@@ -1,8 +1,9 @@
 import re
-from glob import glob
 
 import numpy as np
 import xarray as xr
+import dask.array as da
+import h5py
 
 
 class Database:
@@ -97,6 +98,24 @@ class Database:
             attrs={"Conventions": "CF-1.9"},
         )
         dataset.to_netcdf(*args, **kwargs)
+
+    @classmethod
+    def from_hdf(cls, fname):
+        file = h5py.File(fname, "r")
+
+        data = da.from_array(file["data"], chunks=(-1, -1))
+
+        time_tie_indices = np.asarray(file["time_tie_indices"])
+        time_tie_values = np.asarray(file["time_tie_values"]).astype("datetime64[ns]")
+        time_coordinate = Coordinate(time_tie_indices, time_tie_values)
+
+        distance_tie_indices = np.asarray(file["distance_tie_indices"])
+        distance_tie_values = np.asarray(file["distance_tie_values"])
+        distance_coordinate = Coordinate(distance_tie_indices, distance_tie_values)
+
+        coords = Coordinates(time=time_coordinate, distance=distance_coordinate)
+
+        return cls(data, coords)
 
 
 class Coordinates(dict):
