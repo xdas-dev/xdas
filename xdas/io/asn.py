@@ -6,7 +6,7 @@ import numpy as np
 from ..database import Coordinate
 
 
-def build_database(paths, dgap=None):
+def build_database(fname, paths, dgap=None):
     if isinstance(paths, str):
         paths = glob(paths)
     nsamples, nchannels, dt, dx = get_shared_metadata(paths[0])
@@ -14,11 +14,11 @@ def build_database(paths, dgap=None):
     time = get_time(metadata, nsamples, dt, dgap)
     distance = get_distance(nchannels, dx)
     data = get_data(nchannels, nsamples, metadata)
-    to_hdf(time, distance, data)
+    to_hdf(fname, time, distance, data)
 
 
-def to_hdf(time, distance, data):
-    with h5py.File("/data/results/trabatto/data/database_v2.h5", "w") as file:
+def to_hdf(fname, time, distance, data):
+    with h5py.File(fname, "w") as file:
         file.create_virtual_dataset("data", data, fillvalue=np.nan)
         file.create_dataset("time_tie_indices", data=time.tie_indices)
         file.create_dataset("time_tie_values", data=time.tie_values.astype("int"))
@@ -65,7 +65,7 @@ def correct_time(time, nsamples, dt, dgap):
             tie_indices.append(time.tie_indices[k] + nsample - 1)
             tie_values.append(time.tie_values[k] + (nsample - 1) * dt)
     time = Coordinate(tie_indices, tie_values)
-    time.simplify(np.timedelta64(dgap, "ms"))
+    time.simplify(dgap)
     return time
 
 

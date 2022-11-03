@@ -106,7 +106,7 @@ class Database:
         data = da.from_array(file["data"], chunks=(-1, -1))
 
         time_tie_indices = np.asarray(file["time_tie_indices"])
-        time_tie_values = np.asarray(file["time_tie_values"]).astype("datetime64[ns]")
+        time_tie_values = np.asarray(file["time_tie_values"]).astype("datetime64[us]")
         time_coordinate = Coordinate(time_tie_indices, time_tie_values)
 
         distance_tie_indices = np.asarray(file["distance_tie_indices"])
