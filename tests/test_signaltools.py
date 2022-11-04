@@ -25,8 +25,13 @@ class TestSignal:
             result_chunks[query] = lfilter(xarr[query]).data
         lfilter.reset()
         chain = SignalProcessingChain([lfilter])
-        out = chain.process(xarr, "time", chunk_size)
+        out = chain.process(xarr, "time", chunk_size, parallel=False)
         out = np.concatenate([x.data for x in out])
+        lfilter.reset()
+        assert chain.filters[0].zi == None
+        out_parallel = chain.process(xarr, "time", chunk_size, parallel=True)
+        out_parallel = np.concatenate([x.data for x in out_parallel])
         assert np.allclose(result_chunks.data, result_direct.data)
         assert np.allclose(out, result_direct.data)
+        assert np.allclose(out_parallel, result_direct.data)
         

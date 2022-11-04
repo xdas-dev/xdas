@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.signal as sp
+from dask.distributed import Client
 
 
 class SignalProcessingChain:
@@ -18,11 +19,27 @@ class SignalProcessingChain:
             nchunks = div
         else:
             nchunks = div + 1
-        out = []
-        for k in range(nchunks):
-            query = {dim: slice(k * chunk_size, (k + 1) * chunk_size)}
-            out.append(self(xarr[query]))
-        return out
+        result = []
+        if parallel:
+            client = Client(n_workers=1)
+            queue = []
+            for filter in self.filters:
+                queue.append(client.submit(lambda: None))
+            for k in range(nchunks):
+                query = {dim: slice(k * chunk_size, (k + 1) * chunk_size)}
+                out = client.scatter(xarr[query])
+                for n, filter in enumerate(self.filters):
+                    queue[n].result()
+                    out = client.submit(filter, out)
+                    queue[n] = out
+                result.append(out)
+            result = client.gather(result)
+            client.close()
+        else:
+            for k in range(nchunks):
+                query = {dim: slice(k * chunk_size, (k + 1) * chunk_size)}
+                result.append(self(xarr[query]))
+        return result
 
 
 class SignalProcessingUnit:
