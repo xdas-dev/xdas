@@ -45,10 +45,18 @@ class TestDatabase:
 
     def test_getitem(self):
         database = self.generate()
+        assert database[0].data == 0.0
+        assert database[1].data == 0.1
+        assert database[0]["dim"] == 100.0
         subdatabase = database[2:4]
         assert np.allclose(subdatabase.data, [0.2, 0.3])
         assert np.allclose(subdatabase["dim"].tie_indices, [0, 1])
         assert np.allclose(subdatabase["dim"].tie_values, [300.0, 400.0])
+
+    def test_setitem(self):
+        database = self.generate()
+        database[0] = -100.0
+        assert database[0].data == -100.0
 
     def test_sel(self):
         database = self.generate()

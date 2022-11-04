@@ -9,8 +9,8 @@ import xarray as xr
 
 class Database:
     def __init__(self, data, coords, dims=None, name=None, attrs=None):
-        if not (data.shape == tuple(len(coord) for coord in coords.values())):
-            raise ValueError("Shape mismatch between data and coordinates")
+        # if not (data.shape == tuple(len(coord) for coord in coords.values())):
+            # raise ValueError("Shape mismatch between data and coordinates")
         self.data = data
         self.coords = Coordinates(coords)
         self.dims = tuple(coords.keys())
@@ -20,18 +20,34 @@ class Database:
         self.name = name
         self.attrs = attrs
 
-    def __getitem__(self, item):
-        if isinstance(item, str):
-            return self.coords[item]
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            return self.coords[key]
         else:
-            query = get_query(item, self.coords.dims)
+            query = get_query(key, self.coords.dims)
             data = self.data.__getitem__(tuple(query.values()))
             dct = {dim: self.coords[dim][query[dim]] for dim in query}
             coords = Coordinates(dct)
             return self.__class__(data, coords)
 
+    def __setitem__(self, key, value):
+        if isinstance(key, str):
+            self.coords[key] = value
+        else:
+            query = get_query(key, self.coords.dims)
+            self.data.__setitem__(tuple(query.values()), value)
+
     def __repr__(self):
         return repr(self.data) + "\n" + repr(self.coords)
+
+    def __array__(self, dtype=None):
+        return self.data.__array__(dtype=dtype)
+
+    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        raise NotImplementedError()
+
+    def __array_function__(self, func, types, args, kwargs):
+        raise NotImplementedError()
 
     @property
     def shape(self):
@@ -173,9 +189,13 @@ class LocIndexer:
     def __init__(self, obj):
         self.obj = obj
 
-    def __getitem__(self, item):
-        item = self.obj.coords.to_index(item)
-        return self.obj[item]
+    def __getitem__(self, key):
+        key = self.obj.coords.to_index(key)
+        return self.obj[key]
+
+    def __setitem__(self, key, value):
+        key = self.obj.coords.to_index(key)
+        self.obj[key] = value
 
 
 def get_query(item, dims):
@@ -215,10 +235,10 @@ class Coordinate:
         return self.values()
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        raise NotImplemented()
+        raise NotImplementedError()
 
     def __array_function__(self, func, types, args, kwargs):
-        raise NotImplemented()
+        raise NotImplementedError()
 
     @property
     def dtype(self):
