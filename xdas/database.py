@@ -1,8 +1,9 @@
 import re
 
+import dask.array as da
+import h5py
 import numpy as np
 import xarray as xr
-import h5py
 
 
 class Database:
@@ -102,7 +103,7 @@ class Database:
     def from_hdf(cls, fname):
         file = h5py.File(fname, "r")
 
-        data = file["data"]
+        data = da.from_array(file["data"], chunks=(-1, -1))
 
         time_tie_indices = np.asarray(file["time_tie_indices"])
         time_tie_values = np.asarray(file["time_tie_values"]).astype("datetime64[us]")
