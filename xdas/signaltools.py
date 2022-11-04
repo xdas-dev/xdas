@@ -12,6 +12,18 @@ class SignalProcessingChain:
             out = filter(out)
         return out
 
+    def process(self, xarr, dim, chunk_size, parallel=True):
+        div, mod = divmod(xarr.sizes[dim], chunk_size)
+        if mod == 0:
+            nchunks = div
+        else:
+            nchunks = div + 1
+        out = []
+        for k in range(nchunks):
+            query = {dim: slice(k * chunk_size, (k + 1) * chunk_size)}
+            out.append(self(xarr[query]))
+        return out
+
 
 class SignalProcessingUnit:
     pass

@@ -2,8 +2,8 @@ import dask.array as da
 import numpy as np
 import scipy.signal as sp
 
-from xdas.database import Coordinate, Coordinates, Database
-from xdas.signaltools import LFilter, SignalProcessingChain, SignalProcessingUnit
+from xdas.database import Coordinate, Database
+from xdas.signaltools import LFilter, SignalProcessingChain
 
 
 class TestSignal:
@@ -23,5 +23,10 @@ class TestSignal:
         for k in range(xarr.shape[0] // chunk_size):
             query = {"time": slice(k * chunk_size, (k + 1) * chunk_size)}
             result_chunks[query] = lfilter(xarr[query]).data
+        lfilter.reset()
+        chain = SignalProcessingChain([lfilter])
+        out = chain.process(xarr, "time", chunk_size)
+        out = np.concatenate([x.data for x in out])
         assert np.allclose(result_chunks.data, result_direct.data)
+        assert np.allclose(out, result_direct.data)
         
