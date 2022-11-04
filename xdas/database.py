@@ -1,4 +1,5 @@
 import re
+import copy
 
 import dask.array as da
 import h5py
@@ -8,12 +9,14 @@ import xarray as xr
 
 class Database:
     def __init__(self, data, coords, dims=None, name=None, attrs=None):
+        if not (data.shape == tuple(len(coord) for coord in coords.values())):
+            raise ValueError("Shape mismatch between data and coordinates")
         self.data = data
-        self.coords = coords
-        if dims is None:
-            self.dims = tuple(coords.keys())
-        else:
-            raise NotImplemented()
+        self.coords = Coordinates(coords)
+        self.dims = tuple(coords.keys())
+        if dims is not None:
+            if not (self.dims == dims):
+                raise ValueError("Dimension mismatch between coordinates and dims")
         self.name = name
         self.attrs = attrs
 
@@ -27,6 +30,20 @@ class Database:
             coords = Coordinates(dct)
             return self.__class__(data, coords)
 
+    def __repr__(self):
+        return repr(self.data) + "\n" + repr(self.coords)
+
+    @property
+    def shape(self):
+        return self.data.shape
+
+    @property
+    def ndim(self):
+        return len(self.dims)
+
+    def get_axis_num(self, dim):
+        return self.dims.index(dim)
+
     @property
     def loc(self):
         return LocIndexer(self)
@@ -37,8 +54,20 @@ class Database:
     def sel(self, **kwargs):
         return self.loc[kwargs]
 
-    def __repr__(self):
-        return repr(self.data) + "\n" + repr(self.coords)
+    def copy(self, deep=True, data=None):
+        if deep:
+            copy_fn = copy.deepcopy
+        else:
+            copy_fn = copy.copy
+        if data is None:
+            data = copy_fn(self.data)
+        return self.__class__(
+            data,
+            copy_fn(self.coords),
+            copy_fn(self.dims),
+            copy_fn(self.name),
+            copy_fn(self.attrs),
+        )
 
     def to_xarray(self):
         return xr.DataArray(
@@ -168,7 +197,7 @@ class Coordinate:
         self.kind = "linear"
 
     def __len__(self):
-        return len(self.tie_indices)
+        return self.tie_indices[-1] - self.tie_indices[0] + 1
 
     def __repr__(self):
         return (

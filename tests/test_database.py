@@ -40,6 +40,8 @@ class TestDatabase:
     def test_init(self):
         database = self.generate()
         assert database.dims == ("dim",)
+        assert database.ndim == 1
+        assert database.shape == (9,)
 
     def test_getitem(self):
         database = self.generate()
