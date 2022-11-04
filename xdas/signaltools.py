@@ -2,14 +2,6 @@ import numpy as np
 import scipy.signal as sp
 
 
-class Task:
-    def __init__(self, xarr, chain, chunk_dim, chunk_size):
-        self.xarr = xarr
-        self.chain = chain
-        self.chunk_dim = chunk_dim
-        self.chunk_size = chunk_size
-
-
 class SignalProcessingChain:
     def __init__(self, filters):
         self.filters = filters
