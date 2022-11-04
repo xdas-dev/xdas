@@ -10,7 +10,7 @@ import xarray as xr
 class Database:
     def __init__(self, data, coords, dims=None, name=None, attrs=None):
         # if not (data.shape == tuple(len(coord) for coord in coords.values())):
-            # raise ValueError("Shape mismatch between data and coordinates")
+        # raise ValueError("Shape mismatch between data and coordinates")
         self.data = data
         self.coords = Coordinates(coords)
         self.dims = tuple(coords.keys())
@@ -59,6 +59,10 @@ class Database:
 
     def get_axis_num(self, dim):
         return self.dims.index(dim)
+
+    @property
+    def sizes(self):
+        return {dim: len(coord) for dim, coord in self.coords.items()}
 
     @property
     def loc(self):

@@ -42,6 +42,7 @@ class TestDatabase:
         assert database.dims == ("dim",)
         assert database.ndim == 1
         assert database.shape == (9,)
+        assert database.sizes == {"dim": 9}
 
     def test_getitem(self):
         database = self.generate()
