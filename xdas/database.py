@@ -89,6 +89,12 @@ class Database:
             copy_fn(self.attrs),
         )
 
+    def load(self):
+        return self.compute()
+
+    def compute(self):
+        return self.copy(data=self.data.compute())
+
     def to_xarray(self):
         return xr.DataArray(
             data=self.data,

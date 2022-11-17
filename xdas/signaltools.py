@@ -1,6 +1,7 @@
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+
 import numpy as np
 import scipy.signal as sp
-from dask.distributed import Client
 
 
 class SignalProcessingChain:
@@ -21,25 +22,62 @@ class SignalProcessingChain:
             nchunks = div + 1
         result = []
         if parallel:
-            client = Client(n_workers=1)
-            queue = []
-            for filter in self.filters:
-                queue.append(client.submit(lambda: None))
+            chunks = []
             for k in range(nchunks):
                 query = {dim: slice(k * chunk_size, (k + 1) * chunk_size)}
-                out = client.scatter(xarr[query])
-                for n, filter in enumerate(self.filters):
-                    queue[n].result()
-                    out = client.submit(filter, out)
-                    queue[n] = out
-                result.append(out)
-            result = client.gather(result)
-            client.close()
+                chunks.append(xarr[query])
+            scheduler = Scheduler(chunks, self.filters)
+            result = scheduler.compute()
         else:
             for k in range(nchunks):
                 query = {dim: slice(k * chunk_size, (k + 1) * chunk_size)}
                 result.append(self(xarr[query]))
         return result
+
+
+class Scheduler:
+    def __init__(self, chunks, filters):
+        self.chunks = chunks
+        self.filters = filters
+        self.buffer = {idx: chunk for idx, chunk in enumerate(chunks)}
+        self.executor = None
+        self.futures = {}
+
+    def compute(self):
+        with ThreadPoolExecutor() as executor:
+            self.executor = executor
+            task = {"chunk": 0, "filter": 0}
+            future = self.submit_task(task)
+            while self.futures:
+                done, _ = wait(self.futures, return_when=FIRST_COMPLETED)
+                for future in done:
+                    task = self.futures.pop(future)
+                    self.buffer[task["chunk"]] = future.result()
+                    next_tasks = self.get_next_tasks(task)
+                    for next_task in next_tasks:
+                        self.submit_task(next_task)
+                print("Number of futures:", len(self.futures))
+        return list(self.buffer.values())
+
+    def submit_task(self, task):
+        filter = self.filters[task["filter"]]
+        chunk = self.buffer[task["chunk"]]
+        future = self.executor.submit(filter, chunk)
+        self.futures[future] = task
+        print("New task:", task)
+        return future
+
+    def get_next_tasks(self, task):
+        next_tasks = []
+        if not task["chunk"] >= len(self.chunks) - 1:
+            next_task = task.copy()
+            next_task["chunk"] += 1
+            next_tasks.append(next_task)
+        if not task["filter"] >= len(self.filters) - 1:
+            next_task = task.copy()
+            next_task["filter"] += 1
+            next_tasks.append(next_task)
+        return next_tasks
 
 
 class SignalProcessingUnit:
