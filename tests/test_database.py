@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from xdas.database import Coordinate, Coordinates, Database
 
@@ -30,9 +31,21 @@ class TestCoordinate:
         coord = self.generate()
         assert coord.shape == (9,)
 
+    def test_get_value(self):
+        coord = self.generate()
+        assert coord.get_value(0) == 100.0
+        assert coord.get_value(4) == 500.0
+        assert coord.get_value(8) == 900.0
+        assert coord.get_value(-1) == 900.0
+        assert coord.get_value(-9) == 100.0
+        with pytest.raises(IndexError):
+            coord.get_value(-10)
+            coord.get_value(9)
+
     def test_getitem(self):
         coord = self.generate()
         assert coord[0] == 100.0
+        assert coord[4] == 500.0
         assert coord[8] == 900.0
         assert np.allclose(coord.indices(), np.arange(9))
         assert np.allclose(coord.values(), np.arange(100.0, 1000.0, 100.0))
@@ -42,7 +55,8 @@ class TestCoordinate:
 
     def test_asarray(self):
         coord = self.generate()
-        np.allclose(np.asarray(coord), coord.values())
+        assert np.allclose(np.asarray(coord), coord.values())
+
 
 
 class TestDatabase:
