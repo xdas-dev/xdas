@@ -53,14 +53,16 @@ class TestCoordinate:
         assert coord.get_index(125.0, "nearest") == 0
         assert coord.get_index(175.0, "nearest") == 1
         assert coord.get_index(175.0, "before") == 0
+        assert coord.get_index(200.0, "before") == 1
+        assert coord.get_index(200.0, "after") == 1
         assert coord.get_index(125.0, "after") == 1
-        assert coord.get_index(1000.0, "after") == 8
-        assert coord.get_index(0.0, "before") == 0
         assert np.all(np.equal(coord.get_index([100.0, 900.0]), [0, 8]))
         with pytest.raises(KeyError):
             assert coord.get_index(0.0) == 0
             assert coord.get_index(1000.0) == 8
             assert coord.get_index(150.0) == 0
+            assert coord.get_index(1000.0, "after") == 8
+            assert coord.get_index(0.0, "before") == 0
 
     def test_indices(self):
         coord = self.generate()
@@ -74,6 +76,17 @@ class TestCoordinate:
                 [100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0],
             )
         )
+
+    def test_get_index_slice(self):
+        coord = self.generate()
+        assert coord.get_index_slice(slice(100.0, 200.0)) == slice(0, 2)
+        assert coord.get_index_slice(slice(150.0, 250.0)) == slice(1, 2)
+        assert coord.get_index_slice(slice(300.0, 500.0)) == slice(2, 5)
+        assert coord.get_index_slice(slice(0.0, 500.0)) == slice(0, 5)
+        assert coord.get_index_slice(slice(125.0, 175.0)) == slice(1, 1)
+        assert coord.get_index_slice(slice(0.0, 50.0)) == slice(0, 0)
+        assert coord.get_index_slice(slice(1000.0, 1100.0)) == slice(9, 9)
+        assert coord.get_index_slice(slice(1000.0, 500.0)) == slice(9, 5)
 
     def test_getitem(self):
         coord = self.generate()

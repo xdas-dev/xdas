@@ -273,19 +273,32 @@ class Coordinate:
 
     def get_index(self, value, method=None):
         value = np.asarray(value)
-        index = _linear_interpolate(value, self.tie_values, self.tie_indices)
         if method is None:
+            index = linear_interpolate(value, self.tie_values, self.tie_indices)
             index = np.rint(index).astype("int")
             if not np.allclose(self.get_value(index), value):
                 raise KeyError("value not found in index")
             else:
                 return index
         elif method == "nearest":
+            index = linear_interpolate(value, self.tie_values, self.tie_indices)
             return np.rint(index).astype("int")
         elif method == "before":
-            return np.floor(index).astype("int")
+            index = linear_interpolate(
+                value, self.tie_values, self.tie_indices, left=np.nan
+            )
+            if np.any(np.isnan(index)):
+                raise KeyError("value not found in index")
+            else:
+                return np.floor(index).astype("int")
         elif method == "after":
-            return np.ceil(index).astype("int")
+            index = linear_interpolate(
+                value, self.tie_values, self.tie_indices, right=np.nan
+            )
+            if np.any(np.isnan(index)):
+                raise KeyError("value not found in index")
+            else:
+                return np.ceil(index).astype("int")
         else:
             raise ValueError("valid methods are: 'nearest', 'before', 'after'")
 
@@ -299,12 +312,18 @@ class Coordinate:
         if value_slice.start is None:
             start = None
         else:
-            start = self.get_index(value_slice.start, method="after")
+            try:
+                start = self.get_index(value_slice.start, method="after")
+            except KeyError:
+                start = len(self)
         if value_slice.stop is None:
             stop = None
         else:
-            end = self.get_index(value_slice.stop, method="before")
-            stop = end + 1
+            try:
+                end = self.get_index(value_slice.stop, method="before")
+                stop = end + 1
+            except KeyError:
+                stop = 0
         return slice(start, stop)
 
     def slice(self, index_slice):
