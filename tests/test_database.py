@@ -16,7 +16,6 @@ class TestCoordinate:
         assert coord
         assert not Coordinate([], [])
 
-
     def test_len(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
         assert len(coord) == 9
@@ -104,6 +103,13 @@ class TestCoordinate:
         assert coord.slice(slice(7, None)) == Coordinate([0, 1], [800.0, 900.0])
         assert coord.slice(slice(None, None)) == coord
         assert coord.slice(slice(0, 0)) == Coordinate([], [])
+        assert coord.slice(slice(4, 2)) == Coordinate([], [])
+        assert coord.slice(slice(9, 9)) == Coordinate([], [])
+        assert coord.slice(slice(3, 3)) == Coordinate([], [])
+        assert coord.slice(slice(0, -1)) == Coordinate([0, 7], [100.0, 800.0])
+        assert coord.slice(slice(0, -2)) == Coordinate([0, 6], [100.0, 700.0])
+        assert coord.slice(slice(-2, None)) == Coordinate([0, 1], [800.0, 900.0])
+        assert coord.slice(slice(1, 2))
 
     def test_getitem(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
@@ -130,14 +136,14 @@ class TestDatabase:
         return database
 
     def test_init(self):
-        database = Coordinate([0, 8], [100.0, 900.0])
+        database = self.generate()
         assert database.dims == ("dim",)
         assert database.ndim == 1
         assert database.shape == (9,)
         assert database.sizes == {"dim": 9}
 
     def test_getitem(self):
-        database = Coordinate([0, 8], [100.0, 900.0])
+        database = self.generate()
         assert database[0].data == 0.0
         assert database[1].data == 0.1
         assert database[0]["dim"] == 100.0
@@ -147,14 +153,14 @@ class TestDatabase:
         assert np.allclose(subdatabase["dim"].tie_values, [300.0, 400.0])
 
     def test_setitem(self):
-        database = Coordinate([0, 8], [100.0, 900.0])
+        database = self.generate()
         database[0] = -100.0
         assert database[0].data == -100.0
 
     def test_sel(self):
-        database = Coordinate([0, 8], [100.0, 900.0])
+        database = self.generate()
         sub = database.sel(dim=slice(2, 4))
 
     def test_to_xarray(self):
-        database = Coordinate([0, 8], [100.0, 900.0])
+        database = self.generate()
         database.to_xarray()

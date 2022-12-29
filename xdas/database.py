@@ -235,17 +235,20 @@ class Coordinate:
     def __len__(self):
         if self:
             return self.tie_indices[-1] - self.tie_indices[0] + 1
-        else: 
+        else:
             return 0
 
     def __repr__(self):
-        return (
-            f"{len(self.tie_indices)} tie points from {self.tie_values[0]} "
-            f"to {self.tie_values[-1]}"
-        )
+        if self:
+            return (
+                f"{len(self.tie_indices)} tie points from {self.tie_values[0]} "
+                f"to {self.tie_values[-1]}"
+            )
+        else:
+            return "Empty Coordinate"
 
     def __eq__(self, other):
-        return np.all(np.equal(self.tie_indices, other.tie_indices)) and np.allclose(
+        return np.array_equal(self.tie_indices, other.tie_indices) and np.array_equal(
             self.tie_values, other.tie_values
         )
 
@@ -342,15 +345,27 @@ class Coordinate:
 
     def slice(self, index_slice):
         if index_slice.start is None:
-            start_index = self.tie_indices[0]
+            start_index = 0
         else:
-            start_index = index_slice.start
+            if index_slice.start >= 0:
+                start_index = index_slice.start
+            else:
+                start_index = len(self) + index_slice.start
         if index_slice.stop is None:
-            end_index = self.tie_indices[-1]
+            stop_index = len(self)
         else:
-            end_index = index_slice.stop - 1
-        if index_slice.stop - index_slice.start <= 0:
+            if index_slice.stop >= 0:
+                stop_index = index_slice.stop
+            else:
+                stop_index = len(self) + index_slice.stop
+                print(stop_index)
+        start_index = np.clip(start_index, 0, len(self))
+        stop_index = np.clip(stop_index, 0, len(self))
+        if stop_index - start_index <= 0:
             return Coordinate([], [])
+        elif stop_index - start_index == 1:
+            pass  # TODO
+        end_index = stop_index - 1
         start_value = self.get_value(start_index)
         end_value = self.get_value(end_index)
         mask = (start_index < self.tie_indices) & (self.tie_indices < end_index)
