@@ -263,8 +263,8 @@ class Coordinate:
         return (len(self),)
 
     def get_value(self, index):
-        if index >= len(self) or index < -len(self):
-            raise IndexError(f"index {index} is out of bounds for coordinate of length {len(self)}")
+        if np.any(index >= len(self)) or np.any(index < -len(self)):
+            raise IndexError("index is out of bounds")
         index = index % len(self)
         return _linear_interpolate(index, self.tie_indices, self.tie_values)
 
