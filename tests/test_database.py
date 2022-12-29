@@ -54,11 +54,26 @@ class TestCoordinate:
         assert coord.get_index(175.0, "nearest") == 1
         assert coord.get_index(175.0, "before") == 0
         assert coord.get_index(125.0, "after") == 1
+        assert coord.get_index(1000.0, "after") == 8
+        assert coord.get_index(0.0, "before") == 0
         assert np.all(np.equal(coord.get_index([100.0, 900.0]), [0, 8]))
         with pytest.raises(KeyError):
             assert coord.get_index(0.0) == 0
             assert coord.get_index(1000.0) == 8
             assert coord.get_index(150.0) == 0
+
+    def test_indices(self):
+        coord = self.generate()
+        assert np.all(np.equal(coord.indices(), [0, 1, 2, 3, 4, 5, 6, 7, 8]))
+
+    def test_values(self):
+        coord = self.generate()
+        assert np.all(
+            np.equal(
+                coord.values(),
+                [100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0],
+            )
+        )
 
     def test_getitem(self):
         coord = self.generate()
