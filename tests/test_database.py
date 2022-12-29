@@ -38,6 +38,7 @@ class TestCoordinate:
         assert coord.get_value(8) == 900.0
         assert coord.get_value(-1) == 900.0
         assert coord.get_value(-9) == 100.0
+        assert np.allclose(coord.get_value([1, 2, 3, -2]), [200.0, 300.0, 400.0, 800.0])
         with pytest.raises(IndexError):
             coord.get_value(-10)
             coord.get_value(9)
@@ -53,6 +54,7 @@ class TestCoordinate:
         assert coord.get_index(175.0, "nearest") == 1
         assert coord.get_index(175.0, "before") == 0
         assert coord.get_index(125.0, "after") == 1
+        assert np.all(np.equal(coord.get_index([100.0, 900.0]), [0, 8]))
         with pytest.raises(KeyError):
             assert coord.get_index(0.0) == 0
             assert coord.get_index(1000.0) == 8
@@ -72,7 +74,6 @@ class TestCoordinate:
     def test_asarray(self):
         coord = self.generate()
         assert np.allclose(np.asarray(coord), coord.values())
-
 
 
 class TestDatabase:

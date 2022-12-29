@@ -263,7 +263,8 @@ class Coordinate:
         return (len(self),)
 
     def get_value(self, index):
-        if not np.issubdtype(np.asarray(index).dtype, np.integer):
+        index = np.asarray(index)
+        if not np.issubdtype(index.dtype, np.integer):
             raise IndexError("only integer are valid index")
         if np.any(index >= len(self)) or np.any(index < -len(self)):
             raise IndexError("index is out of bounds")
@@ -271,6 +272,7 @@ class Coordinate:
         return _linear_interpolate(index, self.tie_indices, self.tie_values)
 
     def get_index(self, value, method=None):
+        value = np.asarray(value)
         index = _linear_interpolate(value, self.tie_values, self.tie_indices)
         if method is None:
             index = np.rint(index).astype("int")
