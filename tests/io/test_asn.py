@@ -1,7 +1,7 @@
 import numpy as np
 
-from xdas.io.asn import build_database
 from xdas.database import Database
+from xdas.io.asn import build_database
 
 # paths = [
 #     "/home/trabatto/data/abyss/20211106/proc/035622.hdf5",

@@ -1,5 +1,5 @@
-import re
 import copy
+import re
 
 import dask.array as da
 import h5py

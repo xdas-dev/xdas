@@ -34,4 +34,3 @@ class TestSignal:
         assert np.allclose(result_chunks.data, result_direct.data)
         assert np.allclose(out, result_direct.data)
         assert np.allclose(out_parallel, result_direct.data)
-        
