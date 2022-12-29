@@ -12,7 +12,23 @@ class TestCoordinate:
         assert np.allclose(coord.tie_indices, [0, 8])
         assert np.allclose(coord.tie_values, [100.0, 900.0])
         assert coord.kind == "linear"
+
+    def test_len(self):
+        coord = self.generate()
+        assert len(coord) == 9
+
+    def test_dtype(self):
+        coord = self.generate()
         assert coord.dtype == np.float64
+
+    def test_ndim(self):
+        coord = self.generate()
+        assert coord.ndim == 1
+        assert isinstance(coord.ndim, int)
+
+    def test_shape(self):
+        coord = self.generate()
+        assert coord.shape == (9,)
 
     def test_getitem(self):
         coord = self.generate()
