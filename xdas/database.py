@@ -263,6 +263,8 @@ class Coordinate:
         return (len(self),)
 
     def get_value(self, index):
+        if not np.issubdtype(np.asarray(index).dtype, np.integer):
+            raise IndexError("only integer are valid index")
         if np.any(index >= len(self)) or np.any(index < -len(self)):
             raise IndexError("index is out of bounds")
         index = index % len(self)
@@ -273,7 +275,7 @@ class Coordinate:
         if method is None:
             index = np.rint(index).astype("int")
             if not np.allclose(self.get_value(index), value):
-                raise KeyError("not all values found in index")
+                raise KeyError("value not found in index")
             else:
                 return index
         elif method == "nearest":

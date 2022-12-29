@@ -41,7 +41,8 @@ class TestCoordinate:
         with pytest.raises(IndexError):
             coord.get_value(-10)
             coord.get_value(9)
-        
+            coord.get_value(0.5)
+
     def test_get_index(self):
         coord = self.generate()
         assert coord.get_index(100.0) == 0
