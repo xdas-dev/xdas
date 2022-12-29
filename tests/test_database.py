@@ -5,39 +5,43 @@ from xdas.database import Coordinate, Coordinates, Database
 
 
 class TestCoordinate:
-    def generate(self):
-        return Coordinate([0, 8], [100.0, 900.0])
-
     def test_init(self):
-        coord = self.generate()
+        coord = Coordinate([0, 8], [100.0, 900.0])
         assert np.allclose(coord.tie_indices, [0, 8])
         assert np.allclose(coord.tie_values, [100.0, 900.0])
         assert coord.kind == "linear"
 
+    def test_bool(self):
+        coord = Coordinate([0, 8], [100.0, 900.0])
+        assert coord
+        assert not Coordinate([], [])
+
+
     def test_len(self):
-        coord = self.generate()
+        coord = Coordinate([0, 8], [100.0, 900.0])
         assert len(coord) == 9
+        assert len(Coordinate([], [])) == 0
 
     def test_eq(self):
-        coord1 = self.generate()
-        coord2 = self.generate()
+        coord1 = Coordinate([0, 8], [100.0, 900.0])
+        coord2 = Coordinate([0, 8], [100.0, 900.0])
         assert coord1 == coord2
 
     def test_dtype(self):
-        coord = self.generate()
+        coord = Coordinate([0, 8], [100.0, 900.0])
         assert coord.dtype == np.float64
 
     def test_ndim(self):
-        coord = self.generate()
+        coord = Coordinate([0, 8], [100.0, 900.0])
         assert coord.ndim == 1
         assert isinstance(coord.ndim, int)
 
     def test_shape(self):
-        coord = self.generate()
+        coord = Coordinate([0, 8], [100.0, 900.0])
         assert coord.shape == (9,)
 
     def test_get_value(self):
-        coord = self.generate()
+        coord = Coordinate([0, 8], [100.0, 900.0])
         assert coord.get_value(0) == 100.0
         assert coord.get_value(4) == 500.0
         assert coord.get_value(8) == 900.0
@@ -50,7 +54,7 @@ class TestCoordinate:
             coord.get_value(0.5)
 
     def test_get_index(self):
-        coord = self.generate()
+        coord = Coordinate([0, 8], [100.0, 900.0])
         assert coord.get_index(100.0) == 0
         assert coord.get_index(900.0) == 8
         assert coord.get_index(0.0, "nearest") == 0
@@ -70,11 +74,11 @@ class TestCoordinate:
             assert coord.get_index(0.0, "before") == 0
 
     def test_indices(self):
-        coord = self.generate()
+        coord = Coordinate([0, 8], [100.0, 900.0])
         assert np.all(np.equal(coord.indices(), [0, 1, 2, 3, 4, 5, 6, 7, 8]))
 
     def test_values(self):
-        coord = self.generate()
+        coord = Coordinate([0, 8], [100.0, 900.0])
         assert np.all(
             np.equal(
                 coord.values(),
@@ -83,7 +87,7 @@ class TestCoordinate:
         )
 
     def test_get_index_slice(self):
-        coord = self.generate()
+        coord = Coordinate([0, 8], [100.0, 900.0])
         assert coord.get_index_slice(slice(100.0, 200.0)) == slice(0, 2)
         assert coord.get_index_slice(slice(150.0, 250.0)) == slice(1, 2)
         assert coord.get_index_slice(slice(300.0, 500.0)) == slice(2, 5)
@@ -94,13 +98,15 @@ class TestCoordinate:
         assert coord.get_index_slice(slice(1000.0, 500.0)) == slice(9, 5)
         assert coord.get_index_slice(slice(None, None)) == slice(None, None)
 
-
     def test_slice(self):
-        coord = self.generate()
+        coord = Coordinate([0, 8], [100.0, 900.0])
         assert coord.slice(slice(0, 2)) == Coordinate([0, 1], [100.0, 200.0])
+        assert coord.slice(slice(7, None)) == Coordinate([0, 1], [800.0, 900.0])
+        assert coord.slice(slice(None, None)) == coord
+        assert coord.slice(slice(0, 0)) == Coordinate([], [])
 
     def test_getitem(self):
-        coord = self.generate()
+        coord = Coordinate([0, 8], [100.0, 900.0])
         assert coord[0] == 100.0
         assert coord[4] == 500.0
         assert coord[8] == 900.0
@@ -111,7 +117,7 @@ class TestCoordinate:
         assert np.allclose(subcoord.tie_values, [100.0, 200.0])
 
     def test_asarray(self):
-        coord = self.generate()
+        coord = Coordinate([0, 8], [100.0, 900.0])
         assert np.allclose(np.asarray(coord), coord.values())
 
 
@@ -124,14 +130,14 @@ class TestDatabase:
         return database
 
     def test_init(self):
-        database = self.generate()
+        database = Coordinate([0, 8], [100.0, 900.0])
         assert database.dims == ("dim",)
         assert database.ndim == 1
         assert database.shape == (9,)
         assert database.sizes == {"dim": 9}
 
     def test_getitem(self):
-        database = self.generate()
+        database = Coordinate([0, 8], [100.0, 900.0])
         assert database[0].data == 0.0
         assert database[1].data == 0.1
         assert database[0]["dim"] == 100.0
@@ -141,14 +147,14 @@ class TestDatabase:
         assert np.allclose(subdatabase["dim"].tie_values, [300.0, 400.0])
 
     def test_setitem(self):
-        database = self.generate()
+        database = Coordinate([0, 8], [100.0, 900.0])
         database[0] = -100.0
         assert database[0].data == -100.0
 
     def test_sel(self):
-        database = self.generate()
+        database = Coordinate([0, 8], [100.0, 900.0])
         sub = database.sel(dim=slice(2, 4))
 
     def test_to_xarray(self):
-        database = self.generate()
+        database = Coordinate([0, 8], [100.0, 900.0])
         database.to_xarray()

@@ -226,8 +226,17 @@ class Coordinate:
         self.tie_values = np.asarray(tie_values)
         self.kind = "linear"
 
+    def __bool__(self):
+        if len(self.tie_indices) == 0 or len(self.tie_values) == 0:
+            return False
+        else:
+            return True
+
     def __len__(self):
+        if self:
         return self.tie_indices[-1] - self.tie_indices[0] + 1
+        else: 
+            return 0
 
     def __repr__(self):
         return (
