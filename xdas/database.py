@@ -234,7 +234,7 @@ class Coordinate:
 
     def __len__(self):
         if self:
-        return self.tie_indices[-1] - self.tie_indices[0] + 1
+            return self.tie_indices[-1] - self.tie_indices[0] + 1
         else: 
             return 0
 
@@ -349,6 +349,8 @@ class Coordinate:
             end_index = self.tie_indices[-1]
         else:
             end_index = index_slice.stop - 1
+        if index_slice.stop - index_slice.start <= 0:
+            return Coordinate([], [])
         start_value = self.get_value(start_index)
         end_value = self.get_value(end_index)
         mask = (start_index < self.tie_indices) & (self.tie_indices < end_index)
