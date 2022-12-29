@@ -46,10 +46,16 @@ class TestCoordinate:
         coord = self.generate()
         assert coord.get_index(100.0) == 0
         assert coord.get_index(900.0) == 8
-        assert coord.get_index(1000.0) == 8
-        assert coord.get_index(0.0) == 0
-        assert coord.get_index(125.0) == 0
-        assert coord.get_index(175.0) == 1
+        assert coord.get_index(0.0, "nearest") == 0
+        assert coord.get_index(1000.0, "nearest") == 8
+        assert coord.get_index(125.0, "nearest") == 0
+        assert coord.get_index(175.0, "nearest") == 1
+        assert coord.get_index(175.0, "before") == 0
+        assert coord.get_index(125.0, "after") == 1
+        with pytest.raises(KeyError):
+            assert coord.get_index(0.0) == 0
+            assert coord.get_index(1000.0) == 8
+            assert coord.get_index(150.0) == 0
 
     def test_getitem(self):
         coord = self.generate()

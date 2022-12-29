@@ -268,9 +268,15 @@ class Coordinate:
         index = index % len(self)
         return _linear_interpolate(index, self.tie_indices, self.tie_values)
 
-    def get_index(self, value, method="nearest"):
+    def get_index(self, value, method=None):
         index = _linear_interpolate(value, self.tie_values, self.tie_indices)
-        if method == "nearest":
+        if method is None:
+            index = np.rint(index).astype("int")
+            if not np.allclose(self.get_value(index), value):
+                raise KeyError("not all values found in index")
+            else:
+                return index
+        elif method == "nearest":
             return np.rint(index).astype("int")
         elif method == "before":
             return np.floor(index).astype("int")
