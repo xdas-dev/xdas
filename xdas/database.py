@@ -235,6 +235,11 @@ class Coordinate:
             f"to {self.tie_values[-1]}"
         )
 
+    def __eq__(self, other):
+        return np.all(np.equal(self.tie_indices, other.tie_indices)) and np.allclose(
+            self.tie_values, other.tie_values
+        )
+
     def __getitem__(self, item):
         if isinstance(item, slice):
             return self.slice(item)

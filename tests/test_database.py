@@ -18,6 +18,11 @@ class TestCoordinate:
         coord = self.generate()
         assert len(coord) == 9
 
+    def test_eq(self):
+        coord1 = self.generate()
+        coord2 = self.generate()
+        assert coord1 == coord2
+
     def test_dtype(self):
         coord = self.generate()
         assert coord.dtype == np.float64
@@ -87,6 +92,12 @@ class TestCoordinate:
         assert coord.get_index_slice(slice(0.0, 50.0)) == slice(0, 0)
         assert coord.get_index_slice(slice(1000.0, 1100.0)) == slice(9, 9)
         assert coord.get_index_slice(slice(1000.0, 500.0)) == slice(9, 5)
+        assert coord.get_index_slice(slice(None, None)) == slice(None, None)
+
+
+    def test_slice(self):
+        coord = self.generate()
+        assert coord.slice(slice(0, 2)) == Coordinate([0, 1], [100.0, 200.0])
 
     def test_getitem(self):
         coord = self.generate()
