@@ -269,7 +269,7 @@ class Coordinate:
         if np.any(index >= len(self)) or np.any(index < -len(self)):
             raise IndexError("index is out of bounds")
         index = index % len(self)
-        return _linear_interpolate(index, self.tie_indices, self.tie_values)
+        return linear_interpolate(index, self.tie_indices, self.tie_values)
 
     def get_index(self, value, method=None):
         value = np.asarray(value)
@@ -339,7 +339,7 @@ class Coordinate:
             return self.get_index(item)
 
     def simplify(self, epsilon):
-        self.tie_indices, self.tie_values = _simplify(
+        self.tie_indices, self.tie_values = simplify(
             self.tie_indices, self.tie_values, epsilon
         )
 
@@ -368,32 +368,32 @@ class ScaleOffset:
         return self.scale * arr + self.offset
 
 
-def _linear_interpolate(x, xp, fp):
-    if not _is_strictly_increasing(xp):
+def linear_interpolate(x, xp, fp, left=None, right=None):
+    if not is_strictly_increasing(xp):
         raise ValueError("xp must be strictly increasing")
     x_transform = ScaleOffset.floatize(xp)
     f_transform = ScaleOffset.floatize(fp)
     x = x_transform.direct(x)
     xp = x_transform.direct(xp)
     fp = f_transform.direct(fp)
-    f = np.interp(x, xp, fp)
+    f = np.interp(x, xp, fp, left=left, right=right)
     f = f_transform.inverse(f)
     return f
 
 
-def _is_strictly_increasing(x):
+def is_strictly_increasing(x):
     if np.issubdtype(x.dtype, np.datetime64):
         return np.all(np.diff(x) > np.timedelta64(0, "us"))
     else:
         return np.all(np.diff(x) > 0)
 
 
-def _simplify(x, y, epsilon):
+def simplify(x, y, epsilon):
     mask = np.ones(len(x), dtype=bool)
     stack = [(0, len(x))]
     while stack:
         start, stop = stack.pop()
-        ysimple = _linear_interpolate(
+        ysimple = linear_interpolate(
             x[start:stop],
             x[[start, stop - 1]],
             y[[start, stop - 1]],
