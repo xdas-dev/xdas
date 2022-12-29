@@ -1,4 +1,4 @@
-*.egg-info
-*.pyc
-.vscode/
+__pycache__/
+xdas.egg-info/
 .pytest_cache/
+.vscode/
