@@ -65,6 +65,13 @@ class Database:
         return {dim: len(coord) for dim, coord in self.coords.items()}
 
     @property
+    def values(self):
+        try:
+            return self.data.values
+        except AttributeError:
+            return self.data
+
+    @property
     def loc(self):
         return LocIndexer(self)
 

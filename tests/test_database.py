@@ -161,12 +161,15 @@ class TestDatabase:
         database = Database(data, coords)
         return database
 
-    def test_init(self):
+    def test_init_and_properties(self):
         database = self.generate()
         assert database.dims == ("dim",)
         assert database.ndim == 1
         assert database.shape == (9,)
         assert database.sizes == {"dim": 9}
+        assert np.allclose(database.data, 0.1 * np.arange(9))
+        assert np.all(np.equal(database.values, database.data))
+        assert database.get_axis_num("dim") == 0
 
     def test_getitem(self):
         database = self.generate()
