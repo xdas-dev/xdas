@@ -21,10 +21,41 @@ class TestCoordinate:
         assert len(coord) == 9
         assert len(Coordinate([], [])) == 0
 
+    def test_repr(self):
+        # TODO
+        pass
+
     def test_eq(self):
         coord1 = Coordinate([0, 8], [100.0, 900.0])
         coord2 = Coordinate([0, 8], [100.0, 900.0])
         assert coord1 == coord2
+
+    def test_getitem(self):
+        coord = Coordinate([0, 8], [100.0, 900.0])
+        assert coord[0] == 100.0
+        assert coord[4] == 500.0
+        assert coord[8] == 900.0
+        assert coord[-1] == 900.0
+        assert coord[-2] == 800.0
+        assert np.allclose(coord[[1, 2, 3]], [200.0, 300.0, 400.0])
+        with pytest.raises(IndexError):
+            coord[9]
+            coord[-9]
+        coord[0:2] == Coordinate([0, 1], [100.0, 200.0])
+        coord[:] == coord
+        coord[6:3] == Coordinate([], [])
+        coord[1:2] == Coordinate([0], [200.0])
+        coord[-3:-1] == Coordinate([0, 1], [700.0, 800.0])
+
+    def test_setitem(self):
+        coord = Coordinate([0, 8], [100.0, 900.0])
+        with pytest.raises(TypeError):
+            coord[1] = 0
+            coord[:] = 0
+
+    def test_asarray(self):
+        coord = Coordinate([0, 8], [100.0, 900.0])
+        assert np.allclose(np.asarray(coord), coord.values())
 
     def test_dtype(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
@@ -38,6 +69,14 @@ class TestCoordinate:
     def test_shape(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
         assert coord.shape == (9,)
+
+    def test_format_index(self):
+        # TODO
+        pass
+
+    def test_format_index_slice(self):
+        # TODO
+        pass
 
     def test_get_value(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
@@ -106,33 +145,13 @@ class TestCoordinate:
         assert coord.slice(slice(-2, None)) == Coordinate([0, 1], [800.0, 900.0])
         assert coord.slice(slice(1, 2)) == Coordinate([0], [200.0])
 
-    def test_getitem(self):
-        coord = Coordinate([0, 8], [100.0, 900.0])
-        assert coord[0] == 100.0
-        assert coord[4] == 500.0
-        assert coord[8] == 900.0
-        assert coord[-1] == 900.0
-        assert coord[-2] == 800.0
-        assert np.allclose(coord[[1, 2, 3]], [200.0, 300.0, 400.0])
-        with pytest.raises(IndexError):
-            coord[9]
-            coord[-9]
-        coord[0:2] == Coordinate([0, 1], [100.0, 200.0])
-        coord[:] == coord
-        coord[6:3] == Coordinate([], [])
-        coord[1:2] == Coordinate([0], [200.0])
-        coord[-3:-1] == Coordinate([0, 1], [700.0, 800.0])
+    def test_to_index(self):
+        # TODO
+        pass
 
-    def test_setitem(self):
-        coord = Coordinate([0, 8], [100.0, 900.0])
-        with pytest.raises(TypeError):
-            coord[1] = 0
-            coord[:] = 0
-
-    def test_asarray(self):
-        coord = Coordinate([0, 8], [100.0, 900.0])
-        assert np.allclose(np.asarray(coord), coord.values())
-
+    def test_simplify(self):
+        # TODO
+        pass
 
 class TestDatabase:
     def generate(self):
