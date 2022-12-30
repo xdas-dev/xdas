@@ -239,13 +239,15 @@ class Coordinate:
             return 0
 
     def __repr__(self):
-        if self:
+        if len(self) == 0:
+            return "empty coordinate"
+        elif len(self) == 1:
+            return f"one point at {self.tie_values[0]}"
+        else:
             return (
-                f"{len(self.tie_indices)} tie points from {self.tie_values[0]} "
+                f"{len(self)} points from {self.tie_values[0]} "
                 f"to {self.tie_values[-1]}"
             )
-        else:
-            return "Empty Coordinate"
 
     def __eq__(self, other):
         return np.array_equal(self.tie_indices, other.tie_indices) and np.array_equal(
