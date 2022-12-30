@@ -74,16 +74,11 @@ class TestCoordinate:
 
     def test_indices(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
-        assert np.all(np.equal(coord.indices(), [0, 1, 2, 3, 4, 5, 6, 7, 8]))
+        assert np.all(np.equal(coord.indices(), np.arange(9)))
 
     def test_values(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
-        assert np.all(
-            np.equal(
-                coord.values(),
-                [100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0],
-            )
-        )
+        assert np.allclose(coord.values(), np.arange(100.0, 1000.0, 100.0))
 
     def test_get_index_slice(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
@@ -116,11 +111,23 @@ class TestCoordinate:
         assert coord[0] == 100.0
         assert coord[4] == 500.0
         assert coord[8] == 900.0
-        assert np.allclose(coord.indices(), np.arange(9))
-        assert np.allclose(coord.values(), np.arange(100.0, 1000.0, 100.0))
-        subcoord = coord[0:2]
-        assert np.allclose(subcoord.tie_indices, [0, 1])
-        assert np.allclose(subcoord.tie_values, [100.0, 200.0])
+        assert coord[-1] == 900.0
+        assert coord[-2] == 800.0
+        assert np.allclose(coord[[1, 2, 3]], [200.0, 300.0, 400.0])
+        with pytest.raises(IndexError):
+            coord[9]
+            coord[-9]
+        coord[0:2] == Coordinate([0, 1], [100.0, 200.0])
+        coord[:] == coord
+        coord[6:3] == Coordinate([], [])
+        coord[1:2] == Coordinate([0], [200.0])
+        coord[-3:-1] == Coordinate([0, 1], [700.0, 800.0])
+
+    def test_setitem(self):
+        coord = Coordinate([0, 8], [100.0, 900.0])
+        with pytest.raises(TypeError):
+            coord[1] = 0
+            coord[:] = 0
 
     def test_asarray(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
