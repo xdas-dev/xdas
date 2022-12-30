@@ -279,13 +279,32 @@ class Coordinate:
     def shape(self):
         return (len(self),)
 
-    def get_value(self, index):
-        index = np.asarray(index)
-        if not np.issubdtype(index.dtype, np.integer):
+    def format_index(self, idx, bounds="raise"):
+        idx = np.asarray(idx)
+        if not np.issubdtype(idx.dtype, np.integer):
             raise IndexError("only integer are valid index")
-        if np.any(index >= len(self)) or np.any(index < -len(self)):
-            raise IndexError("index is out of bounds")
-        index = index % len(self)
+        idx = idx + (idx < 0) * len(self)
+        if bounds == "raise":
+            if np.any(idx < 0) or np.any(idx >= len(self)):
+                raise IndexError("index is out of bounds")
+        elif bounds == "clip":
+            idx = np.clip(idx, 0, len(self))
+        return idx
+
+    def format_index_slice(self, slc):
+        start = slc.start
+        stop = slc.stop
+        step = slc.step
+        if start is None:
+            start = 0
+        if stop is None:
+            stop = len(self)
+        start = self.format_index(start, bounds="clip")
+        stop = self.format_index(stop, bounds="clip")
+        return slice(start, stop, step)
+
+    def get_value(self, index):
+        index = self.format_index(index)
         return linear_interpolate(index, self.tie_indices, self.tie_values)
 
     def get_index(self, value, method=None):
@@ -344,23 +363,8 @@ class Coordinate:
         return slice(start, stop)
 
     def slice(self, index_slice):
-        if index_slice.start is None:
-            start_index = 0
-        else:
-            if index_slice.start >= 0:
-                start_index = index_slice.start
-            else:
-                start_index = len(self) + index_slice.start
-        if index_slice.stop is None:
-            stop_index = len(self)
-        else:
-            if index_slice.stop >= 0:
-                stop_index = index_slice.stop
-            else:
-                stop_index = len(self) + index_slice.stop
-                print(stop_index)
-        start_index = np.clip(start_index, 0, len(self))
-        stop_index = np.clip(stop_index, 0, len(self))
+        index_slice = self.format_index_slice(index_slice)
+        start_index, stop_index = index_slice.start, index_slice.stop
         if stop_index - start_index <= 0:
             return Coordinate([], [])
         elif stop_index - start_index == 1:
