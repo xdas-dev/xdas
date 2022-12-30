@@ -109,7 +109,7 @@ class TestCoordinate:
         assert coord.slice(slice(0, -1)) == Coordinate([0, 7], [100.0, 800.0])
         assert coord.slice(slice(0, -2)) == Coordinate([0, 6], [100.0, 700.0])
         assert coord.slice(slice(-2, None)) == Coordinate([0, 1], [800.0, 900.0])
-        assert coord.slice(slice(1, 2))
+        assert coord.slice(slice(1, 2)) == Coordinate([0], [200.0])
 
     def test_getitem(self):
         coord = Coordinate([0, 8], [100.0, 900.0])

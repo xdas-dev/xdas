@@ -368,23 +368,26 @@ class Coordinate:
         if stop_index - start_index <= 0:
             return Coordinate([], [])
         elif stop_index - start_index == 1:
-            pass  # TODO
-        end_index = stop_index - 1
-        start_value = self.get_value(start_index)
-        end_value = self.get_value(end_index)
-        mask = (start_index < self.tie_indices) & (self.tie_indices < end_index)
-        tie_indices = np.insert(
-            self.tie_indices[mask],
-            (0, self.tie_indices[mask].size),
-            (start_index, end_index),
-        )
-        tie_values = np.insert(
-            self.tie_values[mask],
-            (0, self.tie_values[mask].size),
-            (start_value, end_value),
-        )
-        tie_indices -= tie_indices[0]
-        return Coordinate(tie_indices, tie_values)
+            tie_indices = [0]
+            tie_values = [self.get_value(start_index)]
+            return Coordinate(tie_indices, tie_values)
+        else:
+            end_index = stop_index - 1
+            start_value = self.get_value(start_index)
+            end_value = self.get_value(end_index)
+            mask = (start_index < self.tie_indices) & (self.tie_indices < end_index)
+            tie_indices = np.insert(
+                self.tie_indices[mask],
+                (0, self.tie_indices[mask].size),
+                (start_index, end_index),
+            )
+            tie_values = np.insert(
+                self.tie_values[mask],
+                (0, self.tie_values[mask].size),
+                (start_value, end_value),
+            )
+            tie_indices -= tie_indices[0]
+            return Coordinate(tie_indices, tie_values)
 
     def to_index(self, item):
         if isinstance(item, slice):
