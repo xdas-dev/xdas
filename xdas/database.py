@@ -415,11 +415,14 @@ class ScaleOffset:
         self.scale = scale
         self.offset = offset
 
+    def __eq__(self, other):
+        return (self.scale == other.scale) and (self.offset == other.offset)
+
     @classmethod
     def floatize(cls, arr):
         if np.issubdtype(arr.dtype, np.datetime64):
-            scale = np.timedelta64(1, "us")
-            offset = arr[0]
+            scale = np.timedelta64(1, "s")
+            offset = np.datetime64(0, "s")
         else:
             scale = 1.0
             offset = 0.0

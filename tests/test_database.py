@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from xdas.database import ScaleOffset, Coordinate, Coordinates, Database
+from xdas.database import Coordinate, Coordinates, Database, ScaleOffset
 
 
 class TestScaleOffset:
@@ -9,6 +9,15 @@ class TestScaleOffset:
         transform = ScaleOffset(10.0, 100.0)
         assert transform.scale == 10.0
         assert transform.offset == 100.0
+
+    def test_eq(self):
+        transform1 = ScaleOffset(10.0, 100.0)
+        transform2 = ScaleOffset(
+            np.timedelta64(1, "s"), np.datetime64("2000-01-01T00:00:00")
+        )
+        assert transform1 == transform1
+        assert transform2 == transform2
+        assert transform1 != transform2
 
     def test_direct(self):
         transform = ScaleOffset(10.0, 100.0)
@@ -43,6 +52,12 @@ class TestScaleOffset:
         assert transform.inverse(10.777777777) == np.datetime64(
             "2000-01-01T00:00:10.777778"
         )
+
+    def test_floatize(self):
+        assert ScaleOffset.floatize(np.linspace(0, 1)) == ScaleOffset(1.0, 0.0)
+        assert ScaleOffset.floatize(
+            np.datetime64("2000-01-01T00:00:11")
+        ) == ScaleOffset(np.timedelta64(1, "s"), np.datetime64(0, "s"))
 
 
 class TestCoordinate:
