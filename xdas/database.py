@@ -421,8 +421,9 @@ class ScaleOffset:
     @classmethod
     def floatize(cls, arr):
         if np.issubdtype(arr.dtype, np.datetime64):
-            scale = np.timedelta64(1, "s")
-            offset = np.datetime64(0, "s")
+            unit, count = np.datetime_data(arr.dtype)
+            scale = np.timedelta64(count, unit)
+            offset = np.datetime64(0, unit)
         else:
             scale = 1.0
             offset = 0.0
@@ -433,12 +434,8 @@ class ScaleOffset:
 
     def inverse(self, arr):
         if np.issubdtype(np.asarray(self.scale).dtype, np.timedelta64):
-            return (
-                np.rint(arr * self.scale.astype("float")).astype(self.scale)
-                + self.offset
-            )
-        else:
-            return self.scale * arr + self.offset
+            arr = np.rint(arr)
+        return self.scale * arr + self.offset
 
 
 def linear_interpolate(x, xp, fp, left=None, right=None):

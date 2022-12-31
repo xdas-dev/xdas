@@ -44,20 +44,38 @@ class TestScaleOffset:
         assert transform.inverse(10.7) == np.datetime64("2000-01-01T00:00:11")
         assert transform.inverse(11.0) == np.datetime64("2000-01-01T00:00:11")
         transform = ScaleOffset(
-            np.timedelta64(1_000_000, "us"), np.datetime64("2000-01-01T00:00:00")
+            np.timedelta64(1000, "us"), np.datetime64("2000-01-01T00:00:00")
         )
-        assert transform.inverse(10.111111111) == np.datetime64(
-            "2000-01-01T00:00:10.111111"
-        )
-        assert transform.inverse(10.777777777) == np.datetime64(
-            "2000-01-01T00:00:10.777778"
-        )
+        assert transform.inverse(1000.0) == np.datetime64("2000-01-01T00:00:01")
+        assert transform.inverse(1000.3) == np.datetime64("2000-01-01T00:00:01")
+        assert transform.inverse(1000.7) == np.datetime64("2000-01-01T00:00:01.001")
 
     def test_floatize(self):
         assert ScaleOffset.floatize(np.linspace(0, 1)) == ScaleOffset(1.0, 0.0)
         assert ScaleOffset.floatize(
             np.datetime64("2000-01-01T00:00:11")
         ) == ScaleOffset(np.timedelta64(1, "s"), np.datetime64(0, "s"))
+
+    def test_accuracy(self):
+        x = np.random.rand(1000)
+        transform = ScaleOffset.floatize(x)
+        assert np.all(np.abs(x - transform.inverse(transform.direct(x))) < 1e-15)
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        unit = np.timedelta64(1, "us")
+        delta = np.random.randint(0, 365 * 24 * 3600 * 1_000_000)
+        t = t0 + delta * unit
+        transform = ScaleOffset.floatize(t)
+        assert np.all(t == transform.inverse(transform.direct(t)))
+        unit = np.timedelta64(1, "s")
+        delta = np.random.randint(0, 365 * 24 * 3600)
+        t = t0 + delta * unit
+        transform = ScaleOffset.floatize(t)
+        assert np.all(t == transform.inverse(transform.direct(t)))
+        unit = np.timedelta64(1, "ns")
+        delta = np.random.randint(0, 365 * 24 * 3600)
+        t = t0 + delta * unit
+        transform = ScaleOffset.floatize(t)
+        # assert np.all(t == transform.inverse(transform.direct(t)))
 
 
 class TestCoordinate:
