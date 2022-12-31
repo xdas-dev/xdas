@@ -263,7 +263,7 @@ class Coordinate:
 
     def __getitem__(self, item):
         if isinstance(item, slice):
-            return self.slice(item)
+            return self.slice_index(item)
         else:
             return self.get_value(item)
 
@@ -371,7 +371,7 @@ class Coordinate:
                 stop = 0
         return slice(start, stop)
 
-    def slice(self, index_slice):
+    def slice_index(self, index_slice):
         index_slice = self.format_index_slice(index_slice)
         start_index, stop_index = index_slice.start, index_slice.stop
         if stop_index - start_index <= 0:
@@ -405,7 +405,7 @@ class Coordinate:
             return self.get_index(item)
 
     def simplify(self, epsilon):
-        self.tie_indices, self.tie_values = simplify(
+        self.tie_indices, self.tie_values = douglas_peucker(
             self.tie_indices, self.tie_values, epsilon
         )
 
@@ -430,8 +430,12 @@ class ScaleOffset:
 
     def inverse(self, arr):
         if np.issubdtype(np.asarray(self.scale).dtype, np.timedelta64):
-            arr = np.rint(arr)
-        return self.scale * arr + self.offset
+            return (
+                np.rint(arr * self.scale.astype("float")).astype(self.scale)
+                + self.offset
+            )
+        else:
+            return self.scale * arr + self.offset
 
 
 def linear_interpolate(x, xp, fp, left=None, right=None):
@@ -454,7 +458,7 @@ def is_strictly_increasing(x):
         return np.all(np.diff(x) > 0)
 
 
-def simplify(x, y, epsilon):
+def douglas_peucker(x, y, epsilon):
     mask = np.ones(len(x), dtype=bool)
     stack = [(0, len(x))]
     while stack:

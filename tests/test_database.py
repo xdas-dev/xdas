@@ -1,7 +1,48 @@
 import numpy as np
 import pytest
 
-from xdas.database import Coordinate, Coordinates, Database
+from xdas.database import ScaleOffset, Coordinate, Coordinates, Database
+
+
+class TestScaleOffset:
+    def test_init(self):
+        transform = ScaleOffset(10.0, 100.0)
+        assert transform.scale == 10.0
+        assert transform.offset == 100.0
+
+    def test_direct(self):
+        transform = ScaleOffset(10.0, 100.0)
+        assert transform.direct(150.0) == 5.0
+        assert np.allclose(
+            transform.direct(np.array([150.0, 160.0])), np.array([5.0, 6.0])
+        )
+        transform = ScaleOffset(
+            np.timedelta64(1, "s"), np.datetime64("2000-01-01T00:00:00")
+        )
+        assert transform.direct(np.datetime64("2000-01-01T00:00:10")) == 10.0
+
+    def test_inverse(self):
+        transform = ScaleOffset(10.0, 100.0)
+        assert transform.inverse(5.0) == 150
+        assert np.allclose(
+            transform.inverse(np.array([5.0, 6.0])), np.array([150.0, 160.0])
+        )
+        transform = ScaleOffset(
+            np.timedelta64(1, "s"), np.datetime64("2000-01-01T00:00:00")
+        )
+        assert transform.inverse(10.0) == np.datetime64("2000-01-01T00:00:10")
+        assert transform.inverse(10.3) == np.datetime64("2000-01-01T00:00:10")
+        assert transform.inverse(10.7) == np.datetime64("2000-01-01T00:00:11")
+        assert transform.inverse(11.0) == np.datetime64("2000-01-01T00:00:11")
+        transform = ScaleOffset(
+            np.timedelta64(1_000_000, "us"), np.datetime64("2000-01-01T00:00:00")
+        )
+        assert transform.inverse(10.111111111) == np.datetime64(
+            "2000-01-01T00:00:10.111111"
+        )
+        assert transform.inverse(10.777777777) == np.datetime64(
+            "2000-01-01T00:00:10.777778"
+        )
 
 
 class TestCoordinate:
@@ -131,19 +172,19 @@ class TestCoordinate:
         assert coord.get_index_slice(slice(1000.0, 500.0)) == slice(9, 5)
         assert coord.get_index_slice(slice(None, None)) == slice(None, None)
 
-    def test_slice(self):
+    def test_slice_index(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
-        assert coord.slice(slice(0, 2)) == Coordinate([0, 1], [100.0, 200.0])
-        assert coord.slice(slice(7, None)) == Coordinate([0, 1], [800.0, 900.0])
-        assert coord.slice(slice(None, None)) == coord
-        assert coord.slice(slice(0, 0)) == Coordinate([], [])
-        assert coord.slice(slice(4, 2)) == Coordinate([], [])
-        assert coord.slice(slice(9, 9)) == Coordinate([], [])
-        assert coord.slice(slice(3, 3)) == Coordinate([], [])
-        assert coord.slice(slice(0, -1)) == Coordinate([0, 7], [100.0, 800.0])
-        assert coord.slice(slice(0, -2)) == Coordinate([0, 6], [100.0, 700.0])
-        assert coord.slice(slice(-2, None)) == Coordinate([0, 1], [800.0, 900.0])
-        assert coord.slice(slice(1, 2)) == Coordinate([0], [200.0])
+        assert coord.slice_index(slice(0, 2)) == Coordinate([0, 1], [100.0, 200.0])
+        assert coord.slice_index(slice(7, None)) == Coordinate([0, 1], [800.0, 900.0])
+        assert coord.slice_index(slice(None, None)) == coord
+        assert coord.slice_index(slice(0, 0)) == Coordinate([], [])
+        assert coord.slice_index(slice(4, 2)) == Coordinate([], [])
+        assert coord.slice_index(slice(9, 9)) == Coordinate([], [])
+        assert coord.slice_index(slice(3, 3)) == Coordinate([], [])
+        assert coord.slice_index(slice(0, -1)) == Coordinate([0, 7], [100.0, 800.0])
+        assert coord.slice_index(slice(0, -2)) == Coordinate([0, 6], [100.0, 700.0])
+        assert coord.slice_index(slice(-2, None)) == Coordinate([0, 1], [800.0, 900.0])
+        assert coord.slice_index(slice(1, 2)) == Coordinate([0], [200.0])
 
     def test_to_index(self):
         # TODO
@@ -152,6 +193,7 @@ class TestCoordinate:
     def test_simplify(self):
         # TODO
         pass
+
 
 class TestDatabase:
     def generate(self):
