@@ -424,28 +424,36 @@ class ScaleOffset:
 
     @classmethod
     def floatize(cls, arr):
+        arr = np.asarray(arr)
         if np.issubdtype(arr.dtype, np.datetime64):
             unit, count = np.datetime_data(arr.dtype)
             scale = np.timedelta64(count, unit)
             offset = np.min(arr) + (np.max(arr) - np.min(arr)) / 2
-            if not np.all(
-                (arr - offset).astype("int") < (2 ** np.finfo("float").nmant)
-            ):
-                warnings.warn(
-                    "float resolution is not sufficient to represent the full integer range"
-                )
         else:
             scale = 1.0
             offset = 0.0
-        return cls(scale, offset)
+        transform = cls(scale, offset)
+        transform.check_resolution(arr)
+        return transform
 
     def direct(self, arr):
+        arr = np.asarray(arr)
+        self.check_resolution(arr)
         return (arr - self.offset) / self.scale
 
     def inverse(self, arr):
+        arr = np.asarray(arr)
         if np.issubdtype(np.asarray(self.scale).dtype, np.timedelta64):
             arr = np.rint(arr)
         return self.scale * arr + self.offset
+
+    def check_resolution(self, arr):
+        arr = np.asarray(arr)
+        nmax = 2 ** np.finfo("float").nmant
+        if not np.all((arr - self.offset).astype("int") < nmax):
+            warnings.warn(
+                "float resolution is not sufficient to represent the full integer range"
+            )
 
 
 def linear_interpolate(x, xp, fp, left=None, right=None):
