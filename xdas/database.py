@@ -1,5 +1,6 @@
 import copy
 import re
+import warnings
 
 import dask.array as da
 import h5py
@@ -416,14 +417,23 @@ class ScaleOffset:
         self.offset = offset
 
     def __eq__(self, other):
-        return (self.scale == other.scale) and (self.offset == other.offset)
+        try:
+            return (self.scale - other.scale == 0) and (self.offset - other.offset == 0)
+        except:
+            return False
 
     @classmethod
     def floatize(cls, arr):
         if np.issubdtype(arr.dtype, np.datetime64):
             unit, count = np.datetime_data(arr.dtype)
             scale = np.timedelta64(count, unit)
-            offset = np.datetime64(0, unit)
+            offset = np.min(arr) + (np.max(arr) - np.min(arr)) / 2
+            if not np.all(
+                (arr - offset).astype("int") < (2 ** np.finfo("float").nmant)
+            ):
+                warnings.warn(
+                    "float resolution is not sufficient to represent the full integer range"
+                )
         else:
             scale = 1.0
             offset = 0.0

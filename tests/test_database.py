@@ -53,29 +53,36 @@ class TestScaleOffset:
     def test_floatize(self):
         assert ScaleOffset.floatize(np.linspace(0, 1)) == ScaleOffset(1.0, 0.0)
         assert ScaleOffset.floatize(
-            np.datetime64("2000-01-01T00:00:11")
-        ) == ScaleOffset(np.timedelta64(1, "s"), np.datetime64(0, "s"))
+            np.array(
+                [
+                    np.datetime64("2000-01-01T00:00:00"),
+                    np.datetime64("2000-01-02T00:00:00"),
+                ]
+            )
+        ) == ScaleOffset(np.timedelta64(1, "s"), np.datetime64("2000-01-01T12:00:00"))
 
     def test_accuracy(self):
         x = np.random.rand(1000)
         transform = ScaleOffset.floatize(x)
         assert np.all(np.abs(x - transform.inverse(transform.direct(x))) < 1e-15)
-        t0 = np.datetime64("2000-01-01T00:00:00")
-        unit = np.timedelta64(1, "us")
-        delta = np.random.randint(0, 365 * 24 * 3600 * 1_000_000)
-        t = t0 + delta * unit
+
+        t0 = np.datetime64("2000-01-01T00:00:00.000000000")
+        three_years_ns = t0 + np.random.randint(0, int(1e9) * 3600 * 24 * 1000, 1000)
+        three_month_ns = t0 + np.random.randint(0, int(1e9) * 3600 * 24 * 100, 1000)
+
+        t = three_years_ns.astype("datetime64[us]")
         transform = ScaleOffset.floatize(t)
         assert np.all(t == transform.inverse(transform.direct(t)))
-        unit = np.timedelta64(1, "s")
-        delta = np.random.randint(0, 365 * 24 * 3600)
-        t = t0 + delta * unit
+
+        t = three_month_ns
         transform = ScaleOffset.floatize(t)
         assert np.all(t == transform.inverse(transform.direct(t)))
-        unit = np.timedelta64(1, "ns")
-        delta = np.random.randint(0, 365 * 24 * 3600)
-        t = t0 + delta * unit
-        transform = ScaleOffset.floatize(t)
-        # assert np.all(t == transform.inverse(transform.direct(t)))
+
+        t = three_years_ns
+        with pytest.warns(UserWarning):
+            transform = ScaleOffset.floatize(t)
+            error = np.abs(t - transform.inverse(transform.direct(t)))
+            assert np.all(error < np.timedelta64(1, "us"))
 
 
 class TestCoordinate:
