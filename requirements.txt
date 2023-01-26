@@ -1,0 +1,6 @@
+dask
+h5py
+netcdf4
+numpy
+scipy
+xarray
