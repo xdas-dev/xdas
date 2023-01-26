@@ -1,5 +1,8 @@
 # xdas
 
+[![DOI](https://zenodo.org/badge/560867006.svg)](https://zenodo.org/badge/latestdoi/560867006)
+
+
 xdas is a python library built around xarray that allows to work with DAS data 
 (Distributed Acoustic Sensing).
 
