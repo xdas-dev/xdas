@@ -42,7 +42,15 @@ class Database:
         return repr(self.data) + "\n" + repr(self.coords)
 
     def __array__(self, dtype=None):
-        return self.data.__array__(dtype=dtype)
+        if isinstance(self.data, h5py.VirtualSource):
+            with h5py.File("in_memory", "w", "core", backing_store=False) as file:
+                layout = h5py.VirtualLayout(self.data.shape, self.data.dtype)
+                layout[...] = self.data
+                dataset = file.create_virtual_dataset("data", layout)
+                arr = np.asarray(dataset)
+            return arr
+        else:
+            return self.data.__array__(dtype=dtype)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         raise NotImplementedError()
@@ -164,20 +172,17 @@ class Database:
 
     @classmethod
     def from_hdf(cls, fname):
-        file = h5py.File(fname, "r")
-
-        data = da.from_array(file["data"], chunks=(-1, -1))
-
-        time_tie_indices = np.asarray(file["time_tie_indices"])
-        time_tie_values = np.asarray(file["time_tie_values"]).astype("datetime64[us]")
+        with h5py.File(fname, "r") as file:
+            data = h5py.VirtualSource(file["data"])
+            time_tie_indices = np.asarray(file["time_tie_indices"])
+            time_tie_values = np.asarray(file["time_tie_values"]).astype(
+                "datetime64[us]"
+            )
+            distance_tie_indices = np.asarray(file["distance_tie_indices"])
+            distance_tie_values = np.asarray(file["distance_tie_values"])
         time_coordinate = Coordinate(time_tie_indices, time_tie_values)
-
-        distance_tie_indices = np.asarray(file["distance_tie_indices"])
-        distance_tie_values = np.asarray(file["distance_tie_values"])
         distance_coordinate = Coordinate(distance_tie_indices, distance_tie_values)
-
         coords = Coordinates(time=time_coordinate, distance=distance_coordinate)
-
         return cls(data, coords)
 
 
