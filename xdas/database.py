@@ -113,7 +113,7 @@ class Database:
 
     def to_xarray(self):
         return xr.DataArray(
-            data=self.data,
+            data=np.asarray(self.data),
             coords=self.coords,
             dims=self.dims,
             name=self.name,
