@@ -47,10 +47,10 @@ class Database:
                 layout = h5py.VirtualLayout(self.data.shape, self.data.dtype)
                 layout[...] = self.data
                 dataset = file.create_virtual_dataset("data", layout)
-                arr = np.asarray(dataset)
+                arr = dataset.__array__(dtype)
             return arr
         else:
-            return self.data.__array__(dtype=dtype)
+            return self.data.__array__(dtype)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         raise NotImplementedError()
@@ -75,10 +75,7 @@ class Database:
 
     @property
     def values(self):
-        try:
-            return self.data.values
-        except AttributeError:
-            return self.data
+        return self.__array__()
 
     @property
     def loc(self):
@@ -113,7 +110,7 @@ class Database:
 
     def to_xarray(self):
         return xr.DataArray(
-            data=np.asarray(self.data),
+            data=self.__array__(),
             coords=self.coords,
             dims=self.dims,
             name=self.name,
@@ -274,7 +271,7 @@ class Coordinate:
             return self.get_value(item)
 
     def __array__(self, dtype=None):
-        return self.values()
+        return self.values
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         raise NotImplementedError()
@@ -293,6 +290,14 @@ class Coordinate:
     @property
     def shape(self):
         return (len(self),)
+
+    @property
+    def indices(self):
+        return np.arange(self.tie_indices[-1] + 1)
+
+    @property
+    def values(self):
+        return self.get_value(self.indices)
 
     def format_index(self, idx, bounds="raise"):
         idx = np.asarray(idx)
@@ -352,12 +357,6 @@ class Coordinate:
                 return np.ceil(index).astype("int")
         else:
             raise ValueError("valid methods are: 'nearest', 'before', 'after'")
-
-    def indices(self):
-        return np.arange(self.tie_indices[-1] + 1)
-
-    def values(self):
-        return self.get_value(self.indices())
 
     def get_index_slice(self, value_slice):
         if value_slice.start is None:

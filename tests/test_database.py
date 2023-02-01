@@ -136,7 +136,7 @@ class TestCoordinate:
 
     def test_asarray(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
-        assert np.allclose(np.asarray(coord), coord.values())
+        assert np.allclose(np.asarray(coord), coord.values)
 
     def test_dtype(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
@@ -194,11 +194,11 @@ class TestCoordinate:
 
     def test_indices(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
-        assert np.all(np.equal(coord.indices(), np.arange(9)))
+        assert np.all(np.equal(coord.indices, np.arange(9)))
 
     def test_values(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
-        assert np.allclose(coord.values(), np.arange(100.0, 1000.0, 100.0))
+        assert np.allclose(coord.values, np.arange(100.0, 1000.0, 100.0))
 
     def test_get_index_slice(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
