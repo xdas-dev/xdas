@@ -5,6 +5,7 @@ import warnings
 from tempfile import TemporaryDirectory
 
 import dask.array as da
+import h5netcdf
 import h5py
 import numpy as np
 import xarray as xr
@@ -162,26 +163,36 @@ class Database:
         )
 
     @classmethod
-    def from_netcdf(cls, *args, **kwargs):
-        dataset = xr.open_dataset(*args, **kwargs)
-        data = [
-            var for var in dataset.values() if "coordinate_interpolation" in var.attrs
-        ]
-        if len(data) == 1:
-            data = data[0]
-        else:
-            ValueError("several possible data arrays detected")
-        coords = Coordinates()
-        mapping = data.attrs.pop("coordinate_interpolation")
-        matches = re.findall(r"(\w+): (\w+) (\w+)", mapping)
-        for match in matches:
-            dim, indices, values = match
-            coords[dim] = Coordinate(dataset[indices], dataset[values])
-        data = data.data
+    def from_netcdf(cls, fname, **kwargs):
+        with xr.open_dataset(fname, **kwargs) as dataset:
+            data_vars = [
+                var
+                for var in dataset.values()
+                if "coordinate_interpolation" in var.attrs
+            ]
+            if len(data_vars) == 1:
+                da = data_vars[0]
+            else:
+                raise ValueError("several possible data arrays detected")
+            name = da.name
+            coords = Coordinates()
+            mapping = da.attrs.pop("coordinate_interpolation")
+            matches = re.findall(r"(\w+): (\w+) (\w+)", mapping)
+            for match in matches:
+                dim, indices, values = match
+                coords[dim] = Coordinate(dataset[indices], dataset[values])
+        with h5py.File(fname) as file:
+            if name is None:
+                name = "__values__"
+            data = h5py.VirtualSource(file[name])
         return cls(data, coords)
 
-    def to_netcdf(self, *args, **kwargs):
-        datas = []
+    @classmethod
+    def from_hdf(cls, fname, **kwargs):
+        return cls.from_netcdf(fname, **kwargs)
+
+    def to_netcdf(self, fname, virtual=False, **kwargs):
+        data_vars = []
         mapping = ""
         for dim in self.coords.dims:
             mapping += f"{dim}: {dim}_indices {dim}_values "
@@ -202,54 +213,46 @@ class Database:
                 data=self.coords[dim].tie_values,
                 dims=(f"{dim}_points"),
             )
-            datas.extend([interpolation, indices, values])
-        data = xr.DataArray(
-            self.values, dims=self.dims, attrs={"coordinate_interpolation": mapping}
-        )
-        datas.append(data)
+            data_vars.extend([interpolation, indices, values])
         dataset = xr.Dataset(
-            data_vars={xarr.name: xarr for xarr in datas},
+            data_vars={xarr.name: xarr for xarr in data_vars},
             attrs={"Conventions": "CF-1.9"},
         )
-        dataset.to_netcdf(*args, **kwargs)
-
-    @classmethod
-    def from_hdf(cls, fname):
-        with h5py.File(fname, "r") as file:
-            return cls.from_group(file)
-
-    @classmethod
-    def from_group(cls, group):
-        data = h5py.VirtualSource(group["data"])
-        time_tie_indices = np.asarray(group["time_tie_indices"])
-        time_tie_values = np.asarray(group["time_tie_values"]).astype("datetime64[us]")
-        distance_tie_indices = np.asarray(group["distance_tie_indices"])
-        distance_tie_values = np.asarray(group["distance_tie_values"])
-        time_coordinate = Coordinate(time_tie_indices, time_tie_values)
-        distance_coordinate = Coordinate(distance_tie_indices, distance_tie_values)
-        coords = Coordinates(time=time_coordinate, distance=distance_coordinate)
-        return cls(data, coords)
-
-    def to_hdf(self, fname, virtual=False):
-        with h5py.File(fname, "w") as file:
-            self.to_group(file, virtual=virtual)
-
-    def to_group(self, group, virtual=False):
         if not virtual:
-            group.create_dataset("data", data=self.values)
+            xarr = xr.DataArray(
+                self.values,
+                dims=self.dims,
+                name=self.name,
+                attrs={"coordinate_interpolation": mapping},
+            )
+            dataset[xarr.name] = xarr
+            dataset.to_netcdf(fname, **kwargs)
         elif virtual and isinstance(self.data, h5py.VirtualSource):
-            layout = h5py.VirtualLayout(self.shape, self.dtype)
-            layout[...] = self.data
-            group.create_virtual_dataset("data", layout, fillvalue=np.nan)
+            if self.name is None:
+                name = "__values__"
+            else:
+                name = self.name
+            dataset.to_netcdf(fname, **kwargs)
+            with h5py.File(fname, "r+") as file:
+                layout = h5py.VirtualLayout(self.shape, self.dtype)
+                layout[...] = self.data
+                file.create_virtual_dataset(name, layout, fillvalue=np.nan)
+                file[name].attrs["coordinate_interpolation"] = mapping
+            with h5netcdf.File(fname, "r+") as file:
+                for dim in self.dims:
+                    file.dimensions[dim] = None
+                file.create_variable("tmp", ("time", "distance"), dtype="f")
+                for key in file["tmp"].attrs:
+                    file[name].attrs[key] = file["tmp"].attrs[key]
+            with h5py.File(fname, "r+") as file:
+                for axis, dim in enumerate(self.dims):
+                    file[name].dims[axis].attach_scale(file[dim])
+                del file["tmp"]
         else:
             raise ValueError("can only use `virtual=True` with a VirtualSource")
-        for dim in self.dims:
-            tie_indices = self[dim].tie_indices
-            tie_values = self[dim].tie_values
-            if np.issubdtype(tie_values.dtype, np.datetime64):
-                tie_values = tie_values.astype("datetime64[us]").astype("int")
-            group.create_dataset(f"{dim}_tie_indices", data=tie_indices)
-            group.create_dataset(f"{dim}_tie_values", data=tie_values)
+
+    def to_hdf(self, fname, **kwargs):
+        self.to_netcdf(fname, **kwargs)
 
 
 class Coordinates(dict):
