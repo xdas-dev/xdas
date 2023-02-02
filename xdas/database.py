@@ -10,6 +10,22 @@ import numpy as np
 import xarray as xr
 
 
+class DataCollection(dict):
+    def to_hdf(self, fname, virtual=False):
+        with h5py.File(fname, "w") as file:
+            for key in self:
+                group = file.create_group(key)
+                self[key].to_group(group, virtual=virtual)
+
+    @classmethod
+    def from_hdf(cls, fname):
+        with h5py.File(fname, "r") as file:
+            self = cls()
+            for key in file.keys():
+                self[key] = Database.from_group(file[key])
+        return self
+
+
 class Database:
     def __init__(self, data, coords, dims=None, name=None, attrs=None):
         # if not (data.shape == tuple(len(coord) for coord in coords.values())):
@@ -180,13 +196,15 @@ class Database:
     @classmethod
     def from_hdf(cls, fname):
         with h5py.File(fname, "r") as file:
-            data = h5py.VirtualSource(file["data"])
-            time_tie_indices = np.asarray(file["time_tie_indices"])
-            time_tie_values = np.asarray(file["time_tie_values"]).astype(
-                "datetime64[us]"
-            )
-            distance_tie_indices = np.asarray(file["distance_tie_indices"])
-            distance_tie_values = np.asarray(file["distance_tie_values"])
+            return cls.from_group(file)
+
+    @classmethod
+    def from_group(cls, group):
+        data = h5py.VirtualSource(group["data"])
+        time_tie_indices = np.asarray(group["time_tie_indices"])
+        time_tie_values = np.asarray(group["time_tie_values"]).astype("datetime64[us]")
+        distance_tie_indices = np.asarray(group["distance_tie_indices"])
+        distance_tie_values = np.asarray(group["distance_tie_values"])
         time_coordinate = Coordinate(time_tie_indices, time_tie_values)
         distance_coordinate = Coordinate(distance_tie_indices, distance_tie_values)
         coords = Coordinates(time=time_coordinate, distance=distance_coordinate)
@@ -194,21 +212,24 @@ class Database:
 
     def to_hdf(self, fname, virtual=False):
         with h5py.File(fname, "w") as file:
-            if not virtual:
-                file.create_dataset("data", data=self.values)
-            elif virtual and isinstance(self.data, h5py.VirtualSource):
-                layout = h5py.VirtualLayout(self.shape, self.dtype)
-                layout[...] = self.data
-                file.create_virtual_dataset("data", layout, fillvalue=np.nan)
-            else:
-                raise ValueError("can only use `virtual=True` with a VirtualSource")
-            for dim in self.dims:
-                tie_indices = self[dim].tie_indices
-                tie_values = self[dim].tie_values
-                if np.issubdtype(tie_values.dtype, np.datetime64):
-                    tie_values = tie_values.astype("datetime64[us]").astype("int")
-                file.create_dataset(f"{dim}_tie_indices", data=tie_indices)
-                file.create_dataset(f"{dim}_tie_values", data=tie_values)
+            self.to_group(file, virtual=virtual)
+
+    def to_group(self, group, virtual=False):
+        if not virtual:
+            group.create_dataset("data", data=self.values)
+        elif virtual and isinstance(self.data, h5py.VirtualSource):
+            layout = h5py.VirtualLayout(self.shape, self.dtype)
+            layout[...] = self.data
+            group.create_virtual_dataset("data", layout, fillvalue=np.nan)
+        else:
+            raise ValueError("can only use `virtual=True` with a VirtualSource")
+        for dim in self.dims:
+            tie_indices = self[dim].tie_indices
+            tie_values = self[dim].tie_values
+            if np.issubdtype(tie_values.dtype, np.datetime64):
+                tie_values = tie_values.astype("datetime64[us]").astype("int")
+            group.create_dataset(f"{dim}_tie_indices", data=tie_indices)
+            group.create_dataset(f"{dim}_tie_values", data=tie_values)
 
 
 class Coordinates(dict):
