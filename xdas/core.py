@@ -177,6 +177,7 @@ class Database:
         for match in matches:
             dim, indices, values = match
             coords[dim] = Coordinate(dataset[indices], dataset[values])
+        data = data.data
         return cls(data, coords)
 
     def to_netcdf(self, *args, **kwargs):
@@ -202,8 +203,9 @@ class Database:
                 dims=(f"{dim}_points"),
             )
             datas.extend([interpolation, indices, values])
-        data = self.data.copy(deep=False)
-        data.attrs["coordinate_interpolation"] = mapping
+        data = xr.DataArray(
+            self.values, dims=self.dims, attrs={"coordinate_interpolation": mapping}
+        )
         datas.append(data)
         dataset = xr.Dataset(
             data_vars={xarr.name: xarr for xarr in datas},
