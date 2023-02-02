@@ -1,6 +1,8 @@
 import copy
+import os
 import re
 import warnings
+from tempfile import TemporaryDirectory
 
 import dask.array as da
 import h5py
@@ -43,12 +45,16 @@ class Database:
 
     def __array__(self, dtype=None):
         if isinstance(self.data, h5py.VirtualSource):
-            with h5py.File("in_memory", "w", "core", backing_store=False) as file:
-                layout = h5py.VirtualLayout(self.data.shape, self.data.dtype)
-                layout[...] = self.data
-                dataset = file.create_virtual_dataset("data", layout)
-                arr = dataset.__array__(dtype)
-            return arr
+            with TemporaryDirectory() as tmpdirname:
+                fname = os.path.join(tmpdirname, "vds.h5")
+                with h5py.File(fname, "w") as file:
+                    layout = h5py.VirtualLayout(self.data.shape, self.data.dtype)
+                    layout[...] = self.data
+                    dataset = file.create_virtual_dataset("data", layout)
+                with h5py.File(fname, "r") as file:
+                    dataset = file["data"]
+                    out = dataset[...]
+            return out
         else:
             return self.data.__array__(dtype)
 
