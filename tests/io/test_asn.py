@@ -1,6 +1,6 @@
 import numpy as np
 
-from xdas.database import Database
+from xdas.core import Database
 from xdas.io.asn import build_database
 
 # paths = [

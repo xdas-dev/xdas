@@ -3,7 +3,7 @@ from glob import glob
 import h5py
 import numpy as np
 
-from ..database import Coordinate
+from ..core import Coordinate
 
 
 def build_database(fname, paths, dgap=None):

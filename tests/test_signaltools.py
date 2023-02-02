@@ -2,7 +2,7 @@ import dask.array as da
 import numpy as np
 import scipy.signal as sp
 
-from xdas.database import Coordinate, Database
+from xdas.core import Coordinate, Database
 from xdas.signaltools import LFilter, SignalProcessingChain
 
 
