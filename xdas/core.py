@@ -10,6 +10,24 @@ import numpy as np
 import xarray as xr
 
 
+def open_database(fname, *args, **kwargs):
+    ext = os.path.splitext(fname)[-1]
+    if ext == ".nc":
+        return Database.from_netcdf(fname, *args, **kwargs)
+    elif ext in [".h5", ".hdf5"]:
+        return Database.from_hdf(fname, *args, **kwargs)
+    else:
+        raise ValueError("file type not supported")
+
+
+def open_datacollection(fname, *args, **kwargs):
+    ext = os.path.splitext(fname)[-1]
+    if ext in [".h5", ".hdf5"]:
+        return DataCollection.from_hdf(fname, *args, **kwargs)
+    else:
+        raise ValueError("file type not supported")
+
+
 class DataCollection(dict):
     def to_hdf(self, fname, virtual=False):
         with h5py.File(fname, "w") as file:

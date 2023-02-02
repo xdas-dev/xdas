@@ -42,7 +42,7 @@ xarr = database.to_xarray()
 To write and read the file using CF conventions:
 
 ```python
-from xdas.core import Database
+import xdas
 database.to_netcdf("path.nc")
-database = Database.from_netcdf("path.nc")
+database = xdas.open_database("path.nc")
 ```
