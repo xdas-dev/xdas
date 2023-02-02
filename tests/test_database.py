@@ -252,6 +252,7 @@ class TestDatabase:
         assert np.allclose(database.data, 0.1 * np.arange(9))
         assert np.all(np.equal(database.values, database.data))
         assert database.get_axis_num("dim") == 0
+        assert database.dtype == np.float64
 
     def test_getitem(self):
         database = self.generate()

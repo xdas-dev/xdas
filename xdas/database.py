@@ -69,6 +69,10 @@ class Database:
         return self.data.shape
 
     @property
+    def dtype(self):
+        return self.data.dtype
+
+    @property
     def ndim(self):
         return len(self.dims)
 
@@ -187,6 +191,24 @@ class Database:
         distance_coordinate = Coordinate(distance_tie_indices, distance_tie_values)
         coords = Coordinates(time=time_coordinate, distance=distance_coordinate)
         return cls(data, coords)
+
+    def to_hdf(self, fname, virtual=False):
+        with h5py.File(fname, "w") as file:
+            if not virtual:
+                file.create_dataset("data", data=self.values)
+            elif virtual and isinstance(self.data, h5py.VirtualSource):
+                layout = h5py.VirtualLayout(self.shape, self.dtype)
+                layout[...] = self.data
+                file.create_virtual_dataset("data", layout, fillvalue=np.nan)
+            else:
+                raise ValueError("can only use `virtual=True` with a VirtualSource")
+            for dim in self.dims:
+                tie_indices = self[dim].tie_indices
+                tie_values = self[dim].tie_values
+                if np.issubdtype(tie_values.dtype, np.datetime64):
+                    tie_values = tie_values.astype("datetime64[us]").astype("int")
+                file.create_dataset(f"{dim}_tie_indices", data=tie_indices)
+                file.create_dataset(f"{dim}_tie_values", data=tie_values)
 
 
 class Coordinates(dict):
