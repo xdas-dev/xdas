@@ -246,6 +246,9 @@ class DataSource(h5py.VirtualSource):
                 out = dataset[...]
         return out
 
+    def __repr__(self):
+        return f"DataSource: {self.shape} {self.dtype} {self.path}"
+
 
 class Coordinates(dict):
     @property
