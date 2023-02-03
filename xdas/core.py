@@ -12,36 +12,25 @@ import xarray as xr
 
 
 def open_database(fname, *args, **kwargs):
-    ext = os.path.splitext(fname)[-1]
-    if ext == ".nc":
-        return Database.from_netcdf(fname, *args, **kwargs)
-    elif ext in [".h5", ".hdf5"]:
-        return Database.from_hdf(fname, *args, **kwargs)
-    else:
-        raise ValueError("file type not supported")
+    return Database.from_netcdf(fname, *args, **kwargs)
 
 
 def open_datacollection(fname, *args, **kwargs):
-    ext = os.path.splitext(fname)[-1]
-    if ext in [".h5", ".hdf5"]:
-        return DataCollection.from_hdf(fname, *args, **kwargs)
-    else:
-        raise ValueError("file type not supported")
+    return DataCollection.from_netcdf(fname, *args, **kwargs)
 
 
 class DataCollection(dict):
-    def to_hdf(self, fname, virtual=False):
-        with h5py.File(fname, "w") as file:
-            for key in self:
-                group = file.create_group(key)
-                self[key].to_group(group, virtual=virtual)
+    def to_netcdf(self, fname, virtual=False):
+        for key in self:
+            self[key].to_netcdf(fname, group=key, virtual=virtual, mode="a")
 
     @classmethod
-    def from_hdf(cls, fname):
-        with h5py.File(fname, "r") as file:
-            self = cls()
-            for key in file.keys():
-                self[key] = Database.from_group(file[key])
+    def from_netcdf(cls, fname):
+        with h5netcdf.File(fname, "r") as file:
+            groups = file.keys()
+        self = cls()
+        for group in groups:
+            self[group] = Database.from_netcdf(fname, group=group)
         return self
 
 
@@ -162,36 +151,7 @@ class Database:
             attrs=self.attrs,
         )
 
-    @classmethod
-    def from_netcdf(cls, fname, **kwargs):
-        with xr.open_dataset(fname, **kwargs) as dataset:
-            data_vars = [
-                var
-                for var in dataset.values()
-                if "coordinate_interpolation" in var.attrs
-            ]
-            if len(data_vars) == 1:
-                da = data_vars[0]
-            else:
-                raise ValueError("several possible data arrays detected")
-            name = da.name
-            coords = Coordinates()
-            mapping = da.attrs.pop("coordinate_interpolation")
-            matches = re.findall(r"(\w+): (\w+) (\w+)", mapping)
-            for match in matches:
-                dim, indices, values = match
-                coords[dim] = Coordinate(dataset[indices], dataset[values])
-        with h5py.File(fname) as file:
-            if name is None:
-                name = "__values__"
-            data = h5py.VirtualSource(file[name])
-        return cls(data, coords)
-
-    @classmethod
-    def from_hdf(cls, fname, **kwargs):
-        return cls.from_netcdf(fname, **kwargs)
-
-    def to_netcdf(self, fname, virtual=False, **kwargs):
+    def to_netcdf(self, fname, group=None, virtual=False, **kwargs):
         data_vars = []
         mapping = ""
         for dim in self.coords.dims:
@@ -226,33 +186,63 @@ class Database:
                 attrs={"coordinate_interpolation": mapping},
             )
             dataset[xarr.name] = xarr
-            dataset.to_netcdf(fname, **kwargs)
+            dataset.to_netcdf(fname, group=group, **kwargs)
         elif virtual and isinstance(self.data, h5py.VirtualSource):
             if self.name is None:
                 name = "__values__"
             else:
                 name = self.name
-            dataset.to_netcdf(fname, **kwargs)
+            dataset.to_netcdf(fname, group=group, **kwargs)
             with h5py.File(fname, "r+") as file:
+                if group:
+                    file = file["group"]
                 layout = h5py.VirtualLayout(self.shape, self.dtype)
                 layout[...] = self.data
                 file.create_virtual_dataset(name, layout, fillvalue=np.nan)
                 file[name].attrs["coordinate_interpolation"] = mapping
             with h5netcdf.File(fname, "r+") as file:
+                if group:
+                    file = file["group"]
                 for dim in self.dims:
                     file.dimensions[dim] = None
                 file.create_variable("tmp", ("time", "distance"), dtype="f")
                 for key in file["tmp"].attrs:
                     file[name].attrs[key] = file["tmp"].attrs[key]
             with h5py.File(fname, "r+") as file:
+                if group:
+                    file = file["group"]
                 for axis, dim in enumerate(self.dims):
                     file[name].dims[axis].attach_scale(file[dim])
                 del file["tmp"]
         else:
             raise ValueError("can only use `virtual=True` with a VirtualSource")
 
-    def to_hdf(self, fname, **kwargs):
-        self.to_netcdf(fname, **kwargs)
+    @classmethod
+    def from_netcdf(cls, fname, group=None, **kwargs):
+        with xr.open_dataset(fname, group=group, **kwargs) as dataset:
+            data_vars = [
+                var
+                for var in dataset.values()
+                if "coordinate_interpolation" in var.attrs
+            ]
+            if len(data_vars) == 1:
+                da = data_vars[0]
+            else:
+                raise ValueError("several possible data arrays detected")
+            name = da.name
+            coords = Coordinates()
+            mapping = da.attrs.pop("coordinate_interpolation")
+            matches = re.findall(r"(\w+): (\w+) (\w+)", mapping)
+            for match in matches:
+                dim, indices, values = match
+                coords[dim] = Coordinate(dataset[indices], dataset[values])
+        with h5py.File(fname) as file:
+            if group:
+                file = file[group]
+            if name is None:
+                name = "__values__"
+            data = h5py.VirtualSource(file[name])
+        return cls(data, coords)
 
 
 class Coordinates(dict):
