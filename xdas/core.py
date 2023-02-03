@@ -4,7 +4,6 @@ import re
 import warnings
 from tempfile import TemporaryDirectory
 
-import dask.array as da
 import h5netcdf
 import h5py
 import numpy as np
@@ -88,9 +87,6 @@ class Database:
     def ndim(self):
         return len(self.dims)
 
-    def get_axis_num(self, dim):
-        return self.dims.index(dim)
-
     @property
     def sizes(self):
         return {dim: len(coord) for dim, coord in self.coords.items()}
@@ -102,6 +98,9 @@ class Database:
     @property
     def loc(self):
         return LocIndexer(self)
+
+    def get_axis_num(self, dim):
+        return self.dims.index(dim)
 
     def isel(self, **kwargs):
         return self[kwargs]
@@ -123,12 +122,6 @@ class Database:
             copy_fn(self.name),
             copy_fn(self.attrs),
         )
-
-    def load(self):
-        return self.compute()
-
-    def compute(self):
-        return self.copy(data=self.data.compute())
 
     def to_xarray(self):
         return xr.DataArray(
