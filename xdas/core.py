@@ -68,19 +68,7 @@ class Database:
         return repr(self.data) + "\n" + repr(self.coords)
 
     def __array__(self, dtype=None):
-        if isinstance(self.data, h5py.VirtualSource):
-            with TemporaryDirectory() as tmpdirname:
-                fname = os.path.join(tmpdirname, "vds.h5")
-                with h5py.File(fname, "w") as file:
-                    layout = h5py.VirtualLayout(self.data.shape, self.data.dtype)
-                    layout[...] = self.data
-                    dataset = file.create_virtual_dataset("data", layout)
-                with h5py.File(fname, "r") as file:
-                    dataset = file["data"]
-                    out = dataset[...]
-            return out
-        else:
-            return self.data.__array__(dtype)
+        return self.data.__array__(dtype)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         raise NotImplementedError()
@@ -187,7 +175,7 @@ class Database:
             )
             dataset[xarr.name] = xarr
             dataset.to_netcdf(fname, group=group, **kwargs)
-        elif virtual and isinstance(self.data, h5py.VirtualSource):
+        elif virtual and isinstance(self.data, DataSource):
             if self.name is None:
                 name = "__values__"
             else:
@@ -241,8 +229,22 @@ class Database:
                 file = file[group]
             if name is None:
                 name = "__values__"
-            data = h5py.VirtualSource(file[name])
+            data = DataSource(file[name])
         return cls(data, coords)
+
+
+class DataSource(h5py.VirtualSource):
+    def __array__(self, dtype=None):
+        with TemporaryDirectory() as tmpdirname:
+            fname = os.path.join(tmpdirname, "vds.h5")
+            with h5py.File(fname, "w") as file:
+                layout = h5py.VirtualLayout(self.shape, self.dtype)
+                layout[...] = self
+                dataset = file.create_virtual_dataset("data", layout)
+            with h5py.File(fname, "r") as file:
+                dataset = file["data"]
+                out = dataset[...]
+        return out
 
 
 class Coordinates(dict):
