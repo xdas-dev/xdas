@@ -9,11 +9,14 @@ import h5netcdf
 import h5py
 import numpy as np
 import xarray as xr
+from tqdm import tqdm
 
 
 def open_mfdatabase(paths, engine="netcdf"):
     fnames = glob(paths)
-    dbs = [open_database(fname, engine="asn") for fname in fnames]
+    dbs = [
+        open_database(fname, engine="asn") for fname in tqdm(fnames, desc="openning files")
+    ]
     dbs = sorted(dbs, key=lambda db: db["time"][0])
     shape = (sum([db.shape[0] for db in dbs]), dbs[0].shape[1])
     dtype = dbs[0].dtype
@@ -40,7 +43,7 @@ def open_database(fname, group=None, engine="netcdf", **kwargs):
 
 
 def open_datacollection(fname, **kwargs):
-    return DataCollection.from_netcdf(fname, *args, **kwargs)
+    return DataCollection.from_netcdf(fname, **kwargs)
 
 
 class DataCollection(dict):
