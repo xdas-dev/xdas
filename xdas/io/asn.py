@@ -13,8 +13,9 @@ def read(fname):
         dt = np.timedelta64(round(1e6 * header["dt"][()]), "us")
         dx = header["dx"][()] * np.median(np.diff(header["channels"]))
         data = DataSource(file["data"])
-        time = Coordinate([0, data.shape[0]], [t0, t0 + data.shape[0] * dt])
-        distance = Coordinate([0, data.shape[1]], [0.0, data.shape[1] * dx])
+        nt, nd = data.shape
+        time = Coordinate([0, nt - 1], [t0, t0 + (nt - 1) * dt])
+        distance = Coordinate([0, nd - 1], [0.0, (nd - 1) * dx])
     return Database(data, {"time": time, "distance": distance})
 
 
