@@ -2,6 +2,7 @@ import copy
 import os
 import re
 import warnings
+from glob import glob
 from tempfile import TemporaryDirectory
 
 import h5netcdf
@@ -10,11 +11,35 @@ import numpy as np
 import xarray as xr
 
 
-def open_database(fname, *args, **kwargs):
-    return Database.from_netcdf(fname, *args, **kwargs)
+def open_mfdatabase(paths, engine="netcdf"):
+    fnames = glob(paths)
+    dbs = [open_database(fname, engine="asn") for fname in fnames]
+    dbs = sorted(dbs, key=lambda db: db["time"][0])
+    shape = (sum([db.shape[0] for db in dbs]), dbs[0].shape[1])
+    dtype = dbs[0].dtype
+    layout = DataLayout(shape=shape, dtype=dtype)
+    idx = 0
+    tie_indices = []
+    tie_values = []
+    for db in dbs:
+        layout[idx : idx + db.shape[0]] = db.data
+        tie_indices.extend([idx, idx + db.shape[0] - 1])
+        tie_values.extend(db["time"].tie_values)
+        idx += db.shape[0]
+    time = Coordinate(tie_indices, tie_values)
+    return Database(layout, {"time": time, "distance": dbs[0]["distance"]})
 
 
-def open_datacollection(fname, *args, **kwargs):
+def open_database(fname, group=None, engine="netcdf", **kwargs):
+    if engine == "netcdf":
+        return Database.from_netcdf(fname, group=group, **kwargs)
+    elif engine == "asn":
+        from .io.asn import read
+
+        return read(fname)
+
+
+def open_datacollection(fname, **kwargs):
     return DataCollection.from_netcdf(fname, *args, **kwargs)
 
 
@@ -168,7 +193,7 @@ class Database:
             )
             dataset[xarr.name] = xarr
             dataset.to_netcdf(fname, group=group, **kwargs)
-        elif virtual and isinstance(self.data, DataSource):
+        elif virtual and isinstance(self.data, (DataSource, DataLayout)):
             if self.name is None:
                 name = "__values__"
             else:
@@ -177,9 +202,7 @@ class Database:
             with h5py.File(fname, "r+") as file:
                 if group:
                     file = file["group"]
-                layout = h5py.VirtualLayout(self.shape, self.dtype)
-                layout[...] = self.data
-                file.create_virtual_dataset(name, layout, fillvalue=np.nan)
+                self.data.to_dataset(file, name)
                 file[name].attrs["coordinate_interpolation"] = mapping
             with h5netcdf.File(fname, "r+") as file:
                 if group:
@@ -196,7 +219,9 @@ class Database:
                     file[name].dims[axis].attach_scale(file[dim])
                 del file["tmp"]
         else:
-            raise ValueError("can only use `virtual=True` with a VirtualSource")
+            raise ValueError(
+                "can only use `virtual=True` with a DataSource or a DataLayout"
+            )
 
     @classmethod
     def from_netcdf(cls, fname, group=None, **kwargs):
@@ -228,19 +253,41 @@ class Database:
 
 class DataSource(h5py.VirtualSource):
     def __array__(self, dtype=None):
-        with TemporaryDirectory() as tmpdirname:
-            fname = os.path.join(tmpdirname, "vds.h5")
-            with h5py.File(fname, "w") as file:
-                layout = h5py.VirtualLayout(self.shape, self.dtype)
-                layout[...] = self
-                dataset = file.create_virtual_dataset("data", layout)
-            with h5py.File(fname, "r") as file:
-                dataset = file["data"]
-                out = dataset[...]
-        return out
+        self.to_layout().__array__(dtype)
 
     def __repr__(self):
         return f"DataSource: {self.shape} {self.dtype} {self.path}"
+
+    def to_layout(self):
+        layout = DataLayout(self.shape, self.dtype)
+        layout[...] = self
+        return layout
+
+    def to_dataset(self, file, name):
+        self.to_layout().to_dataset(self, file, name)
+
+
+class DataLayout(h5py.VirtualLayout):
+    def __array__(self, dtype=None):
+        with TemporaryDirectory() as tmpdirname:
+            fname = os.path.join(tmpdirname, "vds.h5")
+            with h5py.File(fname, "w") as file:
+                dataset = file.create_virtual_dataset(
+                    "__values__", self, fillvalue=np.nan
+                )
+            with h5py.File(fname, "r") as file:
+                dataset = file["__values__"]
+                out = dataset[...]
+        return out
+
+    def __getitem__(self, key):
+        raise NotImplementedError(
+            "Cannot slice DataLayout. Use `self.to_netcdf(fname, virtual=True)` to "
+            "write to disk and reopen it with `xdas.open_database(fname)`"
+        )
+
+    def to_dataset(self, file, name):
+        return file.create_virtual_dataset(name, self, fillvalue=np.nan)
 
 
 class Coordinates(dict):

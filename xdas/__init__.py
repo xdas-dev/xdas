@@ -5,4 +5,5 @@ from .core import (
     DataCollection,
     open_database,
     open_datacollection,
+    open_mfdatabase,
 )
