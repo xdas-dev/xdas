@@ -12,10 +12,11 @@ import xarray as xr
 from tqdm import tqdm
 
 
-def open_mfdatabase(paths, engine="netcdf"):
+def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
     fnames = glob(paths)
     dbs = [
-        open_database(fname, engine="asn") for fname in tqdm(fnames, desc="openning files")
+        open_database(fname, engine="asn")
+        for fname in tqdm(fnames, desc="openning files")
     ]
     dbs = sorted(dbs, key=lambda db: db["time"][0])
     shape = (sum([db.shape[0] for db in dbs]), dbs[0].shape[1])
@@ -29,7 +30,7 @@ def open_mfdatabase(paths, engine="netcdf"):
         tie_indices.extend([idx, idx + db.shape[0] - 1])
         tie_values.extend(db["time"].tie_values)
         idx += db.shape[0]
-    time = Coordinate(tie_indices, tie_values)
+    time = Coordinate(tie_indices, tie_values).simplify(tolerance)
     return Database(layout, {"time": time, "distance": dbs[0]["distance"]})
 
 
@@ -283,6 +284,9 @@ class DataLayout(h5py.VirtualLayout):
                 out = dataset[...]
         return out
 
+    def __repr__(self):
+        return f"DataSource: {self.shape} {self.dtype}"
+
     def __getitem__(self, key):
         raise NotImplementedError(
             "Cannot slice DataLayout. Use `self.to_netcdf(fname, virtual=True)` to "
@@ -305,8 +309,7 @@ class Coordinates(dict):
     def __repr__(self):
         s = "Coordinates:\n"
         for dim, coord in self.items():
-            s += f"  * {dim}".ljust(12)
-            s += f"({dim}) "
+            s += f"  * {dim}: "
             s += repr(coord) + "\n"
         return s
 
@@ -520,9 +523,10 @@ class Coordinate:
             return self.get_index(item)
 
     def simplify(self, tolerance):
-        self.tie_indices, self.tie_values = douglas_peucker(
+        tie_indices, tie_values = douglas_peucker(
             self.tie_indices, self.tie_values, tolerance
         )
+        return self.__class__(tie_indices, tie_values)
 
 
 class ScaleOffset:
