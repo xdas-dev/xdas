@@ -519,9 +519,9 @@ class Coordinate:
         else:
             return self.get_index(item)
 
-    def simplify(self, epsilon):
+    def simplify(self, tolerance):
         self.tie_indices, self.tie_values = douglas_peucker(
-            self.tie_indices, self.tie_values, epsilon
+            self.tie_indices, self.tie_values, tolerance
         )
 
 
