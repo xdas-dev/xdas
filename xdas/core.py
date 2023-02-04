@@ -5,7 +5,6 @@ import warnings
 from glob import glob
 from tempfile import TemporaryDirectory
 
-import h5netcdf
 import h5py
 import numpy as np
 import xarray as xr
@@ -54,7 +53,7 @@ class DataCollection(dict):
 
     @classmethod
     def from_netcdf(cls, fname):
-        with h5netcdf.File(fname, "r") as file:
+        with h5py.File(fname, "r") as file:
             groups = file.keys()
         self = cls()
         for group in groups:
@@ -198,30 +197,26 @@ class Database:
             dataset[xarr.name] = xarr
             dataset.to_netcdf(fname, group=group, **kwargs)
         elif virtual and isinstance(self.data, (DataSource, DataLayout)):
-            if self.name is None:
-                name = "__values__"
-            else:
-                name = self.name
+            xarr = xr.DataArray(
+                dims=self.dims,
+                name="__tmp__",
+                attrs={"coordinate_interpolation": mapping},
+            )
+            dataset[xarr.name] = xarr
             dataset.to_netcdf(fname, group=group, **kwargs)
             with h5py.File(fname, "r+") as file:
+                if self.name is None:
+                    name = "__values__"
+                else:
+                    name = self.name
                 if group:
                     file = file["group"]
                 self.data.to_dataset(file, name)
-                file[name].attrs["coordinate_interpolation"] = mapping
-            with h5netcdf.File(fname, "r+") as file:
-                if group:
-                    file = file["group"]
-                for dim in self.dims:
-                    file.dimensions[dim] = None
-                file.create_variable("tmp", ("time", "distance"), dtype="f")
-                for key in file["tmp"].attrs:
-                    file[name].attrs[key] = file["tmp"].attrs[key]
-            with h5py.File(fname, "r+") as file:
-                if group:
-                    file = file["group"]
                 for axis, dim in enumerate(self.dims):
                     file[name].dims[axis].attach_scale(file[dim])
-                del file["tmp"]
+                for key in file["__tmp__"].attrs:
+                    file[name].attrs[key] = file["__tmp__"].attrs[key]
+                del file["__tmp__"]
         else:
             raise ValueError(
                 "can only use `virtual=True` with a DataSource or a DataLayout"
