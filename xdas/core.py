@@ -265,6 +265,21 @@ class DataSource(h5py.VirtualSource):
     def to_dataset(self, file, name):
         self.to_layout().to_dataset(self, file, name)
 
+    def to_dict(self):
+        return {
+            "path": self.path,
+            "name": self.name,
+            "dtype": self.dtype,
+            "maxshape": self.maxshape,
+            "sel": self.sel._sel,
+        }
+
+    def from_dict(self, dtc):
+        vsource = DataSource(
+            dtc["path"], dtc["name"], dtc["shape"], dtc["dtype"], dtc="maxshape"
+        )
+        vsource.sel._sel = dtc["sel"]
+
 
 class DataLayout(h5py.VirtualLayout):
     def __array__(self, dtype=None):
