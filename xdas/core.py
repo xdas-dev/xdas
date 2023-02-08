@@ -269,16 +269,19 @@ class DataSource(h5py.VirtualSource):
         return {
             "path": self.path,
             "name": self.name,
+            "shape": self.shape,
             "dtype": self.dtype,
             "maxshape": self.maxshape,
             "sel": self.sel._sel,
         }
 
-    def from_dict(self, dtc):
-        vsource = DataSource(
-            dtc["path"], dtc["name"], dtc["shape"], dtc["dtype"], dtc="maxshape"
+    @classmethod
+    def from_dict(cls, dtc):
+        vsource = cls(
+            dtc["path"], dtc["name"], dtc["shape"], dtc["dtype"], dtc["maxshape"]
         )
         vsource.sel._sel = dtc["sel"]
+        return vsource
 
 
 class DataLayout(h5py.VirtualLayout):
