@@ -270,7 +270,7 @@ class DataSource(h5py.VirtualSource):
             "path": self.path,
             "name": self.name,
             "shape": self.shape,
-            "dtype": self.dtype,
+            "dtype": str(self.dtype),
             "maxshape": self.maxshape,
             "sel": self.sel._sel,
         }
