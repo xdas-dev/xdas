@@ -2,6 +2,7 @@ import copy
 import os
 import re
 import warnings
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from glob import glob
 from tempfile import TemporaryDirectory
 
@@ -13,10 +14,18 @@ from tqdm import tqdm
 
 def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
     fnames = glob(paths)
-    dbs = [
-        open_database(fname, engine="asn")
-        for fname in tqdm(fnames, desc="openning files")
-    ]
+    with ProcessPoolExecutor() as executor:
+        futures = [
+            executor.submit(open_database, fname, engine=engine) for fname in fnames
+        ]
+        dbs = [
+            future.result()
+            for future in tqdm(
+                as_completed(futures),
+                total=len(futures),
+                desc="Fetching metadata from files",
+            )
+        ]
     dbs = sorted(dbs, key=lambda db: db["time"][0])
     shape = (sum([db.shape[0] for db in dbs]), dbs[0].shape[1])
     dtype = dbs[0].dtype
