@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 
 def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
-    fnames = glob(paths)
+    fnames = sorted(glob(paths))
     with ProcessPoolExecutor() as executor:
         futures = [
             executor.submit(open_database, fname, engine=engine) for fname in fnames
@@ -26,6 +26,10 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
                 desc="Fetching metadata from files",
             )
         ]
+    return concatenate(dbs, tolerance=tolerance)
+
+
+def concatenate(dbs, tolerance=np.timedelta64(0, "us")):
     dbs = sorted(dbs, key=lambda db: db["time"][0])
     shape = (sum([db.shape[0] for db in dbs]), dbs[0].shape[1])
     dtype = dbs[0].dtype
@@ -35,7 +39,7 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
     tie_values = []
     for db in dbs:
         layout[idx : idx + db.shape[0]] = db.data
-        tie_indices.extend([idx, idx + db.shape[0] - 1])
+        tie_indices.extend(idx + db["time"].tie_indices)
         tie_values.extend(db["time"].tie_values)
         idx += db.shape[0]
     time = Coordinate(tie_indices, tie_values).simplify(tolerance)
@@ -49,6 +53,8 @@ def open_database(fname, group=None, engine="netcdf", **kwargs):
         from .io.asn import read
 
         return read(fname)
+    else:
+        raise ValueError("engine not recognized")
 
 
 def open_datacollection(fname, **kwargs):
