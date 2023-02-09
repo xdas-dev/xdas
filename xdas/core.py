@@ -207,6 +207,7 @@ class Database:
             dataset.to_netcdf(fname, group=group, **kwargs)
         elif virtual and isinstance(self.data, (DataSource, DataLayout)):
             xarr = xr.DataArray(
+                data=np.empty((0, 0)),
                 dims=self.dims,
                 name="__tmp__",
                 attrs={"coordinate_interpolation": mapping},
@@ -261,7 +262,7 @@ class Database:
 
 class DataSource(h5py.VirtualSource):
     def __array__(self, dtype=None):
-        self.to_layout().__array__(dtype)
+        return self.to_layout().__array__(dtype)
 
     def __repr__(self):
         return f"DataSource: {self.shape} {self.dtype} {self.path}"
@@ -307,7 +308,7 @@ class DataLayout(h5py.VirtualLayout):
         return out
 
     def __repr__(self):
-        return f"DataSource: {self.shape} {self.dtype}"
+        return f"DataLayout: {self.shape} {self.dtype}"
 
     def __getitem__(self, key):
         raise NotImplementedError(
