@@ -461,6 +461,8 @@ class Coordinate:
             start = 0
         if stop is None:
             stop = len(self)
+        if step is None:
+            step = 1
         start = self.format_index(start, bounds="clip")
         stop = self.format_index(stop, bounds="clip")
         return slice(start, stop, step)
@@ -520,10 +522,14 @@ class Coordinate:
 
     def slice_index(self, index_slice):
         index_slice = self.format_index_slice(index_slice)
-        start_index, stop_index = index_slice.start, index_slice.stop
+        start_index, stop_index, step_index = (
+            index_slice.start,
+            index_slice.stop,
+            index_slice.step,
+        )
         if stop_index - start_index <= 0:
             return Coordinate([], [])
-        elif stop_index - start_index == 1:
+        elif (stop_index - start_index) // step_index == 1:
             tie_indices = [0]
             tie_values = [self.get_value(start_index)]
             return Coordinate(tie_indices, tie_values)
