@@ -115,6 +115,35 @@ class LFilter(SignalProcessingUnit):
         self.axis = None
 
 
+class SOSFilter:
+    def __init__(self, sos, dim):
+        self.sos = sos
+        self.dim = dim
+        self.zi = None
+        self.axis = None
+
+    def __call__(self, xarr):
+        if (self.zi is None) or (self.axis is None):
+            self.initialize(xarr)
+        data, self.zi = sp.sosfilt(self.sos, xarr, axis=self.axis, zi=self.zi)
+        return xarr.copy(data=data)
+
+    def initialize(self, xarr):
+        self.axis = xarr.get_axis_num(self.dim)
+        zi = sp.sosfilt_zi(self.sos)
+        ndim = len(xarr.shape)
+        n_sections = zi.shape[0]
+        s = [n_sections] + [2 if k == self.axis else 1 for k in range(ndim)]
+        zi = zi.reshape(s)
+        s = [n_sections] + [2 if k == self.axis else xarr.shape[k] for k in range(ndim)]
+        zi = np.broadcast_to(zi, s)
+        self.zi = zi
+
+    def reset(self):
+        self.zi = None
+        self.axis = None
+
+
 class Decimate(SignalProcessingUnit):
     def __init__(self, q, dim):
         self.q = q
