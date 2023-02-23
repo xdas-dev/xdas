@@ -226,6 +226,12 @@ class TestCoordinate:
         assert coord.slice_index(slice(-2, None)) == Coordinate([0, 1], [800.0, 900.0])
         assert coord.slice_index(slice(1, 2)) == Coordinate([0], [200.0])
         assert coord.slice_index(slice(1, 3, 2)) == Coordinate([0], [200.0])
+        assert coord.slice_index(slice(None, None, 2)) == Coordinate([0, 4], [100.0, 900.0])
+        assert coord.slice_index(slice(None, None, 3)) == Coordinate([0, 2], [100.0, 700.0])
+        assert coord.slice_index(slice(None, None, 4)) == Coordinate([0, 2], [100.0, 900.0])
+        assert coord.slice_index(slice(None, None, 5)) == Coordinate([0, 1], [100.0, 600.0])
+        assert coord.slice_index(slice(2, 7, 3)) == Coordinate([0, 1], [300.0, 600.0])
+
 
     def test_to_index(self):
         # TODO

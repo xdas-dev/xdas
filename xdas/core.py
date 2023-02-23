@@ -529,7 +529,7 @@ class Coordinate:
         )
         if stop_index - start_index <= 0:
             return Coordinate([], [])
-        elif (stop_index - start_index) // step_index == 1:
+        elif (stop_index - start_index) <= step_index:
             tie_indices = [0]
             tie_values = [self.get_value(start_index)]
             return Coordinate(tie_indices, tie_values)
@@ -549,7 +549,19 @@ class Coordinate:
                 (start_value, end_value),
             )
             tie_indices -= tie_indices[0]
-            return Coordinate(tie_indices, tie_values)
+            coord = Coordinate(tie_indices, tie_values)
+            if step_index != 1:
+                coord = coord.decimate(step_index)
+            return coord
+
+    def decimate(self, q):
+        tie_indices = (self.tie_indices // q) * q
+        for k in range(1, len(tie_indices) - 1):
+            if tie_indices[k] == tie_indices[k - 1]:
+                tie_indices[k] += q
+        tie_values = [self.get_value(idx) for idx in tie_indices]
+        tie_indices //= q
+        return self.__class__(tie_indices, tie_values)
 
     def to_index(self, item):
         if isinstance(item, slice):
