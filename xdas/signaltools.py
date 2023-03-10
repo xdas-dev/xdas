@@ -3,6 +3,8 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import numpy as np
 import scipy.signal as sp
 
+from xdas.core import concatenate
+
 
 class SignalProcessingChain:
     def __init__(self, filters):
@@ -151,3 +153,22 @@ class Decimate(SignalProcessingUnit):
 
     def __call__(self, xarr):
         return xarr[{self.dim: slice(None, None, self.q)}]
+
+
+class Writter(SignalProcessingUnit):
+    def __init__(self, fname, duration=np.timedelta64(1, "m")):
+        self.fname = fname
+        self.duration = duration
+        self.buffer = None
+
+    def __call__(self, xarr):
+        if self.buffer is None:
+            self.buffer = xarr
+        else:
+            self.buffer = concatenate([self.buffer, xarr])
+        if self.buffer["time"][-1] - self.buffer["time"][-1] > self.duration:
+            self.buffer.sel(
+                time=slice(
+                    None,
+                )
+            )
