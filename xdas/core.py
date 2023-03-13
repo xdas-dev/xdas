@@ -13,6 +13,23 @@ from tqdm import tqdm
 
 
 def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
+    """
+    Open a multiple file database.
+
+    Parameters
+    ----------
+    paths: str
+        The path names given using shell=style wildcards.
+    engine: str
+        The engine to use to read the file.
+    tolerance: timedelta64
+        The tolerance to consider that the end of a file is continuous with the begging of the following
+
+    Returns
+    -------
+    Database
+        The database containing all files data.
+    """
     fnames = sorted(glob(paths))
     with ProcessPoolExecutor() as executor:
         futures = [
@@ -30,6 +47,22 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
 
 
 def concatenate(dbs, tolerance=np.timedelta64(0, "us")):
+    """
+    Concatenate several databases along the time dimension.
+
+    Parameters
+    ----------
+    dbs : list
+        List of databases to concatenate.
+    tolerance : timedelta64, optional
+        The tolerance to consider that the end of a file is continuous with beginning of the following, by default np.timedelta64(0, "us").
+
+    Returns
+    -------
+    Database
+        The concatenated database.
+    """
+
     dbs = sorted(dbs, key=lambda db: db["time"][0])
     shape = (sum([db.shape[0] for db in dbs]), dbs[0].shape[1])
     dtype = dbs[0].dtype
@@ -190,12 +223,12 @@ class Database:
             indices = xr.DataArray(
                 name=f"{dim}_indices",
                 data=self.coords[dim].tie_indices,
-                dims=(f"{dim}_points"),
+                dims=f"{dim}_points",
             )
             values = xr.DataArray(
                 name=f"{dim}_values",
                 data=self.coords[dim].tie_values,
-                dims=(f"{dim}_points"),
+                dims=f"{dim}_points",
             )
             data_vars.extend([interpolation, indices, values])
         dataset = xr.Dataset(
@@ -397,8 +430,7 @@ class Coordinate:
             return f"one point at {self.tie_values[0]}"
         else:
             return (
-                f"{len(self)} points from {self.tie_values[0]} "
-                f"to {self.tie_values[-1]}"
+                f"{len(self)} points from {self.tie_values[0]} to {self.tie_values[-1]}"
             )
 
     def __eq__(self, other):
