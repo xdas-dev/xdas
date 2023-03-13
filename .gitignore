@@ -2,3 +2,4 @@ __pycache__/
 xdas.egg-info/
 .pytest_cache/
 .vscode/
+docs/_*
