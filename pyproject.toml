@@ -8,3 +8,14 @@ version = "0.1a"
 authors = [
     {name = "Alister Trabattoni", email = "alister.trabattoni@gmail.com"},
 ]
+dependencies = [
+    "dask",
+    "h5py",
+    "netcdf4",
+    "numpy",
+    "scipy",
+    "xarray",
+]
+
+[project.optional-dependencies]
+doc = ["sphinx"]
