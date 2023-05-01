@@ -1,5 +1,6 @@
 __pycache__/
-xdas.egg-info/
+.ipynb_checkpoints
 .pytest_cache/
 .vscode/
 docs/_*
+xdas.egg-info/
