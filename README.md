@@ -10,21 +10,10 @@ xdas is a python library built around xarray that allows to work with DAS data
 
 ## Installation
 
-First install the dependencies:
+You can use ```pip``` to install xdas:
 
-    conda install dask h5py netcdf4 numpy scipy xarray
+    pip install xdas
 
-Then install ```xdas```:
-
-    git clone https://github.com/xdas-dev/xdas.git
-    (cd xdas && pip install -e .)
-
-## Update
-
-Pulling the change from github suffices:
-
-    (cd xdas && git pull)
-    (cd icoords && git pull)
 
 ## Usage
 
