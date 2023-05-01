@@ -1,4 +1,9 @@
-# Welcome to xdas's documentation!
+```{include} ../README.md
+```
+
+```{warning}
+This library is under heavly development.
+```
 
 ```{toctree}
 :caption: 'Contents:'
