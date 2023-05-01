@@ -3,5 +3,6 @@ __pycache__/
 .pytest_cache/
 .vscode/
 build/
+dist/
 docs/_*
 xdas.egg-info/
