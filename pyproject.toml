@@ -14,6 +14,7 @@ dependencies = [
     "netcdf4",
     "numpy",
     "scipy",
+    "tqdm",
     "xarray",
 ]
 
