@@ -31,7 +31,7 @@ release = '0.1.0'
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    "myst-parser",
+    "myst_parser",
     "furo",
     "sphinx.ext.autodoc",
     "sphinx.ext.coverage",
