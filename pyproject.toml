@@ -23,3 +23,7 @@ docs = [
     "myst-parser",
     "furo",
 ]
+tests = [
+    "pytest",
+    "pytest-cov",
+]
