@@ -1,0 +1,10 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xdas"
+version = "0.1a"
+authors = [
+    {name = "Alister Trabattoni", email = "alister.trabattoni@gmail.com"},
+]
