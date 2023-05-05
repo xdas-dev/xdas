@@ -142,8 +142,8 @@ class Database:
     def __repr__(self):
         return repr(self.data) + "\n" + repr(self.coords)
 
-    def __array__(self, dtype=None):
-        return self.data.__array__(dtype)
+    def __array__(self):
+        return self.data.__array__()
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         raise NotImplementedError()
@@ -300,8 +300,8 @@ class Database:
 
 
 class DataSource(h5py.VirtualSource):
-    def __array__(self, dtype=None):
-        return self.to_layout().__array__(dtype)
+    def __array__(self):
+        return self.to_layout().__array__()
 
     def __repr__(self):
         return f"DataSource: {self.shape} {self.dtype} {self.path}"
@@ -334,7 +334,7 @@ class DataSource(h5py.VirtualSource):
 
 
 class DataLayout(h5py.VirtualLayout):
-    def __array__(self, dtype=None):
+    def __array__(self):
         with TemporaryDirectory() as tmpdirname:
             fname = os.path.join(tmpdirname, "vds.h5")
             with h5py.File(fname, "w") as file:
@@ -444,7 +444,7 @@ class Coordinate:
         else:
             return self.get_value(item)
 
-    def __array__(self, dtype=None):
+    def __array__(self):
         return self.values
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
