@@ -202,7 +202,7 @@ class Database:
     def to_xarray(self):
         return xr.DataArray(
             data=self.__array__(),
-            coords=self.coords,
+            coords={key: self.coords[key].__array__() for key in self.coords},
             dims=self.dims,
             name=self.name,
             attrs=self.attrs,
