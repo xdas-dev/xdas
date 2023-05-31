@@ -213,7 +213,7 @@ class Database:
             self.data.__setitem__(tuple(query.values()), value)
 
     def __repr__(self):
-        string = "<xdas.DataBase ("
+        string = "<xdas.Database ("
         string += ", ".join([f"{dim}: {size}" for dim, size in self.sizes.items()])
         string += ")>\n"
         string += repr(self.data) + "\n" + repr(self.coords)
