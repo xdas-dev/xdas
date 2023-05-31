@@ -79,3 +79,38 @@ Coordinates:
   * time      (time) datetime64[ns] 2021-11-01T00:00:00.004965486 ... 2021-11...
   * distance  (distance) float64 1e+04 1e+04 1.001e+04 ... 1.999e+04 2e+04
 ```
+
+
+## Data structure
+
+### Database
+
+![](src/database.png)
+
+```{eval-rst}
+.. autoclass:: xdas.Database
+   :members:
+```
+
+### Coordinate
+
+Because data is generally sampled with a constant sampling rate/resolution keeping the 
+corresponding value for each index as a dense array is inefficient. In `xdas`
+coordinates are saved using the 
+[CF convention][CF]. Only a few tie points are kept and intermediate values are retrieved
+by linear interpolation. Discontinuities are marked by two consecutive tie points.
+
+![](src/coordinate.png)
+
+```{eval-rst}
+.. autoclass:: xdas.Coordinate
+   :members:
+```
+
+[CF]: <http://cfconventions.org/Data/cf-conventions/cf-conventions-1.10/cf-conventions.html#compression-by-coordinate-subsampling>
+
+### DataCollection
+```{eval-rst}
+.. autoclass:: xdas.DataCollection
+   :members:
+```
