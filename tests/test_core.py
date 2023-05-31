@@ -122,11 +122,11 @@ class TestCoordinate:
         with pytest.raises(IndexError):
             coord[9]
             coord[-9]
-        coord[0:2] == Coordinate([0, 1], [100.0, 200.0])
-        coord[:] == coord
-        coord[6:3] == Coordinate([], [])
-        coord[1:2] == Coordinate([0], [200.0])
-        coord[-3:-1] == Coordinate([0, 1], [700.0, 800.0])
+        assert coord[0:2] == Coordinate([0, 1], [100.0, 200.0])
+        assert coord[:] == coord
+        assert coord[6:3] == Coordinate([], [])
+        assert coord[1:2] == Coordinate([0], [200.0])
+        assert coord[-3:-1] == Coordinate([0, 1], [700.0, 800.0])
 
     def test_setitem(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
@@ -171,6 +171,14 @@ class TestCoordinate:
             coord.get_value(-10)
             coord.get_value(9)
             coord.get_value(0.5)
+        starttime = np.datetime64("2000-01-01T00:00:00")
+        endtime = np.datetime64("2000-01-01T00:00:08")
+        coord = Coordinate([0, 8], [starttime, endtime])
+        assert coord.get_value(0) == starttime
+        assert coord.get_value(4) == np.datetime64("2000-01-01T00:00:04")
+        assert coord.get_value(8) == endtime
+        assert coord.get_value(-1) == endtime
+        assert coord.get_value(-9) == starttime
 
     def test_get_index(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
@@ -191,6 +199,15 @@ class TestCoordinate:
             assert coord.get_index(150.0) == 0
             assert coord.get_index(1000.0, "after") == 8
             assert coord.get_index(0.0, "before") == 0
+
+        starttime = np.datetime64("2000-01-01T00:00:00")
+        endtime = np.datetime64("2000-01-01T00:00:08")
+        coord = Coordinate([0, 8], [starttime, endtime])
+        assert coord.get_index(starttime) == 0
+        assert coord.get_index(endtime) == 8
+        assert coord.get_index(str(starttime)) == 0
+        assert coord.get_index(str(endtime)) == 8
+        assert coord.get_index("2000-01-01T00:00:04.1", "nearest") == 4
 
     def test_indices(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
@@ -226,12 +243,19 @@ class TestCoordinate:
         assert coord.slice_index(slice(-2, None)) == Coordinate([0, 1], [800.0, 900.0])
         assert coord.slice_index(slice(1, 2)) == Coordinate([0], [200.0])
         assert coord.slice_index(slice(1, 3, 2)) == Coordinate([0], [200.0])
-        assert coord.slice_index(slice(None, None, 2)) == Coordinate([0, 4], [100.0, 900.0])
-        assert coord.slice_index(slice(None, None, 3)) == Coordinate([0, 2], [100.0, 700.0])
-        assert coord.slice_index(slice(None, None, 4)) == Coordinate([0, 2], [100.0, 900.0])
-        assert coord.slice_index(slice(None, None, 5)) == Coordinate([0, 1], [100.0, 600.0])
+        assert coord.slice_index(slice(None, None, 2)) == Coordinate(
+            [0, 4], [100.0, 900.0]
+        )
+        assert coord.slice_index(slice(None, None, 3)) == Coordinate(
+            [0, 2], [100.0, 700.0]
+        )
+        assert coord.slice_index(slice(None, None, 4)) == Coordinate(
+            [0, 2], [100.0, 900.0]
+        )
+        assert coord.slice_index(slice(None, None, 5)) == Coordinate(
+            [0, 1], [100.0, 600.0]
+        )
         assert coord.slice_index(slice(2, 7, 3)) == Coordinate([0, 1], [300.0, 600.0])
-
 
     def test_to_index(self):
         # TODO

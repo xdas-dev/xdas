@@ -724,14 +724,24 @@ class Coordinate:
         return linear_interpolate(index, self.tie_indices, self.tie_values)
 
     def get_index(self, value, method=None):
-        value = np.asarray(value)
+        if isinstance(value, str):
+            value = np.datetime64(value)
+        else:
+            value = np.asarray(value)
         if method is None:
             index = linear_interpolate(value, self.tie_values, self.tie_indices)
             index = np.rint(index).astype("int")
-            if not np.allclose(self.get_value(index), value):
-                raise KeyError("value not found in index")
+            index_value = self.get_value(index)
+            if np.issubdtype(self.dtype, np.datetime64):
+                if not np.all(index_value == value):
+                    raise KeyError("value not found in index")
+                else:
+                    return index
             else:
-                return index
+                if not np.allclose(index_value, value):
+                    raise KeyError("value not found in index")
+                else:
+                    return index
         elif method == "nearest":
             index = linear_interpolate(value, self.tie_values, self.tie_indices)
             return np.rint(index).astype("int")
