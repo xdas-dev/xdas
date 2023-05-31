@@ -213,7 +213,11 @@ class Database:
             self.data.__setitem__(tuple(query.values()), value)
 
     def __repr__(self):
-        return repr(self.data) + "\n" + repr(self.coords)
+        string = "<xdas.DataBase ("
+        string += ", ".join([f"{dim}: {size}" for dim, size in self.sizes.items()])
+        string += ")>\n"
+        string += repr(self.data) + "\n" + repr(self.coords)
+        return string
 
     def __array__(self):
         return self.data.__array__()
@@ -645,7 +649,8 @@ class Coordinate:
             return f"one point at {self.tie_values[0]}"
         else:
             return (
-                f"{len(self)} points from {self.tie_values[0]} to {self.tie_values[-1]}"
+                f"{len(self.tie_indices)} tie points from {self.tie_values[0]} to "
+                f"{self.tie_values[-1]}"
             )
 
     def __eq__(self, other):
