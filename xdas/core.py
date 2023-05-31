@@ -23,7 +23,8 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
     engine: str
         The engine to use to read the file.
     tolerance: timedelta64
-        The tolerance to consider that the end of a file is continuous with the begging of the following
+        The tolerance to consider that the end of a file is continuous with the begging
+        of the following
 
     Returns
     -------
@@ -55,7 +56,8 @@ def concatenate(dbs, tolerance=np.timedelta64(0, "us")):
     dbs : list
         List of databases to concatenate.
     tolerance : timedelta64, optional
-        The tolerance to consider that the end of a file is continuous with beginning of the following, by default np.timedelta64(0, "us").
+        The tolerance to consider that the end of a file is continuous with beginning of
+        the following, by default np.timedelta64(0, "us").
 
     Returns
     -------
@@ -80,6 +82,29 @@ def concatenate(dbs, tolerance=np.timedelta64(0, "us")):
 
 
 def open_database(fname, group=None, engine="netcdf", **kwargs):
+    """
+    Open a database.
+
+    Parameters
+    ----------
+    fname : str
+        The path of the database.
+    group : str, optional
+        The file group where the database is located, by default None which corresponds
+        to the root of the file.
+    engine : str, optional
+        The file format, by default "netcdf".
+
+    Returns
+    -------
+    Database
+        The opened database.
+
+    Raises
+    ------
+    ValueError
+        If the engine si not recognized.
+    """
     if engine == "netcdf":
         return Database.from_netcdf(fname, group=group, **kwargs)
     elif engine == "asn":
@@ -91,10 +116,30 @@ def open_database(fname, group=None, engine="netcdf", **kwargs):
 
 
 def open_datacollection(fname, **kwargs):
+    """
+    Open a DataCollection from a file.
+
+    Parameters
+    ----------
+    fname : str
+        The path of the DataCollection.
+
+    Returns
+    -------
+    DataCollection
+        The opened DataCollection.
+    """
     return DataCollection.from_netcdf(fname, **kwargs)
 
 
 class DataCollection(dict):
+    """
+    A collection of databases.
+
+    A data collection is a dictionary whose keys are any user defined identifiers and
+    values are database objects.
+    """
+
     def to_netcdf(self, fname, virtual=False):
         for key in self:
             self[key].to_netcdf(fname, group=key, virtual=virtual, mode="a")
@@ -110,6 +155,34 @@ class DataCollection(dict):
 
 
 class Database:
+    """
+    N-dimensional array with labeled coordinates and dimensions.
+
+    It is the equivalent of and xarray.DataArray but with custom coordinate objects.
+    Most of the Database API follows the DataArray one. Database objects also provide
+    virtual dataset capabilities to manipulate huge multi-file NETCDF4 or HDF5 datasets.
+
+    Parameters
+    ----------
+    data : array_like
+        Values of the array. Can be a DataSource or a DataLayout for lazy loading of
+        netCDF4/HSF5 files.
+    coords : dict of Coordinate
+        Coordinates to use for indexing along each dimension.
+    dims : sequence of string, optional
+        Name(s) of the data dimension(s). If provided, must be equal to the keys of
+        `coords`. Used for API compatibility with xarray.
+    name : str, optional
+        Name of this array.
+    attrs : dict_like, optional
+        Attributes to assign to the new instance.
+
+    Raises
+    ------
+    ValueError
+        If dims do not match the keys of coords.
+    """
+
     def __init__(self, data, coords, dims=None, name=None, attrs=None):
         # if not (data.shape == tuple(len(coord) for coord in coords.values())):
         # raise ValueError("Shape mismatch between data and coordinates")
@@ -176,15 +249,98 @@ class Database:
         return LocIndexer(self)
 
     def get_axis_num(self, dim):
+        """
+        Return axis number corresponding to dimension in this array.
+
+        Parameters
+        ----------
+        dim : str
+            Dimension name for which to lookup axis.
+
+        Returns
+        -------
+        int
+            Axis number corresponding to the given dimension
+        """
         return self.dims.index(dim)
 
-    def isel(self, **kwargs):
-        return self[kwargs]
+    def isel(self, indexers=None, **indexers_kwargs):
+        """
+        Return a new Database whose data is given by selecting indexes along the
+        specified dimension(s).
 
-    def sel(self, **kwargs):
-        return self.loc[kwargs]
+        Parameters
+        ----------
+        indexers : dict, optional
+            A dict with keys matching dimensions and values given by integers, slice
+            objects or arrays.
+        **indexers_kwargs : dict, optional
+            The keyword arguments form of integers. Overwrite indexers input if both
+            are provided.
+
+        Returns
+        -------
+        Database
+            The selected subset of the Database.
+        """
+        if indexers is None:
+            indexers = {}
+        indexers.update(indexers_kwargs)
+        return self[indexers]
+
+    def sel(self, indexers=None, **indexers_kwargs):
+        """
+        Return a new Database whose data is given by selecting index labels along the
+        specified dimension(s).
+
+        In contrast to Database.isel, indexers for this method should use labels
+        instead of integers.
+
+        Parameters
+        ----------
+        indexers : dict, optional
+            A dict with keys matching dimensions and values given by scalars, slices or
+            arrays of tick labels.
+        **indexers_kwargs : dict, optional
+            The keyword arguments form of integers. Overwrite indexers input if both
+            are provided.
+
+        Returns
+        -------
+        Database
+            _description_
+        """
+        if indexers is None:
+            indexers = {}
+        indexers.update(indexers_kwargs)
+        return self.loc[indexers]
 
     def copy(self, deep=True, data=None):
+        """
+        Returns a copy of this array
+
+        If deep=True, a deep copy is made of the data array. Otherwise, a shallow copy
+        is made, and the returned data array's values are a new view of this data
+        array's values.
+
+        Use data to create a new object with the same structure as original but
+        entirely new data.
+
+        Parameters
+        ----------
+        deep : bool, optional
+            Whether the data array and its coordinates are loaded into memory and copied
+            onto the new object. Default is True.
+        data : array_like, optional
+            Data to use in the new object. Must have same shape as original. When data
+            is used, deep is ignored for all data variables, and only used for coords.
+
+        Returns
+        -------
+        DataArray
+            New object with dimensions, attributes, coordinates, name, encoding, and
+            optionally data copied from original.
+        """
         if deep:
             copy_fn = copy.deepcopy
         else:
@@ -200,6 +356,16 @@ class Database:
         )
 
     def to_xarray(self):
+        """
+        Convert the Database to a DataArray object.
+
+        Coordinates are converted to dense arrays and lazy values are loaded in memory.
+
+        Returns
+        -------
+        DataArray
+            The converted in-memory DataArray.
+        """
         return xr.DataArray(
             data=self.__array__(),
             coords={dim: self.coords[dim].__array__() for dim in self.coords},
@@ -209,6 +375,24 @@ class Database:
         )
 
     def to_netcdf(self, fname, group=None, virtual=False, **kwargs):
+        """
+        Write Database contents to a netCDF file.
+
+        Parameters
+        ----------
+        fname : str
+            Path to which to save this dataset.
+        group : str, optional
+            Path to the netCDF4 group in the given file to open.
+        virtual : bool, optional
+            Weather to write a virtual dataset. The Database data must be a DataSource
+            or a DataLayout. Default is False.
+
+        Raises
+        ------
+        ValueError
+            _description_
+        """
         data_vars = []
         mapping = ""
         for dim in self.coords.dims:
@@ -300,6 +484,10 @@ class Database:
 
 
 class DataSource(h5py.VirtualSource):
+    """
+    A lazy array object pointing toward a netCDF4/HDF5 file.
+    """
+
     def __array__(self):
         return self.to_layout().__array__()
 
@@ -334,6 +522,10 @@ class DataSource(h5py.VirtualSource):
 
 
 class DataLayout(h5py.VirtualLayout):
+    """
+    A composite lazy array pointing toward multiple netCDF4/HDF5 files.
+    """
+
     def __array__(self):
         with TemporaryDirectory() as tmpdirname:
             fname = os.path.join(tmpdirname, "vds.h5")
@@ -360,6 +552,10 @@ class DataLayout(h5py.VirtualLayout):
 
 
 class Coordinates(dict):
+    """
+    A dictionary whose keys are dimension names and values are Coordinate objects.
+    """
+
     @property
     def dims(self):
         return tuple(self.keys())
@@ -406,6 +602,25 @@ def get_query(item, dims):
 
 
 class Coordinate:
+    """
+    Array-like object used to represent piecewise evenly spaced coordinates using the
+    CF convention.
+
+    The coordinate ticks are describes by the mean of tie points that are interpolated
+    when intermediate values are required. For more details see:
+    http://cfconventions.org/Data/cf-conventions/cf-conventions-1.10/cf-conventions.html#compression-by-coordinate-subsampling
+
+    Coordinate objects provides label based selections methods.
+
+    Parameters
+    ----------
+    tie_indices : sequence of integers
+        The indices of the tie points. Must include index 0 and be strictly ncreasing.
+    tie_values : sequence of float or datetime64
+        The values of the tie points. Must be strictly increasing to enable label-based
+        selection. The len of `tie_indices` and `tie_values` sizes must match.
+    """
+
     def __init__(self, tie_indices, tie_values):
         self.tie_indices = np.asarray(tie_indices)
         self.tie_values = np.asarray(tie_values)
