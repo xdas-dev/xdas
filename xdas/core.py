@@ -496,7 +496,11 @@ class DataSource(h5py.VirtualSource):
         return self.to_layout().__array__()
 
     def __repr__(self):
-        return f"DataSource: {self.shape} {self.dtype} {self.path}"
+        return f"DataSource: {to_human(self.nbytes)} ({self.dtype})"
+
+    @property
+    def nbytes(self):
+        return np.prod(self.shape) * self.dtype.itemsize
 
     def to_layout(self):
         layout = DataLayout(self.shape, self.dtype)
@@ -543,7 +547,7 @@ class DataLayout(h5py.VirtualLayout):
         return out
 
     def __repr__(self):
-        return f"DataLayout: {self.shape} {self.dtype}"
+        return f"DataSource: {to_human(self.nbytes)} ({self.dtype})"
 
     def __getitem__(self, key):
         raise NotImplementedError(
@@ -551,8 +555,21 @@ class DataLayout(h5py.VirtualLayout):
             "write to disk and reopen it with `xdas.open_database(fname)`"
         )
 
+    @property
+    def nbytes(self):
+        return np.prod(self.shape) * self.dtype.itemsize
+
     def to_dataset(self, file, name):
         return file.create_virtual_dataset(name, self, fillvalue=np.nan)
+
+
+def to_human(size):
+    unit = {0: "B", 1: "K", 2: "M", 3: "G", 4: "T"}
+    n = 0
+    while size > 1024:
+        size /= 1024
+        n += 1
+    return f"{size:.1f}{unit[n]}"
 
 
 class Coordinates(dict):
