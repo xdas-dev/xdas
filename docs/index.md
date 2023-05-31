@@ -34,10 +34,11 @@ several files):
 ```python
 >>> db = xdas.open_database("path.nc")
 >>> db
-DataSource: (398742500, 50000) float32 /data/results/trabatto/shared/db.nc
+<xdas.DataBase (time: 398742500, distance: 50000)>
+DataSource: 72.5T (float32)
 Coordinates:
-  * time: 398742500 points from 2021-10-27T15:44:10.722 to 2021-12-03T15:45:18.419
-  * distance: 50000 points from 0.0 to 204255.9529541732
+  * time: 51 tie points from 2021-10-27T15:44:10.722000000 to 2021-12-03T15:45:18.419000000
+  * distance: 2 tie points from 0.0 to 204255.9529541732
 ```
 
 Label-based selection can be done using the `xarray` API.
@@ -48,10 +49,11 @@ Label-based selection can be done using the `xarray` API.
 ...     distance=slice(10000, 20000),
 ... )
 >>> db
-DataSource: (7500, 50000) float32 /data/results/trabatto/shared/db.nc
+<xdas.DataBase (time: 7500, distance: 2448)>
+DataSource: 70.0M (float32)
 Coordinates:
-  * time: 7500 points from 2021-11-01T00:00:00.004965486 to 2021-11-01T00:00:59.997391770
-  * distance: 2448 points from 10000.571468065682 to 19997.057735368264
+  * time: 2 tie points from 2021-11-01T00:00:00.004965486 to 2021-11-01T00:00:59.997391770
+  * distance: 2 tie points from 10000.571468065682 to 19997.057735368264
 ```
 Once the selection is small enough to be loader into memory, it can be converted to a
 `DataArray` object. This enables the full use of the `xarray` API (e.g., for plotting):
