@@ -2,9 +2,9 @@
 
 ## Welcome to xdas!
 
-`xdas` is an open source Python library that's used to work with huge labeled
-N-dimensional arrays as it is the case in Distributed Acoustic Sensing (DAS). `xdas` API
-is highly inspired by the `xarray` project. It provides `xarray` like objects with custom
+*xdas* is an open source Python library that's used to work with huge labeled
+N-dimensional arrays as it is the case in Distributed Acoustic Sensing (DAS). *xdas* API
+is highly inspired by the *xarray* project. It provides *xarray* like objects with custom
 functionalities that enable to deal with big multi-file netCDF4/HDF5 dataset with
 generally one very long dimension (usually time). It provides the classical signal
 processing tools to treat time-series that do not fit in memory. It also enables I/O
@@ -12,15 +12,25 @@ capabilities with some DAS formats.
 
 ## Installing xdas
 
-`xdas` is a pure python package. It can easily be installed with `pip`:
+*xdas* is a pure python package. It can easily be installed with *pip*:
 
+`````{tab-set}
+````{tab-item} Stable
 ```bash
 pip install xdas
 ```
+````
+````{tab-item} Latest
+```bash
+pip install "git+https://github.com/xdas-dev/xdas.git@dev"
+```
+
+````
+`````
 
 ## How to use xdas
 
-`xdas` must first be imported:
+*xdas* must first be imported:
 
 ```python
 >>> import xdas
@@ -29,6 +39,8 @@ pip install xdas
 Data can be fetched from a file (that in this case is a virtual dataset linking
 several files):
 
+`````{tab-set}
+````{tab-item} Single File
 ```python
 >>> db = xdas.open_database("path.nc")
 >>> db
@@ -38,8 +50,21 @@ Coordinates:
   * time: 51 tie points from 2021-10-27T15:44:10.722000000 to 2021-12-03T15:45:18.419000000
   * distance: 2 tie points from 0.0 to 204255.9529541732
 ```
+````
+````{tab-item} Multiple Files
+```python
+>>> db = xdas.open_mfdatabase("*.nc")
+>>> db
+<xdas.DataBase (time: 398742500, distance: 50000)>
+DataSource: 72.5T (float32)
+Coordinates:
+  * time: 51 tie points from 2021-10-27T15:44:10.722000000 to 2021-12-03T15:45:18.419000000
+  * distance: 2 tie points from 0.0 to 204255.9529541732
+```
+````
+`````
 
-Label-based selection can be done using the `xarray` API.
+Label-based selection can be done using the [*xarray* API][xarray API].
 
 ```python
 >>> db = db.sel(
@@ -54,7 +79,8 @@ Coordinates:
   * distance: 2 tie points from 10000.571468065682 to 19997.057735368264
 ```
 Once the selection is small enough to be loader into memory, it can be converted to a
-`DataArray` object. This enables the full use of the `xarray` API (e.g., for plotting):
+[`DataArray`][DataArray] object. This enables the full use of the *xarray* API 
+(e.g., for plotting):
 
 ```python
 >>> da = db.to_xarray()
@@ -77,3 +103,6 @@ Coordinates:
   * time      (time) datetime64[ns] 2021-11-01T00:00:00.004965486 ... 2021-11...
   * distance  (distance) float64 1e+04 1e+04 1.001e+04 ... 1.999e+04 2e+04
 ```
+
+[xarray API]: <https://docs.xarray.dev/en/stable/user-guide/indexing.html>
+[DataArray]: <https://docs.xarray.dev/en/stable/generated/xarray.DataArray.html#xarray.DataArray>

@@ -23,7 +23,7 @@ docs = [
     "sphinx",
     "myst-parser",
     "sphinx-design",
-    "furo",
+    "sphinx-book-theme",
 ]
 tests = [
     "pytest",
