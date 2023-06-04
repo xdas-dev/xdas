@@ -12,17 +12,18 @@
 #
 import os
 import sys
-sys.path.insert(0, os.path.abspath('../xdas'))
+
+sys.path.insert(0, os.path.abspath("../xdas"))
 
 
 # -- Project information -----------------------------------------------------
 
-project = 'xdas'
-copyright = '2023, Alister Trabattoni'
-author = 'Alister Trabattoni'
+project = "xdas"
+copyright = "2023, Alister Trabattoni"
+author = "Alister Trabattoni"
 
 # The full version, including alpha/beta/rc tags
-release = '0.1a1'
+release = "0.1a1"
 
 
 # -- General configuration ---------------------------------------------------
@@ -31,20 +32,20 @@ release = '0.1a1'
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    "myst_parser",
+    "myst_nb",
+    "sphinx_design",
     "sphinx.ext.autosummary",
     "sphinx.ext.coverage",
     "sphinx.ext.napoleon",
-    "sphinx_design",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
-templates_path = ['_templates']
+templates_path = ["_templates"]
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 
 # -- Options for HTML output -------------------------------------------------
@@ -52,9 +53,39 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'sphinx_book_theme'
+html_theme = "sphinx_book_theme"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ['_static']
+html_static_path = ["_static"]
+
+# -- Generate dummy data -----------------------------------------------------
+import os
+
+import numpy as np
+import xdas
+
+dirpath = "_data"
+if not os.path.exists(dirpath):
+    os.makedirs(dirpath)
+
+shape = (6000, 1000)
+resolution = (np.timedelta64(10, "ms"), 5.0)
+starttime = np.datetime64("2023-01-01T00:00:00")
+
+
+db = xdas.Database(
+    data=np.random.randn(*shape),
+    coords={
+        "time": xdas.Coordinate(
+            tie_indices=[0, shape[0] - 1],
+            tie_values=[starttime, starttime + resolution[0] * (shape[0] - 1)],
+        ),
+        "distance": xdas.Coordinate(
+            tie_indices=[0, shape[1] - 1],
+            tie_values=[0.0, resolution[1] * (shape[1] - 1)],
+        ),
+    },
+)
+db.to_netcdf("_data/sample.nc")

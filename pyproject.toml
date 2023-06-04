@@ -20,10 +20,11 @@ dependencies = [
 
 [project.optional-dependencies]
 docs = [
-    "sphinx",
-    "myst-parser",
-    "sphinx-design",
+    "ipykernel",
+    "myst-nb",
     "sphinx-book-theme",
+    "sphinx-design",
+    "sphinx",
 ]
 tests = [
     "pytest",

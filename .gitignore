@@ -7,4 +7,5 @@ build/
 dist/
 docs/_autosummary
 docs/_build
+docs/_data/
 xdas.egg-info/
