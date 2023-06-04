@@ -60,6 +60,15 @@ html_theme = "sphinx_book_theme"
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
 
+
+# Theme options are theme-specific and customize the look and feel of a theme
+# further.  For a list of options available for each theme, see the
+# documentation.
+html_theme_options = dict(
+    use_repository_button=True,
+    repository_url="https://github.com/xdas-dev/xdas",
+)
+
 # -- Generate dummy data -----------------------------------------------------
 import os
 
