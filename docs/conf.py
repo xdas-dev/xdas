@@ -36,6 +36,7 @@ extensions = [
     "sphinx_design",
     "sphinx.ext.autosummary",
     "sphinx.ext.coverage",
+    "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
 ]
 
@@ -68,6 +69,14 @@ html_theme_options = dict(
     use_repository_button=True,
     repository_url="https://github.com/xdas-dev/xdas",
 )
+
+
+# Configuration for intersphinx.
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3/", None),
+    "numpy": ("https://numpy.org/doc/stable", None),
+    "xarray": ("https://docs.xarray.dev/en/stable", None),
+}
 
 # -- Generate dummy data -----------------------------------------------------
 import os
