@@ -99,7 +99,7 @@ starttimes = {
 
 for name, starttime in starttimes.items():
     db = xdas.Database(
-        data=np.random.randn(*shape, dtype="float32"),
+        data=np.random.randn(*shape).astype("float32"),
         coords={
             "time": xdas.Coordinate(
                 tie_indices=[0, shape[0] - 1],
