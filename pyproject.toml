@@ -21,6 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 docs = [
     "ipykernel",
+    "matplotlib",
     "myst-nb",
     "sphinx-book-theme",
     "sphinx-design",
