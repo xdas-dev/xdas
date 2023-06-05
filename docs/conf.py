@@ -90,20 +90,25 @@ if not os.path.exists(dirpath):
 
 shape = (6000, 1000)
 resolution = (np.timedelta64(10, "ms"), 5.0)
-starttime = np.datetime64("2023-01-01T00:00:00")
+starttimes = {
+    "sample": np.datetime64("2023-01-01T00:00:00"),
+    "001": np.datetime64("2023-01-01T00:00:00"),
+    "002": np.datetime64("2023-01-01T00:01:00"),
+    "003": np.datetime64("2023-01-01T00:02:00"),
+}
 
-
-db = xdas.Database(
-    data=np.random.randn(*shape),
-    coords={
-        "time": xdas.Coordinate(
-            tie_indices=[0, shape[0] - 1],
-            tie_values=[starttime, starttime + resolution[0] * (shape[0] - 1)],
-        ),
-        "distance": xdas.Coordinate(
-            tie_indices=[0, shape[1] - 1],
-            tie_values=[0.0, resolution[1] * (shape[1] - 1)],
-        ),
-    },
-)
-db.to_netcdf("_data/sample.nc")
+for name, starttime in starttimes.items():
+    db = xdas.Database(
+        data=np.random.randn(*shape),
+        coords={
+            "time": xdas.Coordinate(
+                tie_indices=[0, shape[0] - 1],
+                tie_values=[starttime, starttime + resolution[0] * (shape[0] - 1)],
+            ),
+            "distance": xdas.Coordinate(
+                tie_indices=[0, shape[1] - 1],
+                tie_values=[0.0, resolution[1] * (shape[1] - 1)],
+            ),
+        },
+    )
+    db.to_netcdf(f"_data/{name}.nc")

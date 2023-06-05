@@ -4,6 +4,13 @@ kernelspec:
   name: python3
 ---
 
+```{code-cell}
+:tags: [remove-cell]
+
+import os
+os.chdir("_data")
+```
+
 # Getting Started   
 
 ## Welcome to xdas!
@@ -45,7 +52,7 @@ import xdas
 Data can be fetched from a file:
 
 ```{code-cell} 
-db = xdas.open_database("_data/sample.nc")
+db = xdas.open_database("sample.nc")
 db
 ```
 
@@ -60,12 +67,17 @@ db
 ```
 
 Once the selection is small enough to be loader into memory, it can be converted to a
-[`DataArray`][DataArray] object. This enables the full use of the *xarray* API 
-(e.g., for plotting):
+[`DataArray`][DataArray] object:
 
 ```{code-cell}
 da = db.to_xarray()
 da
+```
+
+This enables the full use of the *xarray* API (e.g., for plotting):
+
+```{code-cell}
+da.plot.imshow();
 ```
 
 [xarray API]: <https://docs.xarray.dev/en/stable/user-guide/indexing.html>

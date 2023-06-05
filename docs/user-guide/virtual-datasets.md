@@ -1,5 +1,77 @@
+---
+file_format: mystnb
+kernelspec:
+  name: python3
+---
+
+```{code-cell}
+:tags: [remove-cell]
+
+import os
+import xdas
+os.chdir("../_data")
+```
+
 # Virtual Datasets
 
-[h5py virutal datasets](https://docs.h5py.org/en/stable/vds.html)
+To deal with large multi-file dataset, *xdas* uses the flexibility offered by the 
+[virtual dataset](https://docs.h5py.org/en/stable/vds.html) capabilities of 
+netCDF4/HDF5. A virtual dataset is a file that contains pointers towards files that 
+can then be accessed seamlessly as a unique dataset. Because behind the scene this is 
+handled by HDF5 (which is C compiled) this can be done with almost no overhead. 
+
+```{note}
+Because netCDF4 are valid HDF5 files, the virtual dataset feature of HDF5 can be used 
+with netCDF4 files.
+```
+
+In *xdas*, a {py:class}`DataSource` is a pointer toward a file while a 
+{py:class}`DataLayout` is linking table of multiple {py:class}`DataLayout`. Below an
+example of virtual dataset linking three files:
 
 ![](/_static/virtual-datasets.svg)
+
+The user normally do not need to deal directly with this objects. Below an example of 
+to link a multi-file dataset.
+
+```{note}
+When opening a virtual dataset, this later will appear as a {py:class}`DataSource`. 
+This is because HDF5 treats virtual dataset as regular files.
+```
+
+## Linking multi-file datasets
+
+The files can all be opened with the {py:func}`xdas.open_mfdatabase`:
+
+```{code-cell}
+:tags: [remove-stdout,remove-stderr]
+
+db = xdas.open_mfdatabase("00*.nc")
+db
+```
+
+Then the database can be written as a virtual dataset using the `virtual` argument
+(other the whole data will be written to disk):
+
+```{code-cell}
+db.to_netcdf("vds.nc", virtual=True)
+```
+
+The resulting file is a few tens of kilobytes:
+
+```{code-cell}
+os.path.getsize("vds.nc")
+```
+
+It can then be read again as a usual file:
+
+```{code-cell}
+xdas.open_database("vds.nc")
+```
+
+```{hint}
+A virtual dataset can point to another virtual dataset. This can be beneficial for huge
+real time dataset where new data can be linked regularly by batches. Those batches can 
+then be linked in a master virtual dataset. This avoids relinking all the files. 
+```
+
