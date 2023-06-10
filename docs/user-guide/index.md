@@ -6,6 +6,4 @@
 data-structures
 virtual-datasets
 interpolated-coordinates
-signal-processing
-online-computation
 ```

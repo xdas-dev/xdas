@@ -45,15 +45,13 @@ class Coordinate:
     CF convention.
 
     The coordinate ticks are describes by the mean of tie points that are interpolated
-    when intermediate values are required. For more details see:
-    http://cfconventions.org/Data/cf-conventions/cf-conventions-1.10/cf-conventions.html#compression-by-coordinate-subsampling
-
-    Coordinate objects provides label based selections methods.
+    when intermediate values are required. Coordinate objects provides label based
+    selections methods.
 
     Parameters
     ----------
     tie_indices : sequence of integers
-        The indices of the tie points. Must include index 0 and be strictly ncreasing.
+        The indices of the tie points. Must include index 0 and be strictly increasing.
     tie_values : sequence of float or datetime64
         The values of the tie points. Must be strictly increasing to enable label-based
         selection. The len of `tie_indices` and `tie_values` sizes must match.
@@ -270,6 +268,16 @@ class Coordinate:
             self.tie_indices, self.tie_values, tolerance
         )
         return self.__class__(tie_indices, tie_values)
+
+    def get_discontinuities(self):
+        (indices,) = np.nonzero(np.diff(self.tie_indices) == 1)
+        return [
+            {
+                self.tie_indices[index]: self.tie_values[index],
+                self.tie_indices[index + 1]: self.tie_values[index + 1],
+            }
+            for index in indices
+        ]
 
 
 class ScaleOffset:

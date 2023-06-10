@@ -32,26 +32,68 @@ coord = xdas.Coordinate(
 coord 
 ```
 
-In this example, the second tie point do not provide useful information. Using the
-{py:meth}`simplify` method, the coordinate can be simplified without loss of accuracy:
-
-```{code-cell}
-coord = coord.simplify(tolerance=0.0)
-coord
-```
-
 The resulting object acts as an {py:class}`numpy.ndarray` object. Indexing and 
-selecting works out of the box:
+selecting works out of the box. Note that using a stepping, the tie points can be moved
+a little bit.
 
 ```{code-cell}
 coord = coord[1:-3:2]
 coord
 ```
 
-To retrieve the index of a value the {py:meth}`get_index` method can be used.
+The main advantage of coordinates is that the enable labeled based selection. To 
+retrieve the index of a value the {py:meth}`get_index` method can be used:
 
 ```{code-cell}
 coord.get_index(430.0)
 ```
 
+```{warning}
+To be able to do labeled based selection, `tie_values` must be strictly increasing.
+In other words they must not be any overlap. To deal with small overlaps, a solution
+is to `simplify` the coordinate increasing the tolerance to the points the overlaps 
+disappear. 
+```
+
+# Gaps and Overlaps
+
+Gaps and Overlaps can be easily extracted:
+
+```{code-cell}
+coord.get_discontinuities()
+```
+
+While gaps represents missing data and are not problematic, overlaps usually arise from
+labeling errors and should be taken care of.
+
+Using the {py:meth}`simplify` method, the coordinate can be simplified with controlled 
+accuracy using the [Ramer–Douglas–Peucker algorithm][RDP]. In this example, the second 
+tie point do not provide useful information and is safely discarded. 
+
+```{code-cell}
+coord = coord.simplify(tolerance=0.0)
+coord
+```
+
+# Temporal Coordinates
+
+The main use of coordinates in *xdas* is to deal with long time series. By default 
+*xdas* uses `"datetime64[us]"` dtype. Microseconds are used because to perform 
+interpolation *xdas* convert `datetime64` to POSIX `float` which cannot safely 
+represent timestamps with better accuracies.
+
+```{code-cell}
+import numpy as np
+
+coord = xdas.Coordinate(
+    tie_indices=[0, 3600 * 100],
+    tie_values=[
+        np.datetime64("2023-01-01T00:00:00"), 
+        np.datetime64("2023-01-01T01:00:00"),
+    ],
+)
+coord.get_index_slice(slice("2023-01-01T00:10:00", "2023-01-01T00:20:00"))
+```
+
 [CF]: <http://cfconventions.org/Data/cf-conventions/cf-conventions-1.10/cf-conventions.html#compression-by-coordinate-subsampling>
+[RDP]: <https://en.wikipedia.org/wiki/Ramer–Douglas–Peucker_algorithm>
