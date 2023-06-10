@@ -3,7 +3,7 @@ import numpy as np
 import scipy.signal as sp
 
 from xdas.core import Coordinate, Database
-from xdas.signaltools import LFilter, SignalProcessingChain, SOSFilter
+from xdas.signal import LFilter, SignalProcessingChain, SOSFilter
 
 
 class TestSignal:
