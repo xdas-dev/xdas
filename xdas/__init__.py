@@ -1,6 +1,5 @@
+from .coordinates import Coordinate, Coordinates
 from .core import (
-    Coordinate,
-    Coordinates,
     Database,
     DataCollection,
     concatenate,

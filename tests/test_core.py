@@ -1,7 +1,8 @@
 import numpy as np
 import pytest
 
-from xdas.core import Coordinate, Coordinates, Database, ScaleOffset
+from xdas.coordinates import Coordinate, Coordinates, ScaleOffset
+from xdas.core import Database
 
 
 class TestScaleOffset:
