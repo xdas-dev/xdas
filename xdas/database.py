@@ -1,4 +1,5 @@
 import copy
+import os
 import re
 
 import h5py
@@ -18,13 +19,15 @@ class DataCollection(dict):
     """
 
     def to_netcdf(self, fname, virtual=False):
+        if os.path.exists(fname):
+            os.remove(fname)
         for key in self:
             self[key].to_netcdf(fname, group=key, virtual=virtual, mode="a")
 
     @classmethod
     def from_netcdf(cls, fname):
         with h5py.File(fname, "r") as file:
-            groups = file.keys()
+            groups = list(file.keys())
         self = cls()
         for group in groups:
             self[group] = Database.from_netcdf(fname, group=group)
@@ -324,7 +327,7 @@ class Database:
                 else:
                     name = self.name
                 if group:
-                    file = file["group"]
+                    file = file[group]
                 self.data.to_dataset(file, name)
                 for axis, dim in enumerate(self.dims):
                     file[name].dims[axis].attach_scale(file[dim])

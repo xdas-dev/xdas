@@ -26,7 +26,7 @@ class DataSource(h5py.VirtualSource):
         return layout
 
     def to_dataset(self, file, name):
-        self.to_layout().to_dataset(self, file, name)
+        self.to_layout().to_dataset(file, name)
 
     def to_dict(self):
         return {
