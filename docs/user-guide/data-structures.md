@@ -86,6 +86,12 @@ db = xdas.Database(data, coords)
 db
 ```
 
+### Reading a Database from a DAS file.
+
+*xdas* can read some DAS file format with {py:func}`xdas.open_database`. *xdas* use 
+netCDF4 format with CF conventions. ASN and Febus file can also be read. In that 
+case the `engine` argument must be passed. 
+
 ### Writing a DataBase to disk
 
 *xdas* uses the CF conventions to write {py:class}`xdas.Database` to disk as netCDF4 
