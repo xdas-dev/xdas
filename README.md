@@ -10,7 +10,7 @@ xdas is a python library using the xarray API that allows to work with DAS data
 
 ## Installation
 
-    pip install xdas
+    pip install "git+https://github.com/xdas-dev/xdas.git
 
 ## Documentation
 
