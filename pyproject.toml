@@ -19,6 +19,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+dev = [
+    "black",
+    "isort",
+    "twine",
+]
 docs = [
     "ipykernel",
     "matplotlib",
