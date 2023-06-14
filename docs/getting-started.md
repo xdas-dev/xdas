@@ -66,6 +66,11 @@ db = db.sel(
 db
 ```
 
+```{warning}
+Due to some actual limitations of *h5py*, databases that have been opened from a file 
+must only be sliced once. Multiple/repeated slicing can lead to unexpected behaviors. 
+```
+
 Once the selection is small enough to be loader into memory, it can be converted to a
 [`DataArray`][DataArray] object:
 
