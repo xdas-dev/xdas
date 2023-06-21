@@ -23,7 +23,7 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
         The tolerance to consider that the end of a file is continuous with the begging
         of the following
 
-    Returns
+    ReturnsDA
     -------
     Database
         The database containing all files data.
@@ -70,7 +70,7 @@ def concatenate(dbs, tolerance=np.timedelta64(0, "us")):
     tie_indices = []
     tie_values = []
     for db in dbs:
-        layout[idx : idx + db.shape[0]] = db.data
+        layout[idx : idx + db.shape[0]] = db.data.vsource
         tie_indices.extend(idx + db["time"].tie_indices)
         tie_values.extend(db["time"].tie_values)
         idx += db.shape[0]
