@@ -3,11 +3,11 @@ import numpy as np
 import scipy.signal as sp
 
 from xdas.core import Coordinate, Database
-from xdas.signal import LFilter, SignalProcessingChain, SOSFilter
+from xdas.processing import LFilter, SignalProcessingChain, SOSFilter
 
 
-class TestSignal:
-    def test_signal(self):
+class TestProcessin:
+    def test_processing(self):
         fs = 125
         ks = 1 / 10
         data = da.random.normal(size=(1000, 100))
