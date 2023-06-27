@@ -1,4 +1,5 @@
 import os
+from copy import deepcopy
 from tempfile import TemporaryDirectory
 
 import h5py
@@ -21,14 +22,15 @@ class DataSource:
         self._vsource = _vsource
 
     def __getitem__(self, key):
+        dsource = deepcopy(self)
         if not isinstance(key, tuple):
             key = (key,)
         for k in key:
             if not isinstance(k, slice):
                 raise ValueError("only slicing is allowed.")
         for axis, k in enumerate(key):
-            self._slices[axis].append(k)
-        return self
+            dsource._slices[axis].append(k)
+        return dsource
 
     def __array__(self):
         return self.to_layout().__array__()
