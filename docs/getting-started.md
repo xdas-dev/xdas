@@ -60,8 +60,8 @@ Label-based selection can be done using the [*xarray* API][xarray API].
 
 ```{code-cell}
 db = db.sel(
-    time=slice("2023-01-01T00:00:20", "2023-01-01T00:00:40"),
-    distance=slice(1000, 2000),
+    time=slice("2023-01-01T00:00:01", "2023-01-01T00:00:05"),
+    distance=slice(1000, 9000),
 )
 db
 ```
@@ -82,7 +82,7 @@ da
 This enables the full use of the *xarray* API (e.g., for plotting):
 
 ```{code-cell}
-da.plot.imshow();
+da.plot.imshow(yincrease=False, vmin=-0.5, vmax=0.5);
 ```
 
 [xarray API]: <https://docs.xarray.dev/en/stable/user-guide/indexing.html>

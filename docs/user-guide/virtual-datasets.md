@@ -51,16 +51,10 @@ db
 ```
 
 Then the database can be written as a virtual dataset using the `virtual` argument
-(other the whole data will be written to disk):
+(otherwise the whole data will be written to disk):
 
 ```{code-cell}
 db.to_netcdf("vds.nc", virtual=True)
-```
-
-The resulting file is a few tens of kilobytes:
-
-```{code-cell}
-os.path.getsize("vds.nc")
 ```
 
 It can then be read again as a usual file:
