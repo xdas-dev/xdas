@@ -30,7 +30,7 @@ def integrate(da, midpoints=False, dim="distance"):
     return out
 
 
-def segment_mean(da, slim, window="hann", dim="distance"):
+def segment_mean(da, limits, window="hann", dim="distance"):
     """
     Piecewise mean removal.
 
@@ -38,7 +38,7 @@ def segment_mean(da, slim, window="hann", dim="distance"):
     ----------
     da : DataArray
         The data that segment mean should be removed.
-    slim : list of float
+    limits : list of float
         The segments limits.
     window : str, optional
         The tapering windows to apply at each window, by default "hann".
@@ -51,7 +51,7 @@ def segment_mean(da, slim, window="hann", dim="distance"):
         The data with segment means removed.
     """
     out = da.copy()
-    for sstart, send in zip(slim[:-1], slim[1:]):
+    for sstart, send in zip(limits[:-1], limits[1:]):
         key = dict(distance=slice(sstart, np.nextafter(send, -np.inf)))
         subset = out.loc[key]
         win = xr.DataArray(

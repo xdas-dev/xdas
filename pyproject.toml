@@ -36,3 +36,6 @@ tests = [
     "pytest",
     "pytest-cov",
 ]
+
+[tool.isort]
+profile = "black"
