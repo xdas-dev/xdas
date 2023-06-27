@@ -31,7 +31,8 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
     fnames = sorted(glob(paths))
     if len(fnames) > 100_000:
         raise NotImplementedError(
-            "The maximum number of file is for now limited to 100 000"
+            "The maximum number of file that can be opened at once is for now limited "
+            "to 100 000."
         )
     with ProcessPoolExecutor() as executor:
         futures = [
