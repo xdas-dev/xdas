@@ -45,7 +45,6 @@ class DataSource:
 
     @property
     def vsource(self):
-        print(self.slices)
         return self._vsource.__getitem__(self.slices)
 
     @property

@@ -3,6 +3,30 @@ import scipy.signal as sp
 import xarray as xr
 
 
+def get_sample_spacing(da, dim):
+    """
+    Returns the sample spacing along a given dimension.
+
+    Parameters
+    ----------
+    da : DataArray or Database
+        The data from which extract the sample spacing.
+    dim : str
+        The dimension along which get the sample spacing.
+
+    Returns
+    -------
+    float
+        The sample spacing.
+    """
+    d = (da[dim][-1] - da[dim][0]) / (len(da[dim]) - 1)
+    d = np.asarray(d)
+    if np.issubdtype(d.dtype, np.timedelta64):
+        d = d / np.timedelta64(1, "s")
+    d = d.item()
+    return d
+
+
 def integrate(da, midpoints=False, dim="distance"):
     """
     Integrate along a given dimension.
@@ -21,7 +45,7 @@ def integrate(da, midpoints=False, dim="distance"):
     DataArray
         The integrated data.
     """
-    d = np.median(np.diff(da[dim].values))
+    d = get_sample_spacing(da, dim)
     out = da.cumsum(dim) * d
     if midpoints:
         s = da[dim].values
@@ -85,7 +109,7 @@ def sliding_mean_removal(da, wlen, window="hann", pad_mode="reflect", dim="dista
     DataArray
         The data with sliding mean removed.
     """
-    d = np.median(np.diff(da[dim].values))
+    d = get_sample_spacing(da, dim)
     n = round(wlen / d)
     if n % 2 == 0:
         n += 1
