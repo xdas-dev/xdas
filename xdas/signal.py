@@ -30,7 +30,7 @@ def integrate(da, midpoints=False, dim="distance"):
     return out
 
 
-def segment_mean(da, limits, window="hann", dim="distance"):
+def segment_mean_removal(da, limits, window="hann", dim="distance"):
     """
     Piecewise mean removal.
 
@@ -63,7 +63,7 @@ def segment_mean(da, limits, window="hann", dim="distance"):
     return out
 
 
-def sliding_mean(da, wlen, window="hann", pad_mode="reflect", dim="distance"):
+def sliding_mean_removal(da, wlen, window="hann", pad_mode="reflect", dim="distance"):
     """
     Sliding mean removal.
 
