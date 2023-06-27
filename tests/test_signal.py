@@ -25,3 +25,13 @@ class TestSignal:
         da.loc[{"distance": slice(limits[1], limits[2])}] = 2.0
         da = xdas.signal.segment_mean(da, limits)
         assert np.allclose(da, 0)
+
+    def test_sliding_window(self):
+        n = 100
+        d = 5.0
+        s = (d / 2) + d * np.arange(n)
+        s = np.linspace(0, 1000, n)
+        data = np.ones(n)
+        da = xr.DataArray(data, {"distance": s})
+        da = xdas.signal.sliding_mean(da, 0.1 * n * d)
+        assert np.allclose(da, 0)

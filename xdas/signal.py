@@ -91,7 +91,7 @@ def sliding_mean(da, wlen, window="hann", pad_mode="reflect", dim="distance"):
         n += 1
     win = sp.get_window(window, n)
     win /= np.sum(win)
-    shape = tuple(-1 if d == dim else 1 for d in da.ds)
+    shape = tuple(-1 if d == dim else 1 for d in da.dims)
     win = np.reshape(win, shape)
     data = da.data
     pad_width = tuple((n // 2, n // 2) if d == dim else (0, 0) for d in da.dims)
