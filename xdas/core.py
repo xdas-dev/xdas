@@ -29,6 +29,10 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
         The database containing all files data.
     """
     fnames = sorted(glob(paths))
+    if len(fnames) > 100_000:
+        raise NotImplementedError(
+            "The maximum number of file is for now limited to 100 000"
+        )
     with ProcessPoolExecutor() as executor:
         futures = [
             executor.submit(open_database, fname, engine=engine) for fname in fnames
@@ -69,7 +73,7 @@ def concatenate(dbs, tolerance=np.timedelta64(0, "us")):
     idx = 0
     tie_indices = []
     tie_values = []
-    for db in dbs:
+    for db in tqdm(dbs, desc="Linking database"):
         layout[idx : idx + db.shape[0]] = db.data.vsource
         tie_indices.extend(idx + db["time"].tie_indices)
         tie_values.extend(db["time"].tie_values)
