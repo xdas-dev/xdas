@@ -1,7 +1,9 @@
 import h5py
 import numpy as np
 
-from ..core import Coordinate, Database, DataSource
+from ..coordinates import Coordinate
+from ..database import Database
+from ..virtual import DataSource
 
 
 def read(fname):
