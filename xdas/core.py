@@ -46,10 +46,10 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
                 desc="Fetching metadata from files",
             )
         ]
-    return concatenate(dbs, tolerance=tolerance)
+    return concatenate(dbs, tolerance=tolerance, virtual=True)
 
 
-def concatenate(dbs, tolerance=np.timedelta64(0, "us")):
+def concatenate(dbs, tolerance=np.timedelta64(0, "us"), virtual=False):
     """
     Concatenate several databases along the time dimension.
 
@@ -60,6 +60,9 @@ def concatenate(dbs, tolerance=np.timedelta64(0, "us")):
     tolerance : timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
         the following, by default np.timedelta64(0, "us").
+    virtual : bool, optional
+        Whether to create a virtual dataset. It requires that all concatenated
+        databases are virtual.
 
     Returns
     -------
@@ -70,12 +73,18 @@ def concatenate(dbs, tolerance=np.timedelta64(0, "us")):
     dbs = sorted(dbs, key=lambda db: db["time"][0])
     shape = (sum([db.shape[0] for db in dbs]), dbs[0].shape[1])
     dtype = dbs[0].dtype
-    layout = DataLayout(shape=shape, dtype=dtype)
+    if virtual:
+        layout = DataLayout(shape, dtype)
+    else:
+        layout = np.zeros(shape, dtype)
     idx = 0
     tie_indices = []
     tie_values = []
     for db in tqdm(dbs, desc="Linking database"):
-        layout[idx : idx + db.shape[0]] = db.data.vsource
+        if virtual:
+            layout[idx : idx + db.shape[0]] = db.data.vsource
+        else:
+            layout[idx : idx + db.shape[0]] = db.values
         tie_indices.extend(idx + db["time"].tie_indices)
         tie_values.extend(db["time"].tie_values)
         idx += db.shape[0]
