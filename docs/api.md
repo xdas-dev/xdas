@@ -27,3 +27,13 @@
    Database
    DataCollection
 ```
+
+## Processing
+```{eval-rst}
+.. autosummary::
+   :toctree: _autosummary
+
+   xdas.processing.SignalProcessingChain
+   xdas.processing.LFilter
+   xdas.processing.SOSFilter
+```

@@ -18,6 +18,8 @@ os.chdir("../_data")
 The API of this part of xdas is still experimental.
 ```
 
+![](/_static/processing.svg)
+
 ```{code-cell} 
 db = xdas.open_database("sample.nc")
 db.to_xarray().plot.imshow(yincrease=False, vmin=-0.5, vmax=0.5);
