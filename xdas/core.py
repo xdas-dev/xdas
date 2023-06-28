@@ -49,7 +49,7 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
     return concatenate(dbs, tolerance=tolerance, virtual=True)
 
 
-def concatenate(dbs, tolerance=np.timedelta64(0, "us"), virtual=False):
+def concatenate(dbs, tolerance=None, virtual=False):
     """
     Concatenate several databases along the time dimension.
 
@@ -57,9 +57,9 @@ def concatenate(dbs, tolerance=np.timedelta64(0, "us"), virtual=False):
     ----------
     dbs : list
         List of databases to concatenate.
-    tolerance : timedelta64, optional
+    tolerance : float of timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
-        the following, by default np.timedelta64(0, "us").
+        the following, zero by default.
     virtual : bool, optional
         Whether to create a virtual dataset. It requires that all concatenated
         databases are virtual.
@@ -69,7 +69,11 @@ def concatenate(dbs, tolerance=np.timedelta64(0, "us"), virtual=False):
     Database
         The concatenated database.
     """
-
+    if tolerance is None:
+        if np.issubdtype(dbs[0]["time"].dtype, np.datetime64):
+            tolerance = np.timedelta64(0, "us")
+        else:
+            tolerance = 0.0 
     dbs = sorted(dbs, key=lambda db: db["time"][0])
     shape = (sum([db.shape[0] for db in dbs]), dbs[0].shape[1])
     dtype = dbs[0].dtype
