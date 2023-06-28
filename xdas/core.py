@@ -49,14 +49,16 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
     return concatenate(dbs, tolerance=tolerance, virtual=True)
 
 
-def concatenate(dbs, tolerance=None, virtual=False):
+def concatenate(dbs, dim="time", tolerance=None, virtual=False):
     """
-    Concatenate several databases along the time dimension.
+    Concatenate several databases along a given dimension.
 
     Parameters
     ----------
     dbs : list
         List of databases to concatenate.
+    dim : str
+        The dimension along which concatenate.
     tolerance : float of timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
         the following, zero by default.
@@ -69,31 +71,41 @@ def concatenate(dbs, tolerance=None, virtual=False):
     Database
         The concatenated database.
     """
+    dbs = sorted(dbs, key=lambda db: db[dim][0])
+    axis = dbs[0].get_axis_num(dim)
+    dims = dbs[0].dims
+    dtype = dbs[0].dtype
+    shape = tuple(
+        sum([db.shape[a] for db in dbs]) if a == axis else dbs[0].shape[a]
+        for a in range(len(dims))
+    )
     if tolerance is None:
-        if np.issubdtype(dbs[0]["time"].dtype, np.datetime64):
+        if np.issubdtype(dbs[0][dim].dtype, np.datetime64):
             tolerance = np.timedelta64(0, "us")
         else:
-            tolerance = 0.0 
-    dbs = sorted(dbs, key=lambda db: db["time"][0])
-    shape = (sum([db.shape[0] for db in dbs]), dbs[0].shape[1])
-    dtype = dbs[0].dtype
+            tolerance = 0.0
     if virtual:
-        layout = DataLayout(shape, dtype)
+        data = DataLayout(shape, dtype)
     else:
-        layout = np.zeros(shape, dtype)
+        data = np.zeros(shape, dtype)
     idx = 0
     tie_indices = []
     tie_values = []
     for db in tqdm(dbs, desc="Linking database"):
+        selection = tuple(
+            slice(idx, idx + db.shape[axis]) if d == dim else slice(None) for d in dims
+        )
         if virtual:
-            layout[idx : idx + db.shape[0]] = db.data.vsource
+            data[selection] = db.data.vsource
         else:
-            layout[idx : idx + db.shape[0]] = db.values
-        tie_indices.extend(idx + db["time"].tie_indices)
-        tie_values.extend(db["time"].tie_values)
-        idx += db.shape[0]
-    time = Coordinate(tie_indices, tie_values).simplify(tolerance)
-    return Database(layout, {"time": time, "distance": dbs[0]["distance"]})
+            data[selection] = db.values
+        tie_indices.extend(idx + db[dim].tie_indices)
+        tie_values.extend(db[dim].tie_values)
+        idx += db.shape[axis]
+    coord = Coordinate(tie_indices, tie_values).simplify(tolerance)
+    coords = dbs[0].coords
+    coords[dim] = coord
+    return Database(data, coords)
 
 
 def open_database(fname, group=None, engine="netcdf", **kwargs):
