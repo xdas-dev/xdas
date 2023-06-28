@@ -34,7 +34,7 @@ class SignalProcessingChain:
             for k in range(nchunks):
                 query = {dim: slice(k * chunk_size, (k + 1) * chunk_size)}
                 result.append(self(xarr[query]))
-        return result
+        return concatenate(result, dim)
 
 
 class Scheduler:

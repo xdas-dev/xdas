@@ -79,11 +79,6 @@ def concatenate(dbs, dim="time", tolerance=None, virtual=False):
         sum([db.shape[a] for db in dbs]) if a == axis else dbs[0].shape[a]
         for a in range(len(dims))
     )
-    if tolerance is None:
-        if np.issubdtype(dbs[0][dim].dtype, np.datetime64):
-            tolerance = np.timedelta64(0, "us")
-        else:
-            tolerance = 0.0
     if virtual:
         data = DataLayout(shape, dtype)
     else:
@@ -102,7 +97,14 @@ def concatenate(dbs, dim="time", tolerance=None, virtual=False):
         tie_indices.extend(idx + db[dim].tie_indices)
         tie_values.extend(db[dim].tie_values)
         idx += db.shape[axis]
-    coord = Coordinate(tie_indices, tie_values).simplify(tolerance)
+    coord = Coordinate(tie_indices, tie_values)
+    if tolerance is None:
+        if np.issubdtype(dbs[0][dim].dtype, np.datetime64):
+            tolerance = np.timedelta64(0, "us")
+        else:
+            tolerance = 0.0
+    if not tolerance == 0:
+        coord = coord.simplify(tolerance)
     coords = dbs[0].coords
     coords[dim] = coord
     return Database(data, coords)

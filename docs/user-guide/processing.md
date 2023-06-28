@@ -31,6 +31,5 @@ sos = sp.iirfilter(4, 0.5, btype="lowpass", output="sos")
 sosfilter = SOSFilter(sos, "time")
 chain = SignalProcessingChain([sosfilter])
 out = chain.process(db, "time", 100, parallel=False)
-out = xdas.concatenate(out)
 out.to_xarray().plot.imshow(yincrease=False, vmin=-0.5, vmax=0.5);
 ```
