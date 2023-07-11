@@ -295,9 +295,17 @@ class Decimate(SignalProcessingUnit):
 
 
 class ChunkWriter(SignalProcessingUnit):
-    def __init__(self, path, dim):
+    """
+    Write to disk chunk by chunk.
+
+    Parameters
+    ----------
+    path : str
+        Path were to store the chunks. The number of the chunk will be prepended.
+    """
+
+    def __init__(self, path):
         self.path = path
-        self.dim = dim
         self.chunk = None
 
     def __call__(self, db):
@@ -310,26 +318,13 @@ class ChunkWriter(SignalProcessingUnit):
         return open_database(fname)
 
     def initialize(self, db):
+        """
+        Initialize the chunk numbering to zero.
+        """
         self.chunk = 0
 
     def reset(self):
+        """
+        Reset the chunk numbering.
+        """
         self.chunk = None
-
-
-class Writter(SignalProcessingUnit):
-    def __init__(self, fname, duration=np.timedelta64(1, "m")):
-        self.fname = fname
-        self.duration = duration
-        self.buffer = None
-
-    def __call__(self, db):
-        if self.buffer is None:
-            self.buffer = db
-        else:
-            self.buffer = concatenate([self.buffer, db])
-        if self.buffer["time"][-1] - self.buffer["time"][-1] > self.duration:
-            self.buffer.sel(
-                time=slice(
-                    None,
-                )
-            )
