@@ -3,7 +3,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import numpy as np
 import scipy.signal as sp
 
-from xdas.core import concatenate
+from .core import concatenate, open_database
 
 
 class SignalProcessingChain:
@@ -20,8 +20,8 @@ class SignalProcessingChain:
     def __init__(self, filters):
         self.filters = filters
 
-    def __call__(self, xarr):
-        out = xarr
+    def __call__(self, db):
+        out = db
         for filter in self.filters:
             out = filter(out)
         return out
@@ -111,7 +111,7 @@ class Scheduler:
                     next_tasks = self.get_next_tasks(task)
                     for next_task in next_tasks:
                         self.submit_task(next_task)
-                print("Number of futures:", len(self.futures))
+                # print("Number of futures:", len(self.futures))
         return list(self.buffer.values())
 
     def submit_task(self, task):
@@ -133,7 +133,7 @@ class Scheduler:
         chunk = self.buffer[task["chunk"]]
         future = self.executor.submit(filter, chunk)
         self.futures[future] = task
-        print("New task:", task)
+        # print("New task:", task)
         return future
 
     def get_next_tasks(self, task):
@@ -251,13 +251,13 @@ class SOSFilter:
         self.zi = None
         self.axis = None
 
-    def __call__(self, xarr):
+    def __call__(self, db):
         if (self.zi is None) or (self.axis is None):
-            self.initialize(xarr)
-        data, self.zi = sp.sosfilt(self.sos, xarr, axis=self.axis, zi=self.zi)
-        return xarr.copy(data=data)
+            self.initialize(db)
+        data, self.zi = sp.sosfilt(self.sos, db, axis=self.axis, zi=self.zi)
+        return db.copy(data=data)
 
-    def initialize(self, xarr):
+    def initialize(self, db):
         """
         Initialize the filter state.
 
@@ -267,13 +267,13 @@ class SOSFilter:
             Some sample of the kind of database to process to get the correct axis
             number.
         """
-        self.axis = xarr.get_axis_num(self.dim)
+        self.axis = db.get_axis_num(self.dim)
         zi = sp.sosfilt_zi(self.sos)
-        ndim = len(xarr.shape)
+        ndim = len(db.shape)
         n_sections = zi.shape[0]
         s = [n_sections] + [2 if k == self.axis else 1 for k in range(ndim)]
         zi = zi.reshape(s)
-        s = [n_sections] + [2 if k == self.axis else xarr.shape[k] for k in range(ndim)]
+        s = [n_sections] + [2 if k == self.axis else db.shape[k] for k in range(ndim)]
         zi = np.broadcast_to(zi, s)
         self.zi = zi
 
@@ -294,17 +294,29 @@ class Decimate(SignalProcessingUnit):
         return db[{self.dim: slice(None, None, self.q)}]
 
 
+class ChunkWritter(SignalProcessingUnit):
+    def __init__(self, path, dim):
+        self.path = path
+        self.dim = dim
+
+    def __call__(self, db):
+        postfix = f"_{db[self.dim][0]}-{db[self.dim][-1]}.nc"
+        fname = self.path + postfix
+        db.to_netcdf(fname)
+        return open_database(fname)
+
+
 class Writter(SignalProcessingUnit):
     def __init__(self, fname, duration=np.timedelta64(1, "m")):
         self.fname = fname
         self.duration = duration
         self.buffer = None
 
-    def __call__(self, xarr):
+    def __call__(self, db):
         if self.buffer is None:
-            self.buffer = xarr
+            self.buffer = db
         else:
-            self.buffer = concatenate([self.buffer, xarr])
+            self.buffer = concatenate([self.buffer, db])
         if self.buffer["time"][-1] - self.buffer["time"][-1] > self.duration:
             self.buffer.sel(
                 time=slice(
