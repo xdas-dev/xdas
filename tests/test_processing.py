@@ -4,10 +4,10 @@ import dask.array as da
 import numpy as np
 import scipy.signal as sp
 
-import xdas
 from xdas.core import Coordinate, Database
-from xdas.processing import LFilter, SignalProcessingChain, SOSFilter, ChunkWritter
+from xdas.processing import ChunkWriter, LFilter, SignalProcessingChain, SOSFilter
 from xdas.virtual import DataLayout
+
 
 class TestProcessing:
     def generate(self):
@@ -64,7 +64,7 @@ class TestProcessing:
         db = self.generate()
         with tempfile.TemporaryDirectory() as tmpdirname:
             path = tmpdirname + "/test"
-            chain = SignalProcessingChain([ChunkWritter(path, "time")])
+            chain = SignalProcessingChain([ChunkWriter(path, "time")])
             out = chain.process(db, "time", 100)
             assert np.array_equal(db.values, out.values)
             print(out["time"].tie_indices)

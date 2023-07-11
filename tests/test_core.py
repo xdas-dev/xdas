@@ -33,4 +33,3 @@ class TestCore:
             _db = xdas.concatenate(dbs, "distance")
             assert np.array_equal(_db.data, db.data)
             assert _db["distance"] == _db["distance"]
-            

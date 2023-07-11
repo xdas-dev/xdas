@@ -39,7 +39,7 @@ class SignalProcessingChain:
         chunk_size : int
             The number of samples per chunk.
         parallel : bool, optional
-            Whether to use multiprocessing to improve performance, by default True.
+            Whether to use multithreading to improve performance, by default True.
 
         Returns
         -------
@@ -294,16 +294,26 @@ class Decimate(SignalProcessingUnit):
         return db[{self.dim: slice(None, None, self.q)}]
 
 
-class ChunkWritter(SignalProcessingUnit):
+class ChunkWriter(SignalProcessingUnit):
     def __init__(self, path, dim):
         self.path = path
         self.dim = dim
+        self.chunk = None
 
     def __call__(self, db):
-        postfix = f"_{db[self.dim][0]}-{db[self.dim][-1]}.nc"
+        if self.chunk is None:
+            self.initialize(db)
+        self.chunk += 1
+        postfix = f"_{self.chunk:06d}.nc"
         fname = self.path + postfix
         db.to_netcdf(fname)
         return open_database(fname)
+
+    def initialize(self, db):
+        self.chunk = 0
+
+    def reset(self):
+        self.chunk = None
 
 
 class Writter(SignalProcessingUnit):
