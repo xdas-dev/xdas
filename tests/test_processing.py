@@ -64,7 +64,7 @@ class TestProcessing:
         db = self.generate()
         with tempfile.TemporaryDirectory() as tmpdirname:
             path = tmpdirname + "/test"
-            chain = SignalProcessingChain([ChunkWriter(path, "time")])
+            chain = SignalProcessingChain([ChunkWriter(path)])
             out = chain.process(db, "time", 100)
             assert np.array_equal(db.values, out.values)
             print(out["time"].tie_indices)

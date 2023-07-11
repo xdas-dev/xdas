@@ -258,6 +258,13 @@ class Database:
             attrs=self.attrs,
         )
 
+    @classmethod
+    def from_xarray(cls, da, tolerance=None):
+        coords = {
+            dim: Coordinate.from_array(da[dim].values, tolerance) for dim in da.dims
+        }
+        return cls(da.data, coords, da.dims, da.name, da.attrs)
+
     def to_netcdf(self, fname, group=None, virtual=False, **kwargs):
         """
         Write Database contents to a netCDF file.

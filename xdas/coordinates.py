@@ -284,6 +284,10 @@ class Coordinate:
             for index in indices
         ]
 
+    @classmethod
+    def from_array(cls, arr, tolerance=None):
+        return cls(np.arange(len(arr)), arr).simplify(tolerance)
+
 
 class ScaleOffset:
     def __init__(self, scale, offset):
