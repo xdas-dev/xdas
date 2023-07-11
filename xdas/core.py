@@ -2,6 +2,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from glob import glob
 
 import numpy as np
+import xarray as xr
 from tqdm import tqdm
 
 from .coordinates import Coordinate
@@ -155,3 +156,35 @@ def open_datacollection(fname, **kwargs):
         The opened DataCollection.
     """
     return DataCollection.from_netcdf(fname, **kwargs)
+
+
+def asdatabase(obj, tolerance=None):
+    """
+    Try to convert given object to a database.
+
+    Only support Database or DataArray as input.
+
+    Parameters
+    ----------
+    obj : object
+        The objected to convert
+    tolerance : float or datetime64, optional
+        For dense coordinates, tolerance error for interpolation representation, by
+        default zero.
+
+    Returns
+    -------
+    Database
+        The object converted to a Database. Data is not copied.
+
+    Raises
+    ------
+    ValueError
+        _description_
+    """
+    if isinstance(obj, Database):
+        return obj
+    elif isinstance(obj, xr.DataArray):
+        return Database.from_xarray(obj, tolerance)
+    else:
+        raise ValueError("Cannot convert to database.")

@@ -28,8 +28,14 @@ class TestCore:
             dbs = [db[100 * k : 100 * (k + 1)] for k in range(3)]
             _db = xdas.concatenate(dbs)
             assert np.array_equal(_db.data, db.data)
-            assert _db["time"] == _db["time"]
+            assert _db["time"] == db["time"]
             dbs = [db[:, 20 * k : 20 * (k + 1)] for k in range(5)]
             _db = xdas.concatenate(dbs, "distance")
             assert np.array_equal(_db.data, db.data)
-            assert _db["distance"] == _db["distance"]
+            assert _db["distance"] == db["distance"]
+
+    def test_asdatabase(self):
+        db = self.generate(False)
+        out = xdas.asdatabase(db.to_xarray())
+        assert np.array_equal(out.data, db.data)
+        assert out.coords == db.coords
