@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 from .coordinates import Coordinate
 from .database import Database, DataCollection
-from .virtual import DataLayout
+from .virtual import DataLayout, DataSource
 
 
 def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
@@ -46,10 +46,10 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
                 desc="Fetching metadata from files",
             )
         ]
-    return concatenate(dbs, tolerance=tolerance, virtual=True)
+    return concatenate(dbs, tolerance=tolerance)
 
 
-def concatenate(dbs, dim="time", tolerance=None, virtual=False):
+def concatenate(dbs, dim="time", tolerance=None, virtual=None):
     """
     Concatenate several databases along a given dimension.
 
@@ -64,7 +64,7 @@ def concatenate(dbs, dim="time", tolerance=None, virtual=False):
         the following, zero by default.
     virtual : bool, optional
         Whether to create a virtual dataset. It requires that all concatenated
-        databases are virtual.
+        databases are virtual. By default tries to create a virtual dataset if possible.
 
     Returns
     -------
@@ -79,6 +79,8 @@ def concatenate(dbs, dim="time", tolerance=None, virtual=False):
         sum([db.shape[a] for db in dbs]) if a == axis else dbs[0].shape[a]
         for a in range(len(dims))
     )
+    if virtual is None:
+        virtual = all(isinstance(db.data, DataSource) for db in dbs)
     if virtual:
         data = DataLayout(shape, dtype)
     else:
