@@ -100,11 +100,6 @@ def concatenate(dbs, dim="time", tolerance=None, virtual=None):
         tie_values.extend(db[dim].tie_values)
         idx += db.shape[axis]
     coord = Coordinate(tie_indices, tie_values)
-    if tolerance is None:
-        if np.issubdtype(dbs[0][dim].dtype, np.datetime64):
-            tolerance = np.timedelta64(0, "us")
-        else:
-            tolerance = 0.0
     coord = coord.simplify(tolerance)
     coords = dbs[0].coords
     coords[dim] = coord

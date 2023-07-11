@@ -263,7 +263,12 @@ class Coordinate:
         else:
             return self.get_index(item)
 
-    def simplify(self, tolerance):
+    def simplify(self, tolerance=None):
+        if tolerance is None:
+            if np.issubdtype(self.dtype, np.datetime64):
+                tolerance = np.timedelta64(0, "us")
+            else:
+                tolerance = 0.0
         tie_indices, tie_values = douglas_peucker(
             self.tie_indices, self.tie_values, tolerance
         )
