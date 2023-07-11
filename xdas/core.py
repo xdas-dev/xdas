@@ -105,8 +105,7 @@ def concatenate(dbs, dim="time", tolerance=None, virtual=None):
             tolerance = np.timedelta64(0, "us")
         else:
             tolerance = 0.0
-    if not tolerance == 0:
-        coord = coord.simplify(tolerance)
+    coord = coord.simplify(tolerance)
     coords = dbs[0].coords
     coords[dim] = coord
     return Database(data, coords)
