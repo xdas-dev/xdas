@@ -27,11 +27,34 @@ def get_sample_spacing(da, dim):
     return d
 
 
+def detrend(da, type, dim):
+    """
+    Detrend data along given dimension
+
+    Parameters
+    ----------
+    da : DataArray
+        The data to detrend.
+    type : str
+        Either "linear" or "constant".
+    dim : str
+        The dimension along which to detrend the data.
+
+    Returns
+    -------
+    DataArray
+        The detrended data.
+    """
+    axis = da.get_axis_num(dim)
+    data = sp.detrend(da.values, axis, type)
+    return da.copy(data=data)
+
+
 def iirfilter(da, freq, btype, corners=4, zerophase=False, dim="time"):
     """
     SOS IIR filtering along given dimension.
 
-    data: array
+    data: DataArray
         Traces to filter.
     freq: float or list
         Cuttoff frequency or band corners [Hz].
