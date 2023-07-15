@@ -50,6 +50,34 @@ def detrend(da, type, dim):
     return da.copy(data=data)
 
 
+def taper(da, window="hann", fftbins=False, dim="time"):
+    """
+    Apply a tapering window along the given dimension
+
+    Parameters
+    ----------
+    da : DataArray
+        The data to taper.
+    window : str or tuple, optional
+        The window to use, by default "hann"
+    fftbins : bool, optional
+        Weather to use a periodic windowing, by default False
+    dim : str, optional
+        Dimension along the which to taper, by default "time"
+
+    Returns
+    -------
+    DataArray
+        The tapered data.
+    """
+    axis = da.get_axis_num(axis)
+    w = sp.get_window(window, da.shape[axis], fftbins=fftbins)
+    shape = [-1 if ax == axis else 1 for ax in range(da.ndim)]
+    w = w.rehape(shape)
+    data = w * da.values
+    return da.copy(data=data)
+
+
 def iirfilter(da, freq, btype, corners=4, zerophase=False, dim="time"):
     """
     SOS IIR filtering along given dimension.
