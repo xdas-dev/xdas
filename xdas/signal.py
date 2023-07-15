@@ -73,7 +73,7 @@ def taper(da, window="hann", fftbins=False, dim="time"):
     axis = da.get_axis_num(dim)
     w = sp.get_window(window, da.shape[axis], fftbins=fftbins)
     shape = [-1 if ax == axis else 1 for ax in range(da.ndim)]
-    w = w.rehape(shape)
+    w = w.reshape(shape)
     data = w * da.values
     return da.copy(data=data)
 
