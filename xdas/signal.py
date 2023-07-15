@@ -27,6 +27,37 @@ def get_sample_spacing(da, dim):
     return d
 
 
+def iirfilter(da, freq, btype, corners=4, zerophase=False, dim="time"):
+    """
+    SOS IIR filtering along given dimension.
+
+    data: array
+        Traces to filter.
+    freq: float or list
+        Cuttoff frequency or band corners [Hz].
+    fs: float
+        Sampling frequency [Hz].
+    btype: {'bandpass', 'lowpass', 'highpass', 'bandstop'}
+        The type of the filter.
+    corners: int
+        The order of the filter.
+    zerophase: bool
+        If True, apply filter once forwards and once backwards.
+        This results in twice the filter order but zero phase shift in
+        the resulting filtered trace.
+    dim: str, optional
+        The dimension along which to filter.
+    """
+    axis = da.get_axis_num(dim)
+    fs = 1.0 / get_sample_spacing(da, dim)
+    sos = sp.iirfilter(corners, freq, btype=btype, ftype="butter", output="sos", fs=fs)
+    if zerophase:
+        data = sp.sosfiltfilt(sos, da.values, axis=axis)
+    else:
+        data = sp.sosfilt(sos, da.values, axis=axis)
+    return da.copy(data=data)
+
+
 def integrate(da, midpoints=False, dim="distance"):
     """
     Integrate along a given dimension.
