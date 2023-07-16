@@ -82,7 +82,7 @@ def iirfilter(da, freq, btype, corners=4, zerophase=False, dim="time"):
     """
     SOS IIR filtering along given dimension.
 
-    data: DataArray
+    da: DataArray
         Traces to filter.
     freq: float or list
         Cuttoff frequency or band corners [Hz].
@@ -130,9 +130,32 @@ def integrate(da, midpoints=False, dim="distance"):
     d = get_sample_spacing(da, dim)
     out = da.cumsum(dim) * d
     if midpoints:
-        s = da[dim].values
-        s += d / 2
-        out[dim] = s
+        out[dim] = out[dim] + d / 2
+    return out
+
+
+def differentiate(da, midpoints=False, dim="distance"):
+    """
+    Differentiate along a given dimension.
+
+    Parameters
+    ----------
+    da : DataArray
+        The data to integrate.
+    midpoints : bool, optional
+        Whether to move the coordinates by half a step, by default False.
+    dim : str, optional
+        The dimension along which to integrate, by default "distance".
+
+    Returns
+    -------
+    DataArray
+        The integrated data.
+    """
+    d = get_sample_spacing(da, dim)
+    out = da.diff(dim) / d
+    if midpoints:
+        out[dim] = out[dim] + d / 2
     return out
 
 
@@ -158,7 +181,7 @@ def segment_mean_removal(da, limits, window="hann", dim="distance"):
     """
     out = da.copy()
     for sstart, send in zip(limits[:-1], limits[1:]):
-        key = dict(distance=slice(sstart, np.nextafter(send, -np.inf)))
+        key = {dim: slice(sstart, np.nextafter(send, -np.inf))}
         subset = out.loc[key]
         win = xr.DataArray(
             sp.get_window(window, subset.sizes[dim]),
