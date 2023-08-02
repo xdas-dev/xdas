@@ -11,8 +11,8 @@ class TestSignal:
         dt = np.timedelta64(8, "ms")
         t = np.datetime64(0, "s") + dt * np.arange(1000)
         da = xr.DataArray(np.ones((len(t), len(s))), {"time": t, "distance": s})
-        assert xp.get_sample_spacing(da, "time") == 0.008
-        assert xp.get_sample_spacing(da, "distance") == 5.0
+        assert xp.get_sampling_interval(da, "time") == 0.008
+        assert xp.get_sampling_interval(da, "distance") == 5.0
         shape = (6000, 1000)
         resolution = (np.timedelta64(8, "ms"), 5.0)
         starttime = np.datetime64("2023-01-01T00:00:00")
@@ -29,8 +29,8 @@ class TestSignal:
                 ),
             },
         )
-        assert xp.get_sample_spacing(db, "time") == 0.008
-        assert xp.get_sample_spacing(db, "distance") == 5.0
+        assert xp.get_sampling_interval(db, "time") == 0.008
+        assert xp.get_sampling_interval(db, "distance") == 5.0
 
     def test_integrate(self):
         n = 100

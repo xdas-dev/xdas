@@ -3,7 +3,7 @@ import scipy.signal as sp
 import xarray as xr
 
 
-def get_sample_spacing(da, dim):
+def get_sampling_interval(da, dim):
     """
     Returns the sample spacing along a given dimension.
 
@@ -100,7 +100,7 @@ def iirfilter(da, freq, btype, corners=4, zerophase=False, dim="time"):
         The dimension along which to filter.
     """
     axis = da.get_axis_num(dim)
-    fs = 1.0 / get_sample_spacing(da, dim)
+    fs = 1.0 / get_sampling_interval(da, dim)
     sos = sp.iirfilter(corners, freq, btype=btype, ftype="butter", output="sos", fs=fs)
     if zerophase:
         data = sp.sosfiltfilt(sos, da.values, axis=axis)
@@ -127,7 +127,7 @@ def integrate(da, midpoints=False, dim="distance"):
     DataArray
         The integrated data.
     """
-    d = get_sample_spacing(da, dim)
+    d = get_sampling_interval(da, dim)
     out = da.cumsum(dim) * d
     if midpoints:
         out[dim] = out[dim] + d / 2
@@ -152,7 +152,7 @@ def differentiate(da, midpoints=False, dim="distance"):
     DataArray
         The integrated data.
     """
-    d = get_sample_spacing(da, dim)
+    d = get_sampling_interval(da, dim)
     out = da.diff(dim) / d
     if midpoints:
         out[dim] = out[dim] + d / 2
@@ -214,7 +214,7 @@ def sliding_mean_removal(da, wlen, window="hann", pad_mode="reflect", dim="dista
     DataArray
         The data with sliding mean removed.
     """
-    d = get_sample_spacing(da, dim)
+    d = get_sampling_interval(da, dim)
     n = round(wlen / d)
     if n % 2 == 0:
         n += 1
