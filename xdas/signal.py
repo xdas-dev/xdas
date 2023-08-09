@@ -145,7 +145,7 @@ def decimate(da, q, n=None, ftype=None, zero_phase=None, dim="time"):
     """
     axis = da.get_axis_num(dim)
     data = sp.decimate(da.values, q, n, ftype, axis, zero_phase)
-    return da[dict(dim=slice(None, None, q))].copy(data=data)
+    return da[{dim: slice(None, None, q)}].copy(data=data)
 
 
 def integrate(da, midpoints=False, dim="distance"):
