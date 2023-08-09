@@ -109,6 +109,45 @@ def iirfilter(da, freq, btype, corners=4, zerophase=False, dim="time"):
     return da.copy(data=data)
 
 
+def decimate(da, q, n=None, ftype=None, zero_phase=None, dim="time"):
+    """
+    Downsample the signal after applying an anti-aliasing filter.
+
+    By default, an order 8 Chebyshev type I filter is used. A 30 point FIR
+    filter with Hamming window is used if `ftype` is 'fir'.
+
+    Parameters
+    ----------
+    da : DataArray
+        The signal to be downsampled, as an N-dimensional dataarray.
+    q : int
+        The downsampling factor. When using IIR downsampling, it is recommended
+        to call `decimate` multiple times for downsampling factors higher than
+        13.
+    n : int, optional
+        The order of the filter (1 less than the length for 'fir'). Defaults to
+        8 for 'iir' and 20 times the downsampling factor for 'fir'.
+    ftype : str {'iir', 'fir'} or ``dlti`` instance, optional
+        If 'iir' or 'fir', specifies the type of lowpass filter. If an instance
+        of an `dlti` object, uses that object to filter before downsampling.
+    dim : str, optional
+        The dimension along which to decimate.
+    zero_phase : bool, optional
+        Prevent phase shift by filtering with `filtfilt` instead of `lfilter`
+        when using an IIR filter, and shifting the outputs back by the filter's
+        group delay when using an FIR filter. The default value of ``True`` is
+        recommended, since a phase shift is generally not desired.
+
+    Returns
+    -------
+    DataArray
+        The down-sampled signal.
+    """
+    axis = da.get_axis_num(dim)
+    data = sp.decimate(da.values, q, n, ftype, axis, zero_phase)
+    return da[dict(dim=slice(None, None, q))].copy(data=data)
+
+
 def integrate(da, midpoints=False, dim="distance"):
     """
     Integrate along a given dimension.
