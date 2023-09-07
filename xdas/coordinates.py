@@ -119,11 +119,17 @@ class Coordinate:
 
     @property
     def indices(self):
-        return np.arange(self.tie_indices[-1] + 1)
+        if self:
+            return np.arange(self.tie_indices[-1] + 1)
+        else:
+            return np.array([], dtype="int")
 
     @property
     def values(self):
-        return self.get_value(self.indices)
+        if self:
+            return self.get_value(self.indices)
+        else:
+            return np.array([], dtype=self.dtype)
 
     def format_index(self, idx, bounds="raise"):
         idx = np.asarray(idx)
