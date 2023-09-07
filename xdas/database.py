@@ -252,7 +252,11 @@ class Database:
         """
         return xr.DataArray(
             data=self.__array__(),
-            coords={dim: self.coords[dim].__array__() for dim in self.coords},
+            coords={
+                dim: self.coords[dim].__array__()
+                for dim in self.coords
+                if self.coords[dim]
+            },
             dims=self.dims,
             name=self.name,
             attrs=self.attrs,
