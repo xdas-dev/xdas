@@ -47,6 +47,10 @@ class TestDatabase:
         da = db.to_xarray()
         assert np.array_equal(da.values, db.values)
         assert np.array_equal(da["dim"].values, db["dim"].values)
+        db = db.sel(dim=slice(1000, 2000))  # empty database
+        da = db.to_xarray()
+        assert np.array_equal(da.values, db.values)
+        assert np.array_equal(da["dim"].values, db["dim"].values)
 
     def test_from_xarray(self):
         db = self.generate()
