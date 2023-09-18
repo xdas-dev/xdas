@@ -4,7 +4,8 @@ import numpy as np
 import scipy.signal as sp
 import xarray as xr
 
-from xdas.core import Coordinate, Coordinates, Database
+from xdas.coordinates import Coordinate, Coordinates
+from xdas.database import Database
 
 
 def read(fname, decimation=None, preprocess=None):
