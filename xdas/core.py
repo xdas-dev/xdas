@@ -35,6 +35,8 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
             "The maximum number of file that can be opened at once is for now limited "
             "to 100 000."
         )
+    if len(fnames) == 0:
+        return None
     with ProcessPoolExecutor() as executor:
         futures = [
             executor.submit(open_database, fname, engine=engine) for fname in fnames
