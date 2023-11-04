@@ -37,8 +37,11 @@ class TestSignal:
         d = 5.0
         s = (d / 2) + d * np.arange(n)
         da = xr.DataArray(np.ones(n), {"distance": s})
+        db = xdas.Database.from_xarray(da)
         da = xp.integrate(da, midpoints=True)
         assert np.allclose(da, da["distance"])
+        db = xp.integrate(db, midpoints=True)
+        assert np.allclose(db.values, db["distance"].values)
 
     def test_segment_mean_removal(self):
         n = 100

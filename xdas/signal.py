@@ -3,7 +3,7 @@ import scipy.signal as sp
 import xarray as xr
 
 
-def get_sampling_interval(da, dim):
+def get_sampling_interval(db, dim):
     """
     Returns the sample spacing along a given dimension.
 
@@ -19,7 +19,7 @@ def get_sampling_interval(da, dim):
     float
         The sample spacing.
     """
-    d = (da[dim][-1] - da[dim][0]) / (len(da[dim]) - 1)
+    d = (db[dim][-1] - db[dim][0]) / (len(db[dim]) - 1)
     d = np.asarray(d)
     if np.issubdtype(d.dtype, np.timedelta64):
         d = d / np.timedelta64(1, "s")
@@ -148,7 +148,7 @@ def decimate(da, q, n=None, ftype=None, zero_phase=None, dim="time"):
     return da[{dim: slice(None, None, q)}].copy(data=data)
 
 
-def integrate(da, midpoints=False, dim="distance"):
+def integrate(db, midpoints=False, dim="distance"):
     """
     Integrate along a given dimension.
 
@@ -166,8 +166,10 @@ def integrate(da, midpoints=False, dim="distance"):
     DataArray
         The integrated data.
     """
-    d = get_sampling_interval(da, dim)
-    out = da.cumsum(dim) * d
+    d = get_sampling_interval(db, dim)
+    axis = db.get_axis_num(dim)
+    data = np.cumsum(db.values, axis=axis) * d
+    out = db.copy(data=data)
     if midpoints:
         out[dim] = out[dim] + d / 2
     return out
