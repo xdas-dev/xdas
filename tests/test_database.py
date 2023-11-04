@@ -40,7 +40,7 @@ class TestDatabase:
 
     def test_sel(self):
         db = self.generate()
-        sub = db.sel(dim=slice(2, 4))
+        db.sel(dim=slice(2, 4))
 
     def test_to_xarray(self):
         db = self.generate()

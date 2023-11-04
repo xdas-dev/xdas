@@ -33,7 +33,7 @@ class TestProcessing:
         chain = SignalProcessingChain([lfilter])
         out = chain.process(db, "time", chunk_size, parallel=False)
         lfilter.reset()
-        assert chain.filters[0].zi == None
+        assert chain.filters[0].zi is None
         out_parallel = chain.process(db, "time", chunk_size, parallel=True)
         assert np.allclose(result_chunks.data, result_direct.data)
         assert np.allclose(out.data, result_direct.data)
@@ -54,7 +54,7 @@ class TestProcessing:
         chain = SignalProcessingChain([sosfilter])
         out = chain.process(db, "time", chunk_size, parallel=False)
         sosfilter.reset()
-        assert chain.filters[0].zi == None
+        assert chain.filters[0].zi is None
         out_parallel = chain.process(db, "time", chunk_size, parallel=True)
         assert np.allclose(result_chunks.data, result_direct.data)
         assert np.allclose(out.data, result_direct.data)

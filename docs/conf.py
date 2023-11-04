@@ -130,7 +130,7 @@ db = xdas.Database(
         ),
     },
 )
-db.to_netcdf(f"_data/sample.nc")
-db[:100].to_netcdf(f"_data/001.nc")
-db[100:200].to_netcdf(f"_data/002.nc")
-db[200:].to_netcdf(f"_data/003.nc")
+db.to_netcdf("_data/sample.nc")
+db[:100].to_netcdf("_data/001.nc")
+db[100:200].to_netcdf("_data/002.nc")
+db[200:].to_netcdf("_data/003.nc")
