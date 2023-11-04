@@ -1,3 +1,4 @@
+import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from glob import glob
 
@@ -24,19 +25,24 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
         The tolerance to consider that the end of a file is continuous with the begging
         of the following
 
-    ReturnsDA
+    Returns
     -------
     Database
         The database containing all files data.
+    
+    Raises
+    ------
+    FileNotFound
+        If no file can be found.
     """
     fnames = sorted(glob(paths))
+    if len(fnames) == 0:
+        raise FileNotFoundError("no file to open")
     if len(fnames) > 100_000:
         raise NotImplementedError(
             "The maximum number of file that can be opened at once is for now limited "
             "to 100 000."
         )
-    if len(fnames) == 0:
-        return None
     with ProcessPoolExecutor() as executor:
         futures = [
             executor.submit(open_database, fname, engine=engine) for fname in fnames
@@ -132,7 +138,14 @@ def open_database(fname, group=None, engine="netcdf", **kwargs):
     ------
     ValueError
         If the engine si not recognized.
+    
+    Raises
+    ------
+    FileNotFound
+        If no file can be found.
     """
+    if not os.path.exists(fname):
+        raise FileNotFoundError("no file to open")
     if engine == "netcdf":
         return Database.from_netcdf(fname, group=group, **kwargs)
     elif engine == "asn":
@@ -156,7 +169,14 @@ def open_datacollection(fname, **kwargs):
     -------
     DataCollection
         The opened DataCollection.
+    
+    Raises
+    ------
+    FileNotFound
+        If no file can be found.
     """
+    if not os.path.exists(fname):
+        raise FileNotFoundError("no file to open")
     return DataCollection.from_netcdf(fname, **kwargs)
 
 

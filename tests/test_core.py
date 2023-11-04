@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 import xdas
 
@@ -22,6 +23,10 @@ class TestCore:
             },
         )
 
+    def test_open_mfdatabase(self):
+        with pytest.raises(FileNotFoundError):
+            xdas.open_mfdatabase("not_existing_files_*.nc")
+
     def test_concatenate(self):
         for datetime in [False, True]:
             db = self.generate(datetime)
@@ -33,6 +38,14 @@ class TestCore:
             _db = xdas.concatenate(dbs, "distance")
             assert np.array_equal(_db.data, db.data)
             assert _db["distance"] == db["distance"]
+
+    def test_open_database(self):
+        with pytest.raises(FileNotFoundError):
+            xdas.open_database("not_existing_file.nc")
+
+    def test_open_datacollection(self):
+        with pytest.raises(FileNotFoundError):
+            xdas.open_datacollection("not_existing_file.nc")
 
     def test_asdatabase(self):
         db = self.generate(False)
