@@ -32,6 +32,17 @@ class TestSignal:
         assert xp.get_sampling_interval(db, "time") == 0.008
         assert xp.get_sampling_interval(db, "distance") == 5.0
 
+    def test_differentiate(self):
+        n = 100
+        d = 5.0
+        s = (d / 2) + d * np.arange(n)
+        da = xr.DataArray(np.ones(n), {"distance": s})
+        db = xdas.Database.from_xarray(da)
+        da = xp.differentiate(da, midpoints=True)
+        assert np.allclose(da, np.zeros(n - 1))
+        db = xp.differentiate(db, midpoints=True)
+        assert np.allclose(db.values, np.zeros(n - 1))
+
     def test_integrate(self):
         n = 100
         d = 5.0
@@ -58,7 +69,6 @@ class TestSignal:
         assert np.allclose(da, 0)
         db = xp.segment_mean_removal(db, limits)
         assert np.allclose(db.values, 0)
-
 
     def test_sliding_window_removal(self):
         n = 100

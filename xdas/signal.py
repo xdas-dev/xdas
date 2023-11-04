@@ -166,8 +166,8 @@ def integrate(db, midpoints=False, dim="distance"):
     DataArray
         The integrated data.
     """
-    d = get_sampling_interval(db, dim)
     axis = db.get_axis_num(dim)
+    d = get_sampling_interval(db, dim)
     data = np.cumsum(db.values, axis=axis) * d
     out = db.copy(data=data)
     if midpoints:
@@ -175,7 +175,7 @@ def integrate(db, midpoints=False, dim="distance"):
     return out
 
 
-def differentiate(da, midpoints=False, dim="distance"):
+def differentiate(db, midpoints=False, dim="distance"):
     """
     Differentiate along a given dimension.
 
@@ -193,8 +193,10 @@ def differentiate(da, midpoints=False, dim="distance"):
     DataArray
         The integrated data.
     """
-    d = get_sampling_interval(da, dim)
-    out = da.diff(dim) / d
+    axis = db.get_axis_num(dim)
+    d = get_sampling_interval(db, dim)
+    data = np.diff(db.values, axis=axis) / d
+    out = db.isel({dim: slice(None, -1)}).copy(data=data)
     if midpoints:
         out[dim] = out[dim] + d / 2
     return out
