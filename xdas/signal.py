@@ -1,6 +1,5 @@
 import numpy as np
 import scipy.signal as sp
-import xarray as xr
 
 
 def get_sampling_interval(db, dim):
@@ -9,7 +8,7 @@ def get_sampling_interval(db, dim):
 
     Parameters
     ----------
-    da : DataArray or Database
+    db : Database or DataArray or Database
         The data from which extract the sample spacing.
     dim : str
         The dimension along which get the sample spacing.
@@ -27,13 +26,13 @@ def get_sampling_interval(db, dim):
     return d
 
 
-def detrend(da, type, dim):
+def detrend(db, type="linear", dim="time"):
     """
     Detrend data along given dimension
 
     Parameters
     ----------
-    da : DataArray
+    db : Database or DataArray
         The data to detrend.
     type : str
         Either "linear" or "constant".
@@ -42,21 +41,21 @@ def detrend(da, type, dim):
 
     Returns
     -------
-    DataArray
+    Database or DataArray
         The detrended data.
     """
-    axis = da.get_axis_num(dim)
-    data = sp.detrend(da.values, axis, type)
-    return da.copy(data=data)
+    axis = db.get_axis_num(dim)
+    data = sp.detrend(db.values, axis, type)
+    return db.copy(data=data)
 
 
-def taper(da, window="hann", fftbins=False, dim="time"):
+def taper(db, window="hann", fftbins=False, dim="time"):
     """
     Apply a tapering window along the given dimension
 
     Parameters
     ----------
-    da : DataArray
+    db : Database or DataArray
         The data to taper.
     window : str or tuple, optional
         The window to use, by default "hann"
@@ -67,18 +66,18 @@ def taper(da, window="hann", fftbins=False, dim="time"):
 
     Returns
     -------
-    DataArray
+    Database or DataArray
         The tapered data.
     """
-    axis = da.get_axis_num(dim)
-    w = sp.get_window(window, da.shape[axis], fftbins=fftbins)
-    shape = [-1 if ax == axis else 1 for ax in range(da.ndim)]
+    axis = db.get_axis_num(dim)
+    w = sp.get_window(window, db.shape[axis], fftbins=fftbins)
+    shape = [-1 if ax == axis else 1 for ax in range(db.ndim)]
     w = w.reshape(shape)
-    data = w * da.values
-    return da.copy(data=data)
+    data = w * db.values
+    return db.copy(data=data)
 
 
-def iirfilter(da, freq, btype, corners=4, zerophase=False, dim="time"):
+def iirfilter(db, freq, btype, corners=4, zerophase=False, dim="time"):
     """
     SOS IIR filtering along given dimension.
 
@@ -99,17 +98,17 @@ def iirfilter(da, freq, btype, corners=4, zerophase=False, dim="time"):
     dim: str, optional
         The dimension along which to filter.
     """
-    axis = da.get_axis_num(dim)
-    fs = 1.0 / get_sampling_interval(da, dim)
+    axis = db.get_axis_num(dim)
+    fs = 1.0 / get_sampling_interval(db, dim)
     sos = sp.iirfilter(corners, freq, btype=btype, ftype="butter", output="sos", fs=fs)
     if zerophase:
-        data = sp.sosfiltfilt(sos, da.values, axis=axis)
+        data = sp.sosfiltfilt(sos, db.values, axis=axis)
     else:
-        data = sp.sosfilt(sos, da.values, axis=axis)
-    return da.copy(data=data)
+        data = sp.sosfilt(sos, db.values, axis=axis)
+    return db.copy(data=data)
 
 
-def decimate(da, q, n=None, ftype=None, zero_phase=None, dim="time"):
+def decimate(db, q, n=None, ftype=None, zero_phase=None, dim="time"):
     """
     Downsample the signal after applying an anti-aliasing filter.
 
@@ -118,7 +117,7 @@ def decimate(da, q, n=None, ftype=None, zero_phase=None, dim="time"):
 
     Parameters
     ----------
-    da : DataArray
+    db : Database or DataArray
         The signal to be downsampled, as an N-dimensional dataarray.
     q : int
         The downsampling factor. When using IIR downsampling, it is recommended
@@ -140,12 +139,12 @@ def decimate(da, q, n=None, ftype=None, zero_phase=None, dim="time"):
 
     Returns
     -------
-    DataArray
+    Database or DataArray
         The down-sampled signal.
     """
-    axis = da.get_axis_num(dim)
-    data = sp.decimate(da.values, q, n, ftype, axis, zero_phase)
-    return da[{dim: slice(None, None, q)}].copy(data=data)
+    axis = db.get_axis_num(dim)
+    data = sp.decimate(db.values, q, n, ftype, axis, zero_phase)
+    return db[{dim: slice(None, None, q)}].copy(data=data)
 
 
 def integrate(db, midpoints=False, dim="distance"):
@@ -154,7 +153,7 @@ def integrate(db, midpoints=False, dim="distance"):
 
     Parameters
     ----------
-    da : DataArray
+    db : Database or DataArray
         The data to integrate.
     midpoints : bool, optional
         Whether to move the coordinates by half a step, by default False.
@@ -163,7 +162,7 @@ def integrate(db, midpoints=False, dim="distance"):
 
     Returns
     -------
-    DataArray
+    Database or DataArray
         The integrated data.
     """
     axis = db.get_axis_num(dim)
@@ -181,7 +180,7 @@ def differentiate(db, midpoints=False, dim="distance"):
 
     Parameters
     ----------
-    da : DataArray
+    db : Database or DataArray
         The data to integrate.
     midpoints : bool, optional
         Whether to move the coordinates by half a step, by default False.
@@ -190,7 +189,7 @@ def differentiate(db, midpoints=False, dim="distance"):
 
     Returns
     -------
-    DataArray
+    Database or DataArray
         The integrated data.
     """
     axis = db.get_axis_num(dim)
@@ -208,7 +207,7 @@ def segment_mean_removal(db, limits, window="hann", dim="distance"):
 
     Parameters
     ----------
-    da : DataArray
+    db : Database or DataArray
         The data that segment mean should be removed.
     limits : list of float
         The segments limits.
@@ -219,7 +218,7 @@ def segment_mean_removal(db, limits, window="hann", dim="distance"):
 
     Returns
     -------
-    DataArray
+    Database or DataArray
         The data with segment means removed.
     """
     out = db.copy()
@@ -241,7 +240,7 @@ def sliding_mean_removal(db, wlen, window="hann", pad_mode="reflect", dim="dista
 
     Parameters
     ----------
-    da : DataArray
+    db : Database or DataArray
         The data that sliding mean should be removed.
     wlen : float
         Length of the sliding mean.
@@ -254,7 +253,7 @@ def sliding_mean_removal(db, wlen, window="hann", pad_mode="reflect", dim="dista
 
     Returns
     -------
-    DataArray
+    Database or DataArray
         The data with sliding mean removed.
     """
     d = get_sampling_interval(db, dim)

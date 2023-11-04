@@ -32,6 +32,17 @@ class TestSignal:
         assert xp.get_sampling_interval(db, "time") == 0.008
         assert xp.get_sampling_interval(db, "distance") == 5.0
 
+    def test_deterend(self):
+        n = 100
+        d = 5.0
+        s = d * np.arange(n)
+        da = xr.DataArray(np.arange(n), {"time": s})
+        db = xdas.Database.from_xarray(da)
+        da = xp.detrend(da)
+        assert np.allclose(da, np.zeros(n))
+        db = xp.detrend(db)
+        assert np.allclose(db.values, np.zeros(n))
+
     def test_differentiate(self):
         n = 100
         d = 5.0
