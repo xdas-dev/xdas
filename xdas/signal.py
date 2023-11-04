@@ -200,7 +200,7 @@ def differentiate(da, midpoints=False, dim="distance"):
     return out
 
 
-def segment_mean_removal(da, limits, window="hann", dim="distance"):
+def segment_mean_removal(db, limits, window="hann", dim="distance"):
     """
     Piecewise mean removal.
 
@@ -220,20 +220,20 @@ def segment_mean_removal(da, limits, window="hann", dim="distance"):
     DataArray
         The data with segment means removed.
     """
-    out = da.copy()
+    out = db.copy()
+    axis = db.get_axis_num(dim)
     for sstart, send in zip(limits[:-1], limits[1:]):
         key = {dim: slice(sstart, np.nextafter(send, -np.inf))}
-        subset = out.loc[key]
-        win = xr.DataArray(
-            sp.get_window(window, subset.sizes[dim]),
-            {dim: subset[dim]},
-        )
-        ref = (subset * win).sum(dim) / win.sum(dim)
-        out.loc[key] -= ref
+        data = out.loc[key].values
+        win = sp.get_window(window, data.shape[axis])
+        shape = tuple(-1 if a == axis else 1 for a in range(data.ndim))
+        win = np.reshape(win, shape)
+        ref = np.sum(data * win, axis=axis) / np.sum(win)
+        out.loc[key] = out.loc[key].values - ref  # TODO: Add Database Arithmetics.
     return out
 
 
-def sliding_mean_removal(da, wlen, window="hann", pad_mode="reflect", dim="distance"):
+def sliding_mean_removal(db, wlen, window="hann", pad_mode="reflect", dim="distance"):
     """
     Sliding mean removal.
 
@@ -255,16 +255,16 @@ def sliding_mean_removal(da, wlen, window="hann", pad_mode="reflect", dim="dista
     DataArray
         The data with sliding mean removed.
     """
-    d = get_sampling_interval(da, dim)
+    d = get_sampling_interval(db, dim)
     n = round(wlen / d)
     if n % 2 == 0:
         n += 1
     win = sp.get_window(window, n)
     win /= np.sum(win)
-    shape = tuple(-1 if d == dim else 1 for d in da.dims)
+    shape = tuple(-1 if d == dim else 1 for d in db.dims)
     win = np.reshape(win, shape)
-    data = da.data
-    pad_width = tuple((n // 2, n // 2) if d == dim else (0, 0) for d in da.dims)
+    data = db.data
+    pad_width = tuple((n // 2, n // 2) if d == dim else (0, 0) for d in db.dims)
     mean = sp.fftconvolve(np.pad(data, pad_width, mode=pad_mode), win, mode="valid")
     data = data - mean
-    return da.copy(data=data)
+    return db.copy(data=data)

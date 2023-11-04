@@ -53,8 +53,12 @@ class TestSignal:
         da = xr.DataArray(data, {"distance": s})
         da.loc[{"distance": slice(limits[0], limits[1])}] = 1.0
         da.loc[{"distance": slice(limits[1], limits[2])}] = 2.0
+        db = xdas.Database.from_xarray(da)
         da = xp.segment_mean_removal(da, limits)
         assert np.allclose(da, 0)
+        db = xp.segment_mean_removal(db, limits)
+        assert np.allclose(db.values, 0)
+
 
     def test_sliding_window_removal(self):
         n = 100
@@ -63,5 +67,8 @@ class TestSignal:
         s = np.linspace(0, 1000, n)
         data = np.ones(n)
         da = xr.DataArray(data, {"distance": s})
+        db = xdas.Database.from_xarray(da)
         da = xp.sliding_mean_removal(da, 0.1 * n * d)
         assert np.allclose(da, 0)
+        db = xp.sliding_mean_removal(db, 0.1 * n * d)
+        assert np.allclose(db.values, 0)
