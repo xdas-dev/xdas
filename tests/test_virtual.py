@@ -38,7 +38,9 @@ class TestAll:
 
             # testing
             _db = xdas.open_database(f"{tmpdir}/002.nc")
+            _db_loaded = _db.load()
             _da = _db.to_xarray()
+            assert np.array_equal(_da.data, _db_loaded.data)
             db = _db.sel(
                 time=slice("2023-01-01T00:01:20", None),
                 distance=slice(1000, None),

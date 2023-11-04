@@ -239,6 +239,9 @@ class Database:
             copy_fn(self.attrs),
         )
 
+    def load(self):
+        return self.copy(data=self.data.__array__())
+
     def to_xarray(self):
         """
         Convert the Database to a DataArray object.

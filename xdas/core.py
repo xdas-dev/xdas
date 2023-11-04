@@ -29,7 +29,7 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
     -------
     Database
         The database containing all files data.
-    
+
     Raises
     ------
     FileNotFound
@@ -138,7 +138,7 @@ def open_database(fname, group=None, engine="netcdf", **kwargs):
     ------
     ValueError
         If the engine si not recognized.
-    
+
     Raises
     ------
     FileNotFound
@@ -169,7 +169,7 @@ def open_datacollection(fname, **kwargs):
     -------
     DataCollection
         The opened DataCollection.
-    
+
     Raises
     ------
     FileNotFound
