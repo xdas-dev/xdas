@@ -66,22 +66,18 @@ db = db.sel(
 db
 ```
 
-```{warning}
-Due to some actual limitations of *h5py*, databases that have been opened from a file 
-must only be sliced once. Multiple/repeated slicing can lead to unexpected behaviors. 
-```
-
-Once the selection is small enough to be loader into memory, it can be converted to a
-[`DataArray`][DataArray] object:
+Once the selection is small enough data can be loaded into memory:
 
 ```{code-cell}
-da = db.to_xarray()
-da
+db = db.load()
+db
 ```
 
-This enables the full use of the *xarray* API (e.g., for plotting):
+It can be converted to a [`DataArray`][DataArray] object to enables the full use of the 
+*xarray* API (e.g., for plotting):
 
 ```{code-cell}
+da = db.to_xarray()  # Data will be loaded automatically if not already done.
 da.plot.imshow(yincrease=False, vmin=-0.5, vmax=0.5);
 ```
 
