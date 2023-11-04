@@ -111,6 +111,17 @@ class TestCoordinate:
         coord2 = Coordinate([0, 8], [100.0, 900.0])
         assert coord1 == coord2
 
+    def test_arithmetic(self):
+        coord1 = Coordinate([0, 8], [100.0, 900.0])
+        coord2 = Coordinate([0, 8], [150.0, 950.0])
+        coord3 = Coordinate([0, 8], [-100.0, -900.0])
+        coord4 = Coordinate([0, 8], [-150.0, -950.0])
+        assert coord1 + 50.0 == coord2
+        assert 50.0 + coord1 == coord2
+        assert coord2 - 50.0 == coord1
+        assert 50.0 - coord2 == coord3
+        assert -coord2 == coord4
+
     def test_getitem(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
         assert coord[0] == 100.0

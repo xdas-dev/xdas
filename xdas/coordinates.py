@@ -90,6 +90,23 @@ class Coordinate:
             self.tie_values, other.tie_values
         )
 
+    def __neg__(self):
+        tie_values = -self.tie_values
+        return self.__class__(self.tie_indices, tie_values)
+
+    def __add__(self, other):
+        tie_values = self.tie_values + other
+        return self.__class__(self.tie_indices, tie_values)
+
+    def __radd__(self, other):
+        return self.__add__(other)
+
+    def __sub__(self, other):
+        return self.__add__(-other)
+
+    def __rsub__(self, other):
+        return self.__neg__().__add__(other)
+
     def __getitem__(self, item):
         if isinstance(item, slice):
             return self.slice_index(item)
