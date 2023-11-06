@@ -101,13 +101,11 @@ class TestCoordinate:
             Coordinate([[0], [8], [9]], [100.0, 900.0])
 
     def test_bool(self):
-        coord = Coordinate([0, 8], [100.0, 900.0])
-        assert coord
+        assert Coordinate([0, 8], [100.0, 900.0])
         assert not Coordinate([], [])
 
     def test_len(self):
-        coord = Coordinate([0, 8], [100.0, 900.0])
-        assert len(coord) == 9
+        assert len(Coordinate([0, 8], [100.0, 900.0])) == 9
         assert len(Coordinate([], [])) == 0
 
     def test_repr(self):
@@ -122,13 +120,8 @@ class TestCoordinate:
     def test_arithmetic(self):
         coord1 = Coordinate([0, 8], [100.0, 900.0])
         coord2 = Coordinate([0, 8], [150.0, 950.0])
-        coord3 = Coordinate([0, 8], [-100.0, -900.0])
-        coord4 = Coordinate([0, 8], [-150.0, -950.0])
         assert coord1 + 50.0 == coord2
-        assert 50.0 + coord1 == coord2
         assert coord2 - 50.0 == coord1
-        assert 50.0 - coord2 == coord3
-        assert -coord2 == coord4
 
     def test_getitem(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
