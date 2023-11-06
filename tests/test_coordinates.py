@@ -91,6 +91,14 @@ class TestCoordinate:
         assert np.allclose(coord.tie_indices, [0, 8])
         assert np.allclose(coord.tie_values, [100.0, 900.0])
         assert coord.kind == "linear"
+        with pytest.raises(ValueError):
+            Coordinate(0, 100.0)
+        with pytest.raises(ValueError):
+            Coordinate([1, 9], [100.0, 900.0])
+        with pytest.raises(ValueError):
+            Coordinate([0, 8, 9], [100.0, 900.0])
+        with pytest.raises(ValueError):
+            Coordinate([[0], [8], [9]], [100.0, 900.0])
 
     def test_bool(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
