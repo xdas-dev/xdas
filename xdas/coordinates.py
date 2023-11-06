@@ -58,8 +58,26 @@ class Coordinate:
     """
 
     def __init__(self, tie_indices, tie_values):
-        self.tie_indices = np.asarray(tie_indices)
-        self.tie_values = np.asarray(tie_values)
+        tie_indices = np.asarray(tie_indices)
+        tie_values = np.asarray(tie_values)
+        if tie_indices.ndim == 0:
+            tie_indices = np.reshape(tie_indices, 1)
+        elif tie_indices.ndim == 1:
+            pass
+        else:
+            raise ValueError("tie_indices must be 1D.")
+        if tie_values.ndim == 0:
+            tie_values = np.reshape(tie_values, 1)
+        elif tie_values.ndim == 1:
+            pass
+        else:
+            raise ValueError("tie_values must be 1D.")
+        if not len(tie_values) == len(tie_values):
+            raise ValueError("tie_indices and tie_values must have the same length.")
+        if (not len(tie_values) == 0) and (not tie_indices[0] == 0):
+            raise ValueError("tie_indices must start with a zero")
+        self.tie_indices = tie_indices
+        self.tie_values = tie_values
         self.kind = "linear"
 
     def __bool__(self):
@@ -112,6 +130,8 @@ class Coordinate:
             return self.slice_index(item)
         else:
             return self.get_value(item)
+            # values = self.get_value(item)
+            # return self.__class__(item, values).simplify()
 
     def __array__(self):
         return self.values
