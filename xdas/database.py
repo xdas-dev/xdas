@@ -243,7 +243,7 @@ class Database:
     def load(self):
         return self.copy(data=self.data.__array__())
 
-    def to_xarray(self, load=True, chunks=-1):
+    def to_xarray(self, load=True):
         """
         Convert the Database to a DataArray object.
 
