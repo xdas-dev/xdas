@@ -2,6 +2,7 @@ import copy
 import os
 import re
 
+import dask.array as da
 import h5py
 import numpy as np
 import xarray as xr
@@ -242,7 +243,7 @@ class Database:
     def load(self):
         return self.copy(data=self.data.__array__())
 
-    def to_xarray(self):
+    def to_xarray(self, load=True, chunks=-1):
         """
         Convert the Database to a DataArray object.
 
@@ -253,17 +254,17 @@ class Database:
         DataArray
             The converted in-memory DataArray.
         """
-        return xr.DataArray(
-            data=self.__array__(),
-            coords={
-                dim: self.coords[dim].__array__()
-                for dim in self.coords
-                if self.coords[dim]
-            },
-            dims=self.dims,
-            name=self.name,
-            attrs=self.attrs,
-        )
+        if load:
+            data = self.__array__()
+        else:
+            chunks = tuple(
+                "auto" if axis == 0 else -1 for axis in range(self.ndim)
+            )
+            data = da.from_array(self.data, chunks=chunks)
+        coords = {
+            dim: self.coords[dim].__array__() for dim in self.coords if self.coords[dim]
+        }
+        return xr.DataArray(data, coords, self.dims, self.name, self.attrs)
 
     @classmethod
     def from_xarray(cls, da, tolerance=None):

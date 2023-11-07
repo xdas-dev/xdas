@@ -76,6 +76,10 @@ class DataSource:
     @property
     def nbytes(self):
         return np.prod(self.shape) * self.dtype.itemsize
+    
+    @property
+    def ndim(self):
+        return len(self.vsource.shape)
 
     def to_layout(self):
         layout = DataLayout(self.shape, self.dtype)
