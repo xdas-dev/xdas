@@ -75,14 +75,11 @@ class Coordinate:
         self.tie_values = tie_values
         self.kind = "linear"
 
-    def __bool__(self):
-        return not self.tie_indices.shape == (0,)
-
     def __len__(self):
-        if self:
-            return self.tie_indices[-1] - self.tie_indices[0] + 1
-        else:
+        if self.empty:
             return 0
+        else:
+            return self.tie_indices[-1] - self.tie_indices[0] + 1
 
     def __repr__(self):
         if len(self) == 0:
@@ -124,6 +121,10 @@ class Coordinate:
         raise NotImplementedError()
 
     @property
+    def empty(self):
+        return self.tie_indices.shape == (0,)
+
+    @property
     def dtype(self):
         return self.tie_values.dtype
 
@@ -137,17 +138,17 @@ class Coordinate:
 
     @property
     def indices(self):
-        if self:
-            return np.arange(self.tie_indices[-1] + 1)
-        else:
+        if self.empty:
             return np.array([], dtype="int")
+        else:
+            return np.arange(self.tie_indices[-1] + 1)
 
     @property
     def values(self):
-        if self:
-            return self.get_value(self.indices)
-        else:
+        if self.empty:
             return np.array([], dtype=self.dtype)
+        else:
+            return self.get_value(self.indices)
 
     def format_index(self, idx, bounds="raise"):
         idx = np.asarray(idx)

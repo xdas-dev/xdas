@@ -257,9 +257,7 @@ class Database:
         if load:
             data = self.__array__()
         else:
-            chunks = tuple(
-                "auto" if axis == 0 else -1 for axis in range(self.ndim)
-            )
+            chunks = tuple("auto" if axis == 0 else -1 for axis in range(self.ndim))
             data = da.from_array(self.data, chunks=chunks)
         coords = {
             dim: self.coords[dim].__array__() for dim in self.coords if self.coords[dim]

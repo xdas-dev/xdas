@@ -100,10 +100,6 @@ class TestCoordinate:
         with pytest.raises(ValueError):
             Coordinate([[0], [8], [9]], [100.0, 900.0])
 
-    def test_bool(self):
-        assert Coordinate([0, 8], [100.0, 900.0])
-        assert not Coordinate([], [])
-
     def test_len(self):
         assert len(Coordinate([0, 8], [100.0, 900.0])) == 9
         assert len(Coordinate([], [])) == 0
@@ -149,6 +145,10 @@ class TestCoordinate:
     def test_asarray(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
         assert np.allclose(np.asarray(coord), coord.values)
+
+    def test_empty(self):
+        assert not Coordinate([0, 8], [100.0, 900.0]).empty
+        assert Coordinate([], []).empty
 
     def test_dtype(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
