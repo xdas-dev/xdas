@@ -259,9 +259,7 @@ class Database:
         else:
             chunks = tuple("auto" if axis == 0 else -1 for axis in range(self.ndim))
             data = da.from_array(self.data, chunks=chunks)
-        coords = {
-            dim: self.coords[dim].__array__() for dim in self.coords if self.coords[dim]
-        }
+        coords = {dim: self.coords[dim].__array__() for dim in self.coords}
         return xr.DataArray(data, coords, self.dims, self.name, self.attrs)
 
     @classmethod

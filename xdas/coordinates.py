@@ -1,12 +1,19 @@
 import warnings
 
 import numpy as np
+import pandas as pd
 
 
 class Coordinates(dict):
     """
     A dictionary whose keys are dimension names and values are Coordinate objects.
     """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for dim in self:
+            if not isinstance(self[dim], Coordinate):
+                self[dim] = pd.Index(self[dim])
 
     @property
     def dims(self):
