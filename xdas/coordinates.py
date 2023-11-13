@@ -36,7 +36,15 @@ class Coordinates(dict):
 
     def to_index(self, item):
         query = self.get_query(item)
-        return {dim: self[dim].to_index(query[dim]) for dim in query}
+        key = {}
+        for dim in query:
+            if isinstance(query[dim], slice):
+                key[dim] = self[dim].slice_indexer(
+                    query[dim].start, query[dim].stop, query[dim].step
+                )
+            else:
+                key[dim] = self[dim].get_indexer(query[dim])
+        return key
 
 
 class Coordinate:
@@ -279,12 +287,6 @@ class Coordinate:
         tie_values = [self.get_value(idx) for idx in tie_indices]
         tie_indices //= q
         return self.__class__(tie_indices, tie_values)
-
-    def to_index(self, item):
-        if isinstance(item, slice):
-            return self.slice_indexer(item.start, item.stop, item.step)
-        else:
-            return self.get_indexer(item)
 
     def simplify(self, tolerance=None):
         if tolerance is None:
