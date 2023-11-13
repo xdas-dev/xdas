@@ -194,32 +194,32 @@ class TestCoordinate:
 
     def test_get_index(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
-        assert coord.get_index(100.0) == 0
-        assert coord.get_index(900.0) == 8
-        assert coord.get_index(0.0, "nearest") == 0
-        assert coord.get_index(1000.0, "nearest") == 8
-        assert coord.get_index(125.0, "nearest") == 0
-        assert coord.get_index(175.0, "nearest") == 1
-        assert coord.get_index(175.0, "before") == 0
-        assert coord.get_index(200.0, "before") == 1
-        assert coord.get_index(200.0, "after") == 1
-        assert coord.get_index(125.0, "after") == 1
-        assert np.all(np.equal(coord.get_index([100.0, 900.0]), [0, 8]))
+        assert coord.get_indexer(100.0) == 0
+        assert coord.get_indexer(900.0) == 8
+        assert coord.get_indexer(0.0, "nearest") == 0
+        assert coord.get_indexer(1000.0, "nearest") == 8
+        assert coord.get_indexer(125.0, "nearest") == 0
+        assert coord.get_indexer(175.0, "nearest") == 1
+        assert coord.get_indexer(175.0, "before") == 0
+        assert coord.get_indexer(200.0, "before") == 1
+        assert coord.get_indexer(200.0, "after") == 1
+        assert coord.get_indexer(125.0, "after") == 1
+        assert np.all(np.equal(coord.get_indexer([100.0, 900.0]), [0, 8]))
         with pytest.raises(KeyError):
-            assert coord.get_index(0.0) == 0
-            assert coord.get_index(1000.0) == 8
-            assert coord.get_index(150.0) == 0
-            assert coord.get_index(1000.0, "after") == 8
-            assert coord.get_index(0.0, "before") == 0
+            assert coord.get_indexer(0.0) == 0
+            assert coord.get_indexer(1000.0) == 8
+            assert coord.get_indexer(150.0) == 0
+            assert coord.get_indexer(1000.0, "after") == 8
+            assert coord.get_indexer(0.0, "before") == 0
 
         starttime = np.datetime64("2000-01-01T00:00:00")
         endtime = np.datetime64("2000-01-01T00:00:08")
         coord = Coordinate([0, 8], [starttime, endtime])
-        assert coord.get_index(starttime) == 0
-        assert coord.get_index(endtime) == 8
-        assert coord.get_index(str(starttime)) == 0
-        assert coord.get_index(str(endtime)) == 8
-        assert coord.get_index("2000-01-01T00:00:04.1", "nearest") == 4
+        assert coord.get_indexer(starttime) == 0
+        assert coord.get_indexer(endtime) == 8
+        assert coord.get_indexer(str(starttime)) == 0
+        assert coord.get_indexer(str(endtime)) == 8
+        assert coord.get_indexer("2000-01-01T00:00:04.1", "nearest") == 4
 
     def test_indices(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
@@ -231,15 +231,15 @@ class TestCoordinate:
 
     def test_get_index_slice(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
-        assert coord.get_index_slice(slice(100.0, 200.0)) == slice(0, 2)
-        assert coord.get_index_slice(slice(150.0, 250.0)) == slice(1, 2)
-        assert coord.get_index_slice(slice(300.0, 500.0)) == slice(2, 5)
-        assert coord.get_index_slice(slice(0.0, 500.0)) == slice(0, 5)
-        assert coord.get_index_slice(slice(125.0, 175.0)) == slice(1, 1)
-        assert coord.get_index_slice(slice(0.0, 50.0)) == slice(0, 0)
-        assert coord.get_index_slice(slice(1000.0, 1100.0)) == slice(9, 9)
-        assert coord.get_index_slice(slice(1000.0, 500.0)) == slice(9, 5)
-        assert coord.get_index_slice(slice(None, None)) == slice(None, None)
+        assert coord.slice_indexer(100.0, 200.0) == slice(0, 2)
+        assert coord.slice_indexer(150.0, 250.0) == slice(1, 2)
+        assert coord.slice_indexer(300.0, 500.0) == slice(2, 5)
+        assert coord.slice_indexer(0.0, 500.0) == slice(0, 5)
+        assert coord.slice_indexer(125.0, 175.0) == slice(1, 1)
+        assert coord.slice_indexer(0.0, 50.0) == slice(0, 0)
+        assert coord.slice_indexer(1000.0, 1100.0) == slice(9, 9)
+        assert coord.slice_indexer(1000.0, 500.0) == slice(9, 5)
+        assert coord.slice_indexer(None, None) == slice(None, None)
 
     def test_slice_index(self):
         coord = Coordinate([0, 8], [100.0, 900.0])

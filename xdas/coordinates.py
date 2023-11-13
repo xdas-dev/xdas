@@ -180,7 +180,7 @@ class Coordinate:
         index = self.format_index(index)
         return linear_interpolate(index, self.tie_indices, self.tie_values)
 
-    def get_index(self, value, method=None):
+    def get_indexer(self, value, method=None):
         if isinstance(value, str):
             value = np.datetime64(value)
         else:
@@ -221,22 +221,20 @@ class Coordinate:
         else:
             raise ValueError("valid methods are: 'nearest', 'before', 'after'")
 
-    def get_index_slice(self, value_slice):
-        if value_slice.start is None:
-            start = None
-        else:
+    def slice_indexer(self, start=None, stop=None, step=None):
+        if start is not None:
             try:
-                start = self.get_index(value_slice.start, method="after")
+                start = self.get_indexer(start, method="after")
             except KeyError:
                 start = len(self)
-        if value_slice.stop is None:
-            stop = None
-        else:
+        if stop is not None:
             try:
-                end = self.get_index(value_slice.stop, method="before")
+                end = self.get_indexer(stop, method="before")
                 stop = end + 1
             except KeyError:
                 stop = 0
+        if step is not None:
+            raise NotImplementedError("cannot use step yet")
         return slice(start, stop)
 
     def slice_index(self, index_slice):
@@ -284,9 +282,9 @@ class Coordinate:
 
     def to_index(self, item):
         if isinstance(item, slice):
-            return self.get_index_slice(item)
+            return self.slice_indexer(item.start, item.stop, item.step)
         else:
-            return self.get_index(item)
+            return self.get_indexer(item)
 
     def simplify(self, tolerance=None):
         if tolerance is None:
