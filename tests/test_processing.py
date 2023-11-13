@@ -69,5 +69,6 @@ class TestProcessing:
             assert np.array_equal(db.values, out.values)
             print(out["time"].tie_indices)
             print(out["time"].tie_values)
-            assert db.coords == out.coords
+            for dim in db.dims:
+                assert out[dim].equals(db[dim])
             assert isinstance(out.data, DataLayout)

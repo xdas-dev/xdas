@@ -92,11 +92,6 @@ class Coordinate:
                 f"{self.tie_values[-1]}"
             )
 
-    def __eq__(self, other):
-        return np.array_equal(self.tie_indices, other.tie_indices) and np.array_equal(
-            self.tie_values, other.tie_values
-        )
-
     def __add__(self, other):
         tie_values = self.tie_values + other
         return self.__class__(self.tie_indices, tie_values)
@@ -149,6 +144,11 @@ class Coordinate:
             return np.array([], dtype=self.dtype)
         else:
             return self.get_value(self.indices)
+
+    def equals(self, other):
+        return np.array_equal(self.tie_indices, other.tie_indices) and np.array_equal(
+            self.tie_values, other.tie_values
+        )
 
     def format_index(self, idx, bounds="raise"):
         idx = np.asarray(idx)

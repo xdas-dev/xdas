@@ -108,16 +108,16 @@ class TestCoordinate:
         # TODO
         pass
 
-    def test_eq(self):
+    def test_equals(self):
         coord1 = Coordinate([0, 8], [100.0, 900.0])
         coord2 = Coordinate([0, 8], [100.0, 900.0])
-        assert coord1 == coord2
+        assert coord1.equals(coord2)
 
     def test_arithmetic(self):
         coord1 = Coordinate([0, 8], [100.0, 900.0])
         coord2 = Coordinate([0, 8], [150.0, 950.0])
-        assert coord1 + 50.0 == coord2
-        assert coord2 - 50.0 == coord1
+        assert coord2.equals(coord1 + 50.0)
+        assert coord1.equals(coord2 - 50.0)
 
     def test_getitem(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
@@ -130,11 +130,11 @@ class TestCoordinate:
         with pytest.raises(IndexError):
             coord[9]
             coord[-9]
-        assert coord[0:2] == Coordinate([0, 1], [100.0, 200.0])
-        assert coord[:] == coord
-        assert coord[6:3] == Coordinate([], [])
-        assert coord[1:2] == Coordinate([0], [200.0])
-        assert coord[-3:-1] == Coordinate([0, 1], [700.0, 800.0])
+        assert coord[0:2].equals(Coordinate([0, 1], [100.0, 200.0]))
+        assert coord[:].equals(coord)
+        assert coord[6:3].equals(Coordinate([], []))
+        assert coord[1:2].equals(Coordinate([0], [200.0]))
+        assert coord[-3:-1].equals(Coordinate([0, 1], [700.0, 800.0]))
 
     def test_setitem(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
@@ -243,31 +243,41 @@ class TestCoordinate:
 
     def test_slice_index(self):
         coord = Coordinate([0, 8], [100.0, 900.0])
-        assert coord.slice_index(slice(0, 2)) == Coordinate([0, 1], [100.0, 200.0])
-        assert coord.slice_index(slice(7, None)) == Coordinate([0, 1], [800.0, 900.0])
-        assert coord.slice_index(slice(None, None)) == coord
-        assert coord.slice_index(slice(0, 0)) == Coordinate([], [])
-        assert coord.slice_index(slice(4, 2)) == Coordinate([], [])
-        assert coord.slice_index(slice(9, 9)) == Coordinate([], [])
-        assert coord.slice_index(slice(3, 3)) == Coordinate([], [])
-        assert coord.slice_index(slice(0, -1)) == Coordinate([0, 7], [100.0, 800.0])
-        assert coord.slice_index(slice(0, -2)) == Coordinate([0, 6], [100.0, 700.0])
-        assert coord.slice_index(slice(-2, None)) == Coordinate([0, 1], [800.0, 900.0])
-        assert coord.slice_index(slice(1, 2)) == Coordinate([0], [200.0])
-        assert coord.slice_index(slice(1, 3, 2)) == Coordinate([0], [200.0])
-        assert coord.slice_index(slice(None, None, 2)) == Coordinate(
-            [0, 4], [100.0, 900.0]
+        assert coord.slice_index(slice(0, 2)).equals(Coordinate([0, 1], [100.0, 200.0]))
+        assert coord.slice_index(slice(7, None)).equals(
+            Coordinate([0, 1], [800.0, 900.0])
         )
-        assert coord.slice_index(slice(None, None, 3)) == Coordinate(
-            [0, 2], [100.0, 700.0]
+        assert coord.slice_index(slice(None, None)).equals(coord)
+        assert coord.slice_index(slice(0, 0)).equals(Coordinate([], []))
+        assert coord.slice_index(slice(4, 2)).equals(Coordinate([], []))
+        assert coord.slice_index(slice(9, 9)).equals(Coordinate([], []))
+        assert coord.slice_index(slice(3, 3)).equals(Coordinate([], []))
+        assert coord.slice_index(slice(0, -1)).equals(
+            Coordinate([0, 7], [100.0, 800.0])
         )
-        assert coord.slice_index(slice(None, None, 4)) == Coordinate(
-            [0, 2], [100.0, 900.0]
+        assert coord.slice_index(slice(0, -2)).equals(
+            Coordinate([0, 6], [100.0, 700.0])
         )
-        assert coord.slice_index(slice(None, None, 5)) == Coordinate(
-            [0, 1], [100.0, 600.0]
+        assert coord.slice_index(slice(-2, None)).equals(
+            Coordinate([0, 1], [800.0, 900.0])
         )
-        assert coord.slice_index(slice(2, 7, 3)) == Coordinate([0, 1], [300.0, 600.0])
+        assert coord.slice_index(slice(1, 2)).equals(Coordinate([0], [200.0]))
+        assert coord.slice_index(slice(1, 3, 2)).equals(Coordinate([0], [200.0]))
+        assert coord.slice_index(slice(None, None, 2)).equals(
+            Coordinate([0, 4], [100.0, 900.0])
+        )
+        assert coord.slice_index(slice(None, None, 3)).equals(
+            Coordinate([0, 2], [100.0, 700.0])
+        )
+        assert coord.slice_index(slice(None, None, 4)).equals(
+            Coordinate([0, 2], [100.0, 900.0])
+        )
+        assert coord.slice_index(slice(None, None, 5)).equals(
+            Coordinate([0, 1], [100.0, 600.0])
+        )
+        assert coord.slice_index(slice(2, 7, 3)).equals(
+            Coordinate([0, 1], [300.0, 600.0])
+        )
 
     def test_to_index(self):
         # TODO
