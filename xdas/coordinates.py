@@ -12,12 +12,8 @@ class Coordinates(dict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for dim in self:
-            if isinstance(self[dim], Coordinate):
-                pass
-            elif isinstance(self[dim], tuple):
-                self[dim] = InterpolatedCoordinate(*self[dim])
-            else:
-                self[dim] = DenseCoordinate(self[dim])
+            if not isinstance(self[dim], AbstractCoordinate):
+                self[dim] = Coordinate(self[dim])
 
     @property
     def dims(self):
@@ -50,7 +46,10 @@ class Coordinates(dict):
         return {dim: self[dim].to_index(query[dim]) for dim in query}
 
 
-class Coordinate:
+class AbstractCoordinate:
+    def __new__(cls, *args, **kwargs):
+        return object.__new__(cls)
+
     def to_index(self, item):
         if isinstance(item, slice):
             return self.slice_indexer(item.start, item.stop, item.step)
@@ -58,7 +57,33 @@ class Coordinate:
             return self.get_indexer(item)
 
 
-class DenseCoordinate(Coordinate):
+class Coordinate:
+    def __new__(cls, *args, **kwargs):
+        if len(args) == 0:
+            if ("tie_indices" in kwargs) and ("tie_values" in kwargs):
+                return InterpolatedCoordinate(
+                    kwargs["tie_indices"], kwargs["tie_values"]
+                )
+        elif len(args) == 1:
+            data = args[0]
+            if np.isscalar(data):
+                return ScalarCoordinate(data)
+            elif isinstance(data, tuple):
+                return InterpolatedCoordinate(*data)
+            else:
+                return DenseCoordinate(data)
+        elif len(args) == 2:
+            return InterpolatedCoordinate(*args)
+        else:
+            raise ValueError("inputs could not be parsed")
+
+
+class ScalarCoordinate(AbstractCoordinate):
+    def __init__(self, index):
+        self.index = index
+
+
+class DenseCoordinate(AbstractCoordinate):
     def __init__(self, data=None, dtype=None, copy=False):
         self.index = pd.Index(data, dtype, copy)
 
@@ -90,7 +115,7 @@ class DenseCoordinate(Coordinate):
         return self.index.__array_function__(func, types, args, kwargs)
 
 
-class InterpolatedCoordinate(Coordinate):
+class InterpolatedCoordinate(AbstractCoordinate):
     """
     Array-like object used to represent piecewise evenly spaced coordinates using the
     CF convention.

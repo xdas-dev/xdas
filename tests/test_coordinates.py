@@ -300,6 +300,11 @@ class TestInterpolatedCoordinate:
         pass
 
 
+class TestCoordinate:
+    def test_init(self):
+        coord = Coordinate(([0, 8], [100.0, 900.0]))
+
+
 class TestCoordinates:
     def test_init(self):
         coords = Coordinates(dim=([0, 8], [100.0, 900.0]))
