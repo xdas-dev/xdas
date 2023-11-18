@@ -53,4 +53,3 @@ class TestCore:
         assert np.array_equal(out.data, db.data)
         for dim in db.dims:
             assert out[dim].equals(db[dim])
-            

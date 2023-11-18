@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from xdas.coordinates import InterpolatedCoordinate, Coordinates, DenseCoordinate
+from xdas.coordinates import Coordinates, DenseCoordinate, InterpolatedCoordinate
 from xdas.database import Database
 
 
@@ -29,7 +29,6 @@ class TestDatabase:
         db = self.generate(dense=True)
         assert isinstance(db["dim"], DenseCoordinate)
 
-
     def test_getitem(self):
         db = self.generate()
         # assert db[0].data == 0.0
@@ -42,8 +41,6 @@ class TestDatabase:
         db = self.generate(dense=True)
         assert np.allclose(subdb.data, [0.2, 0.3])
         assert np.allclose(subdb["dim"].values, [300.0, 400.0])
-
-
 
     def test_setitem(self):
         db = self.generate()

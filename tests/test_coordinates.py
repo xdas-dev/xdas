@@ -1,7 +1,13 @@
 import numpy as np
 import pytest
 
-from xdas.coordinates import InterpolatedCoordinate, ScaleOffset
+from xdas.coordinates import (
+    Coordinate,
+    Coordinates,
+    DenseCoordinate,
+    InterpolatedCoordinate,
+    ScaleOffset,
+)
 
 
 class TestScaleOffset:
@@ -85,7 +91,7 @@ class TestScaleOffset:
             assert np.all(error < np.timedelta64(1, "us"))
 
 
-class TestCoordinate:
+class TestInterpolatedCoordinate:
     def test_init(self):
         coord = InterpolatedCoordinate([0, 8], [100.0, 900.0])
         assert np.allclose(coord.tie_indices, [0, 8])
@@ -243,7 +249,9 @@ class TestCoordinate:
 
     def test_slice_index(self):
         coord = InterpolatedCoordinate([0, 8], [100.0, 900.0])
-        assert coord.slice_index(slice(0, 2)).equals(InterpolatedCoordinate([0, 1], [100.0, 200.0]))
+        assert coord.slice_index(slice(0, 2)).equals(
+            InterpolatedCoordinate([0, 1], [100.0, 200.0])
+        )
         assert coord.slice_index(slice(7, None)).equals(
             InterpolatedCoordinate([0, 1], [800.0, 900.0])
         )
@@ -261,8 +269,12 @@ class TestCoordinate:
         assert coord.slice_index(slice(-2, None)).equals(
             InterpolatedCoordinate([0, 1], [800.0, 900.0])
         )
-        assert coord.slice_index(slice(1, 2)).equals(InterpolatedCoordinate([0], [200.0]))
-        assert coord.slice_index(slice(1, 3, 2)).equals(InterpolatedCoordinate([0], [200.0]))
+        assert coord.slice_index(slice(1, 2)).equals(
+            InterpolatedCoordinate([0], [200.0])
+        )
+        assert coord.slice_index(slice(1, 3, 2)).equals(
+            InterpolatedCoordinate([0], [200.0])
+        )
         assert coord.slice_index(slice(None, None, 2)).equals(
             InterpolatedCoordinate([0, 4], [100.0, 900.0])
         )
@@ -286,3 +298,16 @@ class TestCoordinate:
     def test_simplify(self):
         # TODO
         pass
+
+
+class TestCoordinates:
+    def test_init(self):
+        coords = Coordinates(dim=([0, 8], [100.0, 900.0]))
+        coord = coords["dim"]
+        assert isinstance(coord, InterpolatedCoordinate)
+        assert np.allclose(coord.tie_indices, [0, 8])
+        assert np.allclose(coord.tie_values, [100.0, 900.0])
+        coords = Coordinates(dim=[1.0, 2.0, 3.0])
+        coord = coords["dim"]
+        assert isinstance(coord, DenseCoordinate)
+        assert np.allclose(coord.values, [1.0, 2.0, 3.0])

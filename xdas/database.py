@@ -7,7 +7,7 @@ import h5py
 import numpy as np
 import xarray as xr
 
-from .coordinates import InterpolatedCoordinate, Coordinates
+from .coordinates import Coordinates, InterpolatedCoordinate
 from .virtual import DataLayout, DataSource
 
 
@@ -265,7 +265,8 @@ class Database:
     @classmethod
     def from_xarray(cls, da, tolerance=None):
         coords = {
-            dim: InterpolatedCoordinate.from_array(da[dim].values, tolerance) for dim in da.dims
+            dim: InterpolatedCoordinate.from_array(da[dim].values, tolerance)
+            for dim in da.dims
         }
         return cls(da.data, coords, da.dims, da.name, da.attrs)
 

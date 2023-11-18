@@ -1,4 +1,3 @@
-from typing import Any
 import warnings
 
 import numpy as np
@@ -13,7 +12,11 @@ class Coordinates(dict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for dim in self:
-            if not isinstance(self[dim], InterpolatedCoordinate):
+            if isinstance(self[dim], Coordinate):
+                pass
+            elif isinstance(self[dim], tuple):
+                self[dim] = InterpolatedCoordinate(*self[dim])
+            else:
                 self[dim] = DenseCoordinate(self[dim])
 
     @property

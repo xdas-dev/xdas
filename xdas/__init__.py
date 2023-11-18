@@ -1,4 +1,4 @@
-from .coordinates import InterpolatedCoordinate, Coordinates
+from .coordinates import Coordinates, InterpolatedCoordinate
 from .core import (
     asdatabase,
     concatenate,
