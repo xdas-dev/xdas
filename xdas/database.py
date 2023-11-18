@@ -7,7 +7,7 @@ import h5py
 import numpy as np
 import xarray as xr
 
-from .coordinates import Coordinate, Coordinates
+from .coordinates import InterpolatedCoordinate, Coordinates
 from .virtual import DataLayout, DataSource
 
 
@@ -265,7 +265,7 @@ class Database:
     @classmethod
     def from_xarray(cls, da, tolerance=None):
         coords = {
-            dim: Coordinate.from_array(da[dim].values, tolerance) for dim in da.dims
+            dim: InterpolatedCoordinate.from_array(da[dim].values, tolerance) for dim in da.dims
         }
         return cls(da.data, coords, da.dims, da.name, da.attrs)
 
@@ -368,7 +368,7 @@ class Database:
             matches = re.findall(r"(\w+): (\w+) (\w+)", mapping)
             for match in matches:
                 dim, indices, values = match
-                coords[dim] = Coordinate(dataset[indices], dataset[values])
+                coords[dim] = InterpolatedCoordinate(dataset[indices], dataset[values])
         with h5py.File(fname) as file:
             if group:
                 file = file[group]

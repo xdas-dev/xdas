@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from xdas.coordinates import Coordinate, ScaleOffset
+from xdas.coordinates import InterpolatedCoordinate, ScaleOffset
 
 
 class TestScaleOffset:
@@ -87,40 +87,40 @@ class TestScaleOffset:
 
 class TestCoordinate:
     def test_init(self):
-        coord = Coordinate([0, 8], [100.0, 900.0])
+        coord = InterpolatedCoordinate([0, 8], [100.0, 900.0])
         assert np.allclose(coord.tie_indices, [0, 8])
         assert np.allclose(coord.tie_values, [100.0, 900.0])
         assert coord.kind == "linear"
         with pytest.raises(ValueError):
-            Coordinate(0, 100.0)
+            InterpolatedCoordinate(0, 100.0)
         with pytest.raises(ValueError):
-            Coordinate([1, 9], [100.0, 900.0])
+            InterpolatedCoordinate([1, 9], [100.0, 900.0])
         with pytest.raises(ValueError):
-            Coordinate([0, 8, 9], [100.0, 900.0])
+            InterpolatedCoordinate([0, 8, 9], [100.0, 900.0])
         with pytest.raises(ValueError):
-            Coordinate([[0], [8], [9]], [100.0, 900.0])
+            InterpolatedCoordinate([[0], [8], [9]], [100.0, 900.0])
 
     def test_len(self):
-        assert len(Coordinate([0, 8], [100.0, 900.0])) == 9
-        assert len(Coordinate([], [])) == 0
+        assert len(InterpolatedCoordinate([0, 8], [100.0, 900.0])) == 9
+        assert len(InterpolatedCoordinate([], [])) == 0
 
     def test_repr(self):
         # TODO
         pass
 
     def test_equals(self):
-        coord1 = Coordinate([0, 8], [100.0, 900.0])
-        coord2 = Coordinate([0, 8], [100.0, 900.0])
+        coord1 = InterpolatedCoordinate([0, 8], [100.0, 900.0])
+        coord2 = InterpolatedCoordinate([0, 8], [100.0, 900.0])
         assert coord1.equals(coord2)
 
     def test_arithmetic(self):
-        coord1 = Coordinate([0, 8], [100.0, 900.0])
-        coord2 = Coordinate([0, 8], [150.0, 950.0])
+        coord1 = InterpolatedCoordinate([0, 8], [100.0, 900.0])
+        coord2 = InterpolatedCoordinate([0, 8], [150.0, 950.0])
         assert coord2.equals(coord1 + 50.0)
         assert coord1.equals(coord2 - 50.0)
 
     def test_getitem(self):
-        coord = Coordinate([0, 8], [100.0, 900.0])
+        coord = InterpolatedCoordinate([0, 8], [100.0, 900.0])
         assert coord[0] == 100.0
         assert coord[4] == 500.0
         assert coord[8] == 900.0
@@ -130,37 +130,37 @@ class TestCoordinate:
         with pytest.raises(IndexError):
             coord[9]
             coord[-9]
-        assert coord[0:2].equals(Coordinate([0, 1], [100.0, 200.0]))
+        assert coord[0:2].equals(InterpolatedCoordinate([0, 1], [100.0, 200.0]))
         assert coord[:].equals(coord)
-        assert coord[6:3].equals(Coordinate([], []))
-        assert coord[1:2].equals(Coordinate([0], [200.0]))
-        assert coord[-3:-1].equals(Coordinate([0, 1], [700.0, 800.0]))
+        assert coord[6:3].equals(InterpolatedCoordinate([], []))
+        assert coord[1:2].equals(InterpolatedCoordinate([0], [200.0]))
+        assert coord[-3:-1].equals(InterpolatedCoordinate([0, 1], [700.0, 800.0]))
 
     def test_setitem(self):
-        coord = Coordinate([0, 8], [100.0, 900.0])
+        coord = InterpolatedCoordinate([0, 8], [100.0, 900.0])
         with pytest.raises(TypeError):
             coord[1] = 0
             coord[:] = 0
 
     def test_asarray(self):
-        coord = Coordinate([0, 8], [100.0, 900.0])
+        coord = InterpolatedCoordinate([0, 8], [100.0, 900.0])
         assert np.allclose(np.asarray(coord), coord.values)
 
     def test_empty(self):
-        assert not Coordinate([0, 8], [100.0, 900.0]).empty
-        assert Coordinate([], []).empty
+        assert not InterpolatedCoordinate([0, 8], [100.0, 900.0]).empty
+        assert InterpolatedCoordinate([], []).empty
 
     def test_dtype(self):
-        coord = Coordinate([0, 8], [100.0, 900.0])
+        coord = InterpolatedCoordinate([0, 8], [100.0, 900.0])
         assert coord.dtype == np.float64
 
     def test_ndim(self):
-        coord = Coordinate([0, 8], [100.0, 900.0])
+        coord = InterpolatedCoordinate([0, 8], [100.0, 900.0])
         assert coord.ndim == 1
         assert isinstance(coord.ndim, int)
 
     def test_shape(self):
-        coord = Coordinate([0, 8], [100.0, 900.0])
+        coord = InterpolatedCoordinate([0, 8], [100.0, 900.0])
         assert coord.shape == (9,)
 
     def test_format_index(self):
@@ -172,7 +172,7 @@ class TestCoordinate:
         pass
 
     def test_get_value(self):
-        coord = Coordinate([0, 8], [100.0, 900.0])
+        coord = InterpolatedCoordinate([0, 8], [100.0, 900.0])
         assert coord.get_value(0) == 100.0
         assert coord.get_value(4) == 500.0
         assert coord.get_value(8) == 900.0
@@ -185,7 +185,7 @@ class TestCoordinate:
             coord.get_value(0.5)
         starttime = np.datetime64("2000-01-01T00:00:00")
         endtime = np.datetime64("2000-01-01T00:00:08")
-        coord = Coordinate([0, 8], [starttime, endtime])
+        coord = InterpolatedCoordinate([0, 8], [starttime, endtime])
         assert coord.get_value(0) == starttime
         assert coord.get_value(4) == np.datetime64("2000-01-01T00:00:04")
         assert coord.get_value(8) == endtime
@@ -193,7 +193,7 @@ class TestCoordinate:
         assert coord.get_value(-9) == starttime
 
     def test_get_index(self):
-        coord = Coordinate([0, 8], [100.0, 900.0])
+        coord = InterpolatedCoordinate([0, 8], [100.0, 900.0])
         assert coord.get_indexer(100.0) == 0
         assert coord.get_indexer(900.0) == 8
         assert coord.get_indexer(0.0, "nearest") == 0
@@ -214,7 +214,7 @@ class TestCoordinate:
 
         starttime = np.datetime64("2000-01-01T00:00:00")
         endtime = np.datetime64("2000-01-01T00:00:08")
-        coord = Coordinate([0, 8], [starttime, endtime])
+        coord = InterpolatedCoordinate([0, 8], [starttime, endtime])
         assert coord.get_indexer(starttime) == 0
         assert coord.get_indexer(endtime) == 8
         assert coord.get_indexer(str(starttime)) == 0
@@ -222,15 +222,15 @@ class TestCoordinate:
         assert coord.get_indexer("2000-01-01T00:00:04.1", "nearest") == 4
 
     def test_indices(self):
-        coord = Coordinate([0, 8], [100.0, 900.0])
+        coord = InterpolatedCoordinate([0, 8], [100.0, 900.0])
         assert np.all(np.equal(coord.indices, np.arange(9)))
 
     def test_values(self):
-        coord = Coordinate([0, 8], [100.0, 900.0])
+        coord = InterpolatedCoordinate([0, 8], [100.0, 900.0])
         assert np.allclose(coord.values, np.arange(100.0, 1000.0, 100.0))
 
     def test_get_index_slice(self):
-        coord = Coordinate([0, 8], [100.0, 900.0])
+        coord = InterpolatedCoordinate([0, 8], [100.0, 900.0])
         assert coord.slice_indexer(100.0, 200.0) == slice(0, 2)
         assert coord.slice_indexer(150.0, 250.0) == slice(1, 2)
         assert coord.slice_indexer(300.0, 500.0) == slice(2, 5)
@@ -242,41 +242,41 @@ class TestCoordinate:
         assert coord.slice_indexer(None, None) == slice(None, None)
 
     def test_slice_index(self):
-        coord = Coordinate([0, 8], [100.0, 900.0])
-        assert coord.slice_index(slice(0, 2)).equals(Coordinate([0, 1], [100.0, 200.0]))
+        coord = InterpolatedCoordinate([0, 8], [100.0, 900.0])
+        assert coord.slice_index(slice(0, 2)).equals(InterpolatedCoordinate([0, 1], [100.0, 200.0]))
         assert coord.slice_index(slice(7, None)).equals(
-            Coordinate([0, 1], [800.0, 900.0])
+            InterpolatedCoordinate([0, 1], [800.0, 900.0])
         )
         assert coord.slice_index(slice(None, None)).equals(coord)
-        assert coord.slice_index(slice(0, 0)).equals(Coordinate([], []))
-        assert coord.slice_index(slice(4, 2)).equals(Coordinate([], []))
-        assert coord.slice_index(slice(9, 9)).equals(Coordinate([], []))
-        assert coord.slice_index(slice(3, 3)).equals(Coordinate([], []))
+        assert coord.slice_index(slice(0, 0)).equals(InterpolatedCoordinate([], []))
+        assert coord.slice_index(slice(4, 2)).equals(InterpolatedCoordinate([], []))
+        assert coord.slice_index(slice(9, 9)).equals(InterpolatedCoordinate([], []))
+        assert coord.slice_index(slice(3, 3)).equals(InterpolatedCoordinate([], []))
         assert coord.slice_index(slice(0, -1)).equals(
-            Coordinate([0, 7], [100.0, 800.0])
+            InterpolatedCoordinate([0, 7], [100.0, 800.0])
         )
         assert coord.slice_index(slice(0, -2)).equals(
-            Coordinate([0, 6], [100.0, 700.0])
+            InterpolatedCoordinate([0, 6], [100.0, 700.0])
         )
         assert coord.slice_index(slice(-2, None)).equals(
-            Coordinate([0, 1], [800.0, 900.0])
+            InterpolatedCoordinate([0, 1], [800.0, 900.0])
         )
-        assert coord.slice_index(slice(1, 2)).equals(Coordinate([0], [200.0]))
-        assert coord.slice_index(slice(1, 3, 2)).equals(Coordinate([0], [200.0]))
+        assert coord.slice_index(slice(1, 2)).equals(InterpolatedCoordinate([0], [200.0]))
+        assert coord.slice_index(slice(1, 3, 2)).equals(InterpolatedCoordinate([0], [200.0]))
         assert coord.slice_index(slice(None, None, 2)).equals(
-            Coordinate([0, 4], [100.0, 900.0])
+            InterpolatedCoordinate([0, 4], [100.0, 900.0])
         )
         assert coord.slice_index(slice(None, None, 3)).equals(
-            Coordinate([0, 2], [100.0, 700.0])
+            InterpolatedCoordinate([0, 2], [100.0, 700.0])
         )
         assert coord.slice_index(slice(None, None, 4)).equals(
-            Coordinate([0, 2], [100.0, 900.0])
+            InterpolatedCoordinate([0, 2], [100.0, 900.0])
         )
         assert coord.slice_index(slice(None, None, 5)).equals(
-            Coordinate([0, 1], [100.0, 600.0])
+            InterpolatedCoordinate([0, 1], [100.0, 600.0])
         )
         assert coord.slice_index(slice(2, 7, 3)).equals(
-            Coordinate([0, 1], [300.0, 600.0])
+            InterpolatedCoordinate([0, 1], [300.0, 600.0])
         )
 
     def test_to_index(self):

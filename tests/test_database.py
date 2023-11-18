@@ -1,13 +1,13 @@
 import numpy as np
 import pandas as pd
 
-from xdas.coordinates import Coordinate, Coordinates
+from xdas.coordinates import InterpolatedCoordinate, Coordinates, DenseCoordinate
 from xdas.database import Database
 
 
 class TestDatabase:
     def generate(self, dense=False):
-        coord = Coordinate([0, 8], [100.0, 900.0])
+        coord = InterpolatedCoordinate([0, 8], [100.0, 900.0])
         if dense:
             coord = coord.values
         coords = Coordinates(dim=coord)
@@ -17,7 +17,7 @@ class TestDatabase:
 
     def test_init_and_properties(self):
         db = self.generate()
-        assert isinstance(db["dim"], Coordinate)
+        assert isinstance(db["dim"], InterpolatedCoordinate)
         assert db.dims == ("dim",)
         assert db.ndim == 1
         assert db.shape == (9,)
@@ -27,7 +27,7 @@ class TestDatabase:
         assert db.get_axis_num("dim") == 0
         assert db.dtype == np.float64
         db = self.generate(dense=True)
-        assert isinstance(db["dim"], pd.Index)
+        assert isinstance(db["dim"], DenseCoordinate)
 
 
     def test_getitem(self):

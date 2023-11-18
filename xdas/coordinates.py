@@ -1,3 +1,4 @@
+from typing import Any
 import warnings
 
 import numpy as np
@@ -12,8 +13,8 @@ class Coordinates(dict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for dim in self:
-            if not isinstance(self[dim], Coordinate):
-                self[dim] = pd.Index(self[dim])
+            if not isinstance(self[dim], InterpolatedCoordinate):
+                self[dim] = DenseCoordinate(self[dim])
 
     @property
     def dims(self):
@@ -43,18 +44,50 @@ class Coordinates(dict):
 
     def to_index(self, item):
         query = self.get_query(item)
-        key = {}
-        for dim in query:
-            if isinstance(query[dim], slice):
-                key[dim] = self[dim].slice_indexer(
-                    query[dim].start, query[dim].stop, query[dim].step
-                )
-            else:
-                key[dim] = self[dim].get_indexer(query[dim])
-        return key
+        return {dim: self[dim].to_index(query[dim]) for dim in query}
 
 
 class Coordinate:
+    def to_index(self, item):
+        if isinstance(item, slice):
+            return self.slice_indexer(item.start, item.stop, item.step)
+        else:
+            return self.get_indexer(item)
+
+
+class DenseCoordinate(Coordinate):
+    def __init__(self, data=None, dtype=None, copy=False):
+        self.index = pd.Index(data, dtype, copy)
+
+    def __getattr__(self, item):
+        return self.index.__getattribute__(item)
+
+    def __getitem__(self, item):
+        return self.index.__getitem__(item)
+
+    def __len__(self):
+        return self.index.__len__()
+
+    def __repr__(self):
+        return self.index.__repr__()
+
+    def __add__(self, other):
+        return self.index.__add__(other)
+
+    def __sub__(self, other):
+        return self.index.__sub__(other)
+
+    def __array__(self):
+        return self.index.__array__()
+
+    def __array__ufunc__(self, ufunc, method, *inputs, **kwargs):
+        return self.index.__array__ufunc__(ufunc, method, *inputs, **kwargs)
+
+    def __array_function__(self, func, types, args, kwargs):
+        return self.index.__array_function__(func, types, args, kwargs)
+
+
+class InterpolatedCoordinate(Coordinate):
     """
     Array-like object used to represent piecewise evenly spaced coordinates using the
     CF convention.
@@ -260,11 +293,11 @@ class Coordinate:
             index_slice.step,
         )
         if stop_index - start_index <= 0:
-            return Coordinate([], [])
+            return InterpolatedCoordinate([], [])
         elif (stop_index - start_index) <= step_index:
             tie_indices = [0]
             tie_values = [self.get_value(start_index)]
-            return Coordinate(tie_indices, tie_values)
+            return InterpolatedCoordinate(tie_indices, tie_values)
         else:
             end_index = stop_index - 1
             start_value = self.get_value(start_index)
@@ -281,7 +314,7 @@ class Coordinate:
                 (start_value, end_value),
             )
             tie_indices -= tie_indices[0]
-            coord = Coordinate(tie_indices, tie_values)
+            coord = InterpolatedCoordinate(tie_indices, tie_values)
             if step_index != 1:
                 coord = coord.decimate(step_index)
             return coord

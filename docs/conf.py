@@ -120,11 +120,11 @@ data = np.diff(data, prepend=0, axis=0)
 db = xdas.Database(
     data=data,
     coords={
-        "time": xdas.Coordinate(
+        "time": xdas.InterpolatedCoordinate(
             tie_indices=[0, shape[0] - 1],
             tie_values=[starttime, starttime + resolution[0] * (shape[0] - 1)],
         ),
-        "distance": xdas.Coordinate(
+        "distance": xdas.InterpolatedCoordinate(
             tie_indices=[0, shape[1] - 1],
             tie_values=[0.0, resolution[1] * (shape[1] - 1)],
         ),
