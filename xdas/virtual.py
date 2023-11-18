@@ -14,23 +14,15 @@ class DataSource:
     def __init__(
         self, path_or_dataset, name=None, shape=None, dtype=None, maxshape=None
     ):
-        _vsource = h5py.VirtualSource(
+        self._vsource = h5py.VirtualSource(
             path_or_dataset, name=None, shape=None, dtype=None, maxshape=None
         )
-        _slices = tuple([slice(None)] for axis in range(len(_vsource.shape)))
-        self._slices = _slices
-        self._vsource = _vsource
+        self._sel = Selection(self._vsource.shape)
 
     def __getitem__(self, key):
-        dsource = deepcopy(self)
-        if not isinstance(key, tuple):
-            key = (key,)
-        for k in key:
-            if not isinstance(k, slice):
-                raise ValueError("only slicing is allowed.")
-        for axis, k in enumerate(key):
-            dsource._slices[axis].append(k)
-        return dsource
+        self = deepcopy(self)
+        self._sel = self._sel.__getitem__(key)
+        return self
 
     def __array__(self):
         return self.to_layout().__array__()
@@ -39,15 +31,8 @@ class DataSource:
         return f"DataSource: {to_human(self.nbytes)} ({self.dtype})"
 
     @property
-    def slices(self):
-        return tuple(
-            combine_slices(length, *slices)
-            for length, slices in zip(self._vsource.shape, self._slices)
-        )
-
-    @property
     def vsource(self):
-        return self._vsource.__getitem__(self.slices)
+        return self._vsource.__getitem__(self._sel.get_key())
 
     @property
     def shape(self):
@@ -76,7 +61,7 @@ class DataSource:
     @property
     def nbytes(self):
         return np.prod(self.shape) * self.dtype.itemsize
-    
+
     @property
     def ndim(self):
         return len(self.vsource.shape)
@@ -133,13 +118,60 @@ def to_human(size):
     return f"{size:.1f}{unit[n]}"
 
 
-def combine_slices(length, *slices):
-    r = range(length)
-    for s in slices:
-        r = r[s]
-    if len(r) == 0:
-        return slice(0)
-    elif r.stop < 0:
-        return slice(r.start, None, r.step)
-    else:
-        return slice(r.start, r.stop, r.step)
+class Selection:
+    def __init__(self, shape):
+        self.shape = shape
+        self.selectors = [SliceSelector(length) for length in shape]
+
+    def __getitem__(self, key):
+        sel = deepcopy(self)
+        if not isinstance(key, tuple):
+            key = (key,)
+        dim = 0
+        for k in key:
+            while isinstance(sel.selectors[dim], SingleSelector):
+                dim += 1
+                if dim >= sel.ndim:
+                    raise IndexError(
+                        f"too many indices for array: array is {sel.ndim}-dimensional"
+                    )
+            sel.selectors[dim] = sel.selectors[dim][k]
+            dim += 1
+        return sel
+
+    @property
+    def ndim(self):
+        return len(self.shape)
+
+    def get_key(self):
+        return tuple(selector.get_key() for selector in self.selectors)
+
+
+class SingleSelector:
+    def __init__(self, index):
+        self.index = index
+
+    def get_key(self):
+        return self.index
+
+
+class SliceSelector:
+    def __init__(self, length):
+        self.range = range(length)
+
+    def __getitem__(self, key):
+        sel = deepcopy(self)
+        item = sel.range[key]
+        if isinstance(item, int):
+            return SingleSelector(item)
+        else:
+            sel.range = item
+            return sel
+
+    def get_key(self):
+        if len(self.range) == 0:
+            return slice(0)
+        elif self.range.stop < 0:
+            return slice(self.range.start, None, self.range.step)
+        else:
+            return slice(self.range.start, self.range.stop, self.range.step)
