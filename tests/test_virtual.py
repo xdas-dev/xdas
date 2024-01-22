@@ -1,6 +1,7 @@
 import tempfile
 
 import numpy as np
+import pytest
 import xarray as xr
 
 import xdas
@@ -40,6 +41,15 @@ class TestAll:
             _db = xdas.open_database(f"{tmpdir}/002.nc")
             _db_loaded = _db.load()
             _da = _db.to_xarray()
+            datasource = _db.data
+            assert np.allclose(np.asarray(datasource[0]), _da.values[0])
+            assert np.allclose(np.asarray(datasource[0][1]), _da.values[0][1])
+            assert np.allclose(np.asarray(datasource[:, 0][1]), _da.values[:, 0][1])
+            assert np.allclose(np.asarray(datasource[:, 0][1]), _da.values[:, 0][1])
+            assert np.allclose(np.asarray(datasource[10:][1]), _da.values[10:][1])
+            with pytest.raises(IndexError):
+                datasource[1, 2, 3]
+            assert np.allclose(np.asarray(datasource[10:][1]), _da.values[10:][1])
             assert np.array_equal(_da.data, _db_loaded.data)
             db = _db.sel(
                 time=slice("2023-01-01T00:01:20", None),
