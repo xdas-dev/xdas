@@ -67,12 +67,11 @@ class Database:
     def __init__(self, data, coords, dims=None, name=None, attrs=None):
         # if not (data.shape == tuple(len(coord) for coord in coords.values())):
         # raise ValueError("Shape mismatch between data and coordinates")
+        if dims is not None:
+            if not (dims == tuple(coords.keys())):
+                raise ValueError("Dimension mismatch between coordinates and dims")
         self.data = data
         self.coords = Coordinates(coords)
-        self.dims = tuple(coords.keys())
-        if dims is not None:
-            if not (self.dims == dims):
-                raise ValueError("Dimension mismatch between coordinates and dims")
         self.name = name
         self.attrs = attrs
 
@@ -82,7 +81,7 @@ class Database:
         else:
             query = self.coords.get_query(key)
             data = self.data.__getitem__(tuple(query.values()))
-            dct = {dim: self.coords[dim][query[dim]] for dim in query}
+            dct = {dim: self.coords[dim].__getitem__(query[dim]) for dim in query}
             coords = Coordinates(dct)
             return self.__class__(data, coords)
 
@@ -122,8 +121,12 @@ class Database:
         return len(self.dims)
 
     @property
+    def dims(self):
+        return self.coords.dims
+
+    @property
     def sizes(self):
-        return {dim: len(coord) for dim, coord in self.coords.items()}
+        return {dim: len(self.coords[dim]) for dim in self.dims}
 
     @property
     def values(self):
@@ -132,6 +135,21 @@ class Database:
     @property
     def loc(self):
         return LocIndexer(self)
+
+    def equals(self, other):
+        if isinstance(other, self.__class__):
+            if not np.array_equal(self.values, other.values):
+                return False
+            for dim in self.coords.keys():
+                if not self[dim].equals(other[dim]):
+                    return False
+            if not self.name == other.name:
+                return False
+            if not self.attrs == other.attrs:
+                return False
+            return True
+        else:
+            return False
 
     def get_axis_num(self, dim):
         """
@@ -385,8 +403,8 @@ class LocIndexer:
 
     def __getitem__(self, key):
         key = self.obj.coords.to_index(key)
-        return self.obj[key]
+        return self.obj.__getitem__(key)
 
     def __setitem__(self, key, value):
         key = self.obj.coords.to_index(key)
-        self.obj[key] = value
+        self.obj.__setitem__(key, value)

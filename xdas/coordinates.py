@@ -12,12 +12,11 @@ class Coordinates(dict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for dim in self:
-            if not isinstance(self[dim], AbstractCoordinate):
-                self[dim] = Coordinate(self[dim])
+            self[dim] = Coordinate(self[dim])
 
     @property
     def dims(self):
-        return tuple(self.keys())
+        return tuple(dim for dim in self if not self[dim].isscalar())
 
     @property
     def ndim(self):
@@ -26,8 +25,11 @@ class Coordinates(dict):
     def __repr__(self):
         s = "Coordinates:\n"
         for dim, coord in self.items():
-            s += f"  * {dim}: "
-            s += repr(coord) + "\n"
+            if dim in self.dims:
+                s += f"  * {dim}: "
+            else:
+                s += f"    {dim}: "
+            s += repr(self[dim]) + "\n"
         return s
 
     def get_query(self, item):
@@ -56,6 +58,12 @@ class AbstractCoordinate:
         else:
             return self.get_indexer(item)
 
+    def isscalar(self):
+        if isinstance(self, ScalarCoordinate):
+            return True
+        else:
+            return False
+
 
 class Coordinate:
     def __new__(cls, *args, **kwargs):
@@ -66,10 +74,14 @@ class Coordinate:
                 )
         elif len(args) == 1:
             data = args[0]
-            if np.isscalar(data):
+            if isinstance(data, AbstractCoordinate):
+                return data
+            elif np.isscalar(data):
                 return ScalarCoordinate(data)
             elif isinstance(data, tuple):
                 return InterpolatedCoordinate(*data)
+            elif isinstance(data, dict):
+                return InterpolatedCoordinate(**data)
             else:
                 return DenseCoordinate(data)
         elif len(args) == 2:
@@ -79,16 +91,16 @@ class Coordinate:
 
 
 class ScalarCoordinate(AbstractCoordinate):
-    def __init__(self, index):
-        self.index = index
+    def __init__(self, value):
+        self.value = value
+
+    def equals(self, other):
+        return self.value == other.value
 
 
 class DenseCoordinate(AbstractCoordinate):
     def __init__(self, data=None, dtype=None, copy=False):
         self.index = pd.Index(data, dtype, copy)
-
-    def __getattr__(self, item):
-        return self.index.__getattribute__(item)
 
     def __getitem__(self, item):
         return self.index.__getitem__(item)
@@ -113,6 +125,25 @@ class DenseCoordinate(AbstractCoordinate):
 
     def __array_function__(self, func, types, args, kwargs):
         return self.index.__array_function__(func, types, args, kwargs)
+
+    @property
+    def values(self):
+        return self.index.values
+
+    def get_indexer(self, value, method=None):
+        if np.isscalar(value):
+            return self.index.get_indexer([value], method).item()
+        else:
+            return self.index.get_indexer(value, method)
+
+    def slice_indexer(self, start=None, end=None, step=None):
+        return self.index.slice_indexer(start, end, step)
+
+    def equals(self, other):
+        if isinstance(other, self.__class__):
+            return self.index.equals(other.index)
+        else:
+            return False
 
 
 class InterpolatedCoordinate(AbstractCoordinate):
@@ -226,6 +257,10 @@ class InterpolatedCoordinate(AbstractCoordinate):
             self.tie_values, other.tie_values
         )
 
+    def get_value(self, index):
+        index = self.format_index(index)
+        return linear_interpolate(index, self.tie_indices, self.tie_values)
+
     def format_index(self, idx, bounds="raise"):
         idx = np.asarray(idx)
         if not np.issubdtype(idx.dtype, np.integer):
@@ -237,6 +272,40 @@ class InterpolatedCoordinate(AbstractCoordinate):
         elif bounds == "clip":
             idx = np.clip(idx, 0, len(self))
         return idx
+
+    def slice_index(self, index_slice):
+        index_slice = self.format_index_slice(index_slice)
+        start_index, stop_index, step_index = (
+            index_slice.start,
+            index_slice.stop,
+            index_slice.step,
+        )
+        if stop_index - start_index <= 0:
+            return InterpolatedCoordinate([], [])
+        elif (stop_index - start_index) <= step_index:
+            tie_indices = [0]
+            tie_values = [self.get_value(start_index)]
+            return InterpolatedCoordinate(tie_indices, tie_values)
+        else:
+            end_index = stop_index - 1
+            start_value = self.get_value(start_index)
+            end_value = self.get_value(end_index)
+            mask = (start_index < self.tie_indices) & (self.tie_indices < end_index)
+            tie_indices = np.insert(
+                self.tie_indices[mask],
+                (0, self.tie_indices[mask].size),
+                (start_index, end_index),
+            )
+            tie_values = np.insert(
+                self.tie_values[mask],
+                (0, self.tie_values[mask].size),
+                (start_value, end_value),
+            )
+            tie_indices -= tie_indices[0]
+            coord = InterpolatedCoordinate(tie_indices, tie_values)
+            if step_index != 1:
+                coord = coord.decimate(step_index)
+            return coord
 
     def format_index_slice(self, slc):
         start = slc.start
@@ -251,10 +320,6 @@ class InterpolatedCoordinate(AbstractCoordinate):
         start = self.format_index(start, bounds="clip")
         stop = self.format_index(stop, bounds="clip")
         return slice(start, stop, step)
-
-    def get_value(self, index):
-        index = self.format_index(index)
-        return linear_interpolate(index, self.tie_indices, self.tie_values)
 
     def get_indexer(self, value, method=None):
         if isinstance(value, str):
@@ -312,40 +377,6 @@ class InterpolatedCoordinate(AbstractCoordinate):
         if step is not None:
             raise NotImplementedError("cannot use step yet")
         return slice(start, stop)
-
-    def slice_index(self, index_slice):
-        index_slice = self.format_index_slice(index_slice)
-        start_index, stop_index, step_index = (
-            index_slice.start,
-            index_slice.stop,
-            index_slice.step,
-        )
-        if stop_index - start_index <= 0:
-            return InterpolatedCoordinate([], [])
-        elif (stop_index - start_index) <= step_index:
-            tie_indices = [0]
-            tie_values = [self.get_value(start_index)]
-            return InterpolatedCoordinate(tie_indices, tie_values)
-        else:
-            end_index = stop_index - 1
-            start_value = self.get_value(start_index)
-            end_value = self.get_value(end_index)
-            mask = (start_index < self.tie_indices) & (self.tie_indices < end_index)
-            tie_indices = np.insert(
-                self.tie_indices[mask],
-                (0, self.tie_indices[mask].size),
-                (start_index, end_index),
-            )
-            tie_values = np.insert(
-                self.tie_values[mask],
-                (0, self.tie_values[mask].size),
-                (start_value, end_value),
-            )
-            tie_indices -= tie_indices[0]
-            coord = InterpolatedCoordinate(tie_indices, tie_values)
-            if step_index != 1:
-                coord = coord.decimate(step_index)
-            return coord
 
     def decimate(self, q):
         tie_indices = (self.tie_indices // q) * q

@@ -76,3 +76,34 @@ class TestDatabase:
         coords = Coordinates(dim=coord)
         data = 0.1 * np.arange(9)
         db = Database(data, coords)
+
+    def test_single_index_selection(self):
+        db = Database(
+            np.arange(12).reshape(3, 4),
+            {
+                "time": {"tie_values": [0.0, 1.0], "tie_indices": [0, 2]},
+                "distance": [0.0, 10.0, 20.0, 30.0],
+            },
+        )
+        db_getitem = db[1]
+        db_isel = db.isel(time=1)
+        db_sel = db.sel(time=0.5)
+        db_expected = Database(
+            np.array([4, 5, 6, 7]), {"time": 0.5, "distance": [0.0, 10.0, 20.0, 30.0]}
+        )
+        assert db_getitem.equals(db_expected)
+        assert db_isel.equals(db_expected)
+        assert db_sel.equals(db_expected)
+        db_getitem = db[:, 1]
+        db_isel = db.isel(distance=1)
+        db_sel = db.sel(distance=10.0)
+        db_expected = Database(
+            np.array([1, 5, 9]),
+            {
+                "time": {"tie_values": [0.0, 1.0], "tie_indices": [0, 2]},
+                "distance": 10.0,
+            },
+        )
+        assert db_getitem.equals(db_expected)
+        assert db_isel.equals(db_expected)
+        assert db_sel.equals(db_expected)
