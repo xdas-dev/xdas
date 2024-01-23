@@ -22,17 +22,17 @@ class TestAll:
                 db = xdas.Database(
                     data=np.random.randn(*shape).astype("float32"),
                     coords={
-                        "time": xdas.InterpolatedCoordinate(
-                            tie_indices=[0, shape[0] - 1],
-                            tie_values=[
+                        "time": {
+                            "tie_indices": [0, shape[0] - 1],
+                            "tie_values": [
                                 starttime,
                                 starttime + resolution[0] * (shape[0] - 1),
                             ],
-                        ),
-                        "distance": xdas.InterpolatedCoordinate(
-                            tie_indices=[0, shape[1] - 1],
-                            tie_values=[0.0, resolution[1] * (shape[1] - 1)],
-                        ),
+                        },
+                        "distance": {
+                            "tie_indices": [0, shape[1] - 1],
+                            "tie_values": [0.0, resolution[1] * (shape[1] - 1)],
+                        },
                     },
                 )
                 db.to_netcdf(f"{tmpdir}/{name}.nc")

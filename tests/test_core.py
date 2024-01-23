@@ -8,13 +8,13 @@ class TestCore:
     def generate(self, datetime):
         shape = (300, 100)
         if datetime:
-            t = xdas.InterpolatedCoordinate(
-                [0, shape[0] - 1],
-                [np.datetime64(0, "ms"), np.datetime64(2990, "ms")],
-            )
+            t = xdas.Coordinate({
+                "tie_indices": [0, shape[0] - 1],
+                "tie_values": [np.datetime64(0, "ms"), np.datetime64(2990, "ms")],
+            })
         else:
-            t = xdas.InterpolatedCoordinate([0, shape[0] - 1], [0, 3.0 - 1 / 100])
-        s = xdas.InterpolatedCoordinate([0, shape[1] - 1], [0, 990.0])
+            t = xdas.Coordinate({"tie_indices": [0, shape[0] - 1], "tie_values": [0, 3.0 - 1 / 100]})
+        s = xdas.Coordinate({"tie_indices": [0, shape[1] - 1], "tie_values": [0, 990.0]})
         return xdas.Database(
             data=np.random.randn(*shape),
             coords={

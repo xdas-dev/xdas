@@ -6,7 +6,7 @@ import numpy as np
 import xarray as xr
 from tqdm import tqdm
 
-from .coordinates import InterpolatedCoordinate
+from .coordinates import InterpCoordinate
 from .database import Database, DataCollection
 from .virtual import DataLayout, DataSource
 
@@ -108,7 +108,7 @@ def concatenate(dbs, dim="time", tolerance=None, virtual=None):
         tie_indices.extend(idx + db[dim].tie_indices)
         tie_values.extend(db[dim].tie_values)
         idx += db.shape[axis]
-    coord = InterpolatedCoordinate(tie_indices, tie_values)
+    coord = InterpCoordinate({"tie_indices": tie_indices, "tie_values": tie_values})
     coord = coord.simplify(tolerance)
     coords = dbs[0].coords
     coords[dim] = coord

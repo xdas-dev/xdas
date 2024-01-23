@@ -9,28 +9,34 @@ class Coordinates(dict):
     A dictionary whose keys are dimension names and values are Coordinate objects.
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        for dim in self:
-            self[dim] = Coordinate(self[dim])
-
-    @property
-    def dims(self):
-        return tuple(dim for dim in self if not self[dim].isscalar())
-
-    @property
-    def ndim(self):
-        return len(self)
+    def __init__(self, coords=None, **coords_kwargs):
+        if coords is None:
+            coords = {}
+        coords.update(coords_kwargs)
+        for name in coords:
+            if isinstance(coords[name], tuple):
+                dim, coord = coords[name]
+            else:
+                dim = name
+                coord = coords[name]
+            coords[name] = Coordinate(coord, dim, name)
+        super().__init__(coords)
 
     def __repr__(self):
         s = "Coordinates:\n"
-        for dim, coord in self.items():
-            if dim in self.dims:
-                s += f"  * {dim}: "
+        for name, coord in self.items():
+            if name == coord.dim:
+                s += f"  * {name} ({coord.dim}): "
             else:
-                s += f"    {dim}: "
-            s += repr(self[dim]) + "\n"
+                s += f"    {name} ({coord.dim}): "
+            s += repr(coord) + "\n"
         return s
+
+    @property
+    def dims(self):
+        return tuple(
+            dict.fromkeys(self[name].dim for name in self if self[name].dim == name)
+        )
 
     def get_query(self, item):
         query = {dim: slice(None) for dim in self.dims}
@@ -48,9 +54,61 @@ class Coordinates(dict):
         return {dim: self[dim].to_index(query[dim]) for dim in query}
 
 
+class Coordinate:
+    def __new__(cls, data, dim=None, name=None):
+        if isinstance(data, AbstractCoordinate):
+            coord = data
+            if dim:
+                coord.dim = dim
+            if name:
+                coord.name = name
+            return coord
+        elif ScalarCoordinate.isvalid(data):
+            return ScalarCoordinate(data, dim, name)
+        elif DenseCoordinate.isvalid(data):
+            return DenseCoordinate(data, dim, name)
+        elif InterpCoordinate.isvalid(data):
+            return InterpCoordinate(data, dim, name)
+        else:
+            raise TypeError("could not parse `data`")
+
+
 class AbstractCoordinate:
     def __new__(cls, *args, **kwargs):
         return object.__new__(cls)
+
+    def __getitem__(self, item):
+        return self.data.__getitem__(item)
+
+    def __len__(self):
+        return self.data.__len__()
+
+    def __repr__(self):
+        return self.data.__str__()
+
+    def __array__(self):
+        return self.data.__array__()
+
+    def __array__ufunc__(self, ufunc, method, *inputs, **kwargs):
+        return self.data.__array__ufunc__(ufunc, method, *inputs, **kwargs)
+
+    def __array_function__(self, func, types, args, kwargs):
+        return self.data.__array_function__(func, types, args, kwargs)
+
+    @staticmethod
+    def isvalid(data):
+        raise NotImplementedError
+
+    @property
+    def dtype(self):
+        return self.data.dtype
+
+    @property
+    def values(self):
+        return self.__array__()
+
+    def equals(self, other):
+        return NotImplementedError
 
     def to_index(self, item):
         if isinstance(item, slice):
@@ -59,76 +117,60 @@ class AbstractCoordinate:
             return self.get_indexer(item)
 
     def isscalar(self):
-        if isinstance(self, ScalarCoordinate):
-            return True
-        else:
-            return False
+        return isinstance(self, ScalarCoordinate)
 
+    def isdense(self):
+        return isinstance(self, DenseCoordinate)
 
-class Coordinate:
-    def __new__(cls, *args, **kwargs):
-        if len(args) == 0:
-            if ("tie_indices" in kwargs) and ("tie_values" in kwargs):
-                return InterpolatedCoordinate(
-                    kwargs["tie_indices"], kwargs["tie_values"]
-                )
-        elif len(args) == 1:
-            data = args[0]
-            if isinstance(data, AbstractCoordinate):
-                return data
-            elif np.isscalar(data):
-                return ScalarCoordinate(data)
-            elif isinstance(data, tuple):
-                return InterpolatedCoordinate(*data)
-            elif isinstance(data, dict):
-                return InterpolatedCoordinate(**data)
-            else:
-                return DenseCoordinate(data)
-        elif len(args) == 2:
-            return InterpolatedCoordinate(*args)
-        else:
-            raise ValueError("inputs could not be parsed")
+    def isinterp(self):
+        return isinstance(self, InterpCoordinate)
 
 
 class ScalarCoordinate(AbstractCoordinate):
-    def __init__(self, value):
-        self.value = value
+    def __init__(self, data, dim=None, name=None):
+        if not self.__class__.isvalid(data):
+            raise TypeError("`data` must be scalar-like")
+        self.data = np.asarray(data)
+        self.dim = dim
+        self.name = name
+
+    @staticmethod
+    def isvalid(data):
+        data = np.asarray(data)
+        return (data.dtype != np.dtype(object)) and (data.ndim == 0)
 
     def equals(self, other):
-        return self.value == other.value
+        if isinstance(other, self.__class__):
+            return self.data == other.data
+        else:
+            return False
+
+    def to_index(self, item):
+        raise NotImplementedError("cannot get index of scalar coordinate")
 
 
 class DenseCoordinate(AbstractCoordinate):
-    def __init__(self, data=None, dtype=None, copy=False):
-        self.index = pd.Index(data, dtype, copy)
+    def __init__(self, data, dim=None, name=None):
+        if not self.isvalid(data):
+            raise TypeError("`data` must be array-like")
+        self.data = np.asarray(data)
+        self.dim = dim
+        self.name = name
 
-    def __getitem__(self, item):
-        return self.index.__getitem__(item)
-
-    def __len__(self):
-        return self.index.__len__()
-
-    def __repr__(self):
-        return self.index.__repr__()
-
-    def __add__(self, other):
-        return self.index.__add__(other)
-
-    def __sub__(self, other):
-        return self.index.__sub__(other)
-
-    def __array__(self):
-        return self.index.__array__()
-
-    def __array__ufunc__(self, ufunc, method, *inputs, **kwargs):
-        return self.index.__array__ufunc__(ufunc, method, *inputs, **kwargs)
-
-    def __array_function__(self, func, types, args, kwargs):
-        return self.index.__array_function__(func, types, args, kwargs)
+    @staticmethod
+    def isvalid(data):
+        data = np.asarray(data)
+        return (data.dtype != np.dtype(object)) and (data.ndim == 1)
 
     @property
-    def values(self):
-        return self.index.values
+    def index(self):
+        return pd.Index(self.data)
+
+    def equals(self, other):
+        if isinstance(other, self.__class__):
+            return np.array_equal(self.data, other.data)
+        else:
+            return False
 
     def get_indexer(self, value, method=None):
         if np.isscalar(value):
@@ -139,14 +181,8 @@ class DenseCoordinate(AbstractCoordinate):
     def slice_indexer(self, start=None, end=None, step=None):
         return self.index.slice_indexer(start, end, step)
 
-    def equals(self, other):
-        if isinstance(other, self.__class__):
-            return self.index.equals(other.index)
-        else:
-            return False
 
-
-class InterpolatedCoordinate(AbstractCoordinate):
+class InterpCoordinate(AbstractCoordinate):
     """
     Array-like object used to represent piecewise evenly spaced coordinates using the
     CF convention.
@@ -164,23 +200,45 @@ class InterpolatedCoordinate(AbstractCoordinate):
         selection. The len of `tie_indices` and `tie_values` sizes must match.
     """
 
-    def __init__(self, tie_indices, tie_values):
-        tie_indices = np.asarray(tie_indices)
-        tie_values = np.asarray(tie_values)
+    def __init__(self, data, dim=None, name=None):
+        if not self.__class__.isvalid(data):
+            raise TypeError("`data` must be dict-like")
+        if not set(data) == {"tie_indices", "tie_values"}:
+            raise ValueError(
+                "both `tie_indices` and `tie_values` key should be provided"
+            )
+        tie_indices = np.asarray(data["tie_indices"])
+        tie_values = np.asarray(data["tie_values"])
         if not tie_indices.ndim == 1:
-            raise ValueError("tie_indices must be 1D.")
+            raise ValueError("`tie_indices` must be 1D")
         if not tie_values.ndim == 1:
-            raise ValueError("tie_values must be 1D.")
+            raise ValueError("`tie_values` must be 1D")
         if not len(tie_indices) == len(tie_values):
-            raise ValueError("tie_indices and tie_values must have the same length.")
+            raise ValueError("`tie_indices` and `tie_values` must have the same length")
         if not tie_indices.shape == (0,):
+            if not np.issubdtype(tie_indices.dtype, np.integer):
+                raise ValueError("`tie_indices` must be integer-like")
             if not tie_indices[0] == 0:
-                raise ValueError("tie_indices must start with a zero")
+                raise ValueError("`tie_indices` must start with a zero")
             if not is_strictly_increasing(tie_indices):
-                raise ValueError("tie_indices must be strictly increasing")
-        self.tie_indices = tie_indices
-        self.tie_values = tie_values
-        self.kind = "linear"
+                raise ValueError("`tie_indices` must be strictly increasing")
+        if not (
+            np.issubdtype(tie_values.dtype, np.number)
+            or np.issubdtype(tie_values.dtype, np.datetime64)
+        ):
+            raise ValueError("`tie_values` must have either numeric or datetime dtype")
+        tie_indices = tie_indices.astype(int)
+        self.data = dict(tie_indices=tie_indices, tie_values=tie_values)
+        self.dim = dim
+        self.name = name
+
+    @staticmethod
+    def isvalid(data):
+        try:
+            data = dict(data)
+            return True
+        except (TypeError, ValueError):
+            return False
 
     def __len__(self):
         if self.empty:
@@ -201,11 +259,15 @@ class InterpolatedCoordinate(AbstractCoordinate):
 
     def __add__(self, other):
         tie_values = self.tie_values + other
-        return self.__class__(self.tie_indices, tie_values)
+        return self.__class__(
+            {"tie_indices": self.tie_indices, "tie_values": tie_values}
+        )
 
     def __sub__(self, other):
         tie_values = self.tie_values - other
-        return self.__class__(self.tie_indices, tie_values)
+        return self.__class__(
+            {"tie_indices": self.tie_indices, "tie_values": tie_values}
+        )
 
     def __getitem__(self, item):
         if isinstance(item, slice):
@@ -221,6 +283,14 @@ class InterpolatedCoordinate(AbstractCoordinate):
 
     def __array_function__(self, func, types, args, kwargs):
         raise NotImplementedError()
+
+    @property
+    def tie_indices(self):
+        return self.data["tie_indices"]
+
+    @property
+    def tie_values(self):
+        return self.data["tie_values"]
 
     @property
     def empty(self):
@@ -281,11 +351,11 @@ class InterpolatedCoordinate(AbstractCoordinate):
             index_slice.step,
         )
         if stop_index - start_index <= 0:
-            return InterpolatedCoordinate([], [])
+            return self.__class__(dict(tie_indices=[], tie_values=[]))
         elif (stop_index - start_index) <= step_index:
             tie_indices = [0]
             tie_values = [self.get_value(start_index)]
-            return InterpolatedCoordinate(tie_indices, tie_values)
+            return self.__class__(dict(tie_indices=tie_indices, tie_values=tie_values))
         else:
             end_index = stop_index - 1
             start_value = self.get_value(start_index)
@@ -302,7 +372,7 @@ class InterpolatedCoordinate(AbstractCoordinate):
                 (start_value, end_value),
             )
             tie_indices -= tie_indices[0]
-            coord = InterpolatedCoordinate(tie_indices, tie_values)
+            coord = self.__class__(dict(tie_indices=tie_indices, tie_values=tie_values))
             if step_index != 1:
                 coord = coord.decimate(step_index)
             return coord
@@ -343,7 +413,7 @@ class InterpolatedCoordinate(AbstractCoordinate):
         elif method == "nearest":
             index = linear_interpolate(value, self.tie_values, self.tie_indices)
             return np.rint(index).astype("int")
-        elif method == "before":
+        elif method == "ffill":
             index = linear_interpolate(
                 value, self.tie_values, self.tie_indices, left=np.nan
             )
@@ -351,7 +421,7 @@ class InterpolatedCoordinate(AbstractCoordinate):
                 raise KeyError("value not found in index")
             else:
                 return np.floor(index).astype("int")
-        elif method == "after":
+        elif method == "bfill":
             index = linear_interpolate(
                 value, self.tie_values, self.tie_indices, right=np.nan
             )
@@ -365,12 +435,12 @@ class InterpolatedCoordinate(AbstractCoordinate):
     def slice_indexer(self, start=None, stop=None, step=None):
         if start is not None:
             try:
-                start = self.get_indexer(start, method="after")
+                start = self.get_indexer(start, method="bfill")
             except KeyError:
                 start = len(self)
         if stop is not None:
             try:
-                end = self.get_indexer(stop, method="before")
+                end = self.get_indexer(stop, method="ffill")
                 stop = end + 1
             except KeyError:
                 stop = 0
@@ -385,7 +455,7 @@ class InterpolatedCoordinate(AbstractCoordinate):
                 tie_indices[k] += q
         tie_values = [self.get_value(idx) for idx in tie_indices]
         tie_indices //= q
-        return self.__class__(tie_indices, tie_values)
+        return self.__class__(dict(tie_indices=tie_indices, tie_values=tie_values))
 
     def simplify(self, tolerance=None):
         if tolerance is None:
@@ -396,7 +466,7 @@ class InterpolatedCoordinate(AbstractCoordinate):
         tie_indices, tie_values = douglas_peucker(
             self.tie_indices, self.tie_values, tolerance
         )
-        return self.__class__(tie_indices, tie_values)
+        return self.__class__(dict(tie_indices=tie_indices, tie_values=tie_values))
 
     def get_discontinuities(self):
         (indices,) = np.nonzero(np.diff(self.tie_indices) == 1)
@@ -410,7 +480,9 @@ class InterpolatedCoordinate(AbstractCoordinate):
 
     @classmethod
     def from_array(cls, arr, tolerance=None):
-        return cls(np.arange(len(arr)), arr).simplify(tolerance)
+        return cls({"tie_indices": np.arange(len(arr)), "tie_values": arr}).simplify(
+            tolerance
+        )
 
 
 class ScaleOffset:

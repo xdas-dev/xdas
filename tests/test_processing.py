@@ -4,7 +4,7 @@ import dask.array as da
 import numpy as np
 import scipy.signal as sp
 
-from xdas.core import Database, InterpolatedCoordinate
+from xdas.core import Database, InterpCoordinate
 from xdas.processing import ChunkWriter, LFilter, SignalProcessingChain, SOSFilter
 from xdas.virtual import DataLayout
 
@@ -14,13 +14,19 @@ class TestProcessing:
         fs = 125
         ks = 1 / 10
         data = da.random.normal(size=(1000, 100))
-        time = InterpolatedCoordinate(
-            [0, data.shape[0] - 1], [0.0, (data.shape[0] - 1) / fs]
+        return Database(
+            data,
+            {
+                "time": {
+                    "tie_indices": [0, data.shape[0] - 1],
+                    "tie_values": [0.0, (data.shape[0] - 1) / fs],
+                },
+                "distance": {
+                    "tie_indices": [0, data.shape[1] - 1],
+                    "tie_values": [0.0, (data.shape[1] - 1) / ks],
+                },
+            },
         )
-        distance = InterpolatedCoordinate(
-            [0, data.shape[1] - 1], [0.0, (data.shape[1] - 1) / ks]
-        )
-        return Database(data, {"time": time, "distance": distance})
 
     def test_lfilter(self):
         db = self.generate()

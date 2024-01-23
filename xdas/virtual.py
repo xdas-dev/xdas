@@ -15,7 +15,7 @@ class DataSource:
         self, path_or_dataset, name=None, shape=None, dtype=None, maxshape=None
     ):
         self._vsource = h5py.VirtualSource(
-            path_or_dataset, name=None, shape=None, dtype=None, maxshape=None
+            path_or_dataset, name, shape, dtype, maxshape
         )
         self._sel = Selection(self._vsource.shape)
 
@@ -100,6 +100,10 @@ class DataLayout(h5py.VirtualLayout):
             "Cannot slice DataLayout. Use `self.to_netcdf(fname, virtual=True)` to "
             "write to disk and reopen it with `xdas.open_database(fname)`"
         )
+
+    @property
+    def ndim(self):
+        return len(self.shape)
 
     @property
     def nbytes(self):

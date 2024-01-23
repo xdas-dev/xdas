@@ -1,23 +1,24 @@
 import numpy as np
 import pandas as pd
+import xdas
 
-from xdas.coordinates import Coordinates, DenseCoordinate, InterpolatedCoordinate
+from xdas.coordinates import Coordinates, DenseCoordinate, InterpCoordinate
 from xdas.database import Database
 
 
 class TestDatabase:
     def generate(self, dense=False):
-        coord = InterpolatedCoordinate([0, 8], [100.0, 900.0])
+        coord = xdas.Coordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         if dense:
             coord = coord.values
-        coords = Coordinates(dim=coord)
+        coords = xdas.Coordinates(dim=coord)
         data = 0.1 * np.arange(9)
-        db = Database(data, coords)
+        db = xdas.Database(data, coords)
         return db
 
     def test_init_and_properties(self):
         db = self.generate()
-        assert isinstance(db["dim"], InterpolatedCoordinate)
+        assert isinstance(db["dim"], InterpCoordinate)
         assert db.dims == ("dim",)
         assert db.ndim == 1
         assert db.shape == (9,)
