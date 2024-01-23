@@ -1,6 +1,8 @@
 import numpy as np
-import pandas as pd
 import xdas
+
+from tempfile import TemporaryDirectory
+import os
 
 from xdas.coordinates import Coordinates, DenseCoordinate, InterpCoordinate
 from xdas.database import Database
@@ -108,3 +110,23 @@ class TestDatabase:
         assert db_getitem.equals(db_expected)
         assert db_isel.equals(db_expected)
         assert db_sel.equals(db_expected)
+
+    def test_io(self):
+        db = Database(
+            data=np.arange(12).reshape(3, 4),
+            coords={
+                "time": {
+                    "tie_indices": [0, 2],
+                    "tie_values": np.array(
+                        ["2000-01-01T00:00:00", "2000-01-01T00:00:02"],
+                        dtype="datetime64[s]",
+                    ),
+                },
+                "distance": [0.0, 100.0, 200.0, 300.0],
+            },
+        )
+        with TemporaryDirectory() as dirpath:
+            path = os.path.join(dirpath, "tmp.nc")
+            db.to_netcdf(path)
+            db_recovered = Database.from_netcdf(path)
+            assert db.equals(db_recovered)

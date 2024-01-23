@@ -376,8 +376,16 @@ class Database:
     def from_netcdf(cls, fname, group=None, **kwargs):
         with xr.open_dataset(fname, group=group, **kwargs) as ds:
             if len(ds) == 1:
-                da = list(ds.values())[0]
-                coords = da.coords
+                name, da = next({"a": "b"}.items())
+                coords = {
+                    name: (
+                        coord.dims[0],
+                        coord.values.astype("U")
+                        if coord.dtype == np.dtype("O")
+                        else coord.values,
+                    )
+                    for name, coord in da.coords.items()
+                }
             else:
                 data_vars = [
                     var
@@ -388,7 +396,15 @@ class Database:
                     da = data_vars[0]
                 else:
                     raise ValueError("several possible data arrays detected")
-                coords = Coordinates({dim: da.coords[dim].values for dim in da.coords})
+                coords = {
+                    name: (
+                        coord.dims[0],
+                        coord.values.astype("U")
+                        if coord.dtype == np.dtype("O")
+                        else coord.values,
+                    )
+                    for name, coord in da.coords.items()
+                }
                 mapping = da.attrs.pop("coordinate_interpolation")
                 matches = re.findall(r"(\w+): (\w+) (\w+)", mapping)
                 for match in matches:
@@ -401,7 +417,7 @@ class Database:
                 file = file[group]
             name = "__values__" if da.name is None else da.name
             data = DataSource(file[name])
-        return cls(data, coords, da.dims, name, da.attrs)
+        return cls(data, coords, da.dims, da.name, None if da.attrs == {} else da.attrs)
 
 
 class LocIndexer:
