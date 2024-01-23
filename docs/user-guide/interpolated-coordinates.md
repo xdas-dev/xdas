@@ -26,8 +26,10 @@ Below the code corresponding to the example showed above.
 import xdas
 
 coord = xdas.Coordinate(
-    tie_indices=[0, 9, 19, 20, 29],
-    tie_values=[0.0, 90.0, 190.0, 400.0, 490.0]
+    {
+        "tie_indices": [0, 9, 19, 20, 29],
+        "tie_values": [0.0, 90.0, 190.0, 400.0, 490.0]
+    }
 )
 coord 
 ```
@@ -45,7 +47,7 @@ The main advantage of coordinates is that the enable labeled based selection. To
 retrieve the index of a value the {py:meth}`get_index` method can be used:
 
 ```{code-cell}
-coord.get_index(430.0)
+coord.to_index(430.0)
 ```
 
 ```{warning}
@@ -86,13 +88,15 @@ represent timestamps with better accuracies.
 import numpy as np
 
 coord = xdas.Coordinate(
-    tie_indices=[0, 3600 * 100],
-    tie_values=[
-        np.datetime64("2023-01-01T00:00:00"), 
-        np.datetime64("2023-01-01T01:00:00"),
-    ],
+    {
+        "tie_indices": [0, 3600 * 100],
+        "tie_values": [
+            np.datetime64("2023-01-01T00:00:00"), 
+            np.datetime64("2023-01-01T01:00:00"),
+        ],
+    }
 )
-coord.get_index_slice(slice("2023-01-01T00:10:00", "2023-01-01T00:20:00"))
+coord.to_index(slice("2023-01-01T00:10:00", "2023-01-01T00:20:00"))
 ```
 
 [CF]: <http://cfconventions.org/Data/cf-conventions/cf-conventions-1.10/cf-conventions.html#compression-by-coordinate-subsampling>
