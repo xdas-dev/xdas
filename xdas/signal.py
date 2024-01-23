@@ -2,6 +2,18 @@ import numpy as np
 import scipy.signal as sp
 
 
+def parse_dim(db, dim):
+    if dim == "first":
+        return db.dims[0]
+    elif dim == "last":
+        return db.dims[-1]
+    else:
+        if dim in db.dims:
+            return dim
+        else:
+            ValueError(f"{dim} not in db.dims")
+
+
 def get_sampling_interval(db, dim):
     """
     Returns the sample spacing along a given dimension.
@@ -26,7 +38,7 @@ def get_sampling_interval(db, dim):
     return d
 
 
-def detrend(db, type="linear", dim="time"):
+def detrend(db, type="linear", dim="last"):
     """
     Detrend data along given dimension
 
@@ -44,12 +56,13 @@ def detrend(db, type="linear", dim="time"):
     Database or DataArray
         The detrended data.
     """
+    dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
     data = sp.detrend(db.values, axis, type)
     return db.copy(data=data)
 
 
-def taper(db, window="hann", fftbins=False, dim="time"):
+def taper(db, window="hann", fftbins=False, dim="last"):
     """
     Apply a tapering window along the given dimension
 
@@ -69,6 +82,7 @@ def taper(db, window="hann", fftbins=False, dim="time"):
     Database or DataArray
         The tapered data.
     """
+    dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
     w = sp.get_window(window, db.shape[axis], fftbins=fftbins)
     shape = [-1 if ax == axis else 1 for ax in range(db.ndim)]
@@ -77,7 +91,7 @@ def taper(db, window="hann", fftbins=False, dim="time"):
     return db.copy(data=data)
 
 
-def iirfilter(db, freq, btype, corners=4, zerophase=False, dim="time"):
+def iirfilter(db, freq, btype, corners=4, zerophase=False, dim="last"):
     """
     SOS IIR filtering along given dimension.
 
@@ -98,6 +112,7 @@ def iirfilter(db, freq, btype, corners=4, zerophase=False, dim="time"):
     dim: str, optional
         The dimension along which to filter.
     """
+    dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
     fs = 1.0 / get_sampling_interval(db, dim)
     sos = sp.iirfilter(corners, freq, btype=btype, ftype="butter", output="sos", fs=fs)
@@ -108,7 +123,7 @@ def iirfilter(db, freq, btype, corners=4, zerophase=False, dim="time"):
     return db.copy(data=data)
 
 
-def decimate(db, q, n=None, ftype=None, zero_phase=None, dim="time"):
+def decimate(db, q, n=None, ftype=None, zero_phase=None, dim="last"):
     """
     Downsample the signal after applying an anti-aliasing filter.
 
@@ -142,12 +157,13 @@ def decimate(db, q, n=None, ftype=None, zero_phase=None, dim="time"):
     Database or DataArray
         The down-sampled signal.
     """
+    dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
     data = sp.decimate(db.values, q, n, ftype, axis, zero_phase)
     return db[{dim: slice(None, None, q)}].copy(data=data)
 
 
-def integrate(db, midpoints=False, dim="distance"):
+def integrate(db, midpoints=False, dim="last"):
     """
     Integrate along a given dimension.
 
@@ -165,6 +181,7 @@ def integrate(db, midpoints=False, dim="distance"):
     Database or DataArray
         The integrated data.
     """
+    dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
     d = get_sampling_interval(db, dim)
     data = np.cumsum(db.values, axis=axis) * d
@@ -174,7 +191,7 @@ def integrate(db, midpoints=False, dim="distance"):
     return out
 
 
-def differentiate(db, midpoints=False, dim="distance"):
+def differentiate(db, midpoints=False, dim="last"):
     """
     Differentiate along a given dimension.
 
@@ -192,6 +209,7 @@ def differentiate(db, midpoints=False, dim="distance"):
     Database or DataArray
         The integrated data.
     """
+    dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
     d = get_sampling_interval(db, dim)
     data = np.diff(db.values, axis=axis) / d
@@ -201,7 +219,7 @@ def differentiate(db, midpoints=False, dim="distance"):
     return out
 
 
-def segment_mean_removal(db, limits, window="hann", dim="distance"):
+def segment_mean_removal(db, limits, window="hann", dim="last"):
     """
     Piecewise mean removal.
 
@@ -221,6 +239,7 @@ def segment_mean_removal(db, limits, window="hann", dim="distance"):
     Database or DataArray
         The data with segment means removed.
     """
+    dim = parse_dim(db, dim)
     out = db.copy()
     axis = db.get_axis_num(dim)
     for sstart, send in zip(limits[:-1], limits[1:]):
@@ -234,7 +253,7 @@ def segment_mean_removal(db, limits, window="hann", dim="distance"):
     return out
 
 
-def sliding_mean_removal(db, wlen, window="hann", pad_mode="reflect", dim="distance"):
+def sliding_mean_removal(db, wlen, window="hann", pad_mode="reflect", dim="last"):
     """
     Sliding mean removal.
 
@@ -256,6 +275,7 @@ def sliding_mean_removal(db, wlen, window="hann", pad_mode="reflect", dim="dista
     Database or DataArray
         The data with sliding mean removed.
     """
+    dim = parse_dim(db, dim)
     d = get_sampling_interval(db, dim)
     n = round(wlen / d)
     if n % 2 == 0:
