@@ -98,11 +98,44 @@ class Database:
         string += repr(self.data) + "\n" + repr(self.coords)
         return string
 
+    def __add__(self, other):
+        return self.copy(data=self.data.__add__(other))
+
+    def __radd__(self, other):
+        return self.copy(data=self.data.__radd__(other))
+
+    def __sub__(self, other):
+        return self.copy(data=self.data.__sub__(other))
+
+    def __rsub__(self, other):
+        return self.copy(data=self.data.__rsub__(other))
+
+    def __mul__(self, other):
+        return self.copy(data=self.data.__mul__(other))
+
+    def __rmul__(self, other):
+        return self.copy(data=self.data.__rmul__(other))
+
+    def __truediv__(self, other):
+        return self.copy(data=self.data.__truediv__(other))
+
+    def __rtruediv__(self, other):
+        return self.copy(data=self.data.__rtruediv__(other))
+
+    def __pow__(self, other):
+        return self.copy(data=self.data.__pow__(other))
+
+    def __rpow__(self, other):
+        return self.copy(data=self.data.__rpow__(other))
+
     def __array__(self):
         return self.data.__array__()
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        raise NotImplementedError()
+        _, *args = inputs
+        assert _ is self
+        data = getattr(ufunc, method)(self.data, *args, **kwargs)
+        return self.copy(data=data)
 
     def __array_function__(self, func, types, args, kwargs):
         raise NotImplementedError()
@@ -418,6 +451,14 @@ class Database:
             name = "__values__" if da.name is None else da.name
             data = DataSource(file[name])
         return cls(data, coords, da.dims, da.name, None if da.attrs == {} else da.attrs)
+
+    def plot(self, *args, **kwargs):
+        if self.ndim == 1:
+            self.to_xarray().plot.line(*args, **kwargs)
+        elif self.ndim == 2:
+            self.to_xarray().plot.imshow(*args, **kwargs)
+        else:
+            self.to_xarray().plot(*args, **kwargs)
 
 
 class LocIndexer:

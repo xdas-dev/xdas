@@ -4,7 +4,7 @@ import numpy as np
 import scipy.signal as sp
 import xarray as xr
 
-from xdas.coordinates import Coordinates, Coordinate
+from xdas.coordinates import Coordinate, Coordinates
 from xdas.database import Database
 
 

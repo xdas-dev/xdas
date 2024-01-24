@@ -1,12 +1,12 @@
 import numpy as np
-import pytest
-import xdas
 import pandas as pd
+import pytest
 
+import xdas
 from xdas.coordinates import (
-    ScalarCoordinate,
     DenseCoordinate,
     InterpCoordinate,
+    ScalarCoordinate,
     ScaleOffset,
 )
 

@@ -1,9 +1,9 @@
-import numpy as np
-import xdas
-
-from tempfile import TemporaryDirectory
 import os
+from tempfile import TemporaryDirectory
 
+import numpy as np
+
+import xdas
 from xdas.coordinates import Coordinates, DenseCoordinate, InterpCoordinate
 from xdas.database import Database
 

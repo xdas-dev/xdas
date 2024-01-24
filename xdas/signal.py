@@ -1,6 +1,8 @@
 import numpy as np
 import scipy.signal as sp
 
+from .database import Database
+
 
 def parse_dim(db, dim):
     if dim == "first":
@@ -289,3 +291,37 @@ def sliding_mean_removal(db, wlen, window="hann", pad_mode="reflect", dim="last"
     mean = sp.fftconvolve(np.pad(data, pad_width, mode=pad_mode), win, mode="valid")
     data = data - mean
     return db.copy(data=data)
+
+
+def fft(db, n=None, dim={"last": "frequency"}, norm=None):
+    ((olddim, newdim),) = dim.items()
+    olddim = parse_dim(db, olddim)
+    if n is None:
+        n = db.sizes[olddim]
+    axis = db.get_axis_num(olddim)
+    d = get_sampling_interval(db, olddim)
+    f = np.fft.fftshift(np.fft.fftfreq(n, d))
+    data = np.fft.fftshift(np.fft.fft(db.values, n, axis, norm), axis)
+    coords = {
+        newdim if name == olddim else name: f if name == olddim else db.coords[name]
+        for name in db.coords
+    }
+    dims = tuple(newdim if dim == olddim else dim for dim in db.dims)
+    return Database(data, coords, dims, db.name, db.attrs)
+
+
+def rfft(db, n=None, dim={"last": "frequency"}, norm=None):
+    ((olddim, newdim),) = dim.items()
+    olddim = parse_dim(db, olddim)
+    if n is None:
+        n = db.sizes[olddim]
+    axis = db.get_axis_num(olddim)
+    d = get_sampling_interval(db, olddim)
+    f = np.fft.rfftfreq(n, d)
+    data = np.fft.rfft(db.values, n, axis, norm)
+    coords = {
+        newdim if name == olddim else name: f if name == olddim else db.coords[name]
+        for name in db.coords
+    }
+    dims = tuple(newdim if dim == olddim else dim for dim in db.dims)
+    return Database(data, coords, dims, db.name, db.attrs)
