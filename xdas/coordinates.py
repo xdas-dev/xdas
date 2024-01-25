@@ -53,6 +53,14 @@ class Coordinates(dict):
         query = self.get_query(item)
         return {dim: self[dim].to_index(query[dim]) for dim in query}
 
+    def equals(self, other):
+        if not isinstance(other, Coordinates):
+            return False
+        for name in self:
+            if not self[name].equals(other[name]):
+                return False
+        return True
+            
 
 class Coordinate:
     def __new__(cls, data, dim=None, name=None):

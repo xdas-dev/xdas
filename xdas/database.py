@@ -168,9 +168,10 @@ class Database:
         if isinstance(other, self.__class__):
             if not np.array_equal(self.values, other.values):
                 return False
-            for dim in self.coords:
-                if not self[dim].equals(other[dim]):
-                    return False
+            if not self.coords.equals(other.coords):
+                return False
+            if not self.dims == other.dims:
+                return False
             if not self.name == other.name:
                 return False
             if not self.attrs == other.attrs:
