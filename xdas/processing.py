@@ -2,6 +2,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 import numpy as np
 import scipy.signal as sp
+from tqdm import tqdm
 
 from .core import concatenate, open_database
 
@@ -60,7 +61,7 @@ class SignalProcessingChain:
             scheduler = Scheduler(chunks, self.filters)
             result = scheduler.compute()
         else:
-            for k in range(nchunks):
+            for k in tqdm(range(nchunks)):
                 query = {dim: slice(k * chunk_size, (k + 1) * chunk_size)}
                 result.append(self(db[query]))
         return concatenate(result, dim)
@@ -87,6 +88,7 @@ class Scheduler:
         self.chunks = chunks
         self.filters = filters
         self.buffer = {idx: chunk for idx, chunk in enumerate(chunks)}
+        self.progress = {idx: -1 for idx in range(len(chunks))}
         self.executor = None
         self.futures = {}
 
@@ -108,10 +110,10 @@ class Scheduler:
                 for future in done:
                     task = self.futures.pop(future)
                     self.buffer[task["chunk"]] = future.result()
+                    self.progress[task["chunk"]] = task["filter"]
                     next_tasks = self.get_next_tasks(task)
                     for next_task in next_tasks:
                         self.submit_task(next_task)
-                # print("Number of futures:", len(self.futures))
         return list(self.buffer.values())
 
     def submit_task(self, task):
@@ -153,14 +155,18 @@ class Scheduler:
             The new available tasks.
         """
         next_tasks = []
-        if not task["chunk"] >= len(self.chunks) - 1:
-            next_task = task.copy()
-            next_task["chunk"] += 1
-            next_tasks.append(next_task)
-        if not task["filter"] >= len(self.filters) - 1:
-            next_task = task.copy()
-            next_task["filter"] += 1
-            next_tasks.append(next_task)
+        if task["chunk"] < len(self.chunks) - 1:
+            if self.progress[task["chunk"] + 1] >= task["filter"] - 1:
+                next_task = task.copy()
+                next_task["chunk"] += 1
+                next_tasks.append(next_task)
+        if task["filter"] < len(self.filters) - 1:
+            if (task["chunk"] == 0) or (
+                self.progress[task["chunk"] - 1] >= task["filter"] + 1
+            ):
+                next_task = task.copy()
+                next_task["filter"] += 1
+                next_tasks.append(next_task)
         return next_tasks
 
 
@@ -170,6 +176,11 @@ class SignalProcessingUnit:
     """
 
     pass
+
+
+class Reader(SignalProcessingUnit):
+    def __call__(self, db):
+        return db.load()
 
 
 class LFilter(SignalProcessingUnit):
