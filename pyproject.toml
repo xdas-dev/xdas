@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xdas"
-version = "0.1b2"
+version = "0.1b3"
 authors = [
     {name = "Alister Trabattoni", email = "alister.trabattoni@gmail.com"},
 ]
