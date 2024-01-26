@@ -10,7 +10,6 @@ def read(fname):
         acquisition = file["Acquisition"]
         dx = acquisition.attrs["SpatialSamplingInterval"]
         rawdata = acquisition["Raw[0]"]["RawData"]
-        t = rawdata.attrs["PartStartTime"]
         tstart = np.datetime64(rawdata.attrs["PartStartTime"][:-1])
         tend = np.datetime64(rawdata.attrs["PartEndTime"][:-1])
         data = DataSource(rawdata)
