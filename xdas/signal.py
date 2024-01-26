@@ -1,11 +1,11 @@
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import scipy.signal as sp
-from concurrent.futures import ThreadPoolExecutor
 
-from .database import Database
 from . import config
+from .database import Database
 
 
 def parse_dim(db, dim):

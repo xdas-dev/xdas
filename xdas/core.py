@@ -152,6 +152,12 @@ def open_database(fname, group=None, engine="netcdf", **kwargs):
         from .io.asn import read
 
         return read(fname)
+    elif engine == "optasense":
+        from .io.optasense import read
+
+        return read(fname)
+    elif callable(engine):
+        return engine(fname)
     else:
         raise ValueError("engine not recognized")
 

@@ -60,7 +60,7 @@ class Coordinates(dict):
             if not self[name].equals(other[name]):
                 return False
         return True
-            
+
 
 class Coordinate:
     def __new__(cls, data, dim=None, name=None):
