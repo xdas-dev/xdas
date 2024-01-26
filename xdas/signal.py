@@ -1,5 +1,8 @@
+import os
+
 import numpy as np
 import scipy.signal as sp
+from concurrent.futures import ThreadPoolExecutor
 
 from .database import Database
 
@@ -38,6 +41,36 @@ def get_sampling_interval(db, dim):
         d = d / np.timedelta64(1, "s")
     d = d.item()
     return d
+
+
+def parallelize(func, axis, parallel):
+    if parallel:
+        n_workers = get_workers_count(parallel)
+        return multithread_along_axis(func, int(axis == 0), n_workers)
+    else:
+        return func
+
+
+def get_workers_count(parallel):
+    if isinstance(parallel, bool):
+        return os.cpu_count()
+    elif isinstance(parallel, int):
+        return parallel
+    else:
+        raise TypeError("`parallel` must be either bool or int.")
+
+
+def multithread_along_axis(func, axis, n_workers):
+    def wrapper(x, *args, **kwargs):
+        def fn(x):
+            return func(x, *args, **kwargs)
+
+        xs = np.array_split(x, n_workers, axis)
+        with ThreadPoolExecutor(n_workers) as executor:
+            ys = list(executor.map(fn, xs))
+        return np.concatenate(ys, axis)
+
+    return wrapper
 
 
 def detrend(db, type="linear", dim="last"):
@@ -93,7 +126,7 @@ def taper(db, window="hann", fftbins=False, dim="last"):
     return db.copy(data=data)
 
 
-def iirfilter(db, freq, btype, corners=4, zerophase=False, dim="last"):
+def iirfilter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=False):
     """
     SOS IIR filtering along given dimension.
 
@@ -119,13 +152,14 @@ def iirfilter(db, freq, btype, corners=4, zerophase=False, dim="last"):
     fs = 1.0 / get_sampling_interval(db, dim)
     sos = sp.iirfilter(corners, freq, btype=btype, ftype="butter", output="sos", fs=fs)
     if zerophase:
-        data = sp.sosfiltfilt(sos, db.values, axis=axis)
+        func = parallelize(sp.sosfiltfilt)
     else:
-        data = sp.sosfilt(sos, db.values, axis=axis)
+        func = parallelize(sp.sosfilt)
+    data = func(sos, db.values, axis=axis)
     return db.copy(data=data)
 
 
-def decimate(db, q, n=None, ftype=None, zero_phase=None, dim="last"):
+def decimate(db, q, n=None, ftype=None, zero_phase=None, dim="last", parallel=False):
     """
     Downsample the signal after applying an anti-aliasing filter.
 
@@ -161,7 +195,8 @@ def decimate(db, q, n=None, ftype=None, zero_phase=None, dim="last"):
     """
     dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
-    data = sp.decimate(db.values, q, n, ftype, axis, zero_phase)
+    func = parallelize(sp.decimate, axis, parallel)
+    data = func(db.values, q, n, ftype, axis, zero_phase)
     return db[{dim: slice(None, None, q)}].copy(data=data)
 
 
