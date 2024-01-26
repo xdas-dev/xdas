@@ -258,12 +258,14 @@ class InterpCoordinate(AbstractCoordinate):
         if len(self) == 0:
             return "empty coordinate"
         elif len(self) == 1:
-            return f"one point at {self.tie_values[0]}"
+            return f"{self.tie_values[0]}"
         else:
-            return (
-                f"{len(self.tie_indices)} tie points from {self.tie_values[0]} to "
-                f"{self.tie_values[-1]}"
-            )
+            if np.issubdtype(self.dtype, np.floating):
+                return f"{self.tie_values[0]:.3f} to {self.tie_values[-1]:.3f}"
+            elif np.issubdtype(self.dtype, np.datetime64):
+                start = format_datetime(self.tie_values[0])
+                end = format_datetime(self.tie_values[-1])
+                return f"{start} to {end}"
 
     def __add__(self, other):
         tie_values = self.tie_values + other
@@ -578,3 +580,9 @@ def douglas_peucker(x, y, epsilon):
         else:
             mask[start + 1 : stop - 1] = False
     return x[mask], y[mask]
+
+
+def format_datetime(x):
+    datetime, digits = str(x).split(".")
+    digits = digits[:3]
+    return ".".join([datetime, digits])
