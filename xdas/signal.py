@@ -5,6 +5,7 @@ import scipy.signal as sp
 from concurrent.futures import ThreadPoolExecutor
 
 from .database import Database
+from . import config
 
 
 def parse_dim(db, dim):
@@ -44,16 +45,21 @@ def get_sampling_interval(db, dim):
 
 
 def parallelize(func, axis, parallel):
-    if parallel:
-        n_workers = get_workers_count(parallel)
-        return multithread_along_axis(func, int(axis == 0), n_workers)
-    else:
+    n_workers = get_workers_count(parallel)
+    if n_workers == 1:
         return func
+    else:
+        return multithread_along_axis(func, int(axis == 0), n_workers)
 
 
 def get_workers_count(parallel):
-    if isinstance(parallel, bool):
-        return os.cpu_count()
+    if parallel is None:
+        return config.get("n_workers")
+    elif isinstance(parallel, bool):
+        if parallel:
+            return os.cpu_count()
+        else:
+            return 1
     elif isinstance(parallel, int):
         return parallel
     else:
@@ -126,7 +132,7 @@ def taper(db, window="hann", fftbins=False, dim="last"):
     return db.copy(data=data)
 
 
-def iirfilter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=False):
+def iirfilter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=None):
     """
     SOS IIR filtering along given dimension.
 
@@ -159,7 +165,7 @@ def iirfilter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=
     return db.copy(data=data)
 
 
-def decimate(db, q, n=None, ftype=None, zero_phase=None, dim="last", parallel=False):
+def decimate(db, q, n=None, ftype=None, zero_phase=None, dim="last", parallel=None):
     """
     Downsample the signal after applying an anti-aliasing filter.
 
