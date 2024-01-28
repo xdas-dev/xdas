@@ -339,3 +339,29 @@ class ChunkWriter(SignalProcessingUnit):
         Reset the chunk numbering.
         """
         self.chunk = None
+
+
+class ParallelUnit(SignalProcessingUnit):
+    def __init__(self, units, dim):
+        self.units = units
+        self.dim = dim
+
+    def __call__(self, db):
+        dbs = split(db, len(self.units), self.dim)
+        with ThreadPoolExecutor() as executor:
+            futures = [executor.submit(unit, db) for unit, db in zip(self.units, dbs)]
+            wait(futures)
+            dbs = [future.result() for future in futures]
+        return concatenate(dbs, self.dim)
+
+
+def split(db, n, dim):
+    if n <= 0:
+        raise ValueError("number sections must be larger than 0.")
+    size, extras = divmod(db.sizes[dim], n)
+    sizes = [0] + extras * [size + 1] + (n - extras) * [size]
+    indices = np.cumsum(sizes)
+    dbs = []
+    for i in range(n):
+        dbs.append(db.isel({dim: slice(indices[i], indices[i + 1])}))
+    return dbs

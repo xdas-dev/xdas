@@ -97,7 +97,8 @@ def concatenate(dbs, dim="time", tolerance=None, virtual=None):
     idx = 0
     tie_indices = []
     tie_values = []
-    for db in tqdm(dbs, desc="Linking database"):
+    iterator = tqdm(dbs, desc="Linking database") if virtual else dbs
+    for db in iterator:
         selection = tuple(
             slice(idx, idx + db.shape[axis]) if d == dim else slice(None) for d in dims
         )
