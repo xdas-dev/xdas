@@ -158,10 +158,14 @@ def iirfilter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=
     fs = 1.0 / get_sampling_interval(db, dim)
     sos = sp.iirfilter(corners, freq, btype=btype, ftype="butter", output="sos", fs=fs)
     if zerophase:
-        func = parallelize(sp.sosfiltfilt)
+        func = parallelize(
+            lambda x, sos, axis: sp.sosfiltfilt(sos, x, axis), axis, parallel
+        )
     else:
-        func = parallelize(sp.sosfilt)
-    data = func(sos, db.values, axis=axis)
+        func = parallelize(
+            lambda x, sos, axis: sp.sosfilt(sos, x, axis), axis, parallel
+        )
+    data = func(db.values, sos, axis=axis)
     return db.copy(data=data)
 
 

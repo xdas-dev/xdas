@@ -138,7 +138,7 @@ class Database:
         return self.copy(data=data)
 
     def __array_function__(self, func, types, args, kwargs):
-        raise NotImplementedError()
+        return NotImplemented
 
     @property
     def shape(self):
