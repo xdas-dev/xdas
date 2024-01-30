@@ -113,12 +113,14 @@ def multithreaded_concatenate(arrays, axis=0, out=None, dtype=None, n_workers=No
 
     div_points = np.cumsum([0] + section_sizes, dtype=int)
 
-    out = np.swapaxes(out, axis, 0)
     with ThreadPoolExecutor(n_workers) as executor:
         for idx, array in enumerate(arrays):
-            sl = slice(div_points[idx], div_points[idx + 1])
-            executor.submit(out.__setitem__, sl, array)
-    out = np.swapaxes(out, axis, 0)
+            start = div_points[idx]
+            end = div_points[idx + 1]
+            slices = tuple(
+                slice(start, end) if n == axis else slice(None) for n in range(ndim)
+            )
+            executor.submit(out.__setitem__, slices, array)
 
     return out
 
