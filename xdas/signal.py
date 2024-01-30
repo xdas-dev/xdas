@@ -74,9 +74,53 @@ def multithread_along_axis(func, axis, n_workers):
         xs = np.array_split(x, n_workers, axis)
         with ThreadPoolExecutor(n_workers) as executor:
             ys = list(executor.map(fn, xs))
-        return np.concatenate(ys, axis)
+        return multithreaded_concatenate(ys, axis, n_workers=n_workers)
 
     return wrapper
+
+
+def multithreaded_concatenate(arrays, axis=0, out=None, dtype=None, n_workers=None):
+    arrays = [np.asarray(array, dtype) for array in arrays]
+
+    ndim = set(array.ndim for array in arrays)
+    if len(ndim) == 1:
+        (ndim,) = ndim
+    else:
+        raise ValueError("arrays must have the same number of dimensions.")
+
+    dtype = set(array.dtype for array in arrays)
+    if len(dtype) == 1:
+        (dtype,) = dtype
+    else:
+        raise ValueError("arrays must have the same dtype.")
+
+    shapes = [list(array.shape) for array in arrays]
+    section_sizes = [shape.pop(axis) for shape in shapes]
+    subshape = set([tuple(shape) for shape in shapes])
+    if len(subshape) == 1:
+        (subshape,) = subshape
+    else:
+        raise ValueError("arrays must have the same shape on axes other than `axis`.")
+    shape = list(subshape)
+    shape.insert(axis, sum(section_sizes))
+    shape = tuple(shape)
+
+    if out is None:
+        out = np.empty(shape, dtype=dtype)
+    else:
+        if not (out.ndim == ndim and out.dtype == dtype, out.shape == shape):
+            raise ValueError("`out` does not match with provided arrays.")
+
+    div_points = np.cumsum([0] + section_sizes, dtype=int)
+
+    out = np.swapaxes(out, axis, 0)
+    with ThreadPoolExecutor(n_workers) as executor:
+        for idx, array in enumerate(arrays):
+            sl = slice(div_points[idx], div_points[idx + 1])
+            executor.submit(out.__setitem__, sl, array)
+    out = np.swapaxes(out, axis, 0)
+
+    return out
 
 
 def detrend(db, type="linear", dim="last"):
