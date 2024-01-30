@@ -123,6 +123,8 @@ class SOSFilter:
 class ProcessingChain:
     def __init__(self, filters):
         self.filters = filters
+        self.data_loader = None
+        self.data_writer = None
 
     def __call__(self, db):
         for filter in self.filters:
@@ -136,20 +138,16 @@ class ProcessingChain:
 
     def process(self, db, chunks, dirpath):
         self.reset()
-        data_loader = DatabaseLoader(db, chunks)
-        data_writer = DatabaseWriter(dirpath)
-        pbar = tqdm(total=data_loader.nbytes, unit="B", unit_scale=True)
-        monitor = Monitor()
+        self.data_loader = DatabaseLoader(db, chunks)
+        self.data_writer = DatabaseWriter(dirpath)
+        monitor = Monitor(total=self.data_loader.nbytes)
         monitor.tic("read")
-        for chunk in data_loader:
+        for chunk in self.data_loader:
             monitor.tic("proc")
             result = self(chunk)
             monitor.tic("write")
-            data_writer.to_netcdf(result)
-            monitor.toc()
-            pbar.update(chunk.nbytes)
-            pbar.set_postfix(monitor.usage_str())
+            self.data_writer.to_netcdf(result)
+            monitor.toc(chunk.nbytes)
             monitor.tic("read")
-        pbar.set_postfix(monitor.average_usage_str())
-        pbar.close()
-        return data_writer.result()
+        monitor.close()
+        return self.data_writer.result()

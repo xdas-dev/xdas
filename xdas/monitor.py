@@ -1,8 +1,9 @@
 from time import perf_counter
-
+from tqdm import tqdm
 
 class Monitor:
-    def __init__(self, smoothing=0.3):
+    def __init__(self, total=None, smoothing=0.3):
+        self.pbar = tqdm(total=total, unit="B", unit_scale=True)
         self.smoothing = smoothing
         self.time = {}
         self.iter = {}
@@ -12,7 +13,7 @@ class Monitor:
     def tic(self, key):
         self.time[key] = perf_counter()
 
-    def toc(self):
+    def toc(self, nbytes):
         time = perf_counter()
         values = list(self.time.values()) + [time]
         for idx, key in enumerate(self.time):
@@ -27,6 +28,12 @@ class Monitor:
                 self.cum[key] += self.iter[key]
             else:
                 self.cum[key] = self.iter[key]
+        self.pbar.update(nbytes)
+        self.pbar.set_postfix(self.usage_str())
+
+    def close(self):
+        self.pbar.set_postfix(self.average_usage_str())
+        self.pbar.close()
 
     def usage(self):
         total = sum(self.iter.values())
