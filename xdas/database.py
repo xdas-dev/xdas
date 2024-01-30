@@ -157,6 +157,10 @@ class Database:
         return {dim: len(self.coords[dim]) for dim in self.dims}
 
     @property
+    def nbytes(self):
+        return self.data.nbytes
+
+    @property
     def values(self):
         return self.__array__()
 
@@ -347,7 +351,7 @@ class Database:
                         "interpolation_name": "linear",
                         "tie_points_mapping": f"{dim}_points: {dim}_indices {dim}_values",
                     },
-                ).astype("i4")
+                )
                 indices = xr.DataArray(
                     name=f"{dim}_indices",
                     data=self.coords[dim].tie_indices,
