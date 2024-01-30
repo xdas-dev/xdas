@@ -1,7 +1,6 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
-from threading import Thread
 
 import numpy as np
 import scipy.signal as sp
@@ -17,8 +16,8 @@ class DatabaseLoader:
         self.db = db
         ((self.chunk_dim, self.chunk_size),) = chunks.items()
         self.queue = Queue(maxsize=1)
-        self.thread = Thread(target=self.target)
-        self.thread.start()
+        self.executor = ThreadPoolExecutor(1)
+        self.future = self.executor.submit(self.task)
 
     def __len__(self):
         div, mod = divmod(self.db.sizes[self.chunk_dim], self.chunk_size)
@@ -47,7 +46,7 @@ class DatabaseLoader:
     def nbytes(self):
         return self.db.nbytes
 
-    def target(self):
+    def task(self):
         for idx in range(len(self)):
             data = self[idx]
             self.queue.put(data)
@@ -59,13 +58,13 @@ class DatabaseWriter:
         self.dirpath = dirpath
         self.queue = Queue(maxsize=1)
         self.results = []
-        self.thread = Thread(target=self.target)
-        self.thread.start()
+        self.executor = ThreadPoolExecutor(1)
+        self.future = self.executor.submit(self.task)
 
     def to_netcdf(self, db):
         self.queue.put(db)
 
-    def target(self):
+    def task(self):
         while True:
             db = self.queue.get()
             if db is None:
@@ -84,7 +83,7 @@ class DatabaseWriter:
 
     def result(self):
         self.queue.put(None)
-        self.thread.join()
+        self.future.result()
         return concatenate(self.results)
 
 
