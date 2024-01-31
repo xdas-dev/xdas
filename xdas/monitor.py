@@ -1,9 +1,11 @@
 from time import perf_counter
+
 from tqdm import tqdm
+
 
 class Monitor:
     def __init__(self, total=None, smoothing=0.3):
-        self.pbar = tqdm(total=total, unit="B", unit_scale=True)
+        self.pbar = tqdm(total=total, unit="B", unit_scale=True, unit_divisor=1024)
         self.smoothing = smoothing
         self.time = {}
         self.iter = {}

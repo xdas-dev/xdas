@@ -114,7 +114,7 @@ class DataLayout(h5py.VirtualLayout):
 
 
 def to_human(size):
-    unit = {0: "B", 1: "K", 2: "M", 3: "G", 4: "T"}
+    unit = {0: "B", 1: "KB", 2: "MB", 3: "GB", 4: "TB"}
     n = 0
     while size > 1024:
         size /= 1024

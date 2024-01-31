@@ -4,7 +4,8 @@ from queue import Queue
 
 import numpy as np
 import scipy.signal as sp
-from tqdm import tqdm
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 from .core import concatenate, open_database
 from .monitor import Monitor
@@ -51,6 +52,36 @@ class DatabaseLoader:
             data = self[idx]
             self.queue.put(data)
         self.queue.put(None)
+
+
+class RealTimeLoader(Observer):
+    def __init__(self, path, engine="netcdf"):
+        super().__init__()
+        self.path = path
+        self.queue = Queue()
+        self.handler = Handler(self.queue, engine)
+        self.schedule(self.handler, self.path, recursive=True)
+        self.start()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        chunk = self.queue.get()
+        if chunk is None:
+            raise StopIteration
+        else:
+            return chunk
+
+
+class Handler(FileSystemEventHandler):
+    def __init__(self, queue, engine):
+        self.engine = engine
+        self.queue = queue
+
+    def on_closed(self, event):
+        db = open_database(event.src_path, engine=self.engine)
+        self.queue.put(db.load())
 
 
 class DatabaseWriter:
@@ -136,11 +167,15 @@ class ProcessingChain:
             if hasattr(filter, "reset"):
                 filter.reset()
 
-    def process(self, db, chunks, dirpath):
+    def process(self, data_loader, data_writer):
         self.reset()
-        self.data_loader = DatabaseLoader(db, chunks)
-        self.data_writer = DatabaseWriter(dirpath)
-        monitor = Monitor(total=self.data_loader.nbytes)
+        self.data_loader = data_loader
+        self.data_writer = data_writer
+        if hasattr(self.data_loader, "nbytes"):
+            total = self.data_loader.nbytes
+        else:
+            total = None
+        monitor = Monitor(total=total)
         monitor.tic("read")
         for chunk in self.data_loader:
             monitor.tic("proc")
