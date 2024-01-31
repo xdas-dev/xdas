@@ -55,10 +55,10 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
                 desc="Fetching metadata from files",
             )
         ]
-    return concatenate(dbs, tolerance=tolerance)
+    return concatenate(dbs, tolerance=tolerance, verbose=True)
 
 
-def concatenate(dbs, dim="time", tolerance=None, virtual=None):
+def concatenate(dbs, dim="time", tolerance=None, virtual=None, verbose=None):
     """
     Concatenate several databases along a given dimension.
 
@@ -97,7 +97,10 @@ def concatenate(dbs, dim="time", tolerance=None, virtual=None):
     idx = 0
     tie_indices = []
     tie_values = []
-    iterator = tqdm(dbs, desc="Linking database") if virtual else dbs
+    if verbose:
+        iterator = tqdm(dbs, desc="Linking database") 
+    else:
+        iterator = dbs
     for db in iterator:
         selection = tuple(
             slice(idx, idx + db.shape[axis]) if d == dim else slice(None) for d in dims
