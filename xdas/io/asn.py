@@ -8,8 +8,8 @@ from ..virtual import DataSource
 def read(fname):
     with h5py.File(fname, "r") as file:
         header = file["header"]
-        t0 = np.datetime64(round(header["time"][()] * 1e6), "us")
-        dt = np.timedelta64(round(1e6 * header["dt"][()]), "us")
+        t0 = np.datetime64(round(header["time"][()] * 1e9), "ns")
+        dt = np.timedelta64(round(1e9 * header["dt"][()]), "ns")
         dx = header["dx"][()] * np.median(np.diff(header["channels"]))
         data = DataSource(file["data"])
     nt, nd = data.shape

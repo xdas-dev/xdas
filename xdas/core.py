@@ -160,6 +160,10 @@ def open_database(fname, group=None, engine="netcdf", **kwargs):
         from .io.optasense import read
 
         return read(fname)
+    elif engine == "sintela":
+        from .io.sintela import read
+
+        return read(fname)
     elif callable(engine):
         return engine(fname)
     else:
