@@ -37,11 +37,11 @@ db.to_xarray().plot.imshow(yincrease=False, vmin=-0.5, vmax=0.5);
 
 ```{code-cell} 
 import scipy.signal as sp
-from xdas.processing import SignalProcessingChain, SOSFilter
+from xdas.processing import ProcessingChain, SOSFilter
 
 sos = sp.iirfilter(4, 0.5, btype="lowpass", output="sos")
 sosfilter = SOSFilter(sos, "time")
-chain = SignalProcessingChain([sosfilter])
+chain = ProcessingChain([sosfilter])
 out = chain.process(db, "time", 100, parallel=False)
 out.to_xarray().plot.imshow(yincrease=False, vmin=-0.5, vmax=0.5);
 ```

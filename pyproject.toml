@@ -16,6 +16,7 @@ dependencies = [
     "scipy",
     "tqdm",
     "xarray",
+    "watchdog",
 ]
 
 [project.optional-dependencies]
