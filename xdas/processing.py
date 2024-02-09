@@ -161,6 +161,10 @@ class ProcessingChain:
         for filter in self.filters:
             db = filter(db)
         return db
+    
+    def __str__(self) -> str:
+        filter_str = [filter.keywords["name"] for filter in self.filters]
+        return " -> ".join(filter_str)
 
     def reset(self):
         for filter in self.filters:

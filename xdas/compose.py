@@ -1,6 +1,11 @@
 from collections import UserDict
 from collections.abc import Hashable, Callable
-from typing import Any, Dict
+from typing import Any, Dict, Type
+from functools import partial
+
+from .processing import ProcessingChain
+
+ChainType = Type[ProcessingChain]
 
 
 class Sequence(UserDict):
@@ -79,7 +84,10 @@ class Sequence(UserDict):
         self.data = {key: self.get(key) for key in keys}
         pass
 
-
+    def get_chain(self) -> ChainType:
+        atoms = [partial(val.func, **val.args, name=key) for key, val in self.data.items()]
+        chain = ProcessingChain(atoms)
+        return chain
 
 class SequenceAtom:
 
@@ -87,6 +95,11 @@ class SequenceAtom:
         self.parent = parent
         self.key = key
         self.func = func
+        # TODO:
+        # If func is string: import from .atoms
+        # If func is a user func: parallelise
+        #   if func has dim or axis argument, include this in parallel
+        # Store self.func
         self.args = args
         pass
 
