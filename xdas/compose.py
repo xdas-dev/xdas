@@ -3,9 +3,13 @@ from collections.abc import Hashable, Callable
 from typing import Any, Dict, Type
 from functools import partial
 
-from .processing import ProcessingChain
+from .processing import ProcessingChain, DatabaseLoader, DatabaseWriter
+from .database import Database
 
 ChainType = Type[ProcessingChain]
+LoaderType = Type[DatabaseLoader]
+WriterType = Type[DatabaseWriter]
+DatabaseType = Type[Database]
 
 
 class Sequence(UserDict):
@@ -85,9 +89,31 @@ class Sequence(UserDict):
         pass
 
     def get_chain(self) -> ChainType:
-        atoms = [partial(val.func, **val.args, name=key) for key, val in self.data.items()]
+        # Create a list of partial functions which
+        # take the database as the first argument.
+        # The lambda function is a trick to attach
+        # `name` as a keyword without passing it
+        # onto the function (which would raise an
+        # exception). `name` is only used for the
+        # representation of the chain.
+        atoms = [partial(lambda x, name, **kwargs: val.func(x, **kwargs), **val.args, name=key) for key, val in self.data.items()]
         chain = ProcessingChain(atoms)
         return chain
+    
+    def execute(self, 
+                data_loader: DatabaseType | LoaderType, 
+                data_writer: None | WriterType=None):
+        
+        chain = self.get_chain()
+        if isinstance(data_loader, Database):
+            result = chain(data_loader)
+
+        if data_writer is None:
+            return result
+        
+        # TODO: add IO logic
+        
+        pass
 
 class SequenceAtom:
 
