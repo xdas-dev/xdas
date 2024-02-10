@@ -15,8 +15,8 @@ class Coordinates(dict):
         - Coordinate objects
         - tuples (dim, coordinate-like) which can be either dimensional (`dim == name`)
           or non-dimensional (`dim != name` or `dim == None`).
-        - coordinate-like objects (that are passed to the Coordinate constructor) 
-          which are assumed to be a dimensional coordinate with `dim` set to the 
+        - coordinate-like objects (that are passed to the Coordinate constructor)
+          which are assumed to be a dimensional coordinate with `dim` set to the
           related name.
     dims: squence of str, optional
         An ordered sequence of dimensions. It is meant to match the dimensionality of
@@ -43,7 +43,7 @@ class Coordinates(dict):
     def __init__(self, coords=None, dims=None):
         super().__init__()
         for name in coords:
-            if isinstance(coords, AbstractCoordinate):
+            if isinstance(coords[name], AbstractCoordinate):
                 self[name] = coords[name]
             elif isinstance(coords[name], tuple):
                 dim, data = coords[name]
@@ -126,17 +126,17 @@ class Coordinates(dict):
          'channel': {'dim': 'distance', 'data': ['DAS01', 'DAS02', 'DAS03']},
          'interrogator': {'dim': None, 'data': 'SRN'}}
         """
-            
+
         return {name: self[name].to_dict() for name in self}
 
 
 class Coordinate:
     def __new__(cls, data, dim=None):
         if isinstance(data, AbstractCoordinate):
-            coord = data
-            if dim is not None:
-                coord.dim = dim
-            return coord
+            if dim is None:
+                return data
+            else:
+                return Coordinate(data.data, dim)
         elif ScalarCoordinate.isvalid(data):
             return ScalarCoordinate(data, dim)
         elif DenseCoordinate.isvalid(data):
@@ -152,13 +152,23 @@ class AbstractCoordinate:
         return object.__new__(cls)
 
     def __getitem__(self, item):
-        return Coordinate(self.data.__getitem__(item))
+        data = self.data.__getitem__(item)
+        if ScalarCoordinate.isvalid(data):
+            return ScalarCoordinate(data)
+        else:
+            return Coordinate(data, self.dim)
 
     def __len__(self):
         return self.data.__len__()
 
     def __repr__(self):
         return self.data.__str__()
+
+    def __add__(self, other):
+        return self.__class__(self.data + other, self.dim)
+
+    def __sub__(self, other):
+        return self.__class__(self.data - other, self.dim)
 
     def __array__(self):
         return self.data.__array__()
@@ -176,6 +186,14 @@ class AbstractCoordinate:
     @property
     def dtype(self):
         return self.data.dtype
+
+    @property
+    def ndim(self):
+        return self.data.ndim
+
+    @property
+    def shape(self):
+        return self.data.shape
 
     @property
     def values(self):
@@ -354,18 +372,6 @@ class InterpCoordinate(AbstractCoordinate):
                 end = format_datetime(self.tie_values[-1])
                 return f"{start} to {end}"
 
-    def __add__(self, other):
-        tie_values = self.tie_values + other
-        return self.__class__(
-            {"tie_indices": self.tie_indices, "tie_values": tie_values}
-        )
-
-    def __sub__(self, other):
-        tie_values = self.tie_values - other
-        return self.__class__(
-            {"tie_indices": self.tie_indices, "tie_values": tie_values}
-        )
-
     def __getitem__(self, item):
         if isinstance(item, slice):
             return self.slice_index(item)
@@ -373,6 +379,18 @@ class InterpCoordinate(AbstractCoordinate):
             return ScalarCoordinate(self.get_value(item), None)
         else:
             return DenseCoordinate(self.get_value(item), self.dim)
+
+    def __add__(self, other):
+        return self.__class__(
+            {"tie_indices": self.tie_indices, "tie_values": self.tie_values + other},
+            self.dim,
+        )
+
+    def __sub__(self, other):
+        return self.__class__(
+            {"tie_indices": self.tie_indices, "tie_values": self.tie_values - other},
+            self.dim,
+        )
 
     def __array__(self):
         return self.values
@@ -471,7 +489,8 @@ class InterpCoordinate(AbstractCoordinate):
                 (start_value, end_value),
             )
             tie_indices -= tie_indices[0]
-            coord = self.__class__(dict(tie_indices=tie_indices, tie_values=tie_values))
+            data = {"tie_indices": tie_indices, "tie_values": tie_values}
+            coord = self.__class__(data, self.dim)
             if step_index != 1:
                 coord = coord.decimate(step_index)
             return coord
@@ -578,10 +597,10 @@ class InterpCoordinate(AbstractCoordinate):
         ]
 
     @classmethod
-    def from_array(cls, arr, tolerance=None):
-        return cls({"tie_indices": np.arange(len(arr)), "tie_values": arr}).simplify(
-            tolerance
-        )
+    def from_array(cls, arr, dim=None, tolerance=None):
+        return cls(
+            {"tie_indices": np.arange(len(arr)), "tie_values": arr}, dim
+        ).simplify(tolerance)
 
     def to_dict(self):
         tie_indices = self.data["tie_indices"]

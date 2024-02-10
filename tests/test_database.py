@@ -10,10 +10,10 @@ from xdas.database import Database
 
 class TestDatabase:
     def generate(self, dense=False):
-        coord = xdas.Coordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         if dense:
-            coord = coord.values
-        coords = xdas.Coordinates({"dim": coord})
+            coords = {"dim": 100.0 * (1 + np.arange(9))}
+        else:
+            coords = {"dim": {"tie_indices": [0, 8], "tie_values": [100.0, 900.0]}}
         data = 0.1 * np.arange(9)
         db = xdas.Database(data, coords)
         return db

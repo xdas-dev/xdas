@@ -221,6 +221,6 @@ def asdatabase(obj, tolerance=None):
     if isinstance(obj, Database):
         return obj
     elif isinstance(obj, xr.DataArray):
-        return Database.from_xarray(obj, tolerance)
+        return Database.from_xarray(obj)
     else:
         raise ValueError("Cannot convert to database.")

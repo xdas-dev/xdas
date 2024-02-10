@@ -301,7 +301,7 @@ class Database:
     def load(self):
         return self.copy(data=self.data.__array__())
 
-    def to_xarray(self, load=True):
+    def to_xarray(self):
         """
         Convert the Database to a DataArray object.
 
@@ -312,21 +312,12 @@ class Database:
         DataArray
             The converted in-memory DataArray.
         """
-        if load:
-            data = self.__array__()
-        else:
-            chunks = tuple("auto" if axis == 0 else -1 for axis in range(self.ndim))
-            data = da.from_array(self.data, chunks=chunks)
-        coords = {dim: self.coords[dim].__array__() for dim in self.coords}
-        return xr.DataArray(data, coords, self.dims, self.name, self.attrs)
+        data = self.__array__()
+        return xr.DataArray(data, self.coords, self.dims, self.name, self.attrs)
 
     @classmethod
-    def from_xarray(cls, da, tolerance=None):
-        coords = {
-            dim: InterpCoordinate.from_array(da[dim].values, tolerance)
-            for dim in da.dims
-        }
-        return cls(da.data, coords, da.dims, da.name, da.attrs)
+    def from_xarray(cls, da):
+        return cls(da.data, da.coords, da.dims, da.name, da.attrs)
 
     def to_netcdf(self, fname, group=None, virtual=False, **kwargs):
         """
@@ -421,7 +412,7 @@ class Database:
     def from_netcdf(cls, fname, group=None, **kwargs):
         with xr.open_dataset(fname, group=group, **kwargs) as ds:
             if len(ds) == 1:
-                name, da = next({"a": "b"}.items())
+                name, da = next(ds.items())
                 coords = {
                     name: (
                         coord.dims[0],
@@ -458,9 +449,8 @@ class Database:
                 matches = re.findall(r"(\w+): (\w+) (\w+)", mapping)
                 for match in matches:
                     dim, indices, values = match
-                    coords[dim] = InterpCoordinate(
-                        {"tie_indices": ds[indices], "tie_values": ds[values]}
-                    )
+                    data = {"tie_indices": ds[indices], "tie_values": ds[values]}
+                    coords[dim] = InterpCoordinate(data, dim)
         with h5py.File(fname) as file:
             if group:
                 file = file[group]
