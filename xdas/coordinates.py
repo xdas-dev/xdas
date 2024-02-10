@@ -6,22 +6,37 @@ import pandas as pd
 
 class Coordinates(dict):
     """
-    Dictionary like container for coordinates. 
+    Dictionary like container for coordinates.
 
     Parameters
     ----------
     coords: dict-like, optional
         Mapping where keys are coordinate names and values are:
-         - coordinate-like objects and are assumed to be a dimensional coordinate with 
+         - coordinate-like objects and are assumed to be a dimensional coordinate with
          both `name` and `dim` taken set to the related key
-         - tuples (dim, coordinate-like) which can be either dimensional (`dim == name`) 
-          or non-dimensional (`dim != name` or `dim == None`) with the name taken from 
+         - tuples (dim, coordinate-like) which can be either dimensional (`dim == name`)
+          or non-dimensional (`dim != name` or `dim == None`) with the name taken from
           the related key.
     dims: squence of str, optional
-        An ordered sequence of dimensions. It is meant to match the dimensionality of 
-        its associated data. If provided, it must at least include all dimensions found 
-        in `coords` (extras dimensions will be considered empty coordinates). 
+        An ordered sequence of dimensions. It is meant to match the dimensionality of
+        its associated data. If provided, it must at least include all dimensions found
+        in `coords` (extras dimensions will be considered as empty coordinates).
         Otherwise, dimensions will be guessed from `coords`.
+
+    Examples
+    --------
+    >>> coords = {
+    ...     "time": {"tie_indices": [0, 999], "tie_values": [0.0, 10.0]},
+    ...     "distance": [0, 1, 2],
+    ...     "channel": ("distance", ["DAS01", "DAS02", "DAS03"]),
+    ...     "interrogator": (None, "SRN"),
+    ... }
+    >>> Coordinates(coords)
+    Coordinates:
+      * time (time): 0.000 to 10.000
+      * distance (distance): [0 1 2]
+        channel (distance): ['DAS01' 'DAS02' 'DAS03']
+        interrogator: SRN
     """
 
     def __init__(self, coords=None, dims=None):
@@ -37,14 +52,16 @@ class Coordinates(dict):
         self.dims = dims
 
     def __repr__(self):
-        s = "Coordinates:\n"
+        lines = ["Coordinates:"]
         for name, coord in self.items():
-            if name == coord.dim:
-                s += f"  * {name} ({coord.dim}): "
+            if coord.isdim():
+                lines.append(f"  * {name} ({coord.dim}): {coord}")
             else:
-                s += f"    {name} ({coord.dim}): "
-            s += repr(coord) + "\n"
-        return s
+                if coord.dim is None:
+                    lines.append(f"    {name}: {coord}")
+                else:
+                    lines.append(f"    {name} ({coord.dim}): {coord}")
+        return "\n".join(lines)
 
     def get_query(self, item):
         """
@@ -53,9 +70,9 @@ class Coordinates(dict):
         Parameters
         ----------
         item: indexer-like or sequence or mapping
-            Object to be parsed as a query. If item is indexer-like object, it is 
-            applied on the first dimension. If item is a sequence, positional indexing 
-            is performed. If item is a mapping, labeled indexing is performed. 
+            Object to be parsed as a query. If item is indexer-like object, it is
+            applied on the first dimension. If item is a sequence, positional indexing
+            is performed. If item is a mapping, labeled indexing is performed.
 
         Returns
         -------
@@ -138,7 +155,7 @@ class AbstractCoordinate:
     @property
     def values(self):
         return self.__array__()
-    
+
     def isdim(self):
         return self.name == self.dim
 
