@@ -69,8 +69,7 @@ class Database:
         if dims is None:
             dims = coords.dims
         self.data = data
-        self.coords = Coordinates(coords)
-        self.dims = dims
+        self.coords = Coordinates(coords, dims)
         self.name = name
         self.attrs = attrs
 
@@ -82,7 +81,8 @@ class Database:
             data = self.data.__getitem__(tuple(query.values()))
             dct = {dim: self.coords[dim].__getitem__(query[dim]) for dim in query}
             coords = Coordinates(dct)
-            return self.__class__(data, coords)
+            dims = tuple(dim for dim in self.dims if not coords[dim].isscalar())
+            return self.__class__(data, coords, dims, self.name, self.attrs)
 
     def __setitem__(self, key, value):
         if isinstance(key, str):
@@ -139,6 +139,10 @@ class Database:
 
     def __array_function__(self, func, types, args, kwargs):
         return NotImplemented
+
+    @property
+    def dims(self):
+        return self.coords.dims
 
     @property
     def shape(self):

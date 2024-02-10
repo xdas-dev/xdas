@@ -80,7 +80,7 @@ def concatenate(dbs, dim="time", tolerance=None, virtual=None, verbose=None):
     Database
         The concatenated database.
     """
-    dbs = sorted(dbs, key=lambda db: db[dim][0])
+    dbs = sorted(dbs, key=lambda db: db[dim][0].values)
     axis = dbs[0].get_axis_num(dim)
     dims = dbs[0].dims
     dtype = dbs[0].dtype

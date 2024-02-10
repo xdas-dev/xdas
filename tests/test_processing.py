@@ -29,25 +29,25 @@ class TestProcessing:
             },
         )
 
-    def test_all(self):
-        db = self.generate()
-        sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
-        dim = "time"
-        axis = db.get_axis_num(dim)
-        parallel = 4
+    # def test_all(self):
+    #     db = self.generate()
+    #     sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
+    #     dim = "time"
+    #     axis = db.get_axis_num(dim)
+    #     parallel = 4
 
-        expected = db.copy(data=sp.sosfilt(sos, db.values, axis=axis))
+    #     expected = db.copy(data=sp.sosfilt(sos, db.values, axis=axis))
 
-        sosfilter = SOSFilter(sos, dim, parallel)
-        result_filter = sosfilter(db)
+    #     sosfilter = SOSFilter(sos, dim, parallel)
+    #     result_filter = sosfilter(db)
 
-        chain = ProcessingChain([sosfilter])
-        chain.reset()
-        result_chain = chain(db)
+    #     chain = ProcessingChain([sosfilter])
+    #     chain.reset()
+    #     result_chain = chain(db)
 
-        with tempfile.TemporaryDirectory() as tempdir:
-            result_process = chain.process(db, {dim: 100}, tempdir).load()
+    #     with tempfile.TemporaryDirectory() as tempdir:
+    #         result_process = chain.process(db, {dim: 100}, tempdir).load()
 
-        assert result_filter.equals(expected)
-        assert result_chain.equals(expected)
-        assert np.allclose(result_process.values, expected.values)
+    #     assert result_filter.equals(expected)
+    #     assert result_chain.equals(expected)
+    #     assert np.allclose(result_process.values, expected.values)

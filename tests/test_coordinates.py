@@ -34,9 +34,11 @@ class TestScalarCoordinate:
         assert coord.data == 1
         assert coord.dim is None
         assert coord.name is None
-        coord = ScalarCoordinate(1, "dim", "name")
-        assert coord.dim == "dim"
+        coord = ScalarCoordinate(1, None, "name")
+        assert coord.dim is None
         assert coord.name == "name"
+        with pytest.raises(ValueError):
+            ScalarCoordinate(1, "dim", "name")
         for data in self.valid:
             assert ScalarCoordinate(data).data == np.array(data)
         for data in self.invalid:
@@ -44,7 +46,7 @@ class TestScalarCoordinate:
                 ScalarCoordinate(data)
 
     def test_getitem(self):
-        assert ScalarCoordinate(1)[...] == 1
+        assert ScalarCoordinate(1)[...].equals(ScalarCoordinate(1))
         with pytest.raises(IndexError):
             ScalarCoordinate(1)[:]
         with pytest.raises(IndexError):
@@ -128,10 +130,14 @@ class TestDenseCoordinate:
                 DenseCoordinate(data)
 
     def test_getitem(self):
-        assert np.array_equiv(DenseCoordinate([1, 2, 3])[...], [1, 2, 3])
-        assert np.array_equiv(DenseCoordinate([1, 2, 3])[:], [1, 2, 3])
-        assert np.array_equiv(DenseCoordinate([1, 2, 3])[1], 2)
-        assert np.array_equiv(DenseCoordinate([1, 2, 3])[1:], [2, 3])
+        assert np.array_equiv(DenseCoordinate([1, 2, 3])[...].values, [1, 2, 3])
+        assert isinstance(DenseCoordinate([1, 2, 3])[...], DenseCoordinate)
+        assert np.array_equiv(DenseCoordinate([1, 2, 3])[:].values, [1, 2, 3])
+        assert isinstance(DenseCoordinate([1, 2, 3])[:], DenseCoordinate)
+        assert np.array_equiv(DenseCoordinate([1, 2, 3])[1].values, 2)
+        assert isinstance(DenseCoordinate([1, 2, 3])[1], ScalarCoordinate)
+        assert np.array_equiv(DenseCoordinate([1, 2, 3])[1:].values, [2, 3])
+        assert isinstance(DenseCoordinate([1, 2, 3])[1:], DenseCoordinate)
 
     def test_len(self):
         for data in self.valid:
@@ -237,13 +243,13 @@ class TestInterpCoordinate:
             assert not InterpCoordinate.isvalid(data)
 
     def test_init(self):
-        coord = InterpCoordinate(dict(tie_indices=[0, 8], tie_values=[100.0, 900.0]))
+        coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert np.array_equiv(coord.data["tie_indices"], [0, 8])
         assert np.array_equiv(coord.data["tie_values"], [100.0, 900.0])
         assert coord.dim is None
         assert coord.name is None
         coord = InterpCoordinate(
-            dict(tie_indices=[0, 8], tie_values=[100.0, 900.0]), "dim", "name"
+            {"tie_indices": [0, 8], "tie_values": [100.0, 900.0]}, "dim", "name"
         )
         assert coord.dim == "dim"
         assert coord.name == "name"
@@ -260,7 +266,7 @@ class TestInterpCoordinate:
 
     def test_len(self):
         assert (
-            len(InterpCoordinate(dict(tie_indices=[0, 8], tie_values=[100.0, 900.0])))
+            len(InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]}))
             == 9
         )
         assert len(InterpCoordinate(dict(tie_indices=[], tie_values=[]))) == 0
@@ -270,18 +276,19 @@ class TestInterpCoordinate:
         pass
 
     def test_equals(self):
-        coord1 = InterpCoordinate(dict(tie_indices=[0, 8], tie_values=[100.0, 900.0]))
-        coord2 = InterpCoordinate(dict(tie_indices=[0, 8], tie_values=[100.0, 900.0]))
+        coord1 = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
+        coord2 = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert coord1.equals(coord2)
 
     def test_getitem(self):
-        coord = InterpCoordinate(dict(tie_indices=[0, 8], tie_values=[100.0, 900.0]))
-        assert coord[0] == 100.0
-        assert coord[4] == 500.0
-        assert coord[8] == 900.0
-        assert coord[-1] == 900.0
-        assert coord[-2] == 800.0
-        assert np.allclose(coord[[1, 2, 3]], [200.0, 300.0, 400.0])
+        coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
+        assert isinstance(coord[0], ScalarCoordinate)
+        assert coord[0].values == 100.0
+        assert coord[4].values == 500.0
+        assert coord[8].values == 900.0
+        assert coord[-1].values == 900.0
+        assert coord[-2].values == 800.0
+        assert np.allclose(coord[[1, 2, 3]].values, [200.0, 300.0, 400.0])
         with pytest.raises(IndexError):
             coord[9]
             coord[-9]
@@ -298,32 +305,32 @@ class TestInterpCoordinate:
         )
 
     def test_setitem(self):
-        coord = InterpCoordinate(dict(tie_indices=[0, 8], tie_values=[100.0, 900.0]))
+        coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         with pytest.raises(TypeError):
             coord[1] = 0
             coord[:] = 0
 
     def test_asarray(self):
-        coord = InterpCoordinate(dict(tie_indices=[0, 8], tie_values=[100.0, 900.0]))
+        coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert np.allclose(np.asarray(coord), coord.values)
 
     def test_empty(self):
         assert not InterpCoordinate(
-            dict(tie_indices=[0, 8], tie_values=[100.0, 900.0])
+            {"tie_indices": [0, 8], "tie_values": [100.0, 900.0]}
         ).empty
         assert InterpCoordinate(dict(tie_indices=[], tie_values=[])).empty
 
     def test_dtype(self):
-        coord = InterpCoordinate(dict(tie_indices=[0, 8], tie_values=[100.0, 900.0]))
+        coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert coord.dtype == np.float64
 
     def test_ndim(self):
-        coord = InterpCoordinate(dict(tie_indices=[0, 8], tie_values=[100.0, 900.0]))
+        coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert coord.ndim == 1
         assert isinstance(coord.ndim, int)
 
     def test_shape(self):
-        coord = InterpCoordinate(dict(tie_indices=[0, 8], tie_values=[100.0, 900.0]))
+        coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert coord.shape == (9,)
 
     def test_format_index(self):
@@ -335,7 +342,7 @@ class TestInterpCoordinate:
         pass
 
     def test_get_value(self):
-        coord = InterpCoordinate(dict(tie_indices=[0, 8], tie_values=[100.0, 900.0]))
+        coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert coord.get_value(0) == 100.0
         assert coord.get_value(4) == 500.0
         assert coord.get_value(8) == 900.0
@@ -358,7 +365,7 @@ class TestInterpCoordinate:
         assert coord.get_value(-9) == starttime
 
     def test_get_index(self):
-        coord = InterpCoordinate(dict(tie_indices=[0, 8], tie_values=[100.0, 900.0]))
+        coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert coord.get_indexer(100.0) == 0
         assert coord.get_indexer(900.0) == 8
         assert coord.get_indexer(0.0, "nearest") == 0
@@ -389,15 +396,15 @@ class TestInterpCoordinate:
         assert coord.get_indexer("2000-01-01T00:00:04.1", "nearest") == 4
 
     def test_indices(self):
-        coord = InterpCoordinate(dict(tie_indices=[0, 8], tie_values=[100.0, 900.0]))
+        coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert np.all(np.equal(coord.indices, np.arange(9)))
 
     def test_values(self):
-        coord = InterpCoordinate(dict(tie_indices=[0, 8], tie_values=[100.0, 900.0]))
+        coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert np.allclose(coord.values, np.arange(100.0, 1000.0, 100.0))
 
     def test_get_index_slice(self):
-        coord = InterpCoordinate(dict(tie_indices=[0, 8], tie_values=[100.0, 900.0]))
+        coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert coord.slice_indexer(100.0, 200.0) == slice(0, 2)
         assert coord.slice_indexer(150.0, 250.0) == slice(1, 2)
         assert coord.slice_indexer(300.0, 500.0) == slice(2, 5)
@@ -409,7 +416,7 @@ class TestInterpCoordinate:
         assert coord.slice_indexer(None, None) == slice(None, None)
 
     def test_slice_index(self):
-        coord = InterpCoordinate(dict(tie_indices=[0, 8], tie_values=[100.0, 900.0]))
+        coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert coord.slice_index(slice(0, 2)).equals(
             InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[100.0, 200.0]))
         )
@@ -483,13 +490,13 @@ class TestCoordinate:
 class TestCoordinates:
     def test_init(self):
         coords = xdas.Coordinates(
-            dim=("dim", dict(tie_indices=[0, 8], tie_values=[100.0, 900.0]))
+            {"dim": ("dim", {"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})}
         )
         coord = coords["dim"]
         assert coord.isinterp()
         assert np.allclose(coord.tie_indices, [0, 8])
         assert np.allclose(coord.tie_values, [100.0, 900.0])
-        coords = xdas.Coordinates(dim=[1.0, 2.0, 3.0])
+        coords = xdas.Coordinates({"dim": [1.0, 2.0, 3.0]})
         coord = coords["dim"]
         assert coord.isdense()
         assert np.allclose(coord.values, [1.0, 2.0, 3.0])

@@ -13,7 +13,7 @@ class TestDatabase:
         coord = xdas.Coordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         if dense:
             coord = coord.values
-        coords = xdas.Coordinates(dim=coord)
+        coords = xdas.Coordinates({"dim": coord})
         data = 0.1 * np.arange(9)
         db = xdas.Database(data, coords)
         return db
@@ -76,7 +76,7 @@ class TestDatabase:
 
     def test_dense_str(self):
         coord = [f"D{k}" for k in range(9)]
-        coords = Coordinates(dim=coord)
+        coords = Coordinates({"dim": coord})
         data = 0.1 * np.arange(9)
         db = Database(data, coords)
 

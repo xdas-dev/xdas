@@ -9,18 +9,21 @@ class Coordinates(dict):
     A dictionary whose keys are dimension names and values are Coordinate objects.
     """
 
-    def __init__(self, coords=None, **coords_kwargs):
-        if coords is None:
-            coords = {}
-        coords.update(coords_kwargs)
+    def __init__(self, coords=None, dims=None):
         for name in coords:
             if isinstance(coords[name], tuple):
                 dim, coord = coords[name]
             else:
-                dim = name
                 coord = coords[name]
+                if ScalarCoordinate.isvalid(coord):
+                    dim = None
+                else:
+                    dim = name
             coords[name] = Coordinate(coord, dim, name)
         super().__init__(coords)
+        if dims is None:
+            dims = tuple(name for name in coords if coords[name].isdim())
+        self.dims = dims
 
     def __repr__(self):
         s = "Coordinates:\n"
@@ -31,12 +34,6 @@ class Coordinates(dict):
                 s += f"    {name} ({coord.dim}): "
             s += repr(coord) + "\n"
         return s
-
-    @property
-    def dims(self):
-        return tuple(
-            dict.fromkeys(self[name].dim for name in self if self[name].dim == name)
-        )
 
     def get_query(self, item):
         query = {dim: slice(None) for dim in self.dims}
@@ -86,7 +83,7 @@ class AbstractCoordinate:
         return object.__new__(cls)
 
     def __getitem__(self, item):
-        return self.data.__getitem__(item)
+        return Coordinate(self.data.__getitem__(item))
 
     def __len__(self):
         return self.data.__len__()
@@ -114,6 +111,9 @@ class AbstractCoordinate:
     @property
     def values(self):
         return self.__array__()
+    
+    def isdim(self):
+        return self.name == self.dim
 
     def equals(self, other):
         return NotImplementedError
@@ -136,6 +136,8 @@ class AbstractCoordinate:
 
 class ScalarCoordinate(AbstractCoordinate):
     def __init__(self, data, dim=None, name=None):
+        if dim is not None:
+            raise ValueError("a scalar coordinate cannot be a dim.")
         if not self.__class__.isvalid(data):
             raise TypeError("`data` must be scalar-like")
         self.data = np.asarray(data)
@@ -282,8 +284,10 @@ class InterpCoordinate(AbstractCoordinate):
     def __getitem__(self, item):
         if isinstance(item, slice):
             return self.slice_index(item)
+        elif np.isscalar(item):
+            return ScalarCoordinate(self.get_value(item), None, self.name)
         else:
-            return self.get_value(item)
+            return DenseCoordinate(self.get_value(item), self.dim, self.name)
 
     def __array__(self):
         return self.values
