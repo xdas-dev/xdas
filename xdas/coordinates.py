@@ -13,10 +13,9 @@ class Coordinates(dict):
     coords: dict-like, optional
         Mapping where keys are coordinate names and values are:
          - coordinate-like objects and are assumed to be a dimensional coordinate with
-         both `name` and `dim` taken set to the related key
+          `dim` set to the related key
          - tuples (dim, coordinate-like) which can be either dimensional (`dim == name`)
-          or non-dimensional (`dim != name` or `dim == None`) with the name taken from
-          the related key.
+          or non-dimensional (`dim != name` or `dim == None`).
     dims: squence of str, optional
         An ordered sequence of dimensions. It is meant to match the dimensionality of
         its associated data. If provided, it must at least include all dimensions found
@@ -45,10 +44,10 @@ class Coordinates(dict):
                 dim, coord = coords[name]
             else:
                 dim, coord = name, coords[name]
-            coords[name] = Coordinate(coord, dim, name)
+            coords[name] = Coordinate(coord, dim)
         super().__init__(coords)
         if dims is None:
-            dims = tuple(name for name in coords if coords[name].isdim())
+            dims = tuple(name for name in coords if coords[name].dim == name)
         self.dims = dims
 
     def __repr__(self):
@@ -62,6 +61,9 @@ class Coordinates(dict):
                 else:
                     lines.append(f"    {name} ({coord.dim}): {coord}")
         return "\n".join(lines)
+
+    def isdim(self, name):
+        return self[name].dim == name
 
     def get_query(self, item):
         """
@@ -125,20 +127,18 @@ class Coordinates(dict):
 
 
 class Coordinate:
-    def __new__(cls, data, dim=None, name=None):
+    def __new__(cls, data, dim=None):
         if isinstance(data, AbstractCoordinate):
             coord = data
             if dim is not None:
                 coord.dim = dim
-            if name is not None:
-                coord.name = name
             return coord
         elif ScalarCoordinate.isvalid(data):
-            return ScalarCoordinate(data, dim, name)
+            return ScalarCoordinate(data, dim)
         elif DenseCoordinate.isvalid(data):
-            return DenseCoordinate(data, dim, name)
+            return DenseCoordinate(data, dim)
         elif InterpCoordinate.isvalid(data):
-            return InterpCoordinate(data, dim, name)
+            return InterpCoordinate(data, dim)
         else:
             raise TypeError("could not parse `data`")
 
@@ -177,9 +177,6 @@ class AbstractCoordinate:
     def values(self):
         return self.__array__()
 
-    def isdim(self):
-        return self.name == self.dim
-
     def equals(self, other):
         return NotImplementedError
 
@@ -200,13 +197,12 @@ class AbstractCoordinate:
 
 
 class ScalarCoordinate(AbstractCoordinate):
-    def __init__(self, data, dim=None, name=None):
+    def __init__(self, data, dim=None):
         if dim is not None:
             raise ValueError("a scalar coordinate cannot be a dim")
         if not self.__class__.isvalid(data):
             raise TypeError("`data` must be scalar-like")
         self.data = np.asarray(data)
-        self.name = name
 
     @property
     def dim(self):
@@ -240,12 +236,11 @@ class ScalarCoordinate(AbstractCoordinate):
 
 
 class DenseCoordinate(AbstractCoordinate):
-    def __init__(self, data, dim=None, name=None):
+    def __init__(self, data, dim=None):
         if not self.isvalid(data):
             raise TypeError("`data` must be array-like")
         self.data = np.asarray(data)
         self.dim = dim
-        self.name = name
 
     @staticmethod
     def isvalid(data):
@@ -297,7 +292,7 @@ class InterpCoordinate(AbstractCoordinate):
         selection. The len of `tie_indices` and `tie_values` sizes must match.
     """
 
-    def __init__(self, data, dim=None, name=None):
+    def __init__(self, data, dim=None):
         if not self.__class__.isvalid(data):
             raise TypeError("`data` must be dict-like")
         if not set(data) == {"tie_indices", "tie_values"}:
@@ -327,7 +322,6 @@ class InterpCoordinate(AbstractCoordinate):
         tie_indices = tie_indices.astype(int)
         self.data = dict(tie_indices=tie_indices, tie_values=tie_values)
         self.dim = dim
-        self.name = name
 
     @staticmethod
     def isvalid(data):
@@ -372,9 +366,9 @@ class InterpCoordinate(AbstractCoordinate):
         if isinstance(item, slice):
             return self.slice_index(item)
         elif np.isscalar(item):
-            return ScalarCoordinate(self.get_value(item), None, self.name)
+            return ScalarCoordinate(self.get_value(item), None)
         else:
-            return DenseCoordinate(self.get_value(item), self.dim, self.name)
+            return DenseCoordinate(self.get_value(item), self.dim)
 
     def __array__(self):
         return self.values

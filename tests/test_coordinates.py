@@ -33,12 +33,10 @@ class TestScalarCoordinate:
         coord = ScalarCoordinate(1)
         assert coord.data == 1
         assert coord.dim is None
-        assert coord.name is None
-        coord = ScalarCoordinate(1, None, "name")
+        coord = ScalarCoordinate(1, None)
         assert coord.dim is None
-        assert coord.name == "name"
         with pytest.raises(ValueError):
-            ScalarCoordinate(1, "dim", "name")
+            ScalarCoordinate(1, "dim")
         for data in self.valid:
             assert ScalarCoordinate(data).data == np.array(data)
         for data in self.invalid:
@@ -119,10 +117,8 @@ class TestDenseCoordinate:
         coord = DenseCoordinate([1, 2, 3])
         assert np.array_equiv(coord.data, [1, 2, 3])
         assert coord.dim is None
-        assert coord.name is None
-        coord = DenseCoordinate([1, 2, 3], "dim", "name")
+        coord = DenseCoordinate([1, 2, 3], "dim")
         assert coord.dim == "dim"
-        assert coord.name == "name"
         for data in self.valid:
             assert np.array_equiv(DenseCoordinate(data).data, data)
         for data in self.invalid:
@@ -247,12 +243,10 @@ class TestInterpCoordinate:
         assert np.array_equiv(coord.data["tie_indices"], [0, 8])
         assert np.array_equiv(coord.data["tie_values"], [100.0, 900.0])
         assert coord.dim is None
-        assert coord.name is None
         coord = InterpCoordinate(
-            {"tie_indices": [0, 8], "tie_values": [100.0, 900.0]}, "dim", "name"
+            {"tie_indices": [0, 8], "tie_values": [100.0, 900.0]}, "dim"
         )
         assert coord.dim == "dim"
-        assert coord.name == "name"
         for data in self.valid:
             coord = InterpCoordinate(data)
             assert np.array_equiv(coord.data["tie_indices"], data["tie_indices"])
@@ -481,10 +475,9 @@ class TestCoordinate:
         assert xdas.Coordinate(1).isscalar()
         assert xdas.Coordinate([1]).isdense()
         assert xdas.Coordinate({"tie_values": [], "tie_indices": []}).isinterp()
-        coord = xdas.Coordinate(xdas.Coordinate([1]), "dim", "name")
+        coord = xdas.Coordinate(xdas.Coordinate([1]), "dim")
         assert coord.isdense()
         assert coord.dim == "dim"
-        assert coord.name == "name"
 
 
 class TestCoordinates:
