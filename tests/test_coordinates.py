@@ -481,8 +481,8 @@ class TestCoordinate:
         assert xdas.Coordinate(1).isscalar()
         assert xdas.Coordinate([1]).isdense()
         assert xdas.Coordinate({"tie_values": [], "tie_indices": []}).isinterp()
-        coord = xdas.Coordinate(xdas.Coordinate(1), "dim", "name")
-        assert coord.isscalar()
+        coord = xdas.Coordinate(xdas.Coordinate([1]), "dim", "name")
+        assert coord.isdense()
         assert coord.dim == "dim"
         assert coord.name == "name"
 

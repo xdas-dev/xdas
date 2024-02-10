@@ -65,9 +65,6 @@ class Database:
     """
 
     def __init__(self, data, coords, dims=None, name=None, attrs=None):
-        coords = Coordinates(coords)
-        if dims is None:
-            dims = coords.dims
         self.data = data
         self.coords = Coordinates(coords, dims)
         self.name = name

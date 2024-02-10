@@ -128,9 +128,9 @@ class Coordinate:
     def __new__(cls, data, dim=None, name=None):
         if isinstance(data, AbstractCoordinate):
             coord = data
-            if dim:
+            if dim is not None:
                 coord.dim = dim
-            if name:
+            if name is not None:
                 coord.name = name
             return coord
         elif ScalarCoordinate.isvalid(data):
@@ -202,12 +202,20 @@ class AbstractCoordinate:
 class ScalarCoordinate(AbstractCoordinate):
     def __init__(self, data, dim=None, name=None):
         if dim is not None:
-            raise ValueError("a scalar coordinate cannot be a dim.")
+            raise ValueError("a scalar coordinate cannot be a dim")
         if not self.__class__.isvalid(data):
             raise TypeError("`data` must be scalar-like")
         self.data = np.asarray(data)
-        self.dim = dim
         self.name = name
+
+    @property
+    def dim(self):
+        return None
+
+    @dim.setter
+    def dim(self, value):
+        if value is not None:
+            raise ValueError("A scalar coordinate cannot have a `dim` other that None")
 
     @staticmethod
     def isvalid(data):
