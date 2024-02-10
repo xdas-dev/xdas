@@ -39,21 +39,21 @@ class Coordinates(dict):
     """
 
     def __init__(self, coords=None, dims=None):
+        super().__init__()
         for name in coords:
             if isinstance(coords[name], tuple):
-                dim, coord = coords[name]
+                dim, data = coords[name]
+                self[name] = Coordinate(data, dim)
             else:
-                dim, coord = name, coords[name]
-            coords[name] = Coordinate(coord, dim)
-        super().__init__(coords)
+                self[name] = Coordinate(coords[name], name)
         if dims is None:
-            dims = tuple(name for name in coords if coords[name].dim == name)
+            dims = tuple(name for name in self if self.isdim(name))
         self.dims = dims
 
     def __repr__(self):
         lines = ["Coordinates:"]
         for name, coord in self.items():
-            if coord.isdim():
+            if self.isdim(name):
                 lines.append(f"  * {name} ({coord.dim}): {coord}")
             else:
                 if coord.dim is None:

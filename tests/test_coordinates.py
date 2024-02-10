@@ -489,10 +489,26 @@ class TestCoordinates:
         assert coord.isinterp()
         assert np.allclose(coord.tie_indices, [0, 8])
         assert np.allclose(coord.tie_values, [100.0, 900.0])
+        assert coords.isdim("dim")
         coords = xdas.Coordinates({"dim": [1.0, 2.0, 3.0]})
         coord = coords["dim"]
         assert coord.isdense()
         assert np.allclose(coord.values, [1.0, 2.0, 3.0])
+        assert coords.isdim("dim")
+        coords = xdas.Coordinates(
+            {
+                "dim_0": (
+                    "dim_0",
+                    {"tie_indices": [0, 8], "tie_values": [100.0, 900.0]},
+                ),
+                "dim_1": (
+                    "dim_0",
+                    {"tie_indices": [0, 8], "tie_values": [100.0, 900.0]},
+                ),
+            }
+        )
+        assert coords.isdim("dim_0")
+        assert not coords.isdim("dim_1")
 
 
 class TestScaleOffset:
