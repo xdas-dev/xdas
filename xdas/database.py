@@ -79,8 +79,14 @@ class Database:
         else:
             query = self.coords.get_query(key)
             data = self.data.__getitem__(tuple(query.values()))
-            dct = {dim: self.coords[dim].__getitem__(query[dim]) for dim in query}
-            coords = Coordinates(dct)
+            coords = {
+                name: (
+                    coord.__getitem__(query[coord.dim])
+                    if coord.dim is not None
+                    else coord
+                )
+                for name, coord in self.coords.items()
+            }
             dims = tuple(dim for dim in self.dims if not coords[dim].isscalar())
             return self.__class__(data, coords, dims, self.name, self.attrs)
 
@@ -422,9 +428,11 @@ class Database:
                 coords = {
                     name: (
                         coord.dims[0],
-                        coord.values.astype("U")
-                        if coord.dtype == np.dtype("O")
-                        else coord.values,
+                        (
+                            coord.values.astype("U")
+                            if coord.dtype == np.dtype("O")
+                            else coord.values
+                        ),
                     )
                     for name, coord in da.coords.items()
                 }
@@ -441,9 +449,11 @@ class Database:
                 coords = {
                     name: (
                         coord.dims[0],
-                        coord.values.astype("U")
-                        if coord.dtype == np.dtype("O")
-                        else coord.values,
+                        (
+                            coord.values.astype("U")
+                            if coord.dtype == np.dtype("O")
+                            else coord.values
+                        ),
                     )
                     for name, coord in da.coords.items()
                 }

@@ -92,7 +92,8 @@ class TestDatabase:
         db_isel = db.isel(time=1)
         db_sel = db.sel(time=0.5)
         db_expected = Database(
-            np.array([4, 5, 6, 7]), {"time": 0.5, "distance": [0.0, 10.0, 20.0, 30.0]}
+            np.array([4, 5, 6, 7]),
+            {"time": (None, 0.5), "distance": [0.0, 10.0, 20.0, 30.0]},
         )
         assert db_getitem.equals(db_expected)
         assert db_isel.equals(db_expected)
@@ -104,7 +105,7 @@ class TestDatabase:
             np.array([1, 5, 9]),
             {
                 "time": {"tie_values": [0.0, 1.0], "tie_indices": [0, 2]},
-                "distance": 10.0,
+                "distance": (None, 10.0),
             },
         )
         assert db_getitem.equals(db_expected)

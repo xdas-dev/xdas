@@ -6,7 +6,22 @@ import pandas as pd
 
 class Coordinates(dict):
     """
-    A dictionary whose keys are dimension names and values are Coordinate objects.
+    Dictionary like container for coordinates. 
+
+    Parameters
+    ----------
+    coords: dict-like, optional
+        Mapping where keys are coordinate names and values are:
+         - coordinate-like objects and are assumed to be a dimensional coordinate with 
+         both `name` and `dim` taken set to the related key
+         - tuples (dim, coordinate-like) which can be either dimensional (`dim == name`) 
+          or non-dimensional (`dim != name` or `dim == None`) with the name taken from 
+          the related key.
+    dims: squence of str, optional
+        An ordered sequence of dimensions. It is meant to match the dimensionality of 
+        its associated data. If provided, it must at least include all dimensions found 
+        in `coords` (extras dimensions will be considered empty coordinates). 
+        Otherwise, dimensions will be guessed from `coords`.
     """
 
     def __init__(self, coords=None, dims=None):
@@ -14,11 +29,7 @@ class Coordinates(dict):
             if isinstance(coords[name], tuple):
                 dim, coord = coords[name]
             else:
-                coord = coords[name]
-                if ScalarCoordinate.isvalid(coord):
-                    dim = None
-                else:
-                    dim = name
+                dim, coord = name, coords[name]
             coords[name] = Coordinate(coord, dim, name)
         super().__init__(coords)
         if dims is None:
@@ -36,6 +47,22 @@ class Coordinates(dict):
         return s
 
     def get_query(self, item):
+        """
+        Format a query from one or multiple indexer.
+
+        Parameters
+        ----------
+        item: indexer-like or sequence or mapping
+            Object to be parsed as a query. If item is indexer-like object, it is 
+            applied on the first dimension. If item is a sequence, positional indexing 
+            is performed. If item is a mapping, labeled indexing is performed. 
+
+        Returns
+        -------
+        dict:
+            A mapping between each dim and a given indexer. If No indexer was found for
+            a given dim, slice(None) will be used.
+        """
         query = {dim: slice(None) for dim in self.dims}
         if isinstance(item, dict):
             query.update(item)
