@@ -11,11 +11,13 @@ class Coordinates(dict):
     Parameters
     ----------
     coords: dict-like, optional
-        Mapping where keys are coordinate names and values are:
-         - coordinate-like objects and are assumed to be a dimensional coordinate with
-          `dim` set to the related key
-         - tuples (dim, coordinate-like) which can be either dimensional (`dim == name`)
+        Mapping from coordinate names to any of the followings:
+        - Coordinate objects
+        - tuples (dim, coordinate-like) which can be either dimensional (`dim == name`)
           or non-dimensional (`dim != name` or `dim == None`).
+        - coordinate-like objects (that are passed to the Coordinate constructor) 
+          which are assumed to be a dimensional coordinate with `dim` set to the 
+          related name.
     dims: squence of str, optional
         An ordered sequence of dimensions. It is meant to match the dimensionality of
         its associated data. If provided, it must at least include all dimensions found
@@ -41,7 +43,9 @@ class Coordinates(dict):
     def __init__(self, coords=None, dims=None):
         super().__init__()
         for name in coords:
-            if isinstance(coords[name], tuple):
+            if isinstance(coords, AbstractCoordinate):
+                self[name] = coords[name]
+            elif isinstance(coords[name], tuple):
                 dim, data = coords[name]
                 self[name] = Coordinate(data, dim)
             else:
