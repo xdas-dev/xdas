@@ -27,3 +27,4 @@ profile = "black"
 
 [tool.pytest.ini_options]
 addopts = "--doctest-modules"
+doctest_optionflags = "NORMALIZE_WHITESPACE"
