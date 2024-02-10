@@ -102,6 +102,27 @@ class Coordinates(dict):
                 return False
         return True
 
+    def to_dict(self):
+        """Convert this `Coordinates` object into a pure python dictionnary.
+
+        Examples
+        --------
+        >>> coords = {
+        ...     "time": {"tie_indices": [0, 999], "tie_values": [0.0, 10.0]},
+        ...     "distance": [0, 1, 2],
+        ...     "channel": ("distance", ["DAS01", "DAS02", "DAS03"]),
+        ...     "interrogator": (None, "SRN"),
+        ... }
+        >>> Coordinates(coords).to_dict()
+        {'time': {'dim': 'time',
+          'data': {'tie_indices': [0, 999], 'tie_values': [0.0, 10.0]}},
+         'distance': {'dim': 'distance', 'data': [0, 1, 2]},
+         'channel': {'dim': 'distance', 'data': ['DAS01', 'DAS02', 'DAS03']},
+         'interrogator': {'dim': None, 'data': 'SRN'}}
+        """
+            
+        return {name: self[name].to_dict() for name in self}
+
 
 class Coordinate:
     def __new__(cls, data, dim=None, name=None):
@@ -202,6 +223,13 @@ class ScalarCoordinate(AbstractCoordinate):
     def to_index(self, item):
         raise NotImplementedError("cannot get index of scalar coordinate")
 
+    def to_dict(self):
+        if np.issubdtype(self.dtype, np.datetime64):
+            data = self.data.astype(str).item()
+        else:
+            data = self.data.item()
+        return {"dim": self.dim, "data": data}
+
 
 class DenseCoordinate(AbstractCoordinate):
     def __init__(self, data, dim=None, name=None):
@@ -234,6 +262,13 @@ class DenseCoordinate(AbstractCoordinate):
 
     def slice_indexer(self, start=None, end=None, step=None):
         return self.index.slice_indexer(start, end, step)
+
+    def to_dict(self):
+        if np.issubdtype(self.dtype, np.datetime64):
+            data = list(self.data.astype(str))
+        else:
+            data = list(self.data)
+        return {"dim": self.dim, "data": data}
 
 
 class InterpCoordinate(AbstractCoordinate):
@@ -541,6 +576,14 @@ class InterpCoordinate(AbstractCoordinate):
         return cls({"tie_indices": np.arange(len(arr)), "tie_values": arr}).simplify(
             tolerance
         )
+
+    def to_dict(self):
+        tie_indices = self.data["tie_indices"]
+        tie_values = self.data["tie_values"]
+        if np.issubdtype(tie_values.dtype, np.datetime64):
+            tie_values = tie_values.astype(str)
+        data = {"tie_indices": list(tie_indices), "tie_values": list(tie_values)}
+        return {"dim": self.dim, "data": data}
 
 
 class ScaleOffset:
