@@ -21,8 +21,13 @@ class Sequence(UserDict):
 
         # Loop over atoms
         for atom in args:
+            # Set atom name
+            self._check_name(atom)
             # Add parent reference
             atom.parent = self
+
+        # Reset counter (parent __init__ will check names again)
+        self.name_counter = Counter()
 
         # Create keyword args from unique names
         init = dict((atom.name, atom) for atom in args)
@@ -142,14 +147,8 @@ class Sequence(UserDict):
         pass
 
     def get_chain(self) -> ChainType:
-        # Create a list of partial functions which
-        # take the database as the first argument.
-        # The lambda function is a trick to attach
-        # `name` as a keyword without passing it
-        # onto the function (which would raise an
-        # exception). `name` is only used for the
-        # representation of the chain.
-        atoms = [partial(lambda x, name, **kwargs: val.func(x, **kwargs), **val.args, name=key) for key, val in self.data.items()]
+        """Link Atoms into a processing chain"""
+        atoms = [atom for _, atom in self.data.items()]
         chain = ProcessingChain(atoms)
         return chain
     
@@ -172,9 +171,14 @@ class Atom:
 
     def __init__(self, func: Callable, name: Hashable="", **kwargs: Any) -> None:
         self.func = func
+        if hasattr(kwargs, "name"):
+            del kwargs["name"]
         self.kwargs = kwargs
         self.name = name
         pass
+
+    def __call__(self, db) -> Any:
+        return self.func(db, **self.kwargs)
 
     def __str__(self) -> str:
         args = [f"{key}={val}" for key, val in self.kwargs.items()]
@@ -190,10 +194,6 @@ class Atom:
     def delete(self) -> None:
         self.parent.pop(self.name)
         pass
-
-    # def set_name(self, name: Hashable) -> None:
-    #     self.name = name
-    #     pass
 
     def set_args(self, **kwargs) -> None:
         self.kwargs = kwargs

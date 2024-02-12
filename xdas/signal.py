@@ -17,7 +17,7 @@ def parse_dim(db, dim):
         if dim in db.dims:
             return dim
         else:
-            ValueError(f"{dim} not in db.dims")
+            raise ValueError(f"{dim} not in db.dims")
 
 
 def get_sampling_interval(db, dim):
