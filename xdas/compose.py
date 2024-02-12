@@ -14,31 +14,54 @@ DatabaseType = Type[Database]
 
 class Sequence(UserDict):
 
-    # Counter for keeping track of the (unique) names
-    name_counter = Counter()
-
     def __init__(self, *args) -> None:
+
+        # Counter for keeping track of the (unique) names
+        self.name_counter = Counter()
 
         # Loop over atoms
         for atom in args:
-            # Check/update atom name
-            self._check_name(atom)
             # Add parent reference
             atom.parent = self
 
         # Create keyword args from unique names
         init = dict((atom.name, atom) for atom in args)
-        # print(kwargs)
         # Initialise parent class
         return super().__init__(init)
-        pass
     
-    def __setattr__(self, key: Hashable, val: Any) -> None:
-        if isinstance(val, Atom):
-            val.name = key
-            key = self._check_name(val)
-        return super().__setattr__(key, val)
     
+    def __setitem__(self, key: Hashable, val: Any) -> None:
+        """Override set() method to ensure unique atom atom naming"""
+
+        # Only allow [State]Atom instances
+        if not isinstance(val, Atom):
+            return
+        
+        # If a key is provided
+        if (len(key) > 0):
+            # If no name is provided with the Atom
+            # set the atom name to key
+            if len(val.name) == 0:
+                val.name = key
+
+        # Bookkeeping (checking for name duplicates)
+        key = self._check_name(val)
+        return super().__setitem__(key, val)
+    
+
+    def __getitem__(self, key: Hashable) -> Any:
+        """Override get() method to allow for integer keywords"""
+        if isinstance(key, int):
+            key = list(self.keys())[key]
+        return super().__getitem__(key)
+    
+    
+    def __delitem__(self, key: Any) -> None:
+        # TODO: update counter and rename keys?
+        # self.name_counter[key] -= 1
+        return super().__delitem__(key)
+    
+
     def __str__(self) -> str:
         # Get the atom representations and join
         items = [f"{i:<3} {item}" for i, (_, item) in enumerate(self.data.items())]
@@ -48,15 +71,7 @@ class Sequence(UserDict):
         line = "-" * len(header) + "\n"
         header += "\n"
         return line + header + line + itemstr
-
     
-    def __getitem__(self, key: Hashable) -> Any:
-        if isinstance(key, int):
-            key = list(self.keys())[key]
-        return super().__getitem__(key)
-    
-    def __delitem__(self, key: Any) -> None:
-        return super().__delitem__(key)
     
     def _check_name(self, atom: Any) -> Hashable:
 
@@ -73,21 +88,21 @@ class Sequence(UserDict):
         # Update name (and self.name_counter)
         atom.name = name
 
-        return name        
+        return name
+    
     
     def _insert(self, pos: Hashable, atom, locator: Callable) -> None:
-
-        self._check_name(atom)
-        name = atom.name
 
         # List of current keys
         keys = list(self.keys())
         # Locate insertion position
         pos = locator(keys, pos)
+        # Add key:item to dictionary (checks for duplicate names)
+        self.__setitem__(atom.name, atom)
+        name = atom.name
         # Insert key at insertion position
         keys.insert(pos, name)
-        # Add key:item to dictionary
-        self.__setitem__(name, atom)
+        
         # Reorder dict
         self.data = {key: self.get(key) for key in keys}
         pass
