@@ -218,10 +218,31 @@ class Atom:
 
 class StateAtom(Atom):
 
-    def __init__(self, func: Callable, state: None | Any=None, **kwargs) -> None:
-        # TODO: add a state
-        self.state = state
+    _state_initialized = False
+
+    def __init__(self, 
+                 func: Callable, 
+                 state_arg: Hashable,
+                 state: None | Any=None, 
+                 **kwargs) -> None:
+        
+        self._state_arg = state_arg
+        self._state = state
+        if state is not None:
+            self._state_initialized = True
+        
         super().__init__(func, **kwargs)
 
     def __str__(self) -> str:
         return super().__str__() + "  [stateful]"
+    
+    def __call__(self, db) -> Any:
+        kwargs = self.kwargs.copy()
+        kwargs.update(self._state_arg, self._state)
+        db, state = self.func(db,**self.kwargs)
+        self._set_state(state)
+        return db
+    
+    def _set_state(self, state: Any) -> None:
+        self._state = state
+        pass
