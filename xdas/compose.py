@@ -23,6 +23,19 @@ class Sequence(UserDict):
     methods to reorder the dictionary. (By default, all
     dict objects in Python >= 3.7 maintain their insertion order).
 
+    Example usage:
+    ```
+    op1 = xdas.Atom(xdas.signal.taper, dim="time")
+    op2 = xdas.Atom(xdas.signal.taper, dim="space", name="spatial taper")
+    op3 = xdas.Atom(numpy.square)
+    op4 = xdas.Atom(my_func, arg1=1.0, arg2=[0, 1, 2])
+    sequence = xdas.Sequence(op1, op2, op3, op4)
+    sequence["abs"] = xdas.Atom(np.abs)
+    del sequence["spatial taper"]
+    print(sequence)  # Print a summary of the Sequence
+    sequence.execute(db)
+    ```
+
     Attributes
     ----------
     name_counter : Counter
@@ -329,6 +342,57 @@ class Sequence(UserDict):
         pass
 
 class Atom:
+    """
+    Base class for an xdas operation, to be used in conjunction 
+    with Sequence. Each Atom should be seen as an elementary 
+    operation to apply to the data,such as tapering, 
+    multiplication, integration, etc. More complex operations 
+    (fk-analysis, strain-to-displacement conversion, ...) can be 
+    written as a sequence of Atoms, executed in the right order.
+    Each Atom can optionally be labelled with the `name` argument
+    for easy identification in long sequences.
+
+    Example usage:
+    ```
+    sequence = xdas.Sequence(
+        xdas.Atom(xdas.signal.taper, dim="space"),
+        xdas.Atom(xdas.signal.taper, dim="time", name="taper space"),
+    )
+    
+    sequence[0].move_down()
+    sequence["taper space"].insert_before(
+        xdas.Atom(numpy.square),
+    )
+    sequence[-1].delete()
+    ```
+    
+    Attributes
+    ----------
+    func : Callable
+        The function to execute in the Sequence. It
+        takes an xarray Database as the first argument
+        and returns a modified copy of the Database.
+        Subsequent arguments are given by `func`.
+    name : Hashable
+        Name to identify the function
+    kwargs : Any
+        Arguments to pass to `func`
+
+    Methods
+    -------
+    delete():
+        Deletes the selected Atom
+    set_args(**kwargs):
+        Override the selected Atom's keyword arguments
+    insert_after(Atom):
+        Inserts a new Atom behind of the selected Atom
+    insert_before(Atom):
+        Inserts a new Atom ahead of the selected Atom
+    mode_down():
+        Moves the selected Atom down in the Sequence
+    mode_up():
+        Moves the selected Atom up in the Sequence
+    """
 
     def __init__(self, func: Callable, name: Hashable="", **kwargs: Any) -> None:
         self.func = func
@@ -360,24 +424,58 @@ class Atom:
         self.kwargs = kwargs
         pass
 
-    def insert_before(self, atom) -> None:
-        self.parent._insert(self.name, atom, locator=self._locate_before)
-        pass
-
     def insert_after(self, atom) -> None:
         self.parent._insert(self.name, atom, locator=self._locate_after)
         pass
 
-    def move_up(self) -> None:
-        self.parent._move(self.name, locator=self._locate_before)
+    def insert_before(self, atom) -> None:
+        self.parent._insert(self.name, atom, locator=self._locate_before)
         pass
 
     def move_down(self) -> None:
         self.parent._move(self.name, locator=self._locate_after)
         pass
 
+    def move_up(self) -> None:
+        self.parent._move(self.name, locator=self._locate_before)
+        pass
+
 
 class StateAtom(Atom):
+    """
+    A subclass of Atom that provides some logic for handling
+    data states, which need to be updated throughout the
+    execution chain. An example of a stateful operation is
+    a recursive filter, passing on the state from t to t+1.
+    
+    The Atom base class assumes that a given function takes
+    an xarray Database as the first argument, and returns
+    a modified copy of this Database. The StateAtom class
+    assumes that the stateful function takes a Database and
+    an initialized state, and returns the modified Database
+    and modified state, i.e.:
+
+    `db, state = func(db, state_arg=state, **kwargs)`
+    
+    Here, `state_arg` is the name of the keyword argument
+    that contains the state, which can differ from one function
+    to the next. For example, in scipy.signal.sosfilt, the
+    state argument is `zi`, and so `state_arg` is `zi`.
+
+    Example usage:
+    ```
+    state = np.zeros((10, 100))
+    state_op = StateAtom(
+        scipy.signal.sosfilt, axis=0, state_arg="zi", state=state
+    )
+    ```
+
+    Methods
+    -------
+    initialize_state(state):
+        Set the initial state.
+    
+    """
 
     _state_initialized = False
 
@@ -400,10 +498,15 @@ class StateAtom(Atom):
     def __call__(self, db) -> Any:
         kwargs = self.kwargs.copy()
         kwargs.update(self._state_arg, self._state)
-        db, state = self.func(db,**self.kwargs)
+        db, state = self.func(db, **self.kwargs)
         self._set_state(state)
         return db
     
     def _set_state(self, state: Any) -> None:
         self._state = state
+        pass
+
+    def initialize_state(self, state: Any) -> None:
+        self._set_state(state)
+        self._state_initialized = True
         pass
