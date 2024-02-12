@@ -1,7 +1,6 @@
 from collections import UserDict, Counter
-from collections.abc import Hashable, Callable, Sequence
-from typing import Any, Dict, Type
-from functools import partial
+from collections.abc import Hashable, Callable
+from typing import Any, Type
 
 from .processing import ProcessingChain, DatabaseLoader, DatabaseWriter
 from .database import Database
@@ -13,14 +12,39 @@ DatabaseType = Type[Database]
 
 
 class Sequence(UserDict):
+    """
+    A class to handle a sequence of operations.
+    Each operation is represented by an Atom class object,
+    which contains the function and its arguments.
+    For stateful operations, use the StateAtom class.
+
+    Sequence inherits from UserDict, and therefore behaves
+    as a dictionary. It is extended with convenience
+    methods to reorder the dictionary. (By default, all
+    dict objects in Python >= 3.7 maintain their insertion order).
+
+    Attributes
+    ----------
+    name_counter : Counter
+        Counter object to keep track of (duplicate)
+        dictionary keys
+
+    """
 
     def __init__(self, *args) -> None:
+        """
+        Initialise the Sequence with an arbitrary number of
+        Atom or StateAtom objects. Any non-[State]Atom objects
+        are discarded.
+        """
 
         # Counter for keeping track of the (unique) names
         self.name_counter = Counter()
 
         # Loop over atoms
         for atom in args:
+            if not isinstance(atom, Atom):
+                continue
             # Set atom name
             self._check_name(atom)
             # Add parent reference
@@ -42,6 +66,11 @@ class Sequence(UserDict):
         if not isinstance(val, Atom):
             return
         
+        # If the key has no length:
+        # get its string representation
+        if not hasattr(key, "__len__"):
+            key = str(key)
+        
         # If a key is provided
         if (len(key) > 0):
             # If no name is provided with the Atom
@@ -55,15 +84,38 @@ class Sequence(UserDict):
     
 
     def __getitem__(self, key: Hashable) -> Any:
-        """Override get() method to allow for integer keywords"""
+        """
+        Get an item from the Sequence.
+        Overrides `Sequence.get(key)`
+
+        Parameters
+        ----------
+        key : Hashable
+            The key corresponding with the item to delete.
+            If an integer is provided, it is interpreted
+            as the position number in the Sequence.
+        """
         if isinstance(key, int):
             key = list(self.keys())[key]
         return super().__getitem__(key)
     
     
-    def __delitem__(self, key: Any) -> None:
+    def __delitem__(self, key: Hashable) -> None:
+        """
+        Delete an item from the Sequence.
+        Overrides `del Sequence[key]`
+
+        Parameters
+        ----------
+        key : Hashable
+            The key corresponding with the item to delete.
+            If an integer is provided, it is interpreted
+            as the position number in the Sequence.
+        """
         # TODO: update counter and rename keys?
         # self.name_counter[key] -= 1
+        if isinstance(key, int):
+            key = list(self.keys())[key]
         return super().__delitem__(key)
     
 
@@ -79,9 +131,35 @@ class Sequence(UserDict):
     
     
     def _check_name(self, atom: Any) -> Hashable:
+        """
+        Assign a key to an Atom object. If no key is given
+        by the user (atom.name), create one based on the
+        function name (atom.func.__name__). To ensure that 
+        all keys in the sequence are unique, this method 
+        uses `name_counter` to keep track of potential 
+        duplicates (likely the result of applying the same
+        function multiple times with different arguments).
+
+        Parameters
+        ----------
+        atom : Atom
+            The instantiated Atom object
+
+        Returns
+        -------
+        name : str
+            The key that has been assigned to atom
+        
+        """
 
         # Get atom name
         name = atom.name
+
+        # If the name has no length:
+        # get its string representation
+        if not hasattr(name, "__len__"):
+            name = str(name)
+
         if len(name) == 0:
             name = atom.func.__name__
         
@@ -96,7 +174,28 @@ class Sequence(UserDict):
         return name
     
     
-    def _insert(self, pos: Hashable, atom, locator: Callable) -> None:
+    def _insert(self, pos: Hashable, atom: Any, locator: Callable) -> None:
+        """
+        Insert an Atom at a particular position in the Sequence.
+        This method is called from a parent Atom object using the
+        `Atom.insert_before` or `Atom.insert_after` methods. 
+        Example:
+            `Sequence[key].insert_before(Atom)`
+
+        Parameters
+        ----------
+        pos : Hashable
+            Key of the position at which `atom` needs 
+            to be inserted. Whether the insertion is
+            before or after is determined by `locator`
+        atom : Atom
+            The instantiated Atom object to be inserted
+        locator : Callable
+            A function passed on from the calling Atom
+            that indicates whether the insertion is made
+            before or after `pos`
+        
+        """
 
         # List of current keys
         keys = list(self.keys())
@@ -113,6 +212,28 @@ class Sequence(UserDict):
         pass
 
     def _move(self, key: Hashable, locator: Callable) -> None:
+        """
+        Move an Atom within the Sequence in a direction indicated
+        by `locator`. This method is called from a parent Atom object 
+        using the `Atom.move_up` or `Atom.move_down` methods. 
+        Example:
+            `Sequence[key].move_down()`
+
+        Parameters
+        ----------
+        pos : Hashable
+            Key of the position at which `atom` needs 
+            to be inserted. Whether the insertion is
+            before or after is determined by `locator`
+        atom : Atom
+            The instantiated Atom object to be inserted
+        locator : Callable
+            A function passed on from the calling Atom
+            that indicates whether the insertion is made
+            before or after `pos`
+        
+        """
+
         # List of current keys
         keys = list(self.keys())
         # Current position of key
@@ -147,19 +268,59 @@ class Sequence(UserDict):
         pass
 
     def get_chain(self) -> ChainType:
-        """Link Atoms into a processing chain"""
+        """
+        Link Atoms into a processing chain
+        
+        Returns
+        -------
+        chain : ProcessingChain
+            The ProcessingChain object that contains
+            additional execution methods.
+        
+        """
         atoms = [atom for _, atom in self.data.items()]
         chain = ProcessingChain(atoms)
         return chain
     
     def execute(self, 
                 data_loader: DatabaseType | LoaderType, 
-                data_writer: None | WriterType=None):
+                data_writer: None | WriterType=None) -> None | DatabaseType:
+        """
+        A convenience method that executes the current
+        Sequence directly, rather than explicitly requesting
+        the ProcessingChain and executing that.
+
+        Parameters
+        ----------
+        data_loader : Database | DatabaseLoader
+            If an xarray Database is provided, the
+            ProcessingChain is executed directly on the
+            Database. If a DatabaseLoader is provided, 
+            chunked processing is applied.
+        data_writer : None | DatabaseWriter
+            If provided, the result of the ProcessingChain
+            is passed on to the DatabaseWriter for
+            persistent storage. If None, the result is
+            returned to the user.
+
+        Returns
+        -------
+        result : None | Database
+            If `data_writer` is None, the result of the
+            ProcessingChain execution is returned, else
+            None is returned.
         
+        """
+        
+        # Get the list of Atoms in the Sequence
         chain = self.get_chain()
+        # If an xarray Database is provided, execute
+        # the ProcessingChain directly.
         if isinstance(data_loader, Database):
             result = chain(data_loader)
 
+        # If no DatabaseWriter is provided, 
+        # return the results directly
         if data_writer is None:
             return result
         
