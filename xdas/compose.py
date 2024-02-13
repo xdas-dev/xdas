@@ -24,28 +24,27 @@ class Sequence(UserDict):
     methods to reorder the dictionary. (By default, all
     dict objects in Python >= 3.7 maintain their insertion order).
 
-    Example usage:
-    ```
-    op1 = xdas.Atom(xdas.signal.taper, dim="time")
-    op2 = xdas.Atom(xdas.signal.taper, dim="space", name="spatial taper")
-    op3 = xdas.Atom(numpy.square)
-    op4 = xdas.Atom(my_func, arg1=1.0, arg2=[0, 1, 2])
-    sequence = xdas.Sequence(op1, op2, op3, op4)
-    sequence["abs"] = xdas.Atom(np.abs)
-    del sequence["spatial taper"]
-    print(sequence)  # Print a summary of the Sequence
-    sequence.execute(db)
-    ```
-
     Attributes
     ----------
     name_counter : Counter
         Counter object to keep track of (duplicate)
         dictionary keys
 
+    Examples
+    --------
+    >>> op1 = xdas.Atom(xdas.signal.taper, dim="time")
+    ... op2 = xdas.Atom(xdas.signal.taper, dim="space", name="spatial taper")
+    ... op3 = xdas.Atom(numpy.square)
+    ... op4 = xdas.Atom(my_func, arg1=1.0, arg2=[0, 1, 2])
+    ... sequence = xdas.Sequence(op1, op2, op3, op4)
+    ... sequence["abs"] = xdas.Atom(np.abs)
+    ... del sequence["spatial taper"]
+    ... print(sequence)  # Print a summary of the Sequence
+    ... sequence.execute(db)
+
     """
 
-    def __init__(self, *args) -> None:
+    def __init__(self, *args: Any) -> None:
         """
         Initialise the Sequence with an arbitrary number of
         Atom or StateAtom objects. Any non-[State]Atom objects
@@ -371,20 +370,6 @@ class Atom:
     Each Atom can optionally be labelled with the `name` argument
     for easy identification in long sequences.
 
-    Example usage:
-    ```
-    sequence = xdas.Sequence(
-        xdas.Atom(xdas.signal.taper, dim="space"),
-        xdas.Atom(xdas.signal.taper, dim="time", name="taper space"),
-    )
-
-    sequence[0].move_down()
-    sequence["taper space"].insert_before(
-        xdas.Atom(numpy.square),
-    )
-    sequence[-1].delete()
-    ```
-
     Attributes
     ----------
     func : Callable
@@ -411,6 +396,19 @@ class Atom:
         Moves the selected Atom down in the Sequence
     mode_up():
         Moves the selected Atom up in the Sequence
+
+    Examples
+    --------
+    >>> sequence = xdas.Sequence(
+    ...     xdas.Atom(xdas.signal.taper, dim="space"),
+    ...     xdas.Atom(xdas.signal.taper, dim="time", name="taper space"),
+    ... )
+    ...
+    ... sequence[0].move_down()
+    ... sequence["taper space"].insert_before(
+    ...     xdas.Atom(numpy.square),
+    ... )
+    ... sequence[-1].delete()
     """
 
     def __init__(self, func: Callable, name: Hashable = "", **kwargs: Any) -> None:
@@ -476,25 +474,22 @@ class StateAtom(Atom):
     an initialized state, and returns the modified Database
     and modified state, i.e.:
 
-    `db, state = func(db, state_arg=state, **kwargs)`
+    >>> db, state = func(db, state_arg=state, **kwargs)
 
     Here, `state_arg` is the name of the keyword argument
     that contains the state, which can differ from one function
     to the next. For example, in scipy.signal.sosfilt, the
     state argument is `zi`, and so `state_arg` is `zi`.
 
-    Example usage:
-    ```
-    state = np.zeros((10, 100))
-    state_op = StateAtom(
-        scipy.signal.sosfilt, axis=0, state_arg="zi", state=state
-    )
-    ```
-
     Methods
     -------
     initialize_state(state):
         Set the initial state.
+
+    Examples
+    --------
+    >>> state = np.zeros((10, 100))
+    ... state_op = StateAtom(scipy.signal.sosfilt, axis=0, state_arg="zi", state=state)
 
     """
 
