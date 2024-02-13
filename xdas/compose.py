@@ -1,6 +1,7 @@
 from collections import UserDict, Counter
 from collections.abc import Hashable, Callable
-from typing import Any, Type
+from typing import Any, Type, Self
+from copy import copy
 
 from .processing import ProcessingChain, DatabaseLoader, DatabaseWriter
 from .database import Database
@@ -48,28 +49,27 @@ class Sequence(UserDict):
         """
         Initialise the Sequence with an arbitrary number of
         Atom or StateAtom objects. Any non-[State]Atom objects
-        are discarded.
+        are silently discarded.
         """
+
+        super().__init__()
 
         # Counter for keeping track of the (unique) names
         self.name_counter = Counter()
 
-        # Loop over atoms
+        # Loop over arguments
         for atom in args:
+            # Skip non-Atoms
             if not isinstance(atom, Atom):
                 continue
             # Set atom name
             self._check_name(atom)
             # Add parent reference
-            atom.parent = self
+            atom._parent = self
+            # Insert atom
+            super().__setitem__(atom._name, atom)
 
-        # Reset counter (parent __init__ will check names again)
-        self.name_counter = Counter()
-
-        # Create keyword args from unique names
-        init = dict((atom.name, atom) for atom in args)
-        # Initialise parent class
-        return super().__init__(init)
+        pass
     
     
     def __setitem__(self, key: Hashable, val: Any) -> None:
@@ -88,8 +88,8 @@ class Sequence(UserDict):
         if (len(key) > 0):
             # If no name is provided with the Atom
             # set the atom name to key
-            if len(val.name) == 0:
-                val.name = key
+            if len(val._name) == 0:
+                val._name = key
 
         # Bookkeeping (checking for name duplicates)
         key = self._check_name(val)
@@ -131,6 +131,27 @@ class Sequence(UserDict):
             key = list(self.keys())[key]
         return super().__delitem__(key)
     
+    def copy(self) -> Self:
+
+        # Instantiate a new Sequence
+        # result = Sequence()
+        cls = self.__class__
+        result = cls.__new__(cls)
+        super(Sequence, result).__init__()
+        # Loop over Atoms
+        for key, val in self.data.items():
+            # Create a copy of the Atom
+            new_val = copy(val)
+            # Override the parent pointer
+            new_val._parent = result
+            # Insert key:val without checking the key,
+            # which would re-create unique keys
+            super(Sequence, result).__setitem__(key, new_val)
+        
+        # Copy over the current counter
+        result.name_counter = copy(self.name_counter)
+
+        return result    
 
     def __str__(self) -> str:
         # Get the atom representations and join
@@ -166,7 +187,7 @@ class Sequence(UserDict):
         """
 
         # Get atom name
-        name = atom.name
+        name = atom._name
 
         # If the name has no length:
         # get its string representation
@@ -174,15 +195,15 @@ class Sequence(UserDict):
             name = str(name)
 
         if len(name) == 0:
-            name = atom.func.__name__
+            name = atom._func.__name__
         
         # Check for duplicates
         self.name_counter[name] += 1
         if self.name_counter[name] > 1:
             name = f"{name}{self.name_counter[name]}"
         
-        # Update name (and self.name_counter)
-        atom.name = name
+        # Update name
+        atom._name = name
 
         return name
     
@@ -215,8 +236,8 @@ class Sequence(UserDict):
         # Locate insertion position
         pos = locator(keys, pos)
         # Add key:item to dictionary (checks for duplicate names)
-        self.__setitem__(atom.name, atom)
-        name = atom.name
+        self.__setitem__(atom._name, atom)
+        name = atom._name
         # Insert key at insertion position
         keys.insert(pos, name)
         
@@ -341,6 +362,7 @@ class Sequence(UserDict):
         
         pass
 
+
 class Atom:
     """
     Base class for an xdas operation, to be used in conjunction 
@@ -395,20 +417,22 @@ class Atom:
     """
 
     def __init__(self, func: Callable, name: Hashable="", **kwargs: Any) -> None:
-        self.func = func
+        self._func = func
         if hasattr(kwargs, "name"):
             del kwargs["name"]
-        self.kwargs = kwargs
-        self.name = name
+        self._kwargs = kwargs
+        self._name = name
+        self._key = None
+        self._parent = None
         pass
 
     def __call__(self, db) -> Any:
         return self.func(db, **self.kwargs)
 
     def __str__(self) -> str:
-        args = [f"{key}={val}" for key, val in self.kwargs.items()]
+        args = [f"{key}={val}" for key, val in self._kwargs.items()]
         argstr = ", ".join(args)
-        return f"{self.name:<25}{self.func.__name__}({argstr})"
+        return f"{self._name:<25}{self._func.__name__}({argstr})"
     
     def _locate_before(self, x, a):
         return x.index(a)
@@ -417,27 +441,27 @@ class Atom:
         return x.index(a)+1
     
     def delete(self) -> None:
-        self.parent.pop(self.name)
+        self._parent.pop(self._name)
         pass
 
     def set_args(self, **kwargs) -> None:
-        self.kwargs = kwargs
+        self._kwargs = kwargs
         pass
 
     def insert_after(self, atom) -> None:
-        self.parent._insert(self.name, atom, locator=self._locate_after)
+        self._parent._insert(self._name, atom, locator=self._locate_after)
         pass
 
     def insert_before(self, atom) -> None:
-        self.parent._insert(self.name, atom, locator=self._locate_before)
+        self._parent._insert(self._name, atom, locator=self._locate_before)
         pass
 
     def move_down(self) -> None:
-        self.parent._move(self.name, locator=self._locate_after)
+        self._parent._move(self._name, locator=self._locate_after)
         pass
 
     def move_up(self) -> None:
-        self.parent._move(self.name, locator=self._locate_before)
+        self._parent._move(self._name, locator=self._locate_before)
         pass
 
 
@@ -496,9 +520,9 @@ class StateAtom(Atom):
         return super().__str__() + "  [stateful]"
     
     def __call__(self, db) -> Any:
-        kwargs = self.kwargs.copy()
+        kwargs = self._kwargs.copy()
         kwargs.update(self._state_arg, self._state)
-        db, state = self.func(db, **self.kwargs)
+        db, state = self._func(db, **self._kwargs)
         self._set_state(state)
         return db
     
