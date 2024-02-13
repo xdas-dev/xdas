@@ -65,8 +65,3 @@ class TestCompose:
         assert sequence1 == sequence2
 
         # TODO: test insertion via insert_before/after
-
-
-
-
-

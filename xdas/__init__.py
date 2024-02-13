@@ -1,3 +1,4 @@
+from .compose import Atom, Sequence, StateAtom
 from .coordinates import Coordinate, Coordinates, InterpCoordinate
 from .core import (
     asdatabase,
@@ -7,9 +8,3 @@ from .core import (
     open_mfdatabase,
 )
 from .database import Database, DataCollection
-
-from .compose import (
-    Atom, 
-    StateAtom, 
-    Sequence
-)

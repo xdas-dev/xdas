@@ -418,9 +418,11 @@ class Database:
                 coords = {
                     name: (
                         coord.dims[0],
-                        coord.values.astype("U")
-                        if coord.dtype == np.dtype("O")
-                        else coord.values,
+                        (
+                            coord.values.astype("U")
+                            if coord.dtype == np.dtype("O")
+                            else coord.values
+                        ),
                     )
                     for name, coord in da.coords.items()
                 }
@@ -437,9 +439,11 @@ class Database:
                 coords = {
                     name: (
                         coord.dims[0],
-                        coord.values.astype("U")
-                        if coord.dtype == np.dtype("O")
-                        else coord.values,
+                        (
+                            coord.values.astype("U")
+                            if coord.dtype == np.dtype("O")
+                            else coord.values
+                        ),
                     )
                     for name, coord in da.coords.items()
                 }

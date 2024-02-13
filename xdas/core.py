@@ -98,7 +98,7 @@ def concatenate(dbs, dim="time", tolerance=None, virtual=None, verbose=None):
     tie_indices = []
     tie_values = []
     if verbose:
-        iterator = tqdm(dbs, desc="Linking database") 
+        iterator = tqdm(dbs, desc="Linking database")
     else:
         iterator = dbs
     for db in iterator:
