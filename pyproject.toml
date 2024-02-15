@@ -8,7 +8,17 @@ version = "0.1b3"
 authors = [
     { name = "Alister Trabattoni", email = "alister.trabattoni@gmail.com" },
 ]
-dependencies = ["dask", "h5py", "netcdf4", "numpy", "scipy", "tqdm", "xarray"]
+dependencies = [
+    "dask",
+    "h5py",
+    "netcdf4",
+    "numpy",
+    "pandas",
+    "scipy",
+    "tqdm",
+    "xarray",
+    "watchdog",
+]
 
 [project.optional-dependencies]
 dev = ["black", "isort", "twine"]
