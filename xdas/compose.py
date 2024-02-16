@@ -128,6 +128,11 @@ class Sequence(UserDict):
         return super().__delitem__(key)
 
     def copy(self) -> Self:
+        """
+        Create a copy of the sequence.
+        This overrides the __copy__() method
+        of the Dict / UserDict class
+        """
 
         # Instantiate a new Sequence
         # result = Sequence()
@@ -331,26 +336,28 @@ class Sequence(UserDict):
             If provided, the result of the ProcessingChain
             is passed on to the DatabaseWriter for
             persistent storage. If None, the result is
-            returned to the user.
+            kept in memory.
 
         Returns
         -------
-        result : None | Database
-            If `data_writer` is None, the result of the
-            ProcessingChain execution is returned, else
-            None is returned.
+        result : Database
+            The result of the ProcessingChain execution
 
         """
 
         # Get the list of Atoms in the Sequence
         chain = self.get_chain()
-        # If an xarray Database is provided, execute
+        # If a Database is provided, execute
         # the ProcessingChain directly.
         if isinstance(data_loader, Database):
             result = chain(data_loader)
-
-        if isinstance(data_loader, DatabaseLoader):
+        # Else, if a DatabaseLoader is provided,
+        # perform the chunked processing
+        elif isinstance(data_loader, DatabaseLoader):
             result = chain.process(data_loader, data_writer)
+        # If something else is provided, raise an exception
+        else:
+            raise TypeError(f"data_loader type '{type(data_loader)}' not accepted")
 
         return result
 
@@ -485,8 +492,8 @@ class StateAtom(Atom):
 
     Examples
     --------
-    >>> state = np.zeros((10, 100))
-    ... state_op = StateAtom(scipy.signal.sosfilt, axis=0, state_arg="zi", state=state)
+    >>> state = np.zeros((2, 2, 100))
+    ... state_op = StateAtom(xp.sosfilt, dim="time", state_arg="zi", state=state)
 
     """
 
