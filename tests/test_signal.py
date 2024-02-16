@@ -105,3 +105,17 @@ class TestSignal:
         expected = np.concatenate(arrays, axis=1)
         result = xp.multithreaded_concatenate(arrays, axis=1)
         assert np.array_equal(expected, result)
+
+    def test_filters(self):
+        from scipy import signal
+        from xdas.synthetics import generate
+        db=generate()
+
+        sos = signal.butter(3, 0.5,'highpass',output='sos')
+        z = xp.sosfiltfilt(sos, db, 'time', parallel=None)
+        z = xp.sosfilt(sos, db, 'time', parallel=None)
+
+        b,a = signal.butter(3, 0.05,'highpass')
+        z = xp.lfilter(b, a, db, 'time', parallel=None)
+        z = xp.filtfilt(b, a, db, 'time', parallel=None)
+

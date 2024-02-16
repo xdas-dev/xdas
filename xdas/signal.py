@@ -270,7 +270,7 @@ def lfilter(b, a, db, dim="last", parallel=None):
     axis = db.get_axis_num(dim)
     func = lambda x, b, a, axis: sp.lfilter(b, a, x, axis)
     func = parallelize(func, axis, parallel)
-    data = func(db.values, b, a, axis, parallel)
+    data = func(db.values, b, a, axis)
     return db.copy(data=data)
 
 
@@ -356,11 +356,11 @@ def filtfilt(
         b, a, x, axis, padtype, padlen, method, irlen
     )
     func = parallelize(func, axis, parallel)
-    data = func(db.values, b, a, axis, padtype, padlen, method, irlen, parallel)
+    data = func(db.values, b, a, axis, padtype, padlen, method, irlen)
     return db.copy(data=data)
 
 
-def sosfilt(sos, db, dim, parallel=None):
+def sosfilt(sos, db, dim="last", parallel=None):
     """
     Scipy function filter data along one dimension using cascaded second-order sections.
     `Link text https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.sosfilt.html`_
@@ -415,11 +415,11 @@ def sosfilt(sos, db, dim, parallel=None):
     axis = db.get_axis_num(dim)
     func = lambda x, sos, axis: sp.sosfilt(sos, x, axis)
     func = parallelize(func, axis, parallel)
-    data = func(db.values, sos, axis, parallel)
+    data = func(db.values, sos, axis)
     return db.copy(data=data)
 
 
-def sosfiltfilt(sos, db, dim, padtype='odd', padlen=None, parallel=None):
+def sosfiltfilt(sos, db, dim="last", padtype="odd", padlen=None, parallel=None):
     """
     Scipy function a forward-backward digital filter using cascaded second-order sections..
     `Link text https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.sosfiltfilt.html#scipy.signal.sosfiltfilt`_
@@ -433,13 +433,13 @@ def sosfiltfilt(sos, db, dim, padtype='odd', padlen=None, parallel=None):
         providing the numerator coefficients and the last three providing the denominator
         coefficients.
     padtype: str or None, optional
-        Must be ‘odd’, ‘even’, ‘constant’, or None. This determines the type of extension 
-        to use for the padded signal to which the filter is applied. If padtype is None, 
+        Must be ‘odd’, ‘even’, ‘constant’, or None. This determines the type of extension
+        to use for the padded signal to which the filter is applied. If padtype is None,
         no padding is used. The default is ‘odd’.
 
     padlen: int or None, optional
-        The number of elements by which to extend x at both ends of axis before applying 
-        the filter. This value must be less than x.shape[axis] - 1. padlen=0 implies no padding. 
+        The number of elements by which to extend x at both ends of axis before applying
+        the filter. This value must be less than x.shape[axis] - 1. padlen=0 implies no padding.
         The default value is something complicated see scipy.sosfiltfilt
 
     New Xdas Parameters
@@ -473,18 +473,21 @@ def sosfiltfilt(sos, db, dim, padtype='odd', padlen=None, parallel=None):
     >>> db = xdas.Database(xn,{"time":t})
 
     Create an order 3 lowpass butterworth filter:
-    fs = 1.0 / get_sampling_interval(db, dim)
     >>> sos = signal.butter(3, 0.05,output='sos')
     >>> z = xp.sosfiltfilt(sos, db, dim, parallel=None)
     """
 
     dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
-    func = lambda x, sos, axis, padtype, padlen: sp.sosfiltfilt(sos, x, axis, padtype, padlen)
+    func = lambda x, sos, axis, padtype, padlen: sp.sosfiltfilt(
+        sos, x, axis, padtype, padlen
+    )
     func = parallelize(func, axis, parallel)
-    data = func(db.values, sos, axis, padtype, padlen, parallel)
+    data = func(db.values, sos, axis, padtype, padlen)
     return db.copy(data=data)
 
+#def medfilt2d(input, dictionary)
+    # dictionary is {'time':2, 'space':4}
 
 
 def decimate(db, q, n=None, ftype=None, zero_phase=None, dim="last", parallel=None):
