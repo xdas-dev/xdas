@@ -218,7 +218,7 @@ def filter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=Non
 def resample(db, num, dim='last', window=None, domain='time'):
     """
     Original function: scipy.signal.resample
-    Resample x to num samples using Fourier method along the given axis.
+    Resample db to num samples using Fourier method along the given axis.
     The resampled signal starts at the same value as x but is sampled with a spacing of len(x) / num * (spacing of x). 
     Because a Fourier method is used, the signal is assumed to be periodic.
     For more informations see: `Link text https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.resample.html`_
@@ -231,6 +231,70 @@ def resample(db, num, dim='last', window=None, domain='time'):
         Specifies the window applied to the signal in the Fourier domain.
     domain: string, optional
         A string indicating the domain of the input x: time Consider the input x as time-domain (Default), freq Consider the input x as frequency-domain.
+
+    New Xdas Parameters
+    -------------------
+    db: Database or DataArray
+        The data to be resampled.
+    dim: str, optional
+        The dimension along which to resample.
+
+    Returns
+    -------
+    Database or DataArray
+        The resampled data.
+        resampled_x or (resampled_x, resampled_t)
+        Either the resampled array, or, if t was given, a tuple containing the resampled array and the corresponding resampled positions.
+
+    Examples
+    --------
+    This example is made to resample the input database in the time domain at 100 samples 
+    with an original shape of 300 in time. The choosed window is a 'hamming' window.
+    The database is synthetic data.
+    >>> from xdas.synthetics import generate
+    >>> db = generate()
+    >>> resampled_db = xp.resample(db, 100, dim='time', window='hamming', domain='time')
+    """
+    dim = parse_dim(db, dim)
+    axis = db.get_axis_num(dim)
+    (out, t) = sp.resample(db.values, num, db[dim].values, axis, window, domain)
+    coords = {}
+    for name in db.coords:
+        if name == dim:
+            coords[dim] = dict(tie_indices=[0, num - 1], tie_values=[t[0], t[-1]])
+        else:
+            coords[name] = db.coords[name]
+    return Database(out, coords, db.dims, db.name, db.attrs)
+
+
+#def resample_poly(db, num, dim='last', window=None, domain='time'):
+#def resample_poly(x, up, down, axis=0, window=('kaiser', 5.0), padtype='constant', cval=None):
+def resample_poly(db, up, down, dim='last', window=('kaiser', 5.0), padtype='constant', cval=None):
+    """
+    Original function: scipy.signal.resample_poly
+    Resample db along the given axis using polyphase filtering.
+    The signal db is upsampled by the factor up, a zero-phase low-pass FIR filter is applied, 
+    and then it is downsampled by the factor down. 
+    The resulting sample rate is up / down times the original sample rate. 
+    By default, values beyond the boundary of the signal are assumed to be zero during the filtering step.
+    For more informations see: `Link text https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.resample_poly.html`_
+
+    Original Scipy Parameters
+    -------------------------
+    up: int
+        The upsampling factor.
+    down: int
+        The downsampling factor.
+    window: string, tuple, or array_like, optional
+        Desired window to use to design the low-pass filter, or the FIR filter coefficients to employ.
+    padtype: string, optional
+        constant, line, mean, median, maximum, minimum or any of the other signal extension modes supported by scipy.signal.upfirdn. 
+        Changes assumptions on values beyond the boundary. If constant, assumed to be cval (default zero). 
+        If line assumed to continue a linear trend defined by the first and last points. 
+        mean, median, maximum and minimum work as in np.pad and assume that the values beyond the boundary 
+        are the mean, median, maximum or minimum respectively of the array along the axis.
+    cval: float, optional
+        Value to use if padtype=’constant’. Default is zero.
 
     New Xdas Parameters
     -------------------
