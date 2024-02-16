@@ -178,7 +178,7 @@ def taper(db, window="hann", fftbins=False, dim="last"):
     return db.copy(data=data)
 
 
-def iirfilter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=None):
+def filter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=None):
     """
     SOS IIR filtering along given dimension.
 
