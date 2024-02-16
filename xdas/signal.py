@@ -215,6 +215,65 @@ def iirfilter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=
     return db.copy(data=data)
 
 
+def hilbert(db, N=None, dim='last', parallel=None):
+    """
+    scipy.signal.hilbert
+    Compute the analytic signal, using the Hilbert transform.
+    The transformation is done along the last axis by default.
+
+    Parameters
+    ----------
+    db : Database or DataArray
+        The data to transform.
+    N: int, optional
+        Number of Fourier components. Default: x.shape[axis]
+    dim: str, optional
+        The dimension along which to transform.
+
+    Returns
+    -------
+    Database or DataArray
+        Analytic signal of x, of each 1-D array along axis
+
+    Examples
+    --------
+    In this example we use the Hilbert transform to determine the amplitude
+    envelope and instantaneous frequency of an amplitude-modulated signal.
+
+    >>> import numpy as np
+    >>> import xdas
+    >>> from scipy.signal import chirp
+
+    >>> duration = 1.0
+    >>> fs = 400.0
+    >>> samples = int(fs*duration)
+    >>> t = np.arange(samples) / fs
+
+    We create a chirp of which the frequency increases from 20 Hz to 100 Hz and
+    apply an amplitude modulation.
+
+    >>> signal = chirp(t, 20.0, t[-1], 100.0)
+    >>> signal *= (1.0 + 0.5 * np.sin(2.0*np.pi*3.0*t) )
+
+    We create the database.
+
+    >>> db = xdas.Database(signal, {"time": t})
+
+    The amplitude envelope is given by magnitude of the analytic signal. The
+    instantaneous frequency can be obtained by differentiating the
+    instantaneous phase in respect to time. The instantaneous phase corresponds
+    to the phase angle of the analytic signal.
+
+    >>> analytic_signal = xdas.hilbert(db, N=None, dim='last')
+
+    """
+    dim = parse_dim(db, dim)
+    axis = db.get_axis_num(dim)
+    func = parallelize(sp.hilbert, axis, parallel)
+    data = func(db.values, N, axis)
+    return db.copy(data=data)
+
+
 def decimate(db, q, n=None, ftype=None, zero_phase=None, dim="last", parallel=None):
     """
     Downsample the signal after applying an anti-aliasing filter.
