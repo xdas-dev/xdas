@@ -69,3 +69,11 @@ real time dataset where new data can be linked regularly by batches. Those batch
 then be linked in a master virtual dataset. This avoids relinking all the files. 
 ```
 
+```{warnings}
+When loading large part of a virtual dataset, you might end up with nan values. This
+normally happens when linked files are missing. But due to a 
+[known limitation](https://forum.hdfgroup.org/t/virtual-datasets-and-open-file-limit/6757) 
+of the HDF5 C library it can be due to the opening of too many files. Try increasing 
+the number of possible file to open with the `ulimit` command. Or load smaller chunk of 
+data. 
+```
