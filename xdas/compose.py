@@ -352,14 +352,7 @@ class Sequence(UserDict):
         if isinstance(data_loader, DatabaseLoader):
             result = chain.process(data_loader, data_writer)
 
-        # If no DatabaseWriter is provided,
-        # return the results directly
-        if data_writer is None:
-            return result
-
-        # TODO: add IO logic
-
-        pass
+        return result
 
 
 class Atom:
