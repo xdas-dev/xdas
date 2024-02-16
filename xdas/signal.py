@@ -215,6 +215,58 @@ def filter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=Non
     return db.copy(data=data)
 
 
+def resample(db, num, dim='last', window=None, domain='time'):
+    """
+    Original function: scipy.signal.resample
+    Resample x to num samples using Fourier method along the given axis.
+    The resampled signal starts at the same value as x but is sampled with a spacing of len(x) / num * (spacing of x). 
+    Because a Fourier method is used, the signal is assumed to be periodic.
+    For more informations see: `Link text https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.resample.html`_
+
+    Original Scipy Parameters
+    -------------------------
+    num: int
+        The number of samples in the resampled signal.
+    window: array_like, callable, string, float, or tuple, optional
+        Specifies the window applied to the signal in the Fourier domain.
+    domain: string, optional
+        A string indicating the domain of the input x: time Consider the input x as time-domain (Default), freq Consider the input x as frequency-domain.
+
+    New Xdas Parameters
+    -------------------
+    db: Database or DataArray
+        The data to be resampled.
+    dim: str, optional
+        The dimension along which to resample.
+
+    Returns
+    -------
+    Database or DataArray
+        The resampled data.
+        resampled_x or (resampled_x, resampled_t)
+        Either the resampled array, or, if t was given, a tuple containing the resampled array and the corresponding resampled positions.
+
+    Examples
+    --------
+    This example is made to resample the input database in the time domain at 100 samples 
+    with an original shape of 300 in time. The choosed window is a 'hamming' window.
+    The database is synthetic data.
+    >>> from xdas.synthetics import generate
+    >>> db = generate()
+    >>> resampled_db = xp.resample(db, 100, dim='time', window='hamming', domain='time')
+    """
+    dim = parse_dim(db, dim)
+    axis = db.get_axis_num(dim)
+    (out, t) = sp.resample(db.values, num, db[dim].values, axis, window, domain)
+    coords = {}
+    for name in db.coords:
+        if name == dim:
+            coords[dim] = dict(tie_indices=[0, num - 1], tie_values=[t[0], t[-1]])
+        else:
+            coords[name] = db.coords[name]
+    return Database(out, coords, db.dims, db.name, db.attrs)
+
+
 def decimate(db, q, n=None, ftype=None, zero_phase=None, dim="last", parallel=None):
     """
     Downsample the signal after applying an anti-aliasing filter.
