@@ -349,6 +349,9 @@ class Sequence(UserDict):
         if isinstance(data_loader, Database):
             result = chain(data_loader)
 
+        if isinstance(data_loader, DatabaseLoader):
+            result = chain.process(data_loader, data_writer)
+
         # If no DatabaseWriter is provided,
         # return the results directly
         if data_writer is None:
@@ -422,7 +425,7 @@ class Atom:
         pass
 
     def __call__(self, db) -> Any:
-        return self.func(db, **self.kwargs)
+        return self._func(db, **self._kwargs)
 
     def __str__(self) -> str:
         args = [f"{key}={val}" for key, val in self._kwargs.items()]
