@@ -71,4 +71,5 @@ def generate(dirpath=None):
         db[:100].to_netcdf(os.path.join(dirpath, "001.nc"))
         db[100:200].to_netcdf(os.path.join(dirpath, "002.nc"))
         db[200:].to_netcdf(os.path.join(dirpath, "003.nc"))
-    return db
+    else:
+        return db
