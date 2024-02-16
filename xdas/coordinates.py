@@ -584,7 +584,9 @@ class InterpCoordinate(AbstractCoordinate):
         tie_indices, tie_values = douglas_peucker(
             self.tie_indices, self.tie_values, tolerance
         )
-        return self.__class__(dict(tie_indices=tie_indices, tie_values=tie_values))
+        return self.__class__(
+            dict(tie_indices=tie_indices, tie_values=tie_values), self.dim
+        )
 
     def get_discontinuities(self):
         (indices,) = np.nonzero(np.diff(self.tie_indices) == 1)
