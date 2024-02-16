@@ -1,7 +1,11 @@
+import os
+from tempfile import TemporaryDirectory
+
 import numpy as np
 import pytest
 
 import xdas
+from xdas.synthetics import generate
 
 
 class TestCore:
@@ -24,6 +28,11 @@ class TestCore:
         )
 
     def test_open_mfdatabase(self):
+        with TemporaryDirectory() as dirpath:
+            generate(dirpath)
+            db_monolithic = xdas.open_database(os.path.join(dirpath, "sample.nc"))
+            db_chunked = xdas.open_mfdatabase(os.path.join(dirpath, "00*.nc"))
+            assert db_monolithic.equals(db_chunked)
         with pytest.raises(FileNotFoundError):
             xdas.open_mfdatabase("not_existing_files_*.nc")
 
