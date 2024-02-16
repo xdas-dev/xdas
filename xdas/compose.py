@@ -421,9 +421,10 @@ class Atom:
         return self._func(db, **self._kwargs)
 
     def __str__(self) -> str:
-        args = [f"{key}={val}" for key, val in self._kwargs.items()]
+        args = [f"{key}={val}" if (len(str(val)) < 10) else f"{key}=..." for key, val in self._kwargs.items()]
         argstr = ", ".join(args)
-        return f"{self._name:<25}{self._func.__name__}({argstr})"
+        func_name = getattr(self._func, "__name__", "[custom]")
+        return f"{self._name:<25}{func_name}({argstr})"
 
     def _locate_before(self, x, a):
         return x.index(a)
@@ -507,8 +508,8 @@ class StateAtom(Atom):
 
     def __call__(self, db) -> Any:
         kwargs = self._kwargs.copy()
-        kwargs.update(self._state_arg, self._state)
-        db, state = self._func(db, **self._kwargs)
+        kwargs.update({self._state_arg: self._state})
+        db, state = self._func(db, **kwargs)
         self._set_state(state)
         return db
 
