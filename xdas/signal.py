@@ -217,9 +217,10 @@ def iirfilter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=
 
 def hilbert(db, N=None, dim='last', parallel=None):
     """
-    scipy.signal.hilbert
+    Original function: scipy.signal.hilbert
     Compute the analytic signal, using the Hilbert transform.
     The transformation is done along the last axis by default.
+    For more informations see `Link text https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.hilbert.html`_
 
     Parameters
     ----------
