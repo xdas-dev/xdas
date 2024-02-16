@@ -18,22 +18,39 @@ os.chdir("../_data")
 The API of this part of xdas is still experimental.
 ```
 
-## Sequential processing
+The xdas library provides various routines from NumPy, SciPy, and ObsPy that have been optimized for DAS Database objects, and which can be incorporated in a processing pipeline. See [Process big databases]("processing) for an explanation of the xdas processing workflows, e.g. for bigger-than-RAM datasets. Higher-level operations (FK-filters, STA/LTA detector, etc.) can be constructed from a sequence of the elementary operations implemented in xdas. To facilitate this and other user-defined operations, xdas offers a convenient framework to create, manage, and execute a sequence of atomic operations, which we refer to as compositions.
 
-Flexibility while allowing for optimization
+By using compositions, built-in and user-defined processing tasks mesh seamlessly with the optimization and IO-infrastructure that xdas offers, improving the robustness and reproducibility of complex processing pipelines.
+
+## Elementary operations: Atoms and StateAtoms
+
+The building blocks of a processing sequence are atomic operations: small routines that feature a single operation, which can be reused in a range of scenarios. For example, `abs`, `square`, `fft`, `sum`, etc. Each atomic operation is wrapped by an `Atom` class that handles things like passing arguments, bookkeeping, and integration. For operations that rely on a state that is updated over time (i.e., they are *stateful*), a special class exists called `StateAtom`, which inherits from the `Atom` class and adds state-specific manipulations.
+
+An `Atom` is initiated with a function `func` as its first argument, and additional keyword arguments that are passed to `func`. The `StateAtom` class requires the initial state and name of the keyword that hold the state (e.g., for `scipy.signal.sosfilt`, this argument is called `zi`). Finally, user-defined functions can be passed in the same way (assuming that the function is compatible with the xdas framework; see **page describing extension**).
+
+To keep track of the various operations in a sequence, each atom can be assigned a name with the `name` argument. If no name is provided, it is derived from the function name that the `Atom` class wraps.
+
+Example usage:
 
 ```{code-cell} 
-db = xdas.open_database("sample.nc")
-db.to_xarray().plot.imshow(yincrease=False, vmin=-0.5, vmax=0.5);
+import numpy as np
+import xdas.signal as xp
+op1 = xdas.Atom(xp.taper, dim="time")
+
+state0 = np.zeros((2, 2, 100))
+op2 = xdas.StateAtom(xp.sosfilt, state=state0, state_arg="zi", dim="time")
+
+my_func = lambda x: x
+op3 = xdas.Atom(my_func, name="my special function")
 ```
 
-```{code-cell} 
-import scipy.signal as sp
-from xdas.processing import ProcessingChain, SOSFilter
+## Composing a sequence
 
-sos = sp.iirfilter(4, 0.5, btype="lowpass", output="sos")
-sosfilter = SOSFilter(sos, "time")
-chain = ProcessingChain([sosfilter])
-out = chain.process(db, "time", 100, parallel=False)
-out.to_xarray().plot.imshow(yincrease=False, vmin=-0.5, vmax=0.5);
-```
+- Basic construction of `Sequence`
+- Ordering operations
+- Loading pre-defined sequences and manipulating
+
+## Executing a sequence
+
+- Data in memory
+- Data in chunks

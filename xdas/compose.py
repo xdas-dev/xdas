@@ -500,12 +500,12 @@ class StateAtom(Atom):
     _state_initialized = False
 
     def __init__(
-        self, func: Callable, state_arg: Hashable, state: None | Any = None, **kwargs
+        self, func: Callable, state_arg: Hashable, state: str | Any = "init", **kwargs
     ) -> None:
 
         self._state_arg = state_arg
         self._state = state
-        if state is not None:
+        if state != "init":
             self._state_initialized = True
 
         super().__init__(func, **kwargs)
