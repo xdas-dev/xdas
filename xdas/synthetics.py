@@ -21,12 +21,14 @@ def generate(dirpath):
     --------
     >>> import os
     >>> import xdas
+    >>> from xdas.synthetics import generate
     >>> from tempfile import TemporaryDirectory
     >>> with TemporaryDirectory() as dirpath:
     ...     generate(dirpath)
     ...     db_monolithic = xdas.open_database(os.path.join(dirpath, "sample.nc"))
-    ...     db_chunked = xdas.open_mfdatabase(os.path.join(dirpath, "*.nc"))
-    ...     # do your stuff 
+    ...     db_chunked = xdas.open_mfdatabase(os.path.join(dirpath, "00*.nc"))
+    ...     db_monolithic.equals(db_chunked)
+    True
     
     """
     shape = (300, 401)
