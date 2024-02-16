@@ -1,5 +1,6 @@
 import numpy as np
 import xarray as xr
+from xdas.synthetics import generate
 
 import xdas
 import xdas.signal as xp
@@ -105,3 +106,9 @@ class TestSignal:
         expected = np.concatenate(arrays, axis=1)
         result = xp.multithreaded_concatenate(arrays, axis=1)
         assert np.array_equal(expected, result)
+
+    def test_resample(self):
+        db = generate()
+        shape = db.data.shape
+        results = xp.resample(db, shape[0]*10, dim='time', window='hamming', domain='time')
+        assert results['time'].shape[0] == shape[0]*10
