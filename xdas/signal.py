@@ -214,6 +214,61 @@ def filter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=Non
     data = func(db.values, sos, axis=axis)
     return db.copy(data=data)
 
+def lfilter(b, a, db, dim="last",parallel=None):
+    """
+    Scipy filter data along one-dimension with an IIR or FIR filter.
+
+    Parameters 
+    ----------
+    b: array_like
+        The numerator coefficient vector in a 1-D sequence.
+    a: array_like
+        The denominator coefficient vector in a 1-D sequence. If a[0] is not 1, then both a and b are normalized by a[0].
+    db: Database
+        Traces to filter.
+    dim: str, optional
+        The dimension along which to filter.
+    parallel: bool or int, optional
+        whether to parallelize the function, if true all cores are used, if false single core, if int n cores are used
+    
+    Returns
+    -------
+    y: array
+        The output of the digital filter
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import xdas as xs
+    >>> from scipy import signal
+
+    Create dummy time-series
+    >>> rng = np.random.default_rng()
+    >>> t = np.linspace(-1, 1, 201)
+    >>> x = (np.sin(2*np.pi*0.75*t*(1-t) + 2.1) +
+    ...      0.1*np.sin(2*np.pi*1.25*t + 1) +
+    ...      0.18*np.cos(2*np.pi*3.85*t))
+    >>> xn = x + rng.standard_normal(len(t)) * 0.08
+    >>> shape=xn.shape()
+    >>> db = xdas.Database(xn,{"time":t})
+
+    Create an order 3 lowpass butterworth filter:
+    >>> b, a = signal.butter(3, 0.05)
+    >>> z = xp.lfilter(b, a, db, dim, zi=None)
+
+    Apply the filter again, to have a result filtered at an order the same as filtfilt:
+    >>> z2 = xp.lfilter(b, a, z, dim, zi=None])
+
+    """
+    dim = parse_dim(db, dim)
+    axis = db.get_axis_num(dim)
+    func = parallelize(
+            lambda x, b, a, axis : sp.lfilter(b, a, x, axis), axis, parallel
+            )
+    data = func(db.values, b, a, axis, parallel)
+    return db.copy(data=data)
+
+
 
 def decimate(db, q, n=None, ftype=None, zero_phase=None, dim="last", parallel=None):
     """
