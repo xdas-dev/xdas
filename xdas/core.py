@@ -80,7 +80,7 @@ def concatenate(dbs, dim="time", tolerance=None, virtual=None, verbose=None):
     Database
         The concatenated database.
     """
-    dbs = sorted(dbs, key=lambda db: db[dim][0])
+    dbs = sorted(dbs, key=lambda db: db[dim][0].values)
     axis = dbs[0].get_axis_num(dim)
     dims = dbs[0].dims
     dtype = dbs[0].dtype
@@ -221,6 +221,6 @@ def asdatabase(obj, tolerance=None):
     if isinstance(obj, Database):
         return obj
     elif isinstance(obj, xr.DataArray):
-        return Database.from_xarray(obj, tolerance)
+        return Database.from_xarray(obj)
     else:
         raise ValueError("Cannot convert to database.")

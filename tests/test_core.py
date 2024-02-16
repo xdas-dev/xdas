@@ -8,19 +8,13 @@ class TestCore:
     def generate(self, datetime):
         shape = (300, 100)
         if datetime:
-            t = xdas.Coordinate(
-                {
-                    "tie_indices": [0, shape[0] - 1],
-                    "tie_values": [np.datetime64(0, "ms"), np.datetime64(2990, "ms")],
-                }
-            )
+            t = {
+                "tie_indices": [0, shape[0] - 1],
+                "tie_values": [np.datetime64(0, "ms"), np.datetime64(2990, "ms")],
+            }
         else:
-            t = xdas.Coordinate(
-                {"tie_indices": [0, shape[0] - 1], "tie_values": [0, 3.0 - 1 / 100]}
-            )
-        s = xdas.Coordinate(
-            {"tie_indices": [0, shape[1] - 1], "tie_values": [0, 990.0]}
-        )
+            t = {"tie_indices": [0, shape[0] - 1], "tie_values": [0, 3.0 - 1 / 100]}
+        s = {"tie_indices": [0, shape[1] - 1], "tie_values": [0, 990.0]}
         return xdas.Database(
             data=np.random.randn(*shape),
             coords={
@@ -58,4 +52,4 @@ class TestCore:
         out = xdas.asdatabase(db.to_xarray())
         assert np.array_equal(out.data, db.data)
         for dim in db.dims:
-            assert out[dim].equals(db[dim])
+            assert np.array_equal(out[dim].values, db[dim].values)

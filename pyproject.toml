@@ -7,13 +7,14 @@ name = "xdas"
 version = "0.1b3"
 requires-python = ">= 3.7"
 authors = [
-    {name = "Alister Trabattoni", email = "alister.trabattoni@gmail.com"},
+    { name = "Alister Trabattoni", email = "alister.trabattoni@gmail.com" },
 ]
 dependencies = [
     "dask",
     "h5py",
     "netcdf4",
     "numpy",
+    "pandas",
     "scipy",
     "tqdm",
     "xarray",
@@ -21,11 +22,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "black",
-    "isort",
-    "twine",
-]
+dev = ["black", "isort", "twine"]
 docs = [
     "ipykernel",
     "matplotlib",
@@ -34,10 +31,11 @@ docs = [
     "sphinx-design",
     "sphinx",
 ]
-tests = [
-    "pytest",
-    "pytest-cov",
-]
+tests = ["pytest", "pytest-cov"]
 
 [tool.isort]
 profile = "black"
+
+[tool.pytest.ini_options]
+addopts = "--doctest-modules"
+doctest_optionflags = "NORMALIZE_WHITESPACE"

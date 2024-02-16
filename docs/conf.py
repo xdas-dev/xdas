@@ -130,7 +130,8 @@ db = xdas.Database(
         ),
     },
 )
-db.to_netcdf("_data/sample.nc")
-db[:100].to_netcdf("_data/001.nc")
-db[100:200].to_netcdf("_data/002.nc")
-db[200:].to_netcdf("_data/003.nc")
+dirname = os.path.split(__file__)[0]
+db.to_netcdf(os.path.join(dirname, "_data/sample.nc"))
+db[:100].to_netcdf(os.path.join(dirname, "_data/001.nc"))
+db[100:200].to_netcdf(os.path.join(dirname, "_data/002.nc"))
+db[200:].to_netcdf(os.path.join(dirname, "_data/003.nc"))

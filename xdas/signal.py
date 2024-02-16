@@ -36,7 +36,7 @@ def get_sampling_interval(db, dim):
     float
         The sample spacing.
     """
-    d = (db[dim][-1] - db[dim][0]) / (len(db[dim]) - 1)
+    d = (db[dim][-1].values - db[dim][0].values) / (len(db[dim]) - 1)
     d = np.asarray(d)
     if np.issubdtype(d.dtype, np.timedelta64):
         d = d / np.timedelta64(1, "s")

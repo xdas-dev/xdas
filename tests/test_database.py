@@ -10,10 +10,10 @@ from xdas.database import Database
 
 class TestDatabase:
     def generate(self, dense=False):
-        coord = xdas.Coordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         if dense:
-            coord = coord.values
-        coords = xdas.Coordinates(dim=coord)
+            coords = {"dim": 100.0 * (1 + np.arange(9))}
+        else:
+            coords = {"dim": {"tie_indices": [0, 8], "tie_values": [100.0, 900.0]}}
         data = 0.1 * np.arange(9)
         db = xdas.Database(data, coords)
         return db
@@ -76,7 +76,7 @@ class TestDatabase:
 
     def test_dense_str(self):
         coord = [f"D{k}" for k in range(9)]
-        coords = Coordinates(dim=coord)
+        coords = Coordinates({"dim": coord})
         data = 0.1 * np.arange(9)
         db = Database(data, coords)
 
@@ -92,7 +92,8 @@ class TestDatabase:
         db_isel = db.isel(time=1)
         db_sel = db.sel(time=0.5)
         db_expected = Database(
-            np.array([4, 5, 6, 7]), {"time": 0.5, "distance": [0.0, 10.0, 20.0, 30.0]}
+            np.array([4, 5, 6, 7]),
+            {"time": (None, 0.5), "distance": [0.0, 10.0, 20.0, 30.0]},
         )
         assert db_getitem.equals(db_expected)
         assert db_isel.equals(db_expected)
@@ -104,7 +105,7 @@ class TestDatabase:
             np.array([1, 5, 9]),
             {
                 "time": {"tie_values": [0.0, 1.0], "tie_indices": [0, 2]},
-                "distance": 10.0,
+                "distance": (None, 10.0),
             },
         )
         assert db_getitem.equals(db_expected)
