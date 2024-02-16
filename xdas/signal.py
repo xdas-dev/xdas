@@ -204,33 +204,39 @@ def filter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=Non
     fs = 1.0 / get_sampling_interval(db, dim)
     sos = sp.iirfilter(corners, freq, btype=btype, ftype="butter", output="sos", fs=fs)
     if zerophase:
-        func = parallelize(
-            lambda x, sos, axis: sp.sosfiltfilt(sos, x, axis), axis, parallel
-        )
+        func = lambda x, sos, axis: sp.sosfiltfilt(sos, x, axis)
+        func = parallelize(func, axis, parallel)
     else:
-        func = parallelize(
-            lambda x, sos, axis: sp.sosfilt(sos, x, axis), axis, parallel
-        )
+        func = lambda x, sos, axis: sp.sosfilt(sos, x, axis)
+        func = parallelize(func, axis, parallel)
     data = func(db.values, sos, axis=axis)
     return db.copy(data=data)
 
-def lfilter(b, a, db, dim="last",parallel=None):
-    """
-    Scipy filter data along one-dimension with an IIR or FIR filter.
 
-    Parameters 
-    ----------
+def lfilter(b, a, db, dim="last", parallel=None):
+    """
+    Scipy function apply a digital filter forward and backward to a signal.
+    `Link text https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.lfilter.html#scipy.signal.lfilter/`_
+    axis are now given by dim
+
+    Original Scipy Parameters
+    -------------------------
     b: array_like
         The numerator coefficient vector in a 1-D sequence.
     a: array_like
-        The denominator coefficient vector in a 1-D sequence. If a[0] is not 1, then both a and b are normalized by a[0].
+        The denominator coefficient vector in a 1-D sequence.
+        If a[0] is not 1, then both a and b are normalized by a[0].
+
+    New Xdas Parameters
+    -------------------
     db: Database
-        Traces to filter.
+        Traces to filter
     dim: str, optional
         The dimension along which to filter.
     parallel: bool or int, optional
-        whether to parallelize the function, if true all cores are used, if false single core, if int n cores are used
-    
+        whether to parallelize the function, if true all cores are used,
+        if false single core, if int n cores are used
+
     Returns
     -------
     y: array
@@ -254,19 +260,105 @@ def lfilter(b, a, db, dim="last",parallel=None):
 
     Create an order 3 lowpass butterworth filter:
     >>> b, a = signal.butter(3, 0.05)
-    >>> z = xp.lfilter(b, a, db, dim, zi=None)
+    >>> z = xp.lfilter(b, a, db, dim)
 
     Apply the filter again, to have a result filtered at an order the same as filtfilt:
-    >>> z2 = xp.lfilter(b, a, z, dim, zi=None])
+    >>> z2 = xp.lfilter(b, a, z, dim])
 
     """
     dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
-    func = parallelize(
-            lambda x, b, a, axis : sp.lfilter(b, a, x, axis), axis, parallel
-            )
+    func = lambda x, b, a, axis: sp.lfilter(b, a, x, axis)
+    func = parallelize(func, axis, parallel)
     data = func(db.values, b, a, axis, parallel)
     return db.copy(data=data)
+
+def filtfilt(
+    b,
+    a,
+    db,
+    dim="last",
+    padtype="odd",
+    padlen=None,
+    method="pad",
+    irlen=None,
+    parallel=None,
+):
+    """
+    Scipy function filtfilt data along one-dimension with an IIR or FIR filter.
+    `Link text https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.filtfilt.html#scipy.signal.filtfilt`_
+    The initial conditions for the filter delays si is not implemented.
+    axis are now given by dim
+
+    Original Scipy Parameters
+    -------------------------
+    b: array_like
+        The numerator coefficient vector in a 1-D sequence.
+    a: array_like
+        The denominator coefficient vector in a 1-D sequence.
+        If a[0] is not 1, then both a and b are normalized by a[0].
+    padtype: str or None, optional
+        Must be ‘odd’, ‘even’, ‘constant’, or None.
+        This determines the type of extension to use for the padded signal.
+          If padtype is None, no padding is used. The default is ‘odd’.
+    padlen: int or None, optional
+        The number of elements by which to extend x at both ends of axis before applying the filter.
+        This value must be less than x.shape[axis] - 1. padlen=0 implies no padding.
+        The default value is 3 * max(len(a), len(b)).
+    method: str, optional
+        Determines the method for handling the edges of the signal, either “pad” or “gust”.
+        When method is “pad”, the signal is padded; the type of padding is determined
+        by padtype and padlen, and irlen is ignored. When method is “gust”,
+        Gustafsson’s method is used, and padtype and padlen are ignored.
+    irlen: int or None, optional
+        When method is “gust”, irlen specifies the length of the impulse response of the filter.
+        If irlen is None, no part of the impulse response is ignored.
+        For a long signal, specifying irlen can significantly improve the performance of the filter.
+
+    New Xdas Parameters
+    -------------------
+    db: Database
+        Traces to filter
+    dim: str, optional
+        The dimension along which to filter.
+    parallel: bool or int, optional
+        whether to parallelize the function, if true all cores are used, if false single core, if int n cores are used
+
+    Returns
+    -------
+    y: array
+        The output of the digital filter
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import xdas as xs
+    >>> from scipy import signal
+
+    Create dummy time-series
+    >>> rng = np.random.default_rng()
+    >>> t = np.linspace(-1, 1, 201)
+    >>> x = (np.sin(2*np.pi*0.75*t*(1-t) + 2.1) +
+    ...      0.1*np.sin(2*np.pi*1.25*t + 1) +
+    ...      0.18*np.cos(2*np.pi*3.85*t))
+    >>> xn = x + rng.standard_normal(len(t)) * 0.08
+    >>> shape=xn.shape()
+    >>> db = xdas.Database(xn,{"time":t})
+
+    Create an order 3 lowpass butterworth filter:
+    >>> b, a = signal.butter(3, 0.05)
+    >>> z = xp.filtfilt(b, a, db, dim, padlen=150)
+    """
+
+    dim = parse_dim(db, dim)
+    axis = db.get_axis_num(dim)
+    func = lambda x, b, a, axis, padtype, padlen, method, irlen: sp.filtfilt(
+        b, a, x, axis, padtype, padlen, method, irlen
+    )
+    func = parallelize(func, axis, parallel)
+    data = func(db.values, b, a, axis, padtype, padlen, method, irlen, parallel)
+    return db.copy(data=data)
+
 
 
 
