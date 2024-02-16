@@ -229,6 +229,9 @@ def hilbert(db, N=None, dim='last', parallel=None):
         Number of Fourier components. Default: x.shape[axis]
     dim: str, optional
         The dimension along which to transform.
+    parallel: bool or int, optional
+        Whether to parallelize the function, if True all cores are used, 
+        if False signle core, if int: Number of cores
 
     Returns
     -------
