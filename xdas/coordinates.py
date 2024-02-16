@@ -660,7 +660,12 @@ class ScaleOffset:
 
 def linear_interpolate(x, xp, fp, left=None, right=None):
     if not is_strictly_increasing(xp):
-        raise ValueError("xp must be strictly increasing")
+        raise ValueError(
+            "xp must be strictly increasing. Your coordinate probably has overlaps. "
+            "Try to do: db['dim'] = db['dim'].simplify(np.timedelta64(tolerance, 'ms') "
+            "with a gradually increasing tolerance until minor overlaps are resolved."
+            "Big overlaps needs manual intervention."
+        )
     x_transform = ScaleOffset.floatize(xp)
     f_transform = ScaleOffset.floatize(fp)
     x = x_transform.direct(x)
