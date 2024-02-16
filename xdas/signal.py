@@ -239,7 +239,7 @@ def lfilter(b, a, db, dim="last", parallel=None):
 
     Returns
     -------
-    y: array
+    y: Database
         The output of the digital filter
 
     Examples
@@ -287,7 +287,6 @@ def filtfilt(
     """
     Scipy function filtfilt data along one-dimension with an IIR or FIR filter.
     `Link text https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.filtfilt.html#scipy.signal.filtfilt`_
-    The initial conditions for the filter delays si is not implemented.
     axis are now given by dim
 
     Original Scipy Parameters
@@ -326,7 +325,7 @@ def filtfilt(
 
     Returns
     -------
-    y: array
+    y: Database
         The output of the digital filter
 
     Examples
@@ -359,7 +358,65 @@ def filtfilt(
     data = func(db.values, b, a, axis, padtype, padlen, method, irlen, parallel)
     return db.copy(data=data)
 
+def sosfilt(sos, db, dim,parallel=None):
+    """
+    Scipy function filter data along one dimension using cascaded second-order sections.
+    `Link text https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.sosfilt.html`_
+    The initial conditions for the filter delays si is not implemented.
+    axis are now given by dim
 
+    Original Scipy Parameters
+    -------------------------
+    sos: array_like
+        Array of second-order filter coefficients, must have shape (n_sections, 6). 
+        Each row corresponds to a second-order section, with the first three columns 
+        providing the numerator coefficients and the last three providing the denominator 
+        coefficients.
+
+    New Xdas Parameters
+    -------------------
+    db: Database
+        Traces to filter
+    dim: str, optional
+        The dimension along which to filter.
+    parallel: bool or int, optional
+        whether to parallelize the function, if true all cores are used, if false single core, if int n cores are used
+
+    Returns
+    -------
+    y: Database
+        The output of the digital filter
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import xdas as xs
+    >>> from scipy import signal
+
+    Create dummy time-series
+    >>> rng = np.random.default_rng()
+    >>> t = np.linspace(-1, 1, 201)
+    >>> x = (np.sin(2*np.pi*0.75*t*(1-t) + 2.1) +
+    ...      0.1*np.sin(2*np.pi*1.25*t + 1) +
+    ...      0.18*np.cos(2*np.pi*3.85*t))
+    >>> xn = x + rng.standard_normal(len(t)) * 0.08
+    >>> shape=xn.shape()
+    >>> db = xdas.Database(xn,{"time":t})
+
+    Create an order 3 lowpass butterworth filter:
+    fs = 1.0 / get_sampling_interval(db, dim)
+    >>> sos = signal.butter(3, 0.05,output='sos')
+    >>> z = xp.sosfilt(sos, db, dim,parallel=None)
+    """
+
+    dim = parse_dim(db, dim)
+    axis = db.get_axis_num(dim)
+    func = lambda x, sos, axis : sp.sosfilt(
+        sos, x , axis
+    )
+    func = parallelize(func, axis, parallel)
+    data = func(db.values, sos, axis, parallel)
+    return db.copy(data=data)
 
 
 def decimate(db, q, n=None, ftype=None, zero_phase=None, dim="last", parallel=None):
