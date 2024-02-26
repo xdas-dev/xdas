@@ -3,7 +3,7 @@ import xarray as xr
 
 import xdas
 import xdas.signal as xp
-
+from xdas.synthetics import generate
 
 class TestSignal:
     def test_get_sample_spacing(self):
@@ -62,3 +62,12 @@ class TestSignal:
         da = xr.DataArray(data, {"distance": s})
         da = xp.sliding_mean_removal(da, 0.1 * n * d)
         assert np.allclose(da, 0)
+
+    def test_medfilt(self):
+        da = generate()
+        dimensions = np.array([coord for coord in da.coords])
+        kernel_length = [1, 1]
+        dims = dict(zip(dimensions, kernel_length))
+        da_filtered = medfilt(da, dims)
+        assert np.allclose(da_filtered, da)
+            

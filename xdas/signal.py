@@ -227,3 +227,50 @@ def sliding_mean_removal(da, wlen, window="hann", pad_mode="reflect", dim="dista
     mean = sp.fftconvolve(np.pad(data, pad_width, mode=pad_mode), win, mode="valid")
     data = data - mean
     return da.copy(data=data)
+
+
+def medfilt(da, dims):
+    """
+    Median filter data along given dimensions
+
+    Parameters
+    ----------
+    da : DataArray
+        The data to detrend.
+    dims : dict
+        Dictionary containing the dimensions over which to apply a median filtering.
+        The related values are the size of the kernel along that direction.
+        If not all dims are provided, missing dimensions are associated to 1,
+        i.e. no median filtering along that direction.
+        At least one dimension must be passed.
+
+    Returns
+    -------
+    DataArray
+        The median filtered data.
+
+    Examples
+    --------
+    This example is made to apply median filtering at a randomly generated dataarray
+    by selecting a size of 7 for the median filtering along the time dimension
+    and a size of 3 for the median filtering along the space dimension.
+    The database is synthetic data.
+    >>> from xdas.synthetics import generate
+    >>> da = generate()
+    >>> dimensions = np.array([coord for coord in da.coords])
+    >>> kernel_length = [7, 3]
+    >>> dims = dict(zip(dimensions, kernel_length))
+    >>> filtered_da = medfilt(da, dims)
+    """
+    coordinates = np.array([coord for coord in da.coords])
+    kernel = np.ones(len(da.coords), dtype=int)
+    kernel_dict = dict(zip(coordinates, kernel))
+
+    for dim in dims.keys():
+        kernel_dict[dim] = dims[dim]
+
+    kernel_size = np.array([kernel_dict[element] for element in kernel_dict.keys()])
+
+    data = sp.medfilt(da.values, kernel_size)
+    
+    return da.copy(data=data)
