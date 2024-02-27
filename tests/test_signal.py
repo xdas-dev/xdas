@@ -68,8 +68,8 @@ class TestSignal:
         dimensions = np.array(["distance"])
         kernel_length = [3]
         dictionary = dict(zip(dimensions, kernel_length))
-        dimensions = np.array(["time", "distance"])
-        kernel_length = [1, 3]
+        dimensions = np.array(["distance", "time"])
+        kernel_length = [3, 1]
         dictionary_inv = dict(zip(dimensions, kernel_length))
         da_fil = xp.medfilt(da, dictionary)
         da_fil_inv = xp.medfilt(da, dictionary_inv)
