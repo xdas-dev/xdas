@@ -135,10 +135,27 @@ class Database:
         return self.data.__array__()
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        _, *args = inputs
-        assert _ is self
-        data = getattr(ufunc, method)(self.data, *args, **kwargs)
-        return self.copy(data=data)
+        if not method == "__call__":
+            return NotImplemented
+        inputs = tuple(
+            value.data if isinstance(value, self.__class__) else value
+            for value in inputs
+        )
+        if "out" in kwargs:
+            kwargs["out"] = tuple(
+                value.data if isinstance(value, self.__class__) else value
+                for value in kwargs["out"]
+            )
+        if "where" in kwargs:
+            kwargs["where"] = tuple(
+                value.data if isinstance(value, self.__class__) else value
+                for value in kwargs["where"]
+            )
+        data = getattr(ufunc, method)(*inputs, **kwargs)
+        if isinstance(data, tuple):
+            return tuple(self.copy(data=d) for d in data)
+        else:
+            return self.copy(data=data)
 
     def __array_function__(self, func, types, args, kwargs):
         return NotImplemented
