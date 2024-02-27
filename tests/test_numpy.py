@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-import xdas.ufuncs as xp
+import xdas.numpy as xp
 from xdas.synthetics import generate
 
 
@@ -42,3 +42,9 @@ class TestUfuncs:
         assert result2.equals(expected2)
         with pytest.raises(ValueError):
             xp.add(db, db[1:])
+
+
+class TestFunc:
+    def test_func(self):
+        db = generate()
+        xp.sum(db, "time")

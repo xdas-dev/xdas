@@ -9,7 +9,7 @@ import xarray as xr
 
 from .coordinates import Coordinates, InterpCoordinate
 from .virtual import DataLayout, DataSource
-
+from .numpy import implemented
 
 class DataCollection(dict):
     """
@@ -158,7 +158,11 @@ class Database:
             return self.copy(data=data)
 
     def __array_function__(self, func, types, args, kwargs):
-        return NotImplemented
+        if func not in implemented:
+            return NotImplemented
+        if not all(issubclass(t, self.__class__) for t in types):
+            return NotImplemented
+        return implemented[func](*args, **kwargs)
 
     @property
     def dims(self):
