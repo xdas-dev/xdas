@@ -71,8 +71,8 @@ class TestSignal:
         dimensions = np.array(["time", "distance"])
         kernel_length = [1, 3]
         dictionary_inv = dict(zip(dimensions, kernel_length))
-        da_fil = medfilt(da, dictionary)
-        da_fil_inv = medfilt(da, dictionary_inv)
+        da_fil = xp.medfilt(da, dictionary)
+        da_fil_inv = xp.medfilt(da, dictionary_inv)
         assert np.allclose(da_fil.values, da_fil_inv.values)
 
             
