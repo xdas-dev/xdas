@@ -65,9 +65,14 @@ class TestSignal:
 
     def test_medfilt(self):
         da = generate()
-        dimensions = np.array([coord for coord in da.coords])
-        kernel_length = [1, 1]
-        dims = dict(zip(dimensions, kernel_length))
-        da_filtered = medfilt(da, dims)
-        assert np.allclose(da_filtered, da)
+        dimensions = np.array(["distance"])
+        kernel_length = [3]
+        dictionary = dict(zip(dimensions, kernel_length))
+        dimensions = np.array(["time", "distance"])
+        kernel_length = [1, 3]
+        dictionary_inv = dict(zip(dimensions, kernel_length))
+        da_fil = medfilt(da, dictionary)
+        da_fil_inv = medfilt(da, dictionary_inv)
+        assert np.allclose(da_fil.values, da_fil_inv.values)
+
             

@@ -229,7 +229,7 @@ def sliding_mean_removal(da, wlen, window="hann", pad_mode="reflect", dim="dista
     return da.copy(data=data)
 
 
-def medfilt(da, dims):
+def medfilt(da, kernel_dim):
     """
     Median filter data along given dimensions
 
@@ -237,11 +237,11 @@ def medfilt(da, dims):
     ----------
     da : DataArray
         The data to detrend.
-    dims : dict
+    kernel_dim : dict
         Dictionary containing the dimensions over which to apply a median filtering.
         The related values are the size of the kernel along that direction.
-        If not all dims are provided, missing dimensions are associated to 1,
-        i.e. no median filtering along that direction.
+        All values must be odd. If not all dims are provided, missing dimensions
+        are associated to 1, i.e. no median filtering along that direction.
         At least one dimension must be passed.
 
     Returns
@@ -259,18 +259,11 @@ def medfilt(da, dims):
     >>> da = generate()
     >>> dimensions = np.array([coord for coord in da.coords])
     >>> kernel_length = [7, 3]
-    >>> dims = dict(zip(dimensions, kernel_length))
-    >>> filtered_da = medfilt(da, dims)
+    >>> kernel_dim = dict(zip(dimensions, kernel_length))
+    >>> filtered_da = medfilt(da, kernel_dim)
     """
-    coordinates = np.array([coord for coord in da.coords])
-    kernel = np.ones(len(da.coords), dtype=int)
-    kernel_dict = dict(zip(coordinates, kernel))
-
-    for dim in dims.keys():
-        kernel_dict[dim] = dims[dim]
-
-    kernel_size = np.array([kernel_dict[element] for element in kernel_dict.keys()])
-
+    if not all(dim in da.dims for dim in kernel_dim.keys()):
+        raise ValueError("dims provided not in database")
+    kernel_size = tuple(kernel_dim[dim] if dim in kernel_dim else 1 for dim in da.dims)
     data = sp.medfilt(da.values, kernel_size)
-    
     return da.copy(data=data)
