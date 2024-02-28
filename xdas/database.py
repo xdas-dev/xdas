@@ -1,8 +1,6 @@
 import copy
-import os
 import re
 
-import dask.array as da
 import h5py
 import numpy as np
 import xarray as xr
@@ -11,28 +9,6 @@ from .coordinates import Coordinates, InterpCoordinate
 from .virtual import DataLayout, DataSource
 
 
-class DataCollection(dict):
-    """
-    A collection of databases.
-
-    A data collection is a dictionary whose keys are any user defined identifiers and
-    values are database objects.
-    """
-
-    def to_netcdf(self, fname, virtual=False):
-        if os.path.exists(fname):
-            os.remove(fname)
-        for key in self:
-            self[key].to_netcdf(fname, group=key, virtual=virtual, mode="a")
-
-    @classmethod
-    def from_netcdf(cls, fname):
-        with h5py.File(fname, "r") as file:
-            groups = list(file.keys())
-        self = cls()
-        for group in groups:
-            self[group] = Database.from_netcdf(fname, group=group)
-        return self
 
 
 class Database:
