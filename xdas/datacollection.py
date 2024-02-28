@@ -19,10 +19,10 @@ class DataCollection:
         Parameters
         ----------
         data: list or dict of DataCollection or Database
-            The nested data. It can be composed either of sequences or mapping. The 
-            leaves must be databases. 
+            The nested data. It can be composed either of sequences or mapping. The
+            leaves must be databases.
         name: str
-            The name of the current level of nesting. 
+            The name of the current level of nesting.
 
         Returns:
         -------
@@ -34,21 +34,20 @@ class DataCollection:
         >>> import xdas
         >>> from xdas.synthetics import generate
         >>> db = generate()
-        >>> dc = DataCollection
-        >>> dc = DataCollection(
-        ... {
-        ...     "das1": DataCollection([db, db], "acquisition"),
-        ...     "das2": DataCollection([db, db, db], "acquisition"),
-        ... },
-        ... "instrument",
+        >>> dc = xdas.DataCollection(
+        ...     {
+        ...         "das1": xdas.DataCollection([db, db], "acquisition"),
+        ...         "das2": xdas.DataCollection([db, db, db], "acquisition"),
+        ...     },
+        ...     "instrument",
         ... )
         >>> dc
         Instrument:
-          das1: 
+          das1:
             Acquisition:
             0: <xdas.Database (time: 300, distance: 401)>
             1: <xdas.Database (time: 300, distance: 401)>
-          das2: 
+          das2:
             Acquisition:
             0: <xdas.Database (time: 300, distance: 401)>
             1: <xdas.Database (time: 300, distance: 401)>
@@ -65,7 +64,7 @@ class DataCollection:
     @classmethod
     def from_netcdf(cls, fname):
         self = DataMapping.from_netcdf(fname)
-        keys = list(self.keys)
+        keys = list(self.keys())
         if keys == list(range(len(keys))):
             return DataSequence.from_mapping(self)
         else:
@@ -99,20 +98,39 @@ class DataMapping(AbstractDataCollection, dict):
                 s += "\n".join(f"    {e}" for e in repr(value).split("\n")[:-1]) + "\n"
         return s
 
-    def to_netcdf(self, fname, virtual=False):
+    def to_netcdf(self, fname, group=None, virtual=False, **kwargs):
         if os.path.exists(fname):
             os.remove(fname)
         for key in self:
-            self[key].to_netcdf(fname, group=key, virtual=virtual, mode="a")
+            name = self.name if self.name is not None else "collection"
+            location = "/".join([name, str(key)])
+            if group is not None:
+                location = "/".join([group, location])
+            self[key].to_netcdf(fname, location, virtual, mode="a")
 
     @classmethod
-    def from_netcdf(cls, fname):
+    def from_netcdf(cls, fname, group=None):
         with h5py.File(fname, "r") as file:
-            groups = list(file.keys())
-        self = cls()
+            if group is not None:
+                file = file[group]
+            name = list(file.keys())[0]
+            groups = list(file[name].keys())
+        self = cls({}, name=None if name == "collection" else name)
         for group in groups:
-            self[group] = Database.from_netcdf(fname, group=group)
+            location = "/".join([name, group])
+            self[group] = Database.from_netcdf(fname, location)
         return self
+
+    def equals(self, other):
+        if not isinstance(other, self.__class__):
+            return False
+        if not self.name == other.name:
+            return False
+        if not list(self.keys()) == list(other.keys()):
+            return False
+        if not all(self[key].equals(other[key]) for key in self):
+            return False
+        return True
 
 
 class DataSequence(AbstractDataCollection, list):
@@ -135,9 +153,20 @@ class DataSequence(AbstractDataCollection, list):
     def from_mapping(cls, data):
         return cls(data.values(), data.name)
 
-    def to_netcdf(self, fname, virtual=False):
-        self.to_mapping().to_netcdf(fname, virtual)
+    def to_netcdf(self, fname, group=None, virtual=False, **kwargs):
+        self.to_mapping().to_netcdf(fname, group, virtual, **kwargs)
 
     @classmethod
-    def from_netcdf(cls, fname):
-        return DataMapping.from_netcdf(fname).from_mapping()
+    def from_netcdf(cls, fname, group=None):
+        return DataMapping.from_netcdf(fname, group).from_mapping()
+
+    def equals(self, other):
+        if not isinstance(other, self.__class__):
+            return False
+        if not self.name == other.name:
+            return False
+        if not len(self) == len(other):
+            return False
+        if not all(a.equals(b) for a, b in zip(self, other)):
+            return False
+        return True
