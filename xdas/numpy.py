@@ -13,8 +13,10 @@ def dispatch(dbpos=0, axispos=None, outpos=None, reduce=False):
             if axispos is not None:
                 if nargs > axispos:
                     axis = args[axispos]
-                else:
+                elif "axis" in kwargs:
                     axis = kwargs["axis"]
+                else:
+                    axis = None
             if outpos is not None:
                 if nargs > outpos:
                     out = args[outpos]
@@ -23,24 +25,34 @@ def dispatch(dbpos=0, axispos=None, outpos=None, reduce=False):
                             out.data if idx == outpos else args[idx]
                             for idx in range(nargs)
                         )
-                else:
+                elif "out" in kwargs:
                     out = kwargs["out"]
                     if isinstance(out, Database):
                         kwargs = {
                             key: out.data if key == "out" else value
                             for key, value in kwargs.items()
                         }
+                else:
+                    out = None
             data = func(*args, **kwargs)
             if reduce:
-                coords = {
-                    name: coord
-                    for name, coord in db.coords.items()
-                    if not coord.dim == db.dims[axis]
-                }
-                dims = tuple(dim for dim in db.dims if not dim == db.dims[axis])
+                if axis is None:
+                    coords = {
+                        name: coord
+                        for name, coord in db.coords.items()
+                        if coord.dim is None
+                    }
+                    dims = ()
+                else:
+                    coords = {
+                        name: coord
+                        for name, coord in db.coords.items()
+                        if not coord.dim == db.dims[axis]
+                    }
+                    dims = tuple(dim for dim in db.dims if not dim == db.dims[axis])
             else:
                 coords = db.coords
-                dim = db.dims
+                dims = db.dims
             return Database(data, coords, dims, db.name, db.attrs)
 
         return wrapper
