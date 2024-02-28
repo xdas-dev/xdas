@@ -9,7 +9,19 @@ import xarray as xr
 
 from .coordinates import Coordinates, InterpCoordinate
 from .virtual import DataLayout, DataSource
-from .numpy import implemented
+
+HANDLED_FUNCTIONS = {}
+
+
+def implements(numpy_function):
+    """Register an __array_function__ implementation for MyArray objects."""
+
+    def decorator(func):
+        HANDLED_FUNCTIONS[numpy_function] = func
+        return func
+
+    return decorator
+
 
 class DataCollection(dict):
     """
@@ -158,11 +170,13 @@ class Database:
             return self.copy(data=data)
 
     def __array_function__(self, func, types, args, kwargs):
-        if func not in implemented:
+        if func not in HANDLED_FUNCTIONS:
             return NotImplemented
+        # Note: this allows subclasses that don't override
+        # __array_function__ to handle MyArray objects
         if not all(issubclass(t, self.__class__) for t in types):
             return NotImplemented
-        return implemented[func](*args, **kwargs)
+        return HANDLED_FUNCTIONS[func](*args, **kwargs)
 
     @property
     def dims(self):
