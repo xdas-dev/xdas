@@ -419,7 +419,7 @@ def medfilt(db, kernel_dim):
     """
     if not all(dim in db.dims for dim in kernel_dim.keys()):
         raise ValueError("dims provided not in database")
-    kernel_size = tuple(kernel_dim[dim] if dim in kernel_dim else 1 for dim in da.dims)
+    kernel_size = tuple(kernel_dim[dim] if dim in kernel_dim else 1 for dim in db.dims)
     data = sp.medfilt(db.values, kernel_size)
     return db.copy(data=data)
 
