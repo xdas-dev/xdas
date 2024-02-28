@@ -97,7 +97,6 @@ class TestSignal:
         db = xp.sliding_mean_removal(db, 0.1 * n * d)
         assert np.allclose(db.values, 0)
 
-
     def test_medfilt(self):
         da = generate()
         dimensions = np.array(["distance"])
