@@ -381,16 +381,16 @@ def sliding_mean_removal(db, wlen, window="hann", pad_mode="reflect", dim="last"
     pad_width = tuple((n // 2, n // 2) if d == dim else (0, 0) for d in db.dims)
     mean = sp.fftconvolve(np.pad(data, pad_width, mode=pad_mode), win, mode="valid")
     data = data - mean
-    return da.copy(data=data)
+    return db.copy(data=data)
 
 
-def medfilt(da, kernel_dim):
+def medfilt(db, kernel_dim):
     """
     Median filter data along given dimensions
 
     Parameters
     ----------
-    da : DataArray
+    da : Database or DataArray
         The data to detrend.
     kernel_dim : dict
         Dictionary containing the dimensions over which to apply a median filtering.
@@ -417,11 +417,10 @@ def medfilt(da, kernel_dim):
     >>> kernel_dim = dict(zip(dimensions, kernel_length))
     >>> filtered_da = medfilt(da, kernel_dim)
     """
-    if not all(dim in da.dims for dim in kernel_dim.keys()):
+    if not all(dim in db.dims for dim in kernel_dim.keys()):
         raise ValueError("dims provided not in database")
     kernel_size = tuple(kernel_dim[dim] if dim in kernel_dim else 1 for dim in da.dims)
-    data = sp.medfilt(da.values, kernel_size)
-    return da.copy(data=data)
+    data = sp.medfilt(db.values, kernel_size)
     return db.copy(data=data)
 
 
