@@ -240,7 +240,14 @@ class Database:
         int
             Axis number corresponding to the given dimension
         """
-        return self.dims.index(dim)
+        if dim == "first":
+            return 0
+        elif dim == "last":
+            return -1
+        elif dim in self.dims:
+            return self.dims.index(dim)
+        else:
+            raise ValueError("dim not found")
 
     def isel(self, indexers=None, **indexers_kwargs):
         """
