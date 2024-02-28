@@ -24,7 +24,7 @@ def cumprod(db, dim="last", skipna=True, **kwargs):
         Cumulative product of the input data.
     """
     axis = db.get_axis_num(dim)
-    if skipna and np.issubclass(db.dtype, np.floating):
+    if skipna and np.issubdtype(db.dtype, np.floating):
         return np.nancumprod(db, axis, **kwargs)
     else:
         return np.cumprod(db, axis, **kwargs)
@@ -53,7 +53,7 @@ def cumsum(db, dim="last", skipna=True, **kwargs):
         Cumulative sum of the input data.
     """
     axis = db.get_axis_num(dim)
-    if skipna and np.issubclass(db.dtype, np.floating):
+    if skipna and np.issubdtype(db.dtype, np.floating):
         return np.nancumsum(db, axis, **kwargs)
     else:
         return np.cumsum(db, axis, **kwargs)
@@ -80,7 +80,10 @@ def all(db, dim=None, **kwargs):
         otherwise. If `dim` is None, a single boolean value is returned; if
         `dim` is specified, the result has the same shape as the input data.
     """
-    axis = db.get_axis_num(dim)
+    if dim is not None:
+        axis = db.get_axis_num(dim)
+    else:
+        axis = None
     return np.all(db, axis, **kwargs)
 
 
@@ -105,7 +108,10 @@ def any(db, dim=None, **kwargs):
         otherwise. If `dim` is None, a single boolean value is returned; if
         `dim` is specified, the result has the same shape as the input data.
     """
-    axis = db.get_axis_num(dim)
+    if dim is not None:
+        axis = db.get_axis_num(dim)
+    else:
+        axis = None
     return np.any(db, axis, **kwargs)
 
 
@@ -136,8 +142,11 @@ def max(db, dim=None, skipna=True, **kwargs):
         scalar value is returned; if `dim` is specified, the result has the
         same shape as the input data.
     """
-    axis = db.get_axis_num(dim)
-    if skipna and np.issubclass(db.dtype, np.floating):
+    if dim is not None:
+        axis = db.get_axis_num(dim)
+    else:
+        axis = None
+    if skipna and np.issubdtype(db.dtype, np.floating):
         return np.max(db, axis, **kwargs)
     else:
         return np.nanmax(db, axis, **kwargs)
@@ -167,8 +176,11 @@ def min(db, dim=None, skipna=True, **kwargs):
         scalar value is returned; if `dim` is specified, the result has the
         same shape as the input data.
     """
-    axis = db.get_axis_num(dim)
-    if skipna and np.issubclass(db.dtype, np.floating):
+    if dim is not None:
+        axis = db.get_axis_num(dim)
+    else:
+        axis = None
+    if skipna and np.issubdtype(db.dtype, np.floating):
         return np.min(db, axis, **kwargs)
     else:
         return np.nanmin(db, axis, **kwargs)
@@ -202,8 +214,11 @@ def argmax(db, dim=None, skipna=True, **kwargs):
         None, a single integer index is returned; if `dim` is specified, the
         result has the same shape as the input data.
     """
-    axis = db.get_axis_num(dim)
-    if skipna and np.issubclass(db.dtype, np.floating):
+    if dim is not None:
+        axis = db.get_axis_num(dim)
+    else:
+        axis = None
+    if skipna and np.issubdtype(db.dtype, np.floating):
         return np.argmax(db, axis, **kwargs)
     else:
         return np.nanargmax(db, axis, **kwargs)
@@ -234,8 +249,11 @@ def argmin(db, dim=None, skipna=True, **kwargs):
         None, a single integer index is returned; if `dim` is specified, the
         result has the same shape as the input data.
     """
-    axis = db.get_axis_num(dim)
-    if skipna and np.issubclass(db.dtype, np.floating):
+    if dim is not None:
+        axis = db.get_axis_num(dim)
+    else:
+        axis = None
+    if skipna and np.issubdtype(db.dtype, np.floating):
         return np.argmin(db, axis, **kwargs)
     else:
         return np.nanargmin(db, axis, **kwargs)
@@ -268,8 +286,11 @@ def median(db, dim=None, skipna=True, **kwargs):
         scalar value is returned; if `dim` is specified, the result has the
         same shape as the input data.
     """
-    axis = db.get_axis_num(dim)
-    if skipna and np.issubclass(db.dtype, np.floating):
+    if dim is not None:
+        axis = db.get_axis_num(dim)
+    else:
+        axis = None
+    if skipna and np.issubdtype(db.dtype, np.floating):
         return np.median(db, axis, **kwargs)
     else:
         return np.nanmedian(db, axis, **kwargs)
@@ -296,7 +317,10 @@ def ptp(db, dim=None, **kwargs):
         is None, a single scalar value is returned; if `dim` is specified, the
         result has the same shape as the input data.
     """
-    axis = db.get_axis_num(dim)
+    if dim is not None:
+        axis = db.get_axis_num(dim)
+    else:
+        axis = None
     return np.ptp(db, axis, **kwargs)
 
 
@@ -327,8 +351,11 @@ def mean(db, dim=None, skipna=True, **kwargs):
         a single scalar value is returned; if `dim` is specified, the result
         has the same shape as the input data.
     """
-    axis = db.get_axis_num(dim)
-    if skipna and np.issubclass(db.dtype, np.floating):
+    if dim is not None:
+        axis = db.get_axis_num(dim)
+    else:
+        axis = None
+    if skipna and np.issubdtype(db.dtype, np.floating):
         return np.mean(db, axis, **kwargs)
     else:
         return np.nanmean(db, axis, **kwargs)
@@ -358,8 +385,11 @@ def prod(db, dim=None, skipna=True, **kwargs):
         a single scalar value is returned; if `dim` is specified, the result
         has the same shape as the input data.
     """
-    axis = db.get_axis_num(dim)
-    if skipna and np.issubclass(db.dtype, np.floating):
+    if dim is not None:
+        axis = db.get_axis_num(dim)
+    else:
+        axis = None
+    if skipna and np.issubdtype(db.dtype, np.floating):
         return np.prod(db, axis, **kwargs)
     else:
         return np.nanprod(db, axis, **kwargs)
@@ -393,8 +423,11 @@ def std(db, dim=None, skipna=True, **kwargs):
         a single scalar value is returned; if `dim` is specified, the result
         has the same shape as the input data.
     """
-    axis = db.get_axis_num(dim)
-    if skipna and np.issubclass(db.dtype, np.floating):
+    if dim is not None:
+        axis = db.get_axis_num(dim)
+    else:
+        axis = None
+    if skipna and np.issubdtype(db.dtype, np.floating):
         return np.std(db, axis, **kwargs)
     else:
         return np.nanstd(db, axis, **kwargs)
@@ -424,8 +457,11 @@ def sum(db, dim=None, skipna=True, **kwargs):
         single scalar value is returned; if `dim` is specified, the result has
         the same shape as the input data.
     """
-    axis = db.get_axis_num(dim)
-    if skipna and np.issubclass(db.dtype, np.floating):
+    if dim is not None:
+        axis = db.get_axis_num(dim)
+    else:
+        axis = None
+    if skipna and np.issubdtype(db.dtype, np.floating):
         return np.sum(db, axis, **kwargs)
     else:
         return np.nansum(db, axis, **kwargs)
@@ -458,8 +494,11 @@ def var(db, dim=None, skipna=True, **kwargs):
         scalar value is returned; if `dim` is specified, the result has the
         same shape as the input data.
     """
-    axis = db.get_axis_num(dim)
-    if skipna and np.issubclass(db.dtype, np.floating):
+    if dim is not None:
+        axis = db.get_axis_num(dim)
+    else:
+        axis = None
+    if skipna and np.issubdtype(db.dtype, np.floating):
         return np.var(db, axis, **kwargs)
     else:
         return np.nanvar(db, axis, **kwargs)
@@ -491,8 +530,11 @@ def percentile(db, q, dim=None, skipna=True, **kwargs):
         None, a single scalar value is returned; if `dim` is specified, the
         result has the same shape as the input data.
     """
-    axis = db.get_axis_num(dim)
-    if skipna and np.issubclass(db.dtype, np.floating):
+    if dim is not None:
+        axis = db.get_axis_num(dim)
+    else:
+        axis = None
+    if skipna and np.issubdtype(db.dtype, np.floating):
         return np.percentile(db, q, axis, **kwargs)
     else:
         return np.nanpercentile(db, q, axis, **kwargs)
@@ -527,8 +569,11 @@ def quantile(db, q, dim=None, skipna=True, **kwargs):
         None, a single scalar value is returned; if `dim` is specified, the
         result has the same shape as the input data.
     """
-    axis = db.get_axis_num(dim)
-    if skipna and np.issubclass(db.dtype, np.floating):
+    if dim is not None:
+        axis = db.get_axis_num(dim)
+    else:
+        axis = None
+    if skipna and np.issubdtype(db.dtype, np.floating):
         return np.quantile(db, q, axis, **kwargs)
     else:
         return np.nanquantile(db, q, axis, **kwargs)
@@ -558,7 +603,10 @@ def average(db, dim=None, weights=None, **kwargs):
         a single scalar value is returned; if `dim` is specified, the result
         has the same shape as the input data.
     """
-    axis = db.get_axis_num(dim)
+    if dim is not None:
+        axis = db.get_axis_num(dim)
+    else:
+        axis = None
     return np.average(db, axis, weights, **kwargs)
 
 
@@ -583,5 +631,8 @@ def count_nonzero(db, dim=None, **kwargs):
         a single integer value is returned; if `dim` is specified, the result
         has the same shape as the input data.
     """
-    axis = db.get_axis_num(dim)
+    if dim is not None:
+        axis = db.get_axis_num(dim)
+    else:
+        axis = None
     return np.count_nonzero(db, axis, **kwargs)

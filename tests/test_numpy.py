@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from xdas.synthetics import generate
 from xdas.database import HANDLED_FUNCTIONS, Database
+from xdas.synthetics import generate
 
 
 class TestUfuncs:
