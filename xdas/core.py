@@ -1,3 +1,4 @@
+import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from glob import glob
 
@@ -5,7 +6,7 @@ import numpy as np
 import xarray as xr
 from tqdm import tqdm
 
-from .coordinates import Coordinate
+from .coordinates import InterpCoordinate
 from .database import Database, DataCollection
 from .virtual import DataLayout, DataSource
 
@@ -24,12 +25,19 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
         The tolerance to consider that the end of a file is continuous with the begging
         of the following
 
-    ReturnsDA
+    Returns
     -------
     Database
         The database containing all files data.
+
+    Raises
+    ------
+    FileNotFound
+        If no file can be found.
     """
     fnames = sorted(glob(paths))
+    if len(fnames) == 0:
+        raise FileNotFoundError("no file to open")
     if len(fnames) > 100_000:
         raise NotImplementedError(
             "The maximum number of file that can be opened at once is for now limited "
@@ -47,10 +55,10 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
                 desc="Fetching metadata from files",
             )
         ]
-    return concatenate(dbs, tolerance=tolerance)
+    return concatenate(dbs, tolerance=tolerance, verbose=True)
 
 
-def concatenate(dbs, dim="time", tolerance=None, virtual=None):
+def concatenate(dbs, dim="time", tolerance=None, virtual=None, verbose=None):
     """
     Concatenate several databases along a given dimension.
 
@@ -72,7 +80,7 @@ def concatenate(dbs, dim="time", tolerance=None, virtual=None):
     Database
         The concatenated database.
     """
-    dbs = sorted(dbs, key=lambda db: db[dim][0])
+    dbs = sorted(dbs, key=lambda db: db[dim][0].values)
     axis = dbs[0].get_axis_num(dim)
     dims = dbs[0].dims
     dtype = dbs[0].dtype
@@ -89,7 +97,11 @@ def concatenate(dbs, dim="time", tolerance=None, virtual=None):
     idx = 0
     tie_indices = []
     tie_values = []
-    for db in tqdm(dbs, desc="Linking database"):
+    if verbose:
+        iterator = tqdm(dbs, desc="Linking database")
+    else:
+        iterator = dbs
+    for db in iterator:
         selection = tuple(
             slice(idx, idx + db.shape[axis]) if d == dim else slice(None) for d in dims
         )
@@ -100,7 +112,9 @@ def concatenate(dbs, dim="time", tolerance=None, virtual=None):
         tie_indices.extend(idx + db[dim].tie_indices)
         tie_values.extend(db[dim].tie_values)
         idx += db.shape[axis]
-    coord = Coordinate(tie_indices, tie_values)
+    coord = InterpCoordinate(
+        {"tie_indices": tie_indices, "tie_values": tie_values}, dim
+    )
     coord = coord.simplify(tolerance)
     coords = dbs[0].coords
     coords[dim] = coord
@@ -130,13 +144,30 @@ def open_database(fname, group=None, engine="netcdf", **kwargs):
     ------
     ValueError
         If the engine si not recognized.
+
+    Raises
+    ------
+    FileNotFound
+        If no file can be found.
     """
+    if not os.path.exists(fname):
+        raise FileNotFoundError("no file to open")
     if engine == "netcdf":
         return Database.from_netcdf(fname, group=group, **kwargs)
     elif engine == "asn":
         from .io.asn import read
 
         return read(fname)
+    elif engine == "optasense":
+        from .io.optasense import read
+
+        return read(fname)
+    elif engine == "sintela":
+        from .io.sintela import read
+
+        return read(fname)
+    elif callable(engine):
+        return engine(fname)
     else:
         raise ValueError("engine not recognized")
 
@@ -154,7 +185,14 @@ def open_datacollection(fname, **kwargs):
     -------
     DataCollection
         The opened DataCollection.
+
+    Raises
+    ------
+    FileNotFound
+        If no file can be found.
     """
+    if not os.path.exists(fname):
+        raise FileNotFoundError("no file to open")
     return DataCollection.from_netcdf(fname, **kwargs)
 
 
@@ -185,6 +223,6 @@ def asdatabase(obj, tolerance=None):
     if isinstance(obj, Database):
         return obj
     elif isinstance(obj, xr.DataArray):
-        return Database.from_xarray(obj, tolerance)
+        return Database.from_xarray(obj)
     else:
         raise ValueError("Cannot convert to database.")

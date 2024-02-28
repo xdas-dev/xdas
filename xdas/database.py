@@ -2,11 +2,12 @@ import copy
 import os
 import re
 
+import dask.array as da
 import h5py
 import numpy as np
 import xarray as xr
 
-from .coordinates import Coordinate, Coordinates
+from .coordinates import Coordinates, InterpCoordinate
 from .virtual import DataLayout, DataSource
 
 
@@ -64,14 +65,8 @@ class Database:
     """
 
     def __init__(self, data, coords, dims=None, name=None, attrs=None):
-        # if not (data.shape == tuple(len(coord) for coord in coords.values())):
-        # raise ValueError("Shape mismatch between data and coordinates")
         self.data = data
-        self.coords = Coordinates(coords)
-        self.dims = tuple(coords.keys())
-        if dims is not None:
-            if not (self.dims == dims):
-                raise ValueError("Dimension mismatch between coordinates and dims")
+        self.coords = Coordinates(coords, dims)
         self.name = name
         self.attrs = attrs
 
@@ -81,9 +76,16 @@ class Database:
         else:
             query = self.coords.get_query(key)
             data = self.data.__getitem__(tuple(query.values()))
-            dct = {dim: self.coords[dim][query[dim]] for dim in query}
-            coords = Coordinates(dct)
-            return self.__class__(data, coords)
+            coords = {
+                name: (
+                    coord.__getitem__(query[coord.dim])
+                    if coord.dim is not None
+                    else coord
+                )
+                for name, coord in self.coords.items()
+            }
+            dims = tuple(dim for dim in self.dims if not coords[dim].isscalar())
+            return self.__class__(data, coords, dims, self.name, self.attrs)
 
     def __setitem__(self, key, value):
         if isinstance(key, str):
@@ -99,14 +101,51 @@ class Database:
         string += repr(self.data) + "\n" + repr(self.coords)
         return string
 
+    def __add__(self, other):
+        return self.copy(data=self.data.__add__(other))
+
+    def __radd__(self, other):
+        return self.copy(data=self.data.__radd__(other))
+
+    def __sub__(self, other):
+        return self.copy(data=self.data.__sub__(other))
+
+    def __rsub__(self, other):
+        return self.copy(data=self.data.__rsub__(other))
+
+    def __mul__(self, other):
+        return self.copy(data=self.data.__mul__(other))
+
+    def __rmul__(self, other):
+        return self.copy(data=self.data.__rmul__(other))
+
+    def __truediv__(self, other):
+        return self.copy(data=self.data.__truediv__(other))
+
+    def __rtruediv__(self, other):
+        return self.copy(data=self.data.__rtruediv__(other))
+
+    def __pow__(self, other):
+        return self.copy(data=self.data.__pow__(other))
+
+    def __rpow__(self, other):
+        return self.copy(data=self.data.__rpow__(other))
+
     def __array__(self):
         return self.data.__array__()
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        raise NotImplementedError()
+        _, *args = inputs
+        assert _ is self
+        data = getattr(ufunc, method)(self.data, *args, **kwargs)
+        return self.copy(data=data)
 
     def __array_function__(self, func, types, args, kwargs):
-        raise NotImplementedError()
+        return NotImplemented
+
+    @property
+    def dims(self):
+        return self.coords.dims
 
     @property
     def shape(self):
@@ -122,7 +161,11 @@ class Database:
 
     @property
     def sizes(self):
-        return {dim: len(coord) for dim, coord in self.coords.items()}
+        return {dim: len(self.coords[dim]) for dim in self.dims}
+
+    @property
+    def nbytes(self):
+        return self.data.nbytes
 
     @property
     def values(self):
@@ -131,6 +174,22 @@ class Database:
     @property
     def loc(self):
         return LocIndexer(self)
+
+    def equals(self, other):
+        if isinstance(other, self.__class__):
+            if not np.array_equal(self.values, other.values):
+                return False
+            if not self.coords.equals(other.coords):
+                return False
+            if not self.dims == other.dims:
+                return False
+            if not self.name == other.name:
+                return False
+            if not self.attrs == other.attrs:
+                return False
+            return True
+        else:
+            return False
 
     def get_axis_num(self, dim):
         """
@@ -239,6 +298,9 @@ class Database:
             copy_fn(self.attrs),
         )
 
+    def load(self):
+        return self.copy(data=self.data.__array__())
+
     def to_xarray(self):
         """
         Convert the Database to a DataArray object.
@@ -250,20 +312,12 @@ class Database:
         DataArray
             The converted in-memory DataArray.
         """
-        return xr.DataArray(
-            data=self.__array__(),
-            coords={dim: self.coords[dim].__array__() for dim in self.coords},
-            dims=self.dims,
-            name=self.name,
-            attrs=self.attrs,
-        )
+        data = self.__array__()
+        return xr.DataArray(data, self.coords, self.dims, self.name, self.attrs)
 
     @classmethod
-    def from_xarray(cls, da, tolerance=None):
-        coords = {
-            dim: Coordinate.from_array(da[dim].values, tolerance) for dim in da.dims
-        }
-        return cls(da.data, coords, da.dims, da.name, da.attrs)
+    def from_xarray(cls, da):
+        return cls(da.data, da.coords, da.dims, da.name, da.attrs)
 
     def to_netcdf(self, fname, group=None, virtual=False, **kwargs):
         """
@@ -286,48 +340,56 @@ class Database:
         """
         data_vars = []
         mapping = ""
-        for dim in self.coords.dims:
-            mapping += f"{dim}: {dim}_indices {dim}_values "
-            interpolation = xr.DataArray(
-                name=f"{dim}_interpolation",
-                attrs={
-                    "interpolation_name": self.coords[dim].kind,
-                    "tie_points_mapping": f"{dim}_points: {dim}_indices {dim}_values",
-                },
-            ).astype("i4")
-            indices = xr.DataArray(
-                name=f"{dim}_indices",
-                data=self.coords[dim].tie_indices,
-                dims=f"{dim}_points",
-            )
-            values = xr.DataArray(
-                name=f"{dim}_values",
-                data=self.coords[dim].tie_values,
-                dims=f"{dim}_points",
-            )
-            data_vars.extend([interpolation, indices, values])
-        dataset = xr.Dataset(
-            data_vars={xarr.name: xarr for xarr in data_vars},
+        for dim in self.coords:
+            if self.coords[dim].isinterp():
+                mapping += f"{dim}: {dim}_indices {dim}_values "
+                interpolation = xr.DataArray(
+                    name=f"{dim}_interpolation",
+                    attrs={
+                        "interpolation_name": "linear",
+                        "tie_points_mapping": f"{dim}_points: {dim}_indices {dim}_values",
+                    },
+                )
+                indices = xr.DataArray(
+                    name=f"{dim}_indices",
+                    data=self.coords[dim].tie_indices,
+                    dims=f"{dim}_points",
+                )
+                values = xr.DataArray(
+                    name=f"{dim}_values",
+                    data=self.coords[dim].tie_values,
+                    dims=f"{dim}_points",
+                )
+                data_vars.extend([interpolation, indices, values])
+        ds = xr.Dataset(
+            data_vars={da.name: da for da in data_vars},
             attrs={"Conventions": "CF-1.9"},
         )
+        coords = {
+            dim: self.coords[dim].__array__()
+            for dim in self.coords
+            if not self.coords[dim].isinterp()
+        }
         if not virtual:
-            xarr = xr.DataArray(
-                self.values,
+            da = xr.DataArray(
+                data=self.values,
+                coords=coords,
                 dims=self.dims,
                 name=self.name,
                 attrs={"coordinate_interpolation": mapping},
             )
-            dataset[xarr.name] = xarr
-            dataset.to_netcdf(fname, group=group, **kwargs)
+            ds[da.name] = da
+            ds.to_netcdf(fname, group=group, **kwargs)
         elif virtual and isinstance(self.data, (DataSource, DataLayout)):
-            xarr = xr.DataArray(
+            da = xr.DataArray(
                 data=np.empty((0, 0)),
+                coords=coords,
                 dims=self.dims,
                 name="__tmp__",
                 attrs={"coordinate_interpolation": mapping},
             )
-            dataset[xarr.name] = xarr
-            dataset.to_netcdf(fname, group=group, **kwargs)
+            ds[da.name] = da
+            ds.to_netcdf(fname, group=group, **kwargs)
             with h5py.File(fname, "r+") as file:
                 if self.name is None:
                     name = "__values__"
@@ -348,30 +410,61 @@ class Database:
 
     @classmethod
     def from_netcdf(cls, fname, group=None, **kwargs):
-        with xr.open_dataset(fname, group=group, **kwargs) as dataset:
-            data_vars = [
-                var
-                for var in dataset.values()
-                if "coordinate_interpolation" in var.attrs
-            ]
-            if len(data_vars) == 1:
-                da = data_vars[0]
+        with xr.open_dataset(fname, group=group, **kwargs) as ds:
+            if len(ds) == 1:
+                name, da = next(ds.items())
+                coords = {
+                    name: (
+                        coord.dims[0],
+                        (
+                            coord.values.astype("U")
+                            if coord.dtype == np.dtype("O")
+                            else coord.values
+                        ),
+                    )
+                    for name, coord in da.coords.items()
+                }
             else:
-                raise ValueError("several possible data arrays detected")
-            name = da.name
-            coords = Coordinates()
-            mapping = da.attrs.pop("coordinate_interpolation")
-            matches = re.findall(r"(\w+): (\w+) (\w+)", mapping)
-            for match in matches:
-                dim, indices, values = match
-                coords[dim] = Coordinate(dataset[indices], dataset[values])
+                data_vars = [
+                    var
+                    for var in ds.values()
+                    if "coordinate_interpolation" in var.attrs
+                ]
+                if len(data_vars) == 1:
+                    da = data_vars[0]
+                else:
+                    raise ValueError("several possible data arrays detected")
+                coords = {
+                    name: (
+                        coord.dims[0],
+                        (
+                            coord.values.astype("U")
+                            if coord.dtype == np.dtype("O")
+                            else coord.values
+                        ),
+                    )
+                    for name, coord in da.coords.items()
+                }
+                mapping = da.attrs.pop("coordinate_interpolation")
+                matches = re.findall(r"(\w+): (\w+) (\w+)", mapping)
+                for match in matches:
+                    dim, indices, values = match
+                    data = {"tie_indices": ds[indices], "tie_values": ds[values]}
+                    coords[dim] = InterpCoordinate(data, dim)
         with h5py.File(fname) as file:
             if group:
                 file = file[group]
-            if name is None:
-                name = "__values__"
+            name = "__values__" if da.name is None else da.name
             data = DataSource(file[name])
-        return cls(data, coords)
+        return cls(data, coords, da.dims, da.name, None if da.attrs == {} else da.attrs)
+
+    def plot(self, *args, **kwargs):
+        if self.ndim == 1:
+            self.to_xarray().plot.line(*args, **kwargs)
+        elif self.ndim == 2:
+            self.to_xarray().plot.imshow(*args, **kwargs)
+        else:
+            self.to_xarray().plot(*args, **kwargs)
 
 
 class LocIndexer:
@@ -380,8 +473,8 @@ class LocIndexer:
 
     def __getitem__(self, key):
         key = self.obj.coords.to_index(key)
-        return self.obj[key]
+        return self.obj.__getitem__(key)
 
     def __setitem__(self, key, value):
         key = self.obj.coords.to_index(key)
-        self.obj[key] = value
+        self.obj.__setitem__(key, value)

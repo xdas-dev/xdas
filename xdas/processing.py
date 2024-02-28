@@ -1,330 +1,188 @@
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+import os
+from concurrent.futures import ThreadPoolExecutor
+from queue import Queue
 
 import numpy as np
 import scipy.signal as sp
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 from .core import concatenate, open_database
+from .monitor import Monitor
+from .signal import multithreaded_concatenate
 
 
-class SignalProcessingChain:
-    """
-    Chain of processing unit to apply to a Database.
+class DatabaseLoader:
+    def __init__(self, db, chunks):
+        self.db = db
+        ((self.chunk_dim, self.chunk_size),) = chunks.items()
+        self.queue = Queue(maxsize=1)
+        self.executor = ThreadPoolExecutor(1)
+        self.future = self.executor.submit(self.task)
 
-    Parameters
-    ----------
-    filters : list of callable
-        The chain of filters to apply. The filters can have some state memory to ensure
-        continuity when repeatedly applied to consecutive chunks.
-    """
+    def __len__(self):
+        div, mod = divmod(self.db.sizes[self.chunk_dim], self.chunk_size)
+        return div if mod == 0 else div + 1
 
-    def __init__(self, filters):
-        self.filters = filters
+    def __getitem__(self, idx):
+        start = idx * self.chunk_size
+        end = (idx + 1) * self.chunk_size
+        query = {
+            dim: slice(start, end) if dim == self.chunk_dim else slice(None)
+            for dim in self.db.dims
+        }
+        return self.db[query].load()
 
-    def __call__(self, db):
-        out = db
-        for filter in self.filters:
-            out = filter(out)
-        return out
+    def __iter__(self):
+        return self
 
-    def process(self, db, dim, chunk_size, parallel=True):
-        """
-        Process a Database by chunk along a given dimension.
-
-        Parameters
-        ----------
-        db : Database
-            The Database to process.
-        dim : str
-            Name of the the dimension along which to process the Database.
-        chunk_size : int
-            The number of samples per chunk.
-        parallel : bool, optional
-            Whether to use multithreading to improve performance, by default True.
-
-        Returns
-        -------
-        Database
-            The processed Database.
-        """
-        div, mod = divmod(db.sizes[dim], chunk_size)
-        if mod == 0:
-            nchunks = div
+    def __next__(self):
+        chunk = self.queue.get()
+        if chunk is None:
+            raise StopIteration
         else:
-            nchunks = div + 1
-        result = []
-        if parallel:
-            chunks = []
-            for k in range(nchunks):
-                query = {dim: slice(k * chunk_size, (k + 1) * chunk_size)}
-                chunks.append(db[query])
-            scheduler = Scheduler(chunks, self.filters)
-            result = scheduler.compute()
+            return chunk
+
+    @property
+    def nbytes(self):
+        return self.db.nbytes
+
+    def task(self):
+        for idx in range(len(self)):
+            data = self[idx]
+            self.queue.put(data)
+        self.queue.put(None)
+
+
+class RealTimeLoader(Observer):
+    def __init__(self, path, engine="netcdf"):
+        super().__init__()
+        self.path = path
+        self.queue = Queue()
+        self.handler = Handler(self.queue, engine)
+        self.schedule(self.handler, self.path, recursive=True)
+        self.start()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        chunk = self.queue.get()
+        if chunk is None:
+            raise StopIteration
         else:
-            for k in range(nchunks):
-                query = {dim: slice(k * chunk_size, (k + 1) * chunk_size)}
-                result.append(self(db[query]))
-        return concatenate(result, dim)
+            return chunk
 
 
-class Scheduler:
-    """
-    Sequential multithreading scheduler.
+class Handler(FileSystemEventHandler):
+    def __init__(self, queue, engine):
+        self.engine = engine
+        self.queue = queue
 
-    As soon as one filter finishes to process a chunk, the scheduler submit the two
-    newly available task: applying the same filter on the next chunk and applying the
-    next filter to the same chunk.
-
-    Parameters
-    ----------
-    chunks : list of Database
-        The chunks to process.
-    filters : list of callable.
-        The chain of filters to apply. The filters can have some state memory to ensure
-        continuity when repeatedly applied to consecutive chunks.
-    """
-
-    def __init__(self, chunks, filters):
-        self.chunks = chunks
-        self.filters = filters
-        self.buffer = {idx: chunk for idx, chunk in enumerate(chunks)}
-        self.executor = None
-        self.futures = {}
-
-    def compute(self):
-        """
-        Launch the processing.
-
-        Returns
-        -------
-        list of Database
-            The processed chunks.
-        """
-        with ThreadPoolExecutor() as executor:
-            self.executor = executor
-            task = {"chunk": 0, "filter": 0}
-            future = self.submit_task(task)
-            while self.futures:
-                done, _ = wait(self.futures, return_when=FIRST_COMPLETED)
-                for future in done:
-                    task = self.futures.pop(future)
-                    self.buffer[task["chunk"]] = future.result()
-                    next_tasks = self.get_next_tasks(task)
-                    for next_task in next_tasks:
-                        self.submit_task(next_task)
-                # print("Number of futures:", len(self.futures))
-        return list(self.buffer.values())
-
-    def submit_task(self, task):
-        """
-        Submit a task.
-
-        Parameters
-        ----------
-        task : dict
-            The task to submit described by the number of the filter and the number of
-            the chunk.
-
-        Returns
-        -------
-        future
-            The future related to the submitted task.
-        """
-        filter = self.filters[task["filter"]]
-        chunk = self.buffer[task["chunk"]]
-        future = self.executor.submit(filter, chunk)
-        self.futures[future] = task
-        # print("New task:", task)
-        return future
-
-    def get_next_tasks(self, task):
-        """
-        Given a finished task, gives the two new available possible tasks: applying the
-        same filter on the next chunk and applying the next filter to the same chunk.
-
-        Parameters
-        ----------
-        task : dict
-            The finished task described as the number of the filter and the number of
-            the chunk.
-
-        Returns
-        -------
-        list of dict
-            The new available tasks.
-        """
-        next_tasks = []
-        if not task["chunk"] >= len(self.chunks) - 1:
-            next_task = task.copy()
-            next_task["chunk"] += 1
-            next_tasks.append(next_task)
-        if not task["filter"] >= len(self.filters) - 1:
-            next_task = task.copy()
-            next_task["filter"] += 1
-            next_tasks.append(next_task)
-        return next_tasks
+    def on_closed(self, event):
+        db = open_database(event.src_path, engine=self.engine)
+        self.queue.put(db.load())
 
 
-class SignalProcessingUnit:
-    """
-    Parent class to all signal processing units.
-    """
+class DatabaseWriter:
+    def __init__(self, dirpath):
+        self.dirpath = dirpath
+        self.queue = Queue(maxsize=1)
+        self.results = []
+        self.executor = ThreadPoolExecutor(1)
+        self.future = self.executor.submit(self.task)
 
-    pass
+    def to_netcdf(self, db):
+        self.queue.put(db)
 
+    def task(self):
+        while True:
+            db = self.queue.get()
+            if db is None:
+                break
+            path = self.get_path(db)
+            if os.path.exists(path):
+                raise OSError(f"the file '{path}' already exists.")
+            else:
+                db.to_netcdf(path)
+            self.results.append(open_database(path))
 
-class LFilter(SignalProcessingUnit):
-    """
-    Filter data along one-dimension with an IIR or FIR.
+    def get_path(self, db):
+        datetime = np.datetime_as_string(db["time"][0].values, unit="s").replace(":", "-")
+        fname = f"{datetime}.nc"
+        return os.path.join(self.dirpath, fname)
 
-    Once the filter is initialized it can be used repeatedly on subsequent chunks of
-    data as a normal python function. The state of the filter will be saved between
-    each call to ensure continuity of the filtering. The state of the filter can be
-    reset for a fresh start.
-
-    Parameters
-    ----------
-    b : array_like
-        The numerator coefficient vector in a 1-D sequence.
-    a : array_like
-        The denominator coefficient vector in a 1-D sequence.
-    dim : str
-        Name of the dimension of the input database along which to apply the linear
-        filter.
-    """
-
-    def __init__(self, b, a, dim):
-        self.b = b
-        self.a = a
-        self.dim = dim
-        self.zi = None
-        self.axis = None
-
-    def __call__(self, db):
-        if (self.zi is None) or (self.axis is None):
-            self.initialize(db)
-        data, self.zi = sp.lfilter(self.b, self.a, db.data, axis=self.axis, zi=self.zi)
-        return db.copy(data=data)
-
-    def initialize(self, db):
-        """
-        Initialize the filter state.
-
-        Parameters
-        ----------
-        db : Database
-            Some sample of the kind of database to process to get the correct axis
-            number.
-        """
-        self.axis = db.get_axis_num(self.dim)
-        zi = sp.lfilter_zi(self.b, self.a)
-        n_sections = zi.shape[0]
-        s = [n_sections if k == self.axis else 1 for k in range(db.ndim)]
-        zi = zi.reshape(s)
-        s = [n_sections if k == self.axis else db.shape[k] for k in range(db.ndim)]
-        zi = np.broadcast_to(zi, s)
-        self.zi = zi
-
-    def reset(self):
-        """
-        Reset state of the filter for a fresh start.
-        """
-        self.zi = None
-        self.axis = None
+    def result(self):
+        self.queue.put(None)
+        self.future.result()
+        return concatenate(self.results)
 
 
 class SOSFilter:
-    """
-    Filter data along one dimension using cascaded second-order sections.
-
-    Parameters
-    ----------
-    sos : array_like
-        Array of second-order filter coefficients.
-    dim : str
-        Name of the dimension of the input database along which to apply the linear
-        filter.
-    """
-
-    def __init__(self, sos, dim):
+    def __init__(self, sos, dim, parallel=None):
         self.sos = sos
         self.dim = dim
-        self.zi = None
-        self.axis = None
+        self.parallel = parallel if parallel is not None else os.cpu_count()
+        self.state = None
 
     def __call__(self, db):
-        if (self.zi is None) or (self.axis is None):
-            self.initialize(db)
-        data, self.zi = sp.sosfilt(self.sos, db, axis=self.axis, zi=self.zi)
+        axis = db.get_axis_num(self.dim)
+        if self.state is None:
+            self.state = self.initialize(db.shape, db.dtype, axis)
+        states = np.array_split(self.state, self.parallel, 1 + int(axis == 0))
+        datas = np.array_split(db.values, self.parallel, int(axis == 0))
+        fn = lambda data, state: sp.sosfilt(self.sos, data, axis=axis, zi=state)
+        with ThreadPoolExecutor(self.parallel) as executor:
+            datas, states = zip(*executor.map(fn, datas, states))
+        data = multithreaded_concatenate(datas, int(axis == 0), n_workers=self.parallel)
+        self.state = multithreaded_concatenate(
+            states, 1 + int(axis == 0), n_workers=self.parallel
+        )
         return db.copy(data=data)
 
-    def initialize(self, db):
-        """
-        Initialize the filter state.
-
-        Parameters
-        ----------
-        db : Database
-            Some sample of the kind of database to process to get the correct axis
-            number.
-        """
-        self.axis = db.get_axis_num(self.dim)
-        zi = sp.sosfilt_zi(self.sos)
-        ndim = len(db.shape)
-        n_sections = zi.shape[0]
-        s = [n_sections] + [2 if k == self.axis else 1 for k in range(ndim)]
-        zi = zi.reshape(s)
-        s = [n_sections] + [2 if k == self.axis else db.shape[k] for k in range(ndim)]
-        zi = np.broadcast_to(zi, s)
-        self.zi = zi
+    def initialize(self, shape, dtype, axis):
+        n_sections = self.sos.shape[0]
+        zi_shape = (n_sections,) + tuple(
+            2 if index == axis else element for index, element in enumerate(shape)
+        )
+        return np.zeros(zi_shape, dtype=dtype)
 
     def reset(self):
-        """
-        Reset state of the filter for a fresh start.
-        """
-        self.zi = None
-        self.axis = None
+        self.state = None
 
 
-class Decimate(SignalProcessingUnit):
-    def __init__(self, q, dim):
-        self.q = q
-        self.dim = dim
+class ProcessingChain:
+    def __init__(self, filters):
+        self.filters = filters
+        self.data_loader = None
+        self.data_writer = None
 
     def __call__(self, db):
-        return db[{self.dim: slice(None, None, self.q)}]
-
-
-class ChunkWriter(SignalProcessingUnit):
-    """
-    Write to disk chunk by chunk.
-
-    Parameters
-    ----------
-    path : str
-        Path were to store the chunks. The number of the chunk will be prepended.
-    """
-
-    def __init__(self, path):
-        self.path = path
-        self.chunk = None
-
-    def __call__(self, db):
-        if self.chunk is None:
-            self.initialize(db)
-        self.chunk += 1
-        postfix = f"_{self.chunk:06d}.nc"
-        fname = self.path + postfix
-        db.to_netcdf(fname)
-        return open_database(fname)
-
-    def initialize(self, db):
-        """
-        Initialize the chunk numbering to zero.
-        """
-        self.chunk = 0
+        for filter in self.filters:
+            db = filter(db)
+        return db
 
     def reset(self):
-        """
-        Reset the chunk numbering.
-        """
-        self.chunk = None
+        for filter in self.filters:
+            if hasattr(filter, "reset"):
+                filter.reset()
+
+    def process(self, data_loader, data_writer):
+        self.reset()
+        self.data_loader = data_loader
+        self.data_writer = data_writer
+        if hasattr(self.data_loader, "nbytes"):
+            total = self.data_loader.nbytes
+        else:
+            total = None
+        monitor = Monitor(total=total)
+        monitor.tic("read")
+        for chunk in self.data_loader:
+            monitor.tic("proc")
+            result = self(chunk)
+            monitor.tic("write")
+            self.data_writer.to_netcdf(result)
+            monitor.toc(chunk.nbytes)
+            monitor.tic("read")
+        monitor.close()
+        return self.data_writer.result()

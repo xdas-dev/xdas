@@ -4,7 +4,8 @@ import numpy as np
 import scipy.signal as sp
 import xarray as xr
 
-from xdas.core import Coordinate, Coordinates, Database
+from xdas.coordinates import Coordinate, Coordinates
+from xdas.database import Database
 
 
 def read(fname, decimation=None, preprocess=None):
@@ -104,8 +105,8 @@ def to_coordinate(starts, sizes, steps):
     end_indices = np.cumsum(sizes) - 1
     tie_values = np.stack((start_values, end_values)).T.reshape(-1)
     tie_indices = np.stack((start_indices, end_indices)).T.reshape(-1)
-    time_coordinate = Coordinate(tie_indices, tie_values)
-    return time_coordinate
+    coord = Coordinate({"tie_indices": tie_indices, "tie_values": tie_values})
+    return coord
 
 
 def correct_gps_time(data, time, delta, name):

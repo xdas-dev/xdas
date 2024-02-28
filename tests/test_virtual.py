@@ -1,6 +1,7 @@
 import tempfile
 
 import numpy as np
+import pytest
 import xarray as xr
 
 import xdas
@@ -21,24 +22,35 @@ class TestAll:
                 db = xdas.Database(
                     data=np.random.randn(*shape).astype("float32"),
                     coords={
-                        "time": xdas.Coordinate(
-                            tie_indices=[0, shape[0] - 1],
-                            tie_values=[
+                        "time": {
+                            "tie_indices": [0, shape[0] - 1],
+                            "tie_values": [
                                 starttime,
                                 starttime + resolution[0] * (shape[0] - 1),
                             ],
-                        ),
-                        "distance": xdas.Coordinate(
-                            tie_indices=[0, shape[1] - 1],
-                            tie_values=[0.0, resolution[1] * (shape[1] - 1)],
-                        ),
+                        },
+                        "distance": {
+                            "tie_indices": [0, shape[1] - 1],
+                            "tie_values": [0.0, resolution[1] * (shape[1] - 1)],
+                        },
                     },
                 )
                 db.to_netcdf(f"{tmpdir}/{name}.nc")
 
             # testing
             _db = xdas.open_database(f"{tmpdir}/002.nc")
+            _db_loaded = _db.load()
             _da = _db.to_xarray()
+            datasource = _db.data
+            assert np.allclose(np.asarray(datasource[0]), _da.values[0])
+            assert np.allclose(np.asarray(datasource[0][1]), _da.values[0][1])
+            assert np.allclose(np.asarray(datasource[:, 0][1]), _da.values[:, 0][1])
+            assert np.allclose(np.asarray(datasource[:, 0][1]), _da.values[:, 0][1])
+            assert np.allclose(np.asarray(datasource[10:][1]), _da.values[10:][1])
+            with pytest.raises(IndexError):
+                datasource[1, 2, 3]
+            assert np.allclose(np.asarray(datasource[10:][1]), _da.values[10:][1])
+            assert np.array_equal(_da.data, _db_loaded.data)
             db = _db.sel(
                 time=slice("2023-01-01T00:01:20", None),
                 distance=slice(1000, None),

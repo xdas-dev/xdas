@@ -120,17 +120,18 @@ data = np.diff(data, prepend=0, axis=0)
 db = xdas.Database(
     data=data,
     coords={
-        "time": xdas.Coordinate(
+        "time": dict(
             tie_indices=[0, shape[0] - 1],
             tie_values=[starttime, starttime + resolution[0] * (shape[0] - 1)],
         ),
-        "distance": xdas.Coordinate(
+        "distance": dict(
             tie_indices=[0, shape[1] - 1],
             tie_values=[0.0, resolution[1] * (shape[1] - 1)],
         ),
     },
 )
-db.to_netcdf(f"_data/sample.nc")
-db[:100].to_netcdf(f"_data/001.nc")
-db[100:200].to_netcdf(f"_data/002.nc")
-db[200:].to_netcdf(f"_data/003.nc")
+dirname = os.path.split(__file__)[0]
+db.to_netcdf(os.path.join(dirname, "_data/sample.nc"))
+db[:100].to_netcdf(os.path.join(dirname, "_data/001.nc"))
+db[100:200].to_netcdf(os.path.join(dirname, "_data/002.nc"))
+db[200:].to_netcdf(os.path.join(dirname, "_data/003.nc"))
