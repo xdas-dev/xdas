@@ -62,12 +62,15 @@ class DataCollection:
             raise TypeError("could not parse `data`")
 
     @classmethod
-    def from_netcdf(cls, fname):
-        self = DataMapping.from_netcdf(fname)
-        keys = list(self.keys())
-        if keys == list(range(len(keys))):
-            return DataSequence.from_mapping(self)
-        else:
+    def from_netcdf(cls, fname, group=None):
+        self = DataMapping.from_netcdf(fname, group)
+        try:
+            keys = [int(key) for key in self.keys()]
+            if keys == list(range(len(keys))):
+                return DataSequence.from_mapping(self)
+            else:
+                return self
+        except ValueError:
             return self
 
 
@@ -99,7 +102,7 @@ class DataMapping(AbstractDataCollection, dict):
         return s
 
     def to_netcdf(self, fname, group=None, virtual=False, **kwargs):
-        if os.path.exists(fname):
+        if group is None and os.path.exists(fname):
             os.remove(fname)
         for key in self:
             name = self.name if self.name is not None else "collection"
@@ -111,14 +114,20 @@ class DataMapping(AbstractDataCollection, dict):
     @classmethod
     def from_netcdf(cls, fname, group=None):
         with h5py.File(fname, "r") as file:
-            if group is not None:
-                file = file[group]
-            name = list(file.keys())[0]
-            groups = list(file[name].keys())
-        self = cls({}, name=None if name == "collection" else name)
-        for group in groups:
-            location = "/".join([name, group])
-            self[group] = Database.from_netcdf(fname, location)
+            if group is None:
+                group = file[list(file.keys())[0]]
+            else:
+                group = file[group]
+            name = group.name.split("/")[-1]
+            keys = list(group.keys())
+            self = cls({}, name=None if name == "collection" else name)
+            for key in keys:
+                subgroup = group[key]
+                if get_group_depth(subgroup) == 0:
+                    self[key] = Database.from_netcdf(fname, subgroup.name)
+                else:
+                    subgroup = subgroup[list(subgroup.keys())[0]]
+                    self[key] = DataCollection.from_netcdf(fname, subgroup.name)
         return self
 
     def equals(self, other):
@@ -170,3 +179,23 @@ class DataSequence(AbstractDataCollection, list):
         if not all(a.equals(b) for a, b in zip(self, other)):
             return False
         return True
+
+
+class DepthCounter:
+    def __init__(self, group):
+        if not isinstance(group, h5py.Group):
+            raise ValueError("not a group")
+        self.group = group
+        self.depth = self.get_depth()
+
+    def visit_func(self, name):
+        self.depth = max(name.count("/"), self.depth)
+
+    def get_depth(self):
+        self.depth = 0
+        self.group.visit(self.visit_func)
+        return self.depth
+
+
+def get_group_depth(group):
+    return DepthCounter(group).depth

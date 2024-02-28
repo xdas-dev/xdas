@@ -9,8 +9,6 @@ from .coordinates import Coordinates, InterpCoordinate
 from .virtual import DataLayout, DataSource
 
 
-
-
 class Database:
     """
     N-dimensional array with labeled coordinates and dimensions.

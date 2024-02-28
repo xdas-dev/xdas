@@ -1,8 +1,9 @@
+import os
+
 import numpy as np
 import scipy.signal as sp
 
 import xdas
-import os
 
 
 def generate(dirpath=None):
