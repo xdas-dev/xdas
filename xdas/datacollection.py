@@ -14,12 +14,6 @@ class AbstractDataCollection:
     def empty(self):
         return len(self) == 0
 
-    # @property
-    # def fields(self):
-    #     return (self.name,) + tuple(
-    #         value.name for value in self if isinstance(value, AbstractDataCollection)
-    #     )
-
     def query(self, indexers=None, **indexers_kwargs):
         if indexers is None:
             indexers = {}
@@ -116,9 +110,6 @@ class DataMapping(AbstractDataCollection, dict):
     values are database objects.
     """
 
-    def __new__(cls, *args, **kwargs):
-        return dict.__new__(cls)
-
     def __repr__(self):
         width = max([len(str(key)) for key in self])
         name = self.name if self.name is not None else "sequence"
@@ -134,6 +125,15 @@ class DataMapping(AbstractDataCollection, dict):
                 s += label + "\n"
                 s += "\n".join(f"    {e}" for e in repr(value).split("\n")[:-1]) + "\n"
         return s
+
+    @property
+    def fields(self):
+        out = (self.name,) + tuple(
+            value.name
+            for value in self.values()
+            if isinstance(value, AbstractDataCollection)
+        )
+        return uniquifiy(out)
 
     def to_netcdf(self, fname, group=None, virtual=False, **kwargs):
         if group is None and os.path.exists(fname):
@@ -194,11 +194,15 @@ class DataSequence(AbstractDataCollection, list):
     A data sequencw is a list whose values are database objects.
     """
 
-    def __new__(cls, *args, **kwargs):
-        return list.__new__(cls)
-
     def __repr__(self):
         return repr(self.to_mapping())
+
+    @property
+    def fields(self):
+        out = (self.name,) + tuple(
+            value.name for value in self if isinstance(value, AbstractDataCollection)
+        )
+        return uniquifiy(out)
 
     def to_mapping(self):
         return DataMapping({key: value for key, value in enumerate(self)}, self.name)
@@ -253,3 +257,8 @@ class DepthCounter:
 
 def get_group_depth(group):
     return DepthCounter(group).depth
+
+
+def uniquifiy(seq):
+    seen = set()
+    return tuple(x for x in seq if x not in seen and not seen.add(x))

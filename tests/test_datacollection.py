@@ -10,6 +10,15 @@ from xdas.synthetics import generate
 
 
 class TestDataCollection:
+    def nest(self, db):
+        return xdas.DataCollection(
+            {
+                "das1": xdas.DataCollection([db, db], "acquisition"),
+                "das2": xdas.DataCollection([db, db, db], "acquisition"),
+            },
+            "instrument",
+        )
+
     def test_io(self):
         db = generate()
         dc = xdas.DataCollection(
@@ -46,13 +55,7 @@ class TestDataCollection:
     def test_depth_counter(self):
         db = generate()
         db.name = "db"
-        dc = xdas.DataCollection(
-            {
-                "das1": xdas.DataCollection([db, db], "acquisition"),
-                "das2": xdas.DataCollection([db, db, db], "acquisition"),
-            },
-            "instrument",
-        )
+        dc = self.nest(db)
         with TemporaryDirectory() as dirpath:
             path = os.path.join(dirpath, "tmp.nc")
             dc.to_netcdf(path)
@@ -67,14 +70,7 @@ class TestDataCollection:
 
     def test_sel(self):
         db = generate()
-        db.name = "db"
-        dc = xdas.DataCollection(
-            {
-                "das1": xdas.DataCollection([db, db], "acquisition"),
-                "das2": xdas.DataCollection([db, db, db], "acquisition"),
-            },
-            "instrument",
-        )
+        dc = self.nest(db)
         db_sel = db.sel(distance=slice(1000, 2000))
         dc_sel = dc.sel(distance=slice(1000, 2000))
         assert dc_sel["das1"][0].equals(db_sel)
@@ -84,14 +80,7 @@ class TestDataCollection:
 
     def test_query(self):
         db = generate()
-        db.name = "db"
-        dc = xdas.DataCollection(
-            {
-                "das1": xdas.DataCollection([db, db], "acquisition"),
-                "das2": xdas.DataCollection([db, db, db], "acquisition"),
-            },
-            "instrument",
-        )
+        dc = self.nest(db)
         result = dc.query(instrument="das1", acquisition=0)
         expected = xdas.DataCollection(
             {
@@ -100,3 +89,9 @@ class TestDataCollection:
             "instrument",
         )
         assert result.equals(expected)
+
+
+    def test_fiels(self):
+        db = generate()
+        dc = self.nest(db)
+        assert dc.fields == ("instrument", "acquisition")
