@@ -15,6 +15,44 @@ class AbstractDataCollection:
         return len(self) == 0
 
     def query(self, indexers=None, **indexers_kwargs):
+        """
+        Query a given subset from a data collection.
+
+        The data collection is walked through, if any node name corresponds to a key of
+        the `indexers`, the corresponding value is used to select a subset of that node.
+
+        Parameters
+        ----------
+        indexers : dict, optional
+            A dict with keys matching fields and values given by string or int.
+        **indexers_kwargs : dict, optional
+            The keyword arguments form of indexers. Overwrite indexers input if both
+            are provided.
+
+        Returns:
+        -------
+        DataCollection:
+            The queried data.
+
+        Examples
+        --------
+        >>> import xdas
+        >>> from xdas.synthetics import generate
+        >>> db = generate()
+        >>> dc = xdas.DataCollection(
+        ...     {
+        ...         "das1": xdas.DataCollection([db, db], "acquisition"),
+        ...         "das2": xdas.DataCollection([db, db, db], "acquisition"),
+        ...     },
+        ...     "instrument",
+        ... )
+        >>> dc.query(instrument="das1", acquisition=0)
+        Instrument:
+          das1:
+            Acquisition:
+            0: <xdas.Database (time: 300, distance: 401)>
+
+        """
         if indexers is None:
             indexers = {}
         indexers.update(indexers_kwargs)

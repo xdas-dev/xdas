@@ -229,7 +229,7 @@ class Database:
         Returns
         -------
         Database
-            _description_
+            The selected part of the original database.
         """
         if indexers is None:
             indexers = {}
