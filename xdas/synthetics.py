@@ -1,8 +1,9 @@
+import os
+
 import numpy as np
 import scipy.signal as sp
 
 import xdas
-import os
 
 
 def generate(dirpath=None):
@@ -19,10 +20,12 @@ def generate(dirpath=None):
 
     Examples
     --------
+    
     >>> import os
     >>> import xdas
     >>> from xdas.synthetics import generate
     >>> from tempfile import TemporaryDirectory
+
     >>> with TemporaryDirectory() as dirpath:
     ...     generate(dirpath)
     ...     db_monolithic = xdas.open_database(os.path.join(dirpath, "sample.nc"))
@@ -31,6 +34,7 @@ def generate(dirpath=None):
     True
 
     """
+    np.random.seed(42)
     shape = (300, 401)
     resolution = (np.timedelta64(20, "ms"), 25.0)
     starttime = np.datetime64("2023-01-01T00:00:00")

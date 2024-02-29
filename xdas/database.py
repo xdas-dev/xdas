@@ -95,10 +95,18 @@ class Database:
             self.data.__setitem__(tuple(query.values()), value)
 
     def __repr__(self):
+        edgeitems = 3 if not np.issubdtype(self.dtype, np.complexfloating) else 2
+        precision = 6 if not np.issubdtype(self.dtype, np.complexfloating) else 4
+        if isinstance(self.data, np.ndarray):
+            data_repr = np.array2string(
+                self.data, precision=precision, threshold=0, edgeitems=edgeitems
+            )
+        else:
+            data_repr = repr(self.data)
         string = "<xdas.Database ("
         string += ", ".join([f"{dim}: {size}" for dim, size in self.sizes.items()])
         string += ")>\n"
-        string += repr(self.data) + "\n" + repr(self.coords)
+        string += data_repr + "\n" + repr(self.coords)
         return string
 
     def __add__(self, other):
