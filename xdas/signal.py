@@ -217,58 +217,44 @@ def filter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=Non
 
 def hilbert(db, N=None, dim='last', parallel=None):
     """
-    Original function: scipy.signal.hilbert
     Compute the analytic signal, using the Hilbert transform.
+
     The transformation is done along the last axis by default.
-    For more informations see `Link text https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.hilbert.html`_
 
     Parameters
     ----------
-    db : Database or DataArray
-        The data to transform.
+    db : Database
+        Signal data. Must be real.
     N: int, optional
-        Number of Fourier components. Default: x.shape[axis]
+        Number of Fourier components. Default: `db.sizes[dim]`.
     dim: str, optional
-        The dimension along which to transform.
+        The dimension along which to transform. Default: last.
     parallel: bool or int, optional
         Whether to parallelize the function, if True all cores are used, 
-        if False signle core, if int: Number of cores
+        if False single core, if int: number of cores.
 
     Returns
     -------
-    Database or DataArray
-        Analytic signal of x, of each 1-D array along axis
+    Database
+        Analytic signal of `db` along dim.
 
     Examples
     --------
-    In this example we use the Hilbert transform to determine the amplitude
-    envelope and instantaneous frequency of an amplitude-modulated signal.
+    In this example we use the Hilbert transform to determine the analytic signal.
 
-    >>> import numpy as np
-    >>> import xdas
-    >>> from scipy.signal import chirp
-
-    >>> duration = 1.0
-    >>> fs = 400.0
-    >>> samples = int(fs*duration)
-    >>> t = np.arange(samples) / fs
-
-    We create a chirp of which the frequency increases from 20 Hz to 100 Hz and
-    apply an amplitude modulation.
-
-    >>> signal = chirp(t, 20.0, t[-1], 100.0)
-    >>> signal *= (1.0 + 0.5 * np.sin(2.0*np.pi*3.0*t) )
-
-    We create the database.
-
-    >>> db = xdas.Database(signal, {"time": t})
-
-    The amplitude envelope is given by magnitude of the analytic signal. The
-    instantaneous frequency can be obtained by differentiating the
-    instantaneous phase in respect to time. The instantaneous phase corresponds
-    to the phase angle of the analytic signal.
-
-    >>> analytic_signal = xdas.hilbert(db, N=None, dim='last')
+    >>> import xdas.signal as xp
+    >>> from xdas.synthetics import generate
+    >>> db = generate()
+    >>> xp.hilbert(db, dim="time")
+    <xdas.Database (time: 300, distance: 401)>
+    [[ 0.0497+0.1632j -0.0635+0.0125j ...  0.1352-0.3107j -0.2832-0.0126j]
+     [-0.1096-0.0335j  0.124 +0.0257j ... -0.0444+0.2409j  0.1378-0.2702j]
+     ...
+     [-0.1977+0.0545j -0.0533-0.1947j ...  0.3722+0.125j  -0.0127+0.1723j]
+     [ 0.1221-0.1808j  0.1888+0.0368j ... -0.4517+0.1581j  0.0411+0.1512j]]
+    Coordinates:
+      * time (time): 2023-01-01T00:00:00.000 to 2023-01-01T00:00:05.980
+      * distance (distance): 0.000 to 10000.000
 
     """
     dim = parse_dim(db, dim)
@@ -474,21 +460,23 @@ def medfilt(db, kernel_dim):
     --------
     A median filter is applied to some synthetic database with a median window size
     of 7 along the time dimension and 5 along the space dimension.
+
     >>> import xdas.signal as xp
     >>> from xdas.synthetics import generate
     >>> db = generate()
     >>> xp.medfilt(db, {"time": 7, "distance": 5})
     <xdas.Database (time: 300, distance: 401)>
-    array([[0., 0., 0., ..., 0., 0., 0.],
-           [0., 0., 0., ..., 0., 0., 0.],
-           [0., 0., 0., ..., 0., 0., 0.],
-           ...,
-           [0., 0., 0., ..., 0., 0., 0.],
-           [0., 0., 0., ..., 0., 0., 0.],
-           [0., 0., 0., ..., 0., 0., 0.]])
+    [[ 0.        0.        0.       ...  0.        0.        0.      ]
+     [ 0.        0.        0.       ...  0.        0.        0.      ]
+     [ 0.        0.        0.       ...  0.        0.        0.      ]
+     ...
+     [ 0.        0.        0.       ... -0.000402  0.        0.      ]
+     [ 0.        0.        0.       ...  0.        0.        0.      ]
+     [ 0.        0.        0.       ...  0.        0.        0.      ]]
     Coordinates:
       * time (time): 2023-01-01T00:00:00.000 to 2023-01-01T00:00:05.980
       * distance (distance): 0.000 to 10000.000
+
     """
     if not all(dim in db.dims for dim in kernel_dim.keys()):
         raise ValueError("dims provided not in database")
