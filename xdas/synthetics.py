@@ -20,7 +20,7 @@ def generate(dirpath=None):
 
     Examples
     --------
-    
+
     >>> import os
     >>> import xdas
     >>> from xdas.synthetics import generate
