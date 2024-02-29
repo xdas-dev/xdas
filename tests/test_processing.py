@@ -4,7 +4,7 @@ import numpy as np
 import scipy.signal as sp
 
 from xdas.core import Database
-from xdas.processing import ProcessingChain, SOSFilter
+from xdas.processing import DatabaseLoader, DatabaseWriter, ProcessingChain, SOSFilter
 
 
 class TestProcessing:
@@ -29,25 +29,29 @@ class TestProcessing:
             },
         )
 
-    # def test_all(self):
-    #     db = self.generate()
-    #     sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
-    #     dim = "time"
-    #     axis = db.get_axis_num(dim)
-    #     parallel = 4
+    def test_all(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            db = self.generate()
+            dim = "time"
 
-    #     expected = db.copy(data=sp.sosfilt(sos, db.values, axis=axis))
+            data_loader = DatabaseLoader(db, {dim: 1000})
 
-    #     sosfilter = SOSFilter(sos, dim, parallel)
-    #     result_filter = sosfilter(db)
+            sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
+            sosfilter = SOSFilter(sos, dim, parallel=4)
 
-    #     chain = ProcessingChain([sosfilter])
-    #     chain.reset()
-    #     result_chain = chain(db)
+            chain = ProcessingChain([sosfilter])
 
-    #     with tempfile.TemporaryDirectory() as tempdir:
-    #         result_process = chain.process(db, {dim: 100}, tempdir).load()
+            data_writer = DatabaseWriter(tempdir)
 
-    #     assert result_filter.equals(expected)
-    #     assert result_chain.equals(expected)
-    #     assert np.allclose(result_process.values, expected.values)
+            sosfilter.reset()
+            result_filter = sosfilter(db)
+            chain.reset()
+            result_chain = chain(db)
+            chain.reset()
+            result_process = chain.process(data_loader, data_writer).load()
+            axis = db.get_axis_num(dim)
+            restult_expected = db.copy(data=sp.sosfilt(sos, db.values, axis=axis))
+
+            assert result_filter.equals(restult_expected)
+            assert result_chain.equals(restult_expected)
+            assert np.allclose(result_process.values, restult_expected.values)

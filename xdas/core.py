@@ -112,7 +112,9 @@ def concatenate(dbs, dim="time", tolerance=None, virtual=None, verbose=None):
         tie_indices.extend(idx + db[dim].tie_indices)
         tie_values.extend(db[dim].tie_values)
         idx += db.shape[axis]
-    coord = InterpCoordinate({"tie_indices": tie_indices, "tie_values": tie_values})
+    coord = InterpCoordinate(
+        {"tie_indices": tie_indices, "tie_values": tie_values}, dim
+    )
     coord = coord.simplify(tolerance)
     coords = dbs[0].coords
     coords[dim] = coord

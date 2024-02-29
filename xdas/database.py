@@ -10,6 +10,8 @@ import xarray as xr
 from .coordinates import Coordinates, InterpCoordinate
 from .virtual import DataLayout, DataSource
 
+np.set_printoptions(threshold=10)
+
 
 class DataCollection(dict):
     """

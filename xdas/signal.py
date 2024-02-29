@@ -178,7 +178,7 @@ def taper(db, window="hann", fftbins=False, dim="last"):
     return db.copy(data=data)
 
 
-def iirfilter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=None):
+def filter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=None):
     """
     SOS IIR filtering along given dimension.
 
@@ -444,6 +444,56 @@ def sliding_mean_removal(db, wlen, window="hann", pad_mode="reflect", dim="last"
     pad_width = tuple((n // 2, n // 2) if d == dim else (0, 0) for d in db.dims)
     mean = sp.fftconvolve(np.pad(data, pad_width, mode=pad_mode), win, mode="valid")
     data = data - mean
+    return db.copy(data=data)
+
+
+def medfilt(db, kernel_dim):
+    """
+    Perform a median filter along given dimensions
+
+    Apply a median filter to the input using a local window-size given by kernel_size.
+    The array will automatically be zero-padded.
+
+    Parameters
+    ----------
+    db : Database
+        A database to filter.
+    kernel_dim : dict
+        A dictionary which keys are the dimensions over which to apply a median
+        filtering and which values are the related kernel size in that direction.
+        All values must be odd. If not all dims are provided, missing dimensions
+        are associated to 1, i.e. no median filtering along that direction.
+        At least one dimension must be passed.
+
+    Returns
+    -------
+    Database
+        The median filtered data.
+
+    Examples
+    --------
+    A median filter is applied to some synthetic database with a median window size
+    of 7 along the time dimension and 5 along the space dimension.
+    >>> import xdas.signal as xp
+    >>> from xdas.synthetics import generate
+    >>> db = generate()
+    >>> xp.medfilt(db, {"time": 7, "distance": 5})
+    <xdas.Database (time: 300, distance: 401)>
+    array([[0., 0., 0., ..., 0., 0., 0.],
+           [0., 0., 0., ..., 0., 0., 0.],
+           [0., 0., 0., ..., 0., 0., 0.],
+           ...,
+           [0., 0., 0., ..., 0., 0., 0.],
+           [0., 0., 0., ..., 0., 0., 0.],
+           [0., 0., 0., ..., 0., 0., 0.]])
+    Coordinates:
+      * time (time): 2023-01-01T00:00:00.000 to 2023-01-01T00:00:05.980
+      * distance (distance): 0.000 to 10000.000
+    """
+    if not all(dim in db.dims for dim in kernel_dim.keys()):
+        raise ValueError("dims provided not in database")
+    kernel_size = tuple(kernel_dim[dim] if dim in kernel_dim else 1 for dim in db.dims)
+    data = sp.medfilt(db.values, kernel_size)
     return db.copy(data=data)
 
 
