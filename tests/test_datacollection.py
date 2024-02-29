@@ -51,6 +51,8 @@ class TestDataCollection:
             dc.to_netcdf(path)
             result = xdas.DataCollection.from_netcdf(path)
             assert result.equals(dc)
+            result = xdas.open_datacollection(path)
+            assert result.equals(dc)
 
     def test_depth_counter(self):
         db = generate()
