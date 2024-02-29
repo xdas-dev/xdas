@@ -115,6 +115,11 @@ class TestSignal:
         result = xp.multithreaded_concatenate(arrays, axis=1)
         assert np.array_equal(expected, result)
 
+    def test_hilbert(self):
+        db = generate()
+        result = xp.hilbert(db, dim="time")
+        assert np.allclose(db.values, np.real(result.values))
+
     def test_resample(self):
         db = generate()
         result = xp.resample(db, 100, dim="time", window="hamming", domain="time")
