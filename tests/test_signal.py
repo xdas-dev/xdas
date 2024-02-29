@@ -120,6 +120,16 @@ class TestSignal:
         result = xp.hilbert(db, dim="time")
         assert np.allclose(db.values, np.real(result.values))
 
+    def test_resample(self):
+        db = generate()
+        result = xp.resample(db, 100, dim="time", window="hamming", domain="time")
+        assert result.sizes["time"] == 100
+
+    def test_resample_poly(self):
+        db = generate()
+        result = xp.resample_poly(db, 2, 5, dim="time")
+        assert result.sizes["time"] == 120
+
     def test_filters(self):
         from scipy import signal
         from xdas.synthetics import generate
