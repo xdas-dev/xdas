@@ -4,6 +4,7 @@ from xdas.synthetics import generate
 
 import xdas
 import xdas.signal as xp
+from xdas.synthetics import generate
 
 
 class TestSignal:
@@ -97,6 +98,14 @@ class TestSignal:
         assert np.allclose(da, 0)
         db = xp.sliding_mean_removal(db, 0.1 * n * d)
         assert np.allclose(db.values, 0)
+
+    def test_medfilt(self):
+        db = generate()
+        result1 = xp.medfilt(db, {"distance": 3})
+        result2 = xp.medfilt(db, {"time": 1, "distance": 3})
+        assert result1.equals(result2)
+        db.data = np.zeros(db.shape)
+        assert db.equals(xp.medfilt(db, {"time": 7, "distance": 3}))
 
     def test_multithreaded_concatenate(self):
         arrays = [np.random.rand(100, 20) for _ in range(100)]
