@@ -1,5 +1,5 @@
-from fnmatch import fnmatch
 import os
+from fnmatch import fnmatch
 
 import h5py
 
@@ -7,10 +7,6 @@ from .database import Database
 
 
 class AbstractDataCollection:
-    def __init__(self, data, name=None):
-        super().__init__(data)
-        self.name = name
-
     @property
     def empty(self):
         return len(self) == 0
@@ -96,22 +92,6 @@ class AbstractDataCollection:
             return DataCollection(data, self.name)
         else:
             return self
-        # # if indexers is None:
-        # #     indexers = {}
-        # # indexers.update(indexers_kwargs)
-        # # if self.name in indexers:
-        # #     key = indexers[self.name]
-        # #     out = self[key]
-        # #     if isinstance(out, AbstractDataCollection):
-        # #         out = out.query(indexers)
-        # #     if self.issequence():
-        # #         return DataCollection([out], self.name)
-        # #     elif self.ismapping():
-        # #         return DataCollection({key: out}, self.name)
-        # #     else:
-        # #         raise TypeError("unknown type of data collection")
-        # # else:
-        #     return self
 
     def issequence(self):
         return isinstance(self, DataSequence)
@@ -163,6 +143,9 @@ class DataCollection:
             2: <xdas.Database (time: 300, distance: 401)>
 
         """
+        if isinstance(data, tuple) and name is None:
+            name, data = data
+            return DataCollection(data, name)
         if isinstance(data, list):
             return DataSequence(data, name)
         elif isinstance(data, dict):
@@ -190,6 +173,18 @@ class DataMapping(AbstractDataCollection, dict):
     A data mapping is a dictionary whose keys are any user defined identifiers and
     values are database objects.
     """
+
+    def __init__(self, data, name=None):
+        data = {
+            key: (
+                value
+                if isinstance(value, (Database, AbstractDataCollection))
+                else DataCollection(value)
+            )
+            for key, value in data.items()
+        }
+        super().__init__(data)
+        self.name = name
 
     def __repr__(self):
         width = max([len(str(key)) for key in self])
@@ -272,8 +267,20 @@ class DataSequence(AbstractDataCollection, list):
     """
     A collection of databases.
 
-    A data sequencw is a list whose values are database objects.
+    A data sequence is a list whose values are database objects.
     """
+
+    def __init__(self, data, name=None):
+        data = [
+            (
+                value
+                if isinstance(value, (Database, AbstractDataCollection))
+                else DataCollection(value)
+            )
+            for value in data
+        ]
+        super().__init__(data)
+        self.name = name
 
     def __repr__(self):
         return repr(self.to_mapping())

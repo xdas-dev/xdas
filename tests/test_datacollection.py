@@ -19,6 +19,19 @@ class TestDataCollection:
             "instrument",
         )
 
+    def test_init(self):
+        db = generate()
+        dc = self.nest(db)
+        data = (
+            "instrument",
+            {
+                "das1": ("acquisition", [db, db]),
+                "das2": ("acquisition", [db, db, db]),
+            },
+        )
+        result = xdas.DataCollection(data)
+        assert result.equals(dc)
+
     def test_io(self):
         db = generate()
         dc = xdas.DataCollection(
