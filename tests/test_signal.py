@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.signal as sp
 import xarray as xr
 
 import xdas
@@ -129,3 +130,27 @@ class TestSignal:
         db = generate()
         result = xp.resample_poly(db, 2, 5, dim="time")
         assert result.sizes["time"] == 120
+
+    def test_lfilter(self):
+        db = generate()
+        b, a = sp.iirfilter(4, 0.5, btype="low")
+        result1 = xp.lfilter(b, a, db, "time")
+        result2, state = xp.lfilter(b, a, db, "time", state="init")
+        assert result1.equals(result2)
+
+    def test_filtfilt(self):
+        db = generate()
+        b, a = sp.iirfilter(2, 0.5, btype="low")
+        xp.filtfilt(b, a, db, "time", padtype=None)
+
+    def test_sosfilter(self):
+        db = generate()
+        sos = sp.iirfilter(4, 0.5, btype="low", output="sos")
+        result1 = xp.sosfilt(sos, db, "time")
+        result2, state = xp.sosfilt(sos, db, "time", state="init")
+        assert result1.equals(result2)
+
+    def test_sosfiltfilt(self):
+        db = generate()
+        sos = sp.iirfilter(2, 0.5, btype="low", output="sos")
+        xp.sosfiltfilt(sos, db, "time", padtype=None)
