@@ -5,7 +5,7 @@ import h5py
 import pytest
 
 import xdas
-from xdas.datacollection import get_group_depth
+from xdas.datacollection import get_depth
 from xdas.synthetics import generate
 
 
@@ -60,13 +60,13 @@ class TestDataCollection:
             path = os.path.join(dirpath, "tmp.nc")
             dc.to_netcdf(path)
             with h5py.File(path) as file:
-                assert get_group_depth(file) > 0
-                assert get_group_depth(file["instrument"]) > 0
-                assert get_group_depth(file["instrument/das1"]) > 0
-                assert get_group_depth(file["instrument/das1/acquisition"]) > 0
-                assert get_group_depth(file["instrument/das1/acquisition/0"]) == 0
+                assert get_depth(file) > 0
+                assert get_depth(file["instrument"]) > 0
+                assert get_depth(file["instrument/das1"]) > 0
+                assert get_depth(file["instrument/das1/acquisition"]) > 0
+                assert get_depth(file["instrument/das1/acquisition/0"]) == 0
                 with pytest.raises(ValueError):
-                    get_group_depth(file["instrument/das1/acquisition/0/db"]) == 0
+                    get_depth(file["instrument/das1/acquisition/0/db"]) == 0
 
     def test_sel(self):
         db = generate()
@@ -89,7 +89,6 @@ class TestDataCollection:
             "instrument",
         )
         assert result.equals(expected)
-
 
     def test_fiels(self):
         db = generate()

@@ -157,7 +157,7 @@ class DataMapping(AbstractDataCollection, dict):
             self = cls({}, name=None if name == "collection" else name)
             for key in keys:
                 subgroup = group[key]
-                if get_group_depth(subgroup) == 0:
+                if get_depth(subgroup) == 0:
                     self[key] = Database.from_netcdf(fname, subgroup.name)
                 else:
                     subgroup = subgroup[list(subgroup.keys())[0]]
@@ -239,24 +239,12 @@ class DataSequence(AbstractDataCollection, list):
         return self.__class__(data, self.name)
 
 
-class DepthCounter:
-    def __init__(self, group):
-        if not isinstance(group, h5py.Group):
-            raise ValueError("not a group")
-        self.group = group
-        self.depth = self.get_depth()
-
-    def visit_func(self, name):
-        self.depth = max(name.count("/"), self.depth)
-
-    def get_depth(self):
-        self.depth = 0
-        self.group.visit(self.visit_func)
-        return self.depth
-
-
-def get_group_depth(group):
-    return DepthCounter(group).depth
+def get_depth(group):
+    if not isinstance(group, h5py.Group):
+        raise ValueError("not a group")
+    depths = []
+    group.visit(lambda name: depths.append(name.count("/")))
+    return max(depths)
 
 
 def uniquifiy(seq):
