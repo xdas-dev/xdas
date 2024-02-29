@@ -1,8 +1,10 @@
 import numpy as np
+import scipy.signal as sp
 import xarray as xr
 
 import xdas
 import xdas.signal as xp
+from xdas.synthetics import generate
 
 
 class TestSignal:
@@ -97,6 +99,14 @@ class TestSignal:
         db = xp.sliding_mean_removal(db, 0.1 * n * d)
         assert np.allclose(db.values, 0)
 
+    def test_medfilt(self):
+        db = generate()
+        result1 = xp.medfilt(db, {"distance": 3})
+        result2 = xp.medfilt(db, {"time": 1, "distance": 3})
+        assert result1.equals(result2)
+        db.data = np.zeros(db.shape)
+        assert db.equals(xp.medfilt(db, {"time": 7, "distance": 3}))
+
     def test_multithreaded_concatenate(self):
         arrays = [np.random.rand(100, 20) for _ in range(100)]
         expected = np.concatenate(arrays)
@@ -105,3 +115,42 @@ class TestSignal:
         expected = np.concatenate(arrays, axis=1)
         result = xp.multithreaded_concatenate(arrays, axis=1)
         assert np.array_equal(expected, result)
+
+    def test_hilbert(self):
+        db = generate()
+        result = xp.hilbert(db, dim="time")
+        assert np.allclose(db.values, np.real(result.values))
+
+    def test_resample(self):
+        db = generate()
+        result = xp.resample(db, 100, dim="time", window="hamming", domain="time")
+        assert result.sizes["time"] == 100
+
+    def test_resample_poly(self):
+        db = generate()
+        result = xp.resample_poly(db, 2, 5, dim="time")
+        assert result.sizes["time"] == 120
+
+    def test_lfilter(self):
+        db = generate()
+        b, a = sp.iirfilter(4, 0.5, btype="low")
+        result1 = xp.lfilter(b, a, db, "time")
+        result2, state = xp.lfilter(b, a, db, "time", state="init")
+        assert result1.equals(result2)
+
+    def test_filtfilt(self):
+        db = generate()
+        b, a = sp.iirfilter(2, 0.5, btype="low")
+        xp.filtfilt(b, a, db, "time", padtype=None)
+
+    def test_sosfilter(self):
+        db = generate()
+        sos = sp.iirfilter(4, 0.5, btype="low", output="sos")
+        result1 = xp.sosfilt(sos, db, "time")
+        result2, state = xp.sosfilt(sos, db, "time", state="init")
+        assert result1.equals(result2)
+
+    def test_sosfiltfilt(self):
+        db = generate()
+        sos = sp.iirfilter(2, 0.5, btype="low", output="sos")
+        xp.sosfiltfilt(sos, db, "time", padtype=None)

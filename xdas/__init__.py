@@ -1,3 +1,5 @@
+import numpy as np
+
 from .coordinates import Coordinate, Coordinates, InterpCoordinate
 from .core import (
     asdatabase,
