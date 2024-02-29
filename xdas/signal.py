@@ -242,6 +242,7 @@ def hilbert(db, N=None, dim='last', parallel=None):
 
     >>> import xdas.signal as xp
     >>> from xdas.synthetics import generate
+
     >>> db = generate()
     >>> xp.hilbert(db, dim="time")
     <xdas.Database (time: 300, distance: 401)>
@@ -262,34 +263,38 @@ def hilbert(db, N=None, dim='last', parallel=None):
     return db.copy(data=data)
 
 
-def lfilter(b, a, db, dim="last", parallel=None):
+def lfilter(b, a, db, dim="last", state=None, parallel=None):
     """
-    Scipy function apply a digital filter forward and backward to a signal.
-    `Link text https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.lfilter.html#scipy.signal.lfilter/`_
-    axis are now given by dim
+    Filter data along one-dimension with an IIR or FIR filter.
 
-    Original Scipy Parameters
-    -------------------------
-    b: array_like
+    Filter a data sequence, `db`, using a digital filter. The filter is a direct
+    form II transposed implementation of the standard difference equation.
+
+    Parameters
+    ----------
+    b : array_like
         The numerator coefficient vector in a 1-D sequence.
-    a: array_like
-        The denominator coefficient vector in a 1-D sequence.
-        If a[0] is not 1, then both a and b are normalized by a[0].
-
-    New Xdas Parameters
-    -------------------
-    db: Database
-        Traces to filter
-    dim: str, optional
-        The dimension along which to filter.
+    a : array_like
+        The denominator coefficient vector in a 1-D sequence.  If ``a[0]``
+        is not 1, then both `a` and `b` are normalized by ``a[0]``.
+    db : Database
+        An N-dimensional input database.
+    dim : str, optional
+        The dimension of the input data array along which to apply the
+        linear filter. Default is last.
+    state : array_like or str, optional
+        Initial conditions for the filter delays. If `state` is None or "init" then
+        initial rest is assumed.
     parallel: bool or int, optional
-        whether to parallelize the function, if true all cores are used,
-        if false single core, if int n cores are used
-
+        Whether to parallelize the function, if true: all cores are used, if false: 
+        single core, if int: n cores are used.
     Returns
     -------
-    y: Database
-        The output of the digital filter
+    db : Database
+        The output of the digital filter.
+    state : array, optional
+        If `state` is None, this is not returned. If `state` is given or "init" `state` 
+        holds the final filter delay values.
 
     Examples
     --------
