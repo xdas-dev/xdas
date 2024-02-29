@@ -386,36 +386,46 @@ def sliding_mean_removal(db, wlen, window="hann", pad_mode="reflect", dim="last"
 
 def medfilt(db, kernel_dim):
     """
-    Median filter data along given dimensions
+    Perform a median filter along given dimensions
+
+    Apply a median filter to the input using a local window-size given by kernel_size.
+    The array will automatically be zero-padded.
 
     Parameters
     ----------
-    da : Database or DataArray
-        The data to detrend.
+    db : Database
+        A database to filter.
     kernel_dim : dict
-        Dictionary containing the dimensions over which to apply a median filtering.
-        The related values are the size of the kernel along that direction.
+        A dictionary which keys are the dimensions over which to apply a median
+        filtering and which values are the related kernel size in that direction.
         All values must be odd. If not all dims are provided, missing dimensions
         are associated to 1, i.e. no median filtering along that direction.
         At least one dimension must be passed.
 
     Returns
     -------
-    DataArray
+    Database
         The median filtered data.
 
     Examples
     --------
-    This example is made to apply median filtering at a randomly generated dataarray
-    by selecting a size of 7 for the median filtering along the time dimension
-    and a size of 3 for the median filtering along the space dimension.
-    The database is synthetic data.
+    A median filter is applied to some synthetic database with a median window size
+    of 7 along the time dimension and 5 along the space dimension.
+    >>> import xdas.signal as xp
     >>> from xdas.synthetics import generate
-    >>> da = generate()
-    >>> dimensions = np.array([coord for coord in da.coords])
-    >>> kernel_length = [7, 3]
-    >>> kernel_dim = dict(zip(dimensions, kernel_length))
-    >>> filtered_da = medfilt(da, kernel_dim)
+    >>> db = generate()
+    >>> xp.medfilt(db, {"time": 7, "distance": 5})
+    <xdas.Database (time: 300, distance: 401)>
+    array([[0., 0., 0., ..., 0., 0., 0.],
+           [0., 0., 0., ..., 0., 0., 0.],
+           [0., 0., 0., ..., 0., 0., 0.],
+           ...,
+           [0., 0., 0., ..., 0., 0., 0.],
+           [0., 0., 0., ..., 0., 0., 0.],
+           [0., 0., 0., ..., 0., 0., 0.]])
+    Coordinates:
+      * time (time): 2023-01-01T00:00:00.000 to 2023-01-01T00:00:05.980
+      * distance (distance): 0.000 to 10000.000
     """
     if not all(dim in db.dims for dim in kernel_dim.keys()):
         raise ValueError("dims provided not in database")

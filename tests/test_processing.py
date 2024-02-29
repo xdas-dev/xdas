@@ -4,7 +4,7 @@ import numpy as np
 import scipy.signal as sp
 
 from xdas.core import Database
-from xdas.processing import ProcessingChain, SOSFilter, DatabaseLoader, DatabaseWriter
+from xdas.processing import DatabaseLoader, DatabaseWriter, ProcessingChain, SOSFilter
 
 
 class TestProcessing:
@@ -35,7 +35,7 @@ class TestProcessing:
             dim = "time"
 
             data_loader = DatabaseLoader(db, {dim: 1000})
-            
+
             sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
             sosfilter = SOSFilter(sos, dim, parallel=4)
 

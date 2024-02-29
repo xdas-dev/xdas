@@ -5,6 +5,7 @@ import xdas
 import xdas.signal as xp
 from xdas.synthetics import generate
 
+
 class TestSignal:
     def test_get_sample_spacing(self):
         s = (5.0 / 2) + 5.0 * np.arange(100)
@@ -97,18 +98,13 @@ class TestSignal:
         db = xp.sliding_mean_removal(db, 0.1 * n * d)
         assert np.allclose(db.values, 0)
 
-
     def test_medfilt(self):
-        da = generate()
-        dimensions = np.array(["distance"])
-        kernel_length = [3]
-        dictionary = dict(zip(dimensions, kernel_length))
-        dimensions = np.array(["distance", "time"])
-        kernel_length = [3, 1]
-        dictionary_inv = dict(zip(dimensions, kernel_length))
-        da_fil = xp.medfilt(da, dictionary)
-        da_fil_inv = xp.medfilt(da, dictionary_inv)
-        assert np.allclose(da_fil.values, da_fil_inv.values)
+        db = generate()
+        result1 = xp.medfilt(db, {"distance": 3})
+        result2 = xp.medfilt(db, {"time": 1, "distance": 3})
+        assert result1.equals(result2)
+        db.data = np.zeros(db.shape)
+        assert db.equals(xp.medfilt(db, {"time": 7, "distance": 3}))
 
     def test_multithreaded_concatenate(self):
         arrays = [np.random.rand(100, 20) for _ in range(100)]
