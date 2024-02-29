@@ -79,4 +79,24 @@ class TestDataCollection:
         dc_sel = dc.sel(distance=slice(1000, 2000))
         assert dc_sel["das1"][0].equals(db_sel)
         dc_sel = dc.sel(distance=slice(20000, 30000))
-        assert dc_sel.empty
+        assert dc_sel["das1"].empty
+        assert dc_sel["das2"].empty
+
+    def test_query(self):
+        db = generate()
+        db.name = "db"
+        dc = xdas.DataCollection(
+            {
+                "das1": xdas.DataCollection([db, db], "acquisition"),
+                "das2": xdas.DataCollection([db, db, db], "acquisition"),
+            },
+            "instrument",
+        )
+        result = dc.query(instrument="das1", acquisition=0)
+        expected = xdas.DataCollection(
+            {
+                "das1": xdas.DataCollection([db], "acquisition"),
+            },
+            "instrument",
+        )
+        assert result.equals(expected)

@@ -14,6 +14,36 @@ class AbstractDataCollection:
     def empty(self):
         return len(self) == 0
 
+    # @property
+    # def fields(self):
+    #     return (self.name,) + tuple(
+    #         value.name for value in self if isinstance(value, AbstractDataCollection)
+    #     )
+
+    def query(self, indexers=None, **indexers_kwargs):
+        if indexers is None:
+            indexers = {}
+        indexers.update(indexers_kwargs)
+        if self.name in indexers:
+            key = indexers[self.name]
+            out = self[key]
+            if isinstance(out, AbstractDataCollection):
+                out = out.query(indexers)
+            if self.issequence():
+                return DataCollection([out], self.name)
+            elif self.ismapping():
+                return DataCollection({key: out}, self.name)
+            else:
+                raise TypeError("unknown type of data collection")
+        else:
+            return self
+
+    def issequence(self):
+        return isinstance(self, DataSequence)
+
+    def ismapping(self):
+        return isinstance(self, DataMapping)
+
 
 class DataCollection:
     def __new__(cls, data, name=None):
