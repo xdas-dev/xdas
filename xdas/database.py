@@ -146,6 +146,10 @@ class Database:
         return self.__array__()
 
     @property
+    def empty(self):
+        return np.prod(self.shape) == 0
+
+    @property
     def loc(self):
         return LocIndexer(self)
 

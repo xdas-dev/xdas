@@ -10,6 +10,10 @@ class AbstractDataCollection:
         super().__init__(data)
         self.name = name
 
+    @property
+    def empty(self):
+        return len(self) == 0
+
 
 class DataCollection:
     def __new__(cls, data, name=None):
@@ -141,6 +145,17 @@ class DataMapping(AbstractDataCollection, dict):
             return False
         return True
 
+    def sel(self, indexers=None, **indexers_kwargs):
+        data = {
+            key: value.sel(indexers, **indexers_kwargs) for key, value in self.items()
+        }
+        data = {
+            key: value
+            for key, value in data.items()
+            if (isinstance(value, AbstractDataCollection) or not value.empty)
+        }
+        return self.__class__(data, self.name)
+
 
 class DataSequence(AbstractDataCollection, list):
     """
@@ -179,6 +194,15 @@ class DataSequence(AbstractDataCollection, list):
         if not all(a.equals(b) for a, b in zip(self, other)):
             return False
         return True
+
+    def sel(self, indexers=None, **indexers_kwargs):
+        data = [value.sel(indexers, **indexers_kwargs) for value in self]
+        data = [
+            value
+            for value in data
+            if (isinstance(value, AbstractDataCollection) or not value.empty)
+        ]
+        return self.__class__(data, self.name)
 
 
 class DepthCounter:
