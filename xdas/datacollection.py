@@ -1,3 +1,4 @@
+from fnmatch import fnmatch
 import os
 
 import h5py
@@ -58,17 +59,59 @@ class AbstractDataCollection:
         indexers.update(indexers_kwargs)
         if self.name in indexers:
             key = indexers[self.name]
-            out = self[key]
-            if isinstance(out, AbstractDataCollection):
-                out = out.query(indexers)
             if self.issequence():
-                return DataCollection([out], self.name)
+                if isinstance(key, int):
+                    data = [self[key]]
+                elif isinstance(key, slice):
+                    data = self[key]
+                else:
+                    raise ValueError(f"{self.name} query must be a string")
+                data = [
+                    (
+                        value.query(indexers)
+                        if isinstance(value, AbstractDataCollection)
+                        else value
+                    )
+                    for value in data
+                ]
             elif self.ismapping():
-                return DataCollection({key: out}, self.name)
+                if isinstance(key, str):
+                    data = {
+                        name: value
+                        for name, value in self.items()
+                        if fnmatch(name, key)
+                    }
+                else:
+                    raise ValueError(f"{self.name} query must be a string")
+                data = {
+                    name: (
+                        value.query(indexers)
+                        if isinstance(value, AbstractDataCollection)
+                        else value
+                    )
+                    for name, value in data.items()
+                }
             else:
                 raise TypeError("unknown type of data collection")
+            return DataCollection(data, self.name)
         else:
             return self
+        # # if indexers is None:
+        # #     indexers = {}
+        # # indexers.update(indexers_kwargs)
+        # # if self.name in indexers:
+        # #     key = indexers[self.name]
+        # #     out = self[key]
+        # #     if isinstance(out, AbstractDataCollection):
+        # #         out = out.query(indexers)
+        # #     if self.issequence():
+        # #         return DataCollection([out], self.name)
+        # #     elif self.ismapping():
+        # #         return DataCollection({key: out}, self.name)
+        # #     else:
+        # #         raise TypeError("unknown type of data collection")
+        # # else:
+        #     return self
 
     def issequence(self):
         return isinstance(self, DataSequence)

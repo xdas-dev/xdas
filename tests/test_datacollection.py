@@ -91,6 +91,10 @@ class TestDataCollection:
             "instrument",
         )
         assert result.equals(expected)
+        result = dc.query(instrument="das*")
+        assert result.equals(dc)
+        result = dc.query(acquisition=slice(0, 2))
+        assert result.equals(dc)
 
     def test_fiels(self):
         db = generate()
