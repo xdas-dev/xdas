@@ -32,6 +32,7 @@ def generate(dirpath=None):
     True
 
     """
+    np.random.seed(42)
     shape = (300, 401)
     resolution = (np.timedelta64(20, "ms"), 25.0)
     starttime = np.datetime64("2023-01-01T00:00:00")
