@@ -7,7 +7,8 @@ import xarray as xr
 from tqdm import tqdm
 
 from .coordinates import InterpCoordinate
-from .database import Database, DataCollection
+from .database import Database
+from .datacollection import DataCollection
 from .virtual import DataLayout, DataSource
 
 

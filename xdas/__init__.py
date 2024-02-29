@@ -8,4 +8,5 @@ from .core import (
     open_datacollection,
     open_mfdatabase,
 )
-from .database import Database, DataCollection
+from .database import Database
+from .datacollection import DataCollection
