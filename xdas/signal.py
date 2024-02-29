@@ -5,8 +5,8 @@ import numpy as np
 import scipy.signal as sp
 
 from . import config
-from .database import Database
 from .coordinates import Coordinate
+from .database import Database
 
 
 def parse_dim(db, dim):
@@ -216,7 +216,7 @@ def filter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=Non
     return db.copy(data=data)
 
 
-def hilbert(db, N=None, dim='last', parallel=None):
+def hilbert(db, N=None, dim="last", parallel=None):
     """
     Compute the analytic signal, using the Hilbert transform.
 
@@ -231,7 +231,7 @@ def hilbert(db, N=None, dim='last', parallel=None):
     dim: str, optional
         The dimension along which to transform. Default: last.
     parallel: bool or int, optional
-        Whether to parallelize the function, if True all cores are used, 
+        Whether to parallelize the function, if True all cores are used,
         if False single core, if int: number of cores.
 
     Returns
@@ -245,6 +245,7 @@ def hilbert(db, N=None, dim='last', parallel=None):
 
     >>> import xdas.signal as xp
     >>> from xdas.synthetics import generate
+
     >>> db = generate()
     >>> xp.hilbert(db, dim="time")
     <xdas.Database (time: 300, distance: 401)>
@@ -303,7 +304,17 @@ def resample(db, num, dim="last", window=None, domain="time"):
 
     >>> db = generate()
     >>> xp.resample(db, 100, dim='time', window='hamming', domain='time')
-
+    <xdas.Database (time: 100, distance: 401)>
+    [[ 0.039988  0.04855  -0.08251  ...  0.02539  -0.055219 -0.006693]
+     [-0.032913 -0.016732  0.033743 ...  0.028534 -0.037685  0.032918]
+     [ 0.01215   0.064107 -0.048831 ...  0.009131  0.053133  0.019843]
+     ...
+     [-0.036508  0.050059  0.015494 ... -0.012022 -0.064922  0.034198]
+     [ 0.054003 -0.013902 -0.084095 ...  0.008979  0.080804 -0.063866]
+     [-0.042741 -0.03524   0.122637 ... -0.013453 -0.075183  0.093055]]
+    Coordinates:
+      * time (time): 2023-01-01T00:00:00.000 to 2023-01-01T00:00:05.940
+      * distance (distance): 0.000 to 10000.000
     """
     dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
@@ -372,19 +383,13 @@ def resample_poly(
     >>> db = generate()
     >>> xp.resample_poly(db, 2, 5, dim='time')
     <xdas.Database (time: 120, distance: 401)>
-    array([[ 0.03953356, -0.02221072, -0.01972999, ...,  0.00594519,
-            -0.04150856,  0.03278339],
-           [-0.02577478, -0.0240433 ,  0.04823196, ..., -0.11152653,
-             0.0888869 , -0.03732309],
-           [-0.03715278,  0.09667405,  0.02256109, ...,  0.1460261 ,
-            -0.06788061, -0.02310649],
-           ...,
-           [ 0.02076931,  0.02474432, -0.00296662, ...,  0.06039702,
-            -0.10543832,  0.04193603],
-           [-0.02961626,  0.04258454,  0.0181235 , ..., -0.01920023,
-             0.05825849, -0.00434469],
-           [ 0.02295388, -0.03706803, -0.06053322, ...,  0.06473277,
-            -0.1001479 ,  0.05727921]])
+    [[-0.006378  0.012767 -0.002068 ... -0.033461  0.002603 -0.027478]
+     [ 0.008851 -0.037799  0.009595 ...  0.053291 -0.0396    0.026909]
+     [-0.034468  0.085153 -0.038036 ... -0.015803  0.030245  0.047028]
+     ...
+     [ 0.02834   0.053455 -0.155873 ...  0.033726 -0.036478 -0.016146]
+     [ 0.015454 -0.062852  0.049064 ... -0.018409  0.113782 -0.072631]
+     [-0.026921 -0.01264   0.087272 ...  0.001695 -0.147191  0.177587]]
     Coordinates:
       * time (time): 2023-01-01T00:00:00.000 to 2023-01-01T00:00:05.950
       * distance (distance): 0.000 to 10000.000
@@ -611,6 +616,7 @@ def medfilt(db, kernel_dim):
 
     >>> import xdas.signal as xp
     >>> from xdas.synthetics import generate
+
     >>> db = generate()
     >>> xp.medfilt(db, {"time": 7, "distance": 5})
     <xdas.Database (time: 300, distance: 401)>
