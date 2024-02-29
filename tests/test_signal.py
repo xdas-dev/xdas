@@ -1,6 +1,5 @@
 import numpy as np
 import xarray as xr
-from xdas.synthetics import generate
 
 import xdas
 import xdas.signal as xp
@@ -118,6 +117,10 @@ class TestSignal:
 
     def test_resample(self):
         db = generate()
-        shape = db.data.shape
-        results = xp.resample(db, shape[0]*10, dim='time', window='hamming', domain='time')
-        assert results['time'].shape[0] == shape[0]*10
+        result = xp.resample(db, 100, dim="time", window="hamming", domain="time")
+        assert result.sizes["time"] == 100
+
+    def test_resample_poly(self):
+        db = generate()
+        result = xp.resample_poly(db, 2, 5, dim="time")
+        assert result.sizes["time"] == 120

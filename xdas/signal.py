@@ -6,6 +6,7 @@ import scipy.signal as sp
 
 from . import config
 from .database import Database
+from .coordinates import Coordinate
 
 
 def parse_dim(db, dim):
@@ -215,120 +216,151 @@ def filter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=Non
     return db.copy(data=data)
 
 
-def resample(db, num, dim='last', window=None, domain='time'):
+def resample(db, num, dim="last", window=None, domain="time"):
     """
-    Original function: scipy.signal.resample
-    Resample db to num samples using Fourier method along the given axis.
-    The resampled signal starts at the same value as x but is sampled with a spacing of len(x) / num * (spacing of x). 
-    Because a Fourier method is used, the signal is assumed to be periodic.
-    For more informations see: `Link text https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.resample.html`_
+    Resample db to num samples using Fourier method along the given dimension.
 
-    Original Scipy Parameters
-    -------------------------
+    The resampled signal starts at the same value as db but is sampled with a spacing
+    of len(db) / num * (spacing of db). Because a Fourier method is used, the signal is
+    assumed to be periodic.
+
+    Parameters
+    ----------
+    db: Database
+        The data to be resampled.
     num: int
         The number of samples in the resampled signal.
+    dim: str, optional
+        The dimension along which to resample. Default is last.
     window: array_like, callable, string, float, or tuple, optional
-        Specifies the window applied to the signal in the Fourier domain.
+        Specifies the window applied to the signal in the Fourier domain. See below for
+        details.
     domain: string, optional
-        A string indicating the domain of the input x: time Consider the input x as time-domain (Default), freq Consider the input x as frequency-domain.
-
-    New Xdas Parameters
-    -------------------
-    db: Database or DataArray
-        The data to be resampled.
-    dim: str, optional
-        The dimension along which to resample.
+        A string indicating the domain of the input x: `time` Consider the input db as
+        time-domain (Default), `freq` Consider the input db as frequency-domain.
 
     Returns
     -------
-    Database or DataArray
-        The resampled data.
-        resampled_x or (resampled_x, resampled_t)
-        Either the resampled array, or, if t was given, a tuple containing the resampled array and the corresponding resampled positions.
+    Database
+        The resampled database.
 
     Examples
     --------
-    This example is made to resample the input database in the time domain at 100 samples 
-    with an original shape of 300 in time. The choosed window is a 'hamming' window.
-    The database is synthetic data.
+    A synthetic database is resample from 300 to 100 samples along the time dimension.
+    The 'hamming' window is used.
+
+    >>> import xdas.signal as xp
     >>> from xdas.synthetics import generate
+
     >>> db = generate()
-    >>> resampled_db = xp.resample(db, 100, dim='time', window='hamming', domain='time')
+    >>> xp.resample(db, 100, dim='time', window='hamming', domain='time')
+
     """
     dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
-    (out, t) = sp.resample(db.values, num, db[dim].values, axis, window, domain)
-    coords = {}
-    for name in db.coords:
-        if name == dim:
-            coords[dim] = dict(tie_indices=[0, num - 1], tie_values=[t[0], t[-1]])
-        else:
-            coords[name] = db.coords[name]
-    return Database(out, coords, db.dims, db.name, db.attrs)
+    (data, t) = sp.resample(db.values, num, db[dim].values, axis, window, domain)
+    new_coord = {"tie_indices": [0, num - 1], "tie_values": [t[0], t[-1]]}
+    coords = {
+        name: new_coord if name == dim else coord
+        for name, coord in db.coords.items()
+        if not (coord.dim == dim and not name == dim)  # don't handle non-dimensional
+    }
+    return Database(data, coords, db.dims, db.name, db.attrs)
 
 
-#def resample_poly(db, num, dim='last', window=None, domain='time'):
-#def resample_poly(x, up, down, axis=0, window=('kaiser', 5.0), padtype='constant', cval=None):
-def resample_poly(db, up, down, dim='last', window=('kaiser', 5.0), padtype='constant', cval=None):
+def resample_poly(
+    db, up, down, dim="last", window=("kaiser", 5.0), padtype="constant", cval=None
+):
     """
-    Original function: scipy.signal.resample_poly
-    Resample db along the given axis using polyphase filtering.
-    The signal db is upsampled by the factor up, a zero-phase low-pass FIR filter is applied, 
-    and then it is downsampled by the factor down. 
-    The resulting sample rate is up / down times the original sample rate. 
-    By default, values beyond the boundary of the signal are assumed to be zero during the filtering step.
-    For more informations see: `Link text https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.resample_poly.html`_
+    Resample db along the given dimension using polyphase filtering.
 
-    Original Scipy Parameters
-    -------------------------
-    up: int
+    The signal in `db` is upsampled by the factor `up`, a zero-phase low-pass
+    FIR filter is applied, and then it is downsampled by the factor `down`.
+    The resulting sample rate is ``up / down`` times the original sample
+    rate. By default, values beyond the boundary of the signal are assumed
+    to be zero during the filtering step.
+
+    Parameters
+    ----------
+    db : Database
+        The data to be resampled.
+    up : int
         The upsampling factor.
-    down: int
+    down : int
         The downsampling factor.
-    window: string, tuple, or array_like, optional
-        Desired window to use to design the low-pass filter, or the FIR filter coefficients to employ.
-    padtype: string, optional
-        constant, line, mean, median, maximum, minimum or any of the other signal extension modes supported by scipy.signal.upfirdn. 
-        Changes assumptions on values beyond the boundary. If constant, assumed to be cval (default zero). 
-        If line assumed to continue a linear trend defined by the first and last points. 
-        mean, median, maximum and minimum work as in np.pad and assume that the values beyond the boundary 
-        are the mean, median, maximum or minimum respectively of the array along the axis.
-    cval: float, optional
-        Value to use if padtype=’constant’. Default is zero.
+    dim : int, optional
+        The dimension of `db` that is resampled. Default is last.
+    window : string, tuple, or array_like, optional
+        Desired window to use to design the low-pass filter, or the FIR filter
+        coefficients to employ. See below for details.
+    padtype : string, optional
+        `constant`, `line`, `mean`, `median`, `maximum`, `minimum` or any of
+        the other signal extension modes supported by `scipy.signal.upfirdn`.
+        Changes assumptions on values beyond the boundary. If `constant`,
+        assumed to be `cval` (default zero). If `line` assumed to continue a
+        linear trend defined by the first and last points. `mean`, `median`,
+        `maximum` and `minimum` work as in `np.pad` and assume that the values
+        beyond the boundary are the mean, median, maximum or minimum
+        respectively of the array along the dimension.
+    cval : float, optional
+        Value to use if `padtype='constant'`. Default is zero.
 
-    New Xdas Parameters
-    -------------------
-    db: Database or DataArray
-        The data to be resampled.
-    dim: str, optional
-        The dimension along which to resample.
 
     Returns
     -------
-    Database or DataArray
+    Database
         The resampled data.
-        resampled_x or (resampled_x, resampled_t)
-        Either the resampled array, or, if t was given, a tuple containing the resampled array and the corresponding resampled positions.
 
     Examples
     --------
-    This example is made to resample the input database in the time domain at 100 samples 
+    This example is made to resample the input database in the time domain at 100 samples
     with an original shape of 300 in time. The choosed window is a 'hamming' window.
     The database is synthetic data.
+
+    >>> import xdas.signal as xp
     >>> from xdas.synthetics import generate
+
     >>> db = generate()
-    >>> resampled_db = xp.resample(db, 100, dim='time', window='hamming', domain='time')
+    >>> xp.resample_poly(db, 2, 5, dim='time')
+    <xdas.Database (time: 120, distance: 401)>
+    array([[ 0.03953356, -0.02221072, -0.01972999, ...,  0.00594519,
+            -0.04150856,  0.03278339],
+           [-0.02577478, -0.0240433 ,  0.04823196, ..., -0.11152653,
+             0.0888869 , -0.03732309],
+           [-0.03715278,  0.09667405,  0.02256109, ...,  0.1460261 ,
+            -0.06788061, -0.02310649],
+           ...,
+           [ 0.02076931,  0.02474432, -0.00296662, ...,  0.06039702,
+            -0.10543832,  0.04193603],
+           [-0.02961626,  0.04258454,  0.0181235 , ..., -0.01920023,
+             0.05825849, -0.00434469],
+           [ 0.02295388, -0.03706803, -0.06053322, ...,  0.06473277,
+            -0.1001479 ,  0.05727921]])
+    Coordinates:
+      * time (time): 2023-01-01T00:00:00.000 to 2023-01-01T00:00:05.950
+      * distance (distance): 0.000 to 10000.000
+
     """
     dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
-    (out, t) = sp.resample(db.values, num, db[dim].values, axis, window, domain)
-    coords = {}
-    for name in db.coords:
-        if name == dim:
-            coords[dim] = dict(tie_indices=[0, num - 1], tie_values=[t[0], t[-1]])
-        else:
-            coords[name] = db.coords[name]
-    return Database(out, coords, db.dims, db.name, db.attrs)
+    data = sp.resample_poly(db.values, up, down, axis, window, padtype, cval)
+    start = db[dim][0].values
+    d = db[dim][-1].values - db[dim][-2].values
+    end = db[dim][-1].values + d
+    new_coord = Coordinate(
+        {
+            "tie_indices": [0, data.shape[axis]],
+            "tie_values": [start, end],
+        },
+        dim,
+    )
+    new_coord = new_coord[:-1]
+    coords = {
+        name: new_coord if name == dim else coord
+        for name, coord in db.coords.items()
+        if not (coord.dim == dim and not name == dim)  # don't handle non-dimensional
+    }
+    return Database(data, coords, db.dims, db.name, db.attrs)
 
 
 def decimate(db, q, n=None, ftype=None, zero_phase=None, dim="last", parallel=None):
