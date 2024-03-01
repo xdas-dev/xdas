@@ -6,19 +6,8 @@ import numpy as np
 import xarray as xr
 
 from .coordinates import Coordinates, InterpCoordinate
+from .numpy import NUMPY_HANDLED_FUNCTIONS
 from .virtual import DataLayout, DataSource
-
-NUMPY_HANDLED_FUNCTIONS = {}
-
-
-def implements(numpy_function):
-    """Register an __array_function__ implementation for MyArray objects."""
-
-    def decorator(func):
-        NUMPY_HANDLED_FUNCTIONS[numpy_function] = func
-        return func
-
-    return decorator
 
 
 class Database:

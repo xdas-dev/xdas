@@ -1,6 +1,15 @@
 import numpy as np
 
-from .database import Database, implements
+NUMPY_HANDLED_FUNCTIONS = {}
+
+
+def implements(numpy_function):
+
+    def decorator(func):
+        NUMPY_HANDLED_FUNCTIONS[numpy_function] = func
+        return func
+
+    return decorator
 
 
 def dispatch(dbpos=0, axispos=None, outpos=None, reduce=False):
@@ -9,6 +18,7 @@ def dispatch(dbpos=0, axispos=None, outpos=None, reduce=False):
         def wrapper(*args, **kwargs):
             nargs = len(args)
             db = args[dbpos]
+            cls = db.__class__
             args = tuple(db.data if idx == dbpos else args[idx] for idx in range(nargs))
             if axispos is not None:
                 if nargs > axispos:
@@ -20,14 +30,14 @@ def dispatch(dbpos=0, axispos=None, outpos=None, reduce=False):
             if outpos is not None:
                 if nargs > outpos:
                     out = args[outpos]
-                    if isinstance(out, Database):
+                    if isinstance(out, cls):
                         args = tuple(
                             out.data if idx == outpos else args[idx]
                             for idx in range(nargs)
                         )
                 elif "out" in kwargs:
                     out = kwargs["out"]
-                    if isinstance(out, Database):
+                    if isinstance(out, cls):
                         kwargs = {
                             key: out.data if key == "out" else value
                             for key, value in kwargs.items()
@@ -53,7 +63,7 @@ def dispatch(dbpos=0, axispos=None, outpos=None, reduce=False):
             else:
                 coords = db.coords
                 dims = db.dims
-            return Database(data, coords, dims, db.name, db.attrs)
+            return cls(data, coords, dims, db.name, db.attrs)
 
         return wrapper
 
