@@ -1,12 +1,15 @@
 import copy
 import re
+from functools import partial
 
 import h5py
 import numpy as np
 import xarray as xr
 
 from .coordinates import Coordinates, InterpCoordinate
+from .numpy import NUMPY_HANDLED_FUNCTIONS, apply_ufunc
 from .virtual import DataLayout, DataSource
+from .xarray import XARRAY_HANDLED_METHODS
 
 
 class Database:
@@ -83,6 +86,35 @@ class Database:
         string += data_repr + "\n" + repr(self.coords)
         return string
 
+    def __array__(self):
+        return self.data.__array__()
+
+    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        return apply_ufunc(self, ufunc, method, *inputs, **kwargs)
+
+    def __array_function__(self, func, types, args, kwargs):
+        if func not in NUMPY_HANDLED_FUNCTIONS:
+            return NotImplemented
+        # Note: this allows subclasses that don't override
+        # __array_function__ to handle MyArray objects
+        if not all(issubclass(t, self.__class__) for t in types):
+            return NotImplemented
+        return NUMPY_HANDLED_FUNCTIONS[func](*args, **kwargs)
+
+    def __getattr__(self, name):
+        if name in XARRAY_HANDLED_METHODS:
+            func = XARRAY_HANDLED_METHODS[name]
+            method = partial(func, self)
+            method.__name__ = name
+            method.__doc__ = (
+                f"    Method implementation of {name} function.\n\n"
+                + "    *Original docstring below. Skip first parameter.*\n"
+                + func.__doc__
+            )
+            return method
+        else:
+            raise AttributeError(f"'Database' object has no attribute '{name}'")
+
     def __add__(self, other):
         return self.copy(data=self.data.__add__(other))
 
@@ -112,18 +144,6 @@ class Database:
 
     def __rpow__(self, other):
         return self.copy(data=self.data.__rpow__(other))
-
-    def __array__(self):
-        return self.data.__array__()
-
-    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        _, *args = inputs
-        assert _ is self
-        data = getattr(ufunc, method)(self.data, *args, **kwargs)
-        return self.copy(data=data)
-
-    def __array_function__(self, func, types, args, kwargs):
-        return NotImplemented
 
     @property
     def dims(self):
@@ -191,7 +211,14 @@ class Database:
         int
             Axis number corresponding to the given dimension
         """
-        return self.dims.index(dim)
+        if dim == "first":
+            return 0
+        elif dim == "last":
+            return -1
+        elif dim in self.dims:
+            return self.dims.index(dim)
+        else:
+            raise ValueError("dim not found")
 
     def isel(self, indexers=None, **indexers_kwargs):
         """
