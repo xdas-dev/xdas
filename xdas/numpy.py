@@ -12,6 +12,29 @@ def implements(numpy_function):
     return decorator
 
 
+def apply_ufunc(db, ufunc, method, *inputs, **kwargs):
+    if not method == "__call__":
+        return NotImplemented
+    inputs = tuple(
+        value.data if isinstance(value, db.__class__) else value for value in inputs
+    )
+    if "out" in kwargs:
+        kwargs["out"] = tuple(
+            value.data if isinstance(value, db.__class__) else value
+            for value in kwargs["out"]
+        )
+    if "where" in kwargs:
+        kwargs["where"] = tuple(
+            value.data if isinstance(value, db.__class__) else value
+            for value in kwargs["where"]
+        )
+    data = getattr(ufunc, method)(*inputs, **kwargs)
+    if isinstance(data, tuple):
+        return tuple(db.copy(data=d) for d in data)
+    else:
+        return db.copy(data=data)
+
+
 def dispatch(dbpos=0, axispos=None, outpos=None, reduce=False):
     def decorator(func):
         @implements(func)
