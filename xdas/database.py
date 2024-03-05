@@ -104,7 +104,14 @@ class Database:
     def __getattr__(self, name):
         if name in XARRAY_HANDLED_METHODS:
             func = XARRAY_HANDLED_METHODS[name]
-            return partial(func, self)
+            method = partial(func, self)
+            method.__name__ = name
+            method.__doc__ = (
+                f"    Method implementation of {name} function.\n\n"
+                + "    *Original docstring below. Skip first parameter.*\n"
+                + func.__doc__
+            )
+            return method
         else:
             raise AttributeError(f"'Database' object has no attribute '{name}'")
 
