@@ -1,6 +1,18 @@
 import numpy as np
 
+XARRAY_HANDLED_METHODS = {}
 
+
+def implements(name=None):
+    def decorator(func):
+        key = name if name is not None else func.__name__
+        XARRAY_HANDLED_METHODS[key] = func
+        return func
+
+    return decorator
+
+
+@implements()
 def cumprod(db, dim="last", skipna=True, **kwargs):
     """
     Return the cumulative product of elements along a given dimension.
@@ -30,6 +42,7 @@ def cumprod(db, dim="last", skipna=True, **kwargs):
         return np.cumprod(db, axis, **kwargs)
 
 
+@implements()
 def cumsum(db, dim="last", skipna=True, **kwargs):
     """
     Return the cumulative sum of elements along a given dimension.
@@ -59,6 +72,7 @@ def cumsum(db, dim="last", skipna=True, **kwargs):
         return np.cumsum(db, axis, **kwargs)
 
 
+@implements()
 def all(db, dim=None, **kwargs):
     """
     Test whether all elements along a given dimension evaluate to True.
@@ -87,6 +101,7 @@ def all(db, dim=None, **kwargs):
     return np.all(db, axis, **kwargs)
 
 
+@implements()
 def any(db, dim=None, **kwargs):
     """
     Test whether any element along a given dimension evaluates to True.
@@ -118,6 +133,7 @@ def any(db, dim=None, **kwargs):
 import numpy as np
 
 
+@implements()
 def max(db, dim=None, skipna=True, **kwargs):
     """
     Compute the maximum of an array or maximum along an dimension.
@@ -152,6 +168,7 @@ def max(db, dim=None, skipna=True, **kwargs):
         return np.nanmax(db, axis, **kwargs)
 
 
+@implements()
 def min(db, dim=None, skipna=True, **kwargs):
     """
     Compute the minimum of an array or minimum along an dimension.
@@ -189,6 +206,7 @@ def min(db, dim=None, skipna=True, **kwargs):
 import numpy as np
 
 
+@implements()
 def argmax(db, dim=None, skipna=True, **kwargs):
     """
     Return the indices of the maximum values along an dimension.
@@ -259,9 +277,7 @@ def argmin(db, dim=None, skipna=True, **kwargs):
         return np.nanargmin(db, axis, **kwargs)
 
 
-import numpy as np
-
-
+@implements()
 def median(db, dim=None, skipna=True, **kwargs):
     """
     Compute the median along the specified dimension.
@@ -296,6 +312,7 @@ def median(db, dim=None, skipna=True, **kwargs):
         return np.nanmedian(db, axis, **kwargs)
 
 
+@implements()
 def ptp(db, dim=None, **kwargs):
     """
     Compute the range of values along the specified dimension.
@@ -327,6 +344,7 @@ def ptp(db, dim=None, **kwargs):
 import numpy as np
 
 
+@implements()
 def mean(db, dim=None, skipna=True, **kwargs):
     """
     Compute the arithmetic mean along the specified dimension.
@@ -361,6 +379,7 @@ def mean(db, dim=None, skipna=True, **kwargs):
         return np.nanmean(db, axis, **kwargs)
 
 
+@implements()
 def prod(db, dim=None, skipna=True, **kwargs):
     """
     Compute the product of array elements along the specified dimension.
@@ -395,9 +414,7 @@ def prod(db, dim=None, skipna=True, **kwargs):
         return np.nanprod(db, axis, **kwargs)
 
 
-import numpy as np
-
-
+@implements()
 def std(db, dim=None, skipna=True, **kwargs):
     """
     Compute the standard deviation along the specified dimension.
@@ -433,6 +450,7 @@ def std(db, dim=None, skipna=True, **kwargs):
         return np.nanstd(db, axis, **kwargs)
 
 
+@implements()
 def sum(db, dim=None, skipna=True, **kwargs):
     """
     Compute the sum of array elements along the specified dimension.
@@ -467,9 +485,7 @@ def sum(db, dim=None, skipna=True, **kwargs):
         return np.nansum(db, axis, **kwargs)
 
 
-import numpy as np
-
-
+@implements()
 def var(db, dim=None, skipna=True, **kwargs):
     """
     Compute the variance along the specified dimension.
@@ -504,6 +520,7 @@ def var(db, dim=None, skipna=True, **kwargs):
         return np.nanvar(db, axis, **kwargs)
 
 
+@implements()
 def percentile(db, q, dim=None, skipna=True, **kwargs):
     """
     Compute the q-th percentile of the data along the specified dimension.
@@ -540,9 +557,7 @@ def percentile(db, q, dim=None, skipna=True, **kwargs):
         return np.nanpercentile(db, q, axis, **kwargs)
 
 
-import numpy as np
-
-
+@implements()
 def quantile(db, q, dim=None, skipna=True, **kwargs):
     """
     Compute the q-th quantile of the data along the specified dimension.
@@ -579,6 +594,7 @@ def quantile(db, q, dim=None, skipna=True, **kwargs):
         return np.nanquantile(db, q, axis, **kwargs)
 
 
+@implements()
 def average(db, dim=None, weights=None, **kwargs):
     """
     Compute the weighted average along the specified dimension.
@@ -610,6 +626,7 @@ def average(db, dim=None, weights=None, **kwargs):
     return np.average(db, axis, weights, **kwargs)
 
 
+@implements()
 def count_nonzero(db, dim=None, **kwargs):
     """
     Count the number of non-zero values along the specified dimension.

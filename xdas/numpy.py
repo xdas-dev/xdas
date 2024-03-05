@@ -4,7 +4,6 @@ NUMPY_HANDLED_FUNCTIONS = {}
 
 
 def implements(numpy_function):
-
     def decorator(func):
         NUMPY_HANDLED_FUNCTIONS[numpy_function] = func
         return func
