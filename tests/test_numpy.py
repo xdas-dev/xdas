@@ -51,6 +51,9 @@ class TestFunc:
             if numpy_function == np.clip:
                 result = numpy_function(db, -1, 1)
                 assert isinstance(result, Database)
+            elif numpy_function in [np.diff, np.ediff1d, np.trapz]:
+                result = numpy_function(db)
+                assert isinstance(result, np.ndarray)
             elif numpy_function in [
                 np.percentile,
                 np.nanpercentile,

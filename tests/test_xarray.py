@@ -18,6 +18,11 @@ class TestXarray:
                     assert isinstance(result, Database)
                     result = getattr(db, name)(0.5)
                     assert isinstance(result, Database)
+                elif func == xp.diff:
+                    result = func(db, "time")
+                    assert isinstance(result, Database)
+                    result = getattr(db, name)("time")
+                    assert isinstance(result, Database)
                 else:
                     result = func(db)
                     assert isinstance(result, Database)

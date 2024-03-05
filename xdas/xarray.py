@@ -13,7 +13,7 @@ def implements(name=None):
 
 
 @implements()
-def cumprod(db, dim="last", skipna=True, **kwargs):
+def cumprod(db, dim="last", *, skipna=True, **kwargs):
     """
     Return the cumulative product of elements along a given dimension.
 
@@ -43,7 +43,7 @@ def cumprod(db, dim="last", skipna=True, **kwargs):
 
 
 @implements()
-def cumsum(db, dim="last", skipna=True, **kwargs):
+def cumsum(db, dim="last", *, skipna=True, **kwargs):
     """
     Return the cumulative sum of elements along a given dimension.
 
@@ -134,7 +134,7 @@ import numpy as np
 
 
 @implements()
-def max(db, dim=None, skipna=True, **kwargs):
+def max(db, dim=None, *, skipna=True, **kwargs):
     """
     Compute the maximum of an array or maximum along an dimension.
 
@@ -169,7 +169,7 @@ def max(db, dim=None, skipna=True, **kwargs):
 
 
 @implements()
-def min(db, dim=None, skipna=True, **kwargs):
+def min(db, dim=None, *, skipna=True, **kwargs):
     """
     Compute the minimum of an array or minimum along an dimension.
 
@@ -207,7 +207,7 @@ import numpy as np
 
 
 @implements()
-def argmax(db, dim=None, skipna=True, **kwargs):
+def argmax(db, dim=None, *, skipna=True, **kwargs):
     """
     Return the indices of the maximum values along an dimension.
 
@@ -242,7 +242,7 @@ def argmax(db, dim=None, skipna=True, **kwargs):
         return np.nanargmax(db, axis, **kwargs)
 
 
-def argmin(db, dim=None, skipna=True, **kwargs):
+def argmin(db, dim=None, *, skipna=True, **kwargs):
     """
     Return the indices of the minimum values along an dimension.
 
@@ -278,7 +278,7 @@ def argmin(db, dim=None, skipna=True, **kwargs):
 
 
 @implements()
-def median(db, dim=None, skipna=True, **kwargs):
+def median(db, dim=None, *, skipna=True, **kwargs):
     """
     Compute the median along the specified dimension.
 
@@ -345,7 +345,7 @@ import numpy as np
 
 
 @implements()
-def mean(db, dim=None, skipna=True, **kwargs):
+def mean(db, dim=None, *, skipna=True, **kwargs):
     """
     Compute the arithmetic mean along the specified dimension.
 
@@ -380,7 +380,7 @@ def mean(db, dim=None, skipna=True, **kwargs):
 
 
 @implements()
-def prod(db, dim=None, skipna=True, **kwargs):
+def prod(db, dim=None, *, skipna=True, **kwargs):
     """
     Compute the product of array elements along the specified dimension.
 
@@ -415,7 +415,7 @@ def prod(db, dim=None, skipna=True, **kwargs):
 
 
 @implements()
-def std(db, dim=None, skipna=True, **kwargs):
+def std(db, dim=None, *, skipna=True, **kwargs):
     """
     Compute the standard deviation along the specified dimension.
 
@@ -451,7 +451,7 @@ def std(db, dim=None, skipna=True, **kwargs):
 
 
 @implements()
-def sum(db, dim=None, skipna=True, **kwargs):
+def sum(db, dim=None, *, skipna=True, **kwargs):
     """
     Compute the sum of array elements along the specified dimension.
 
@@ -486,7 +486,7 @@ def sum(db, dim=None, skipna=True, **kwargs):
 
 
 @implements()
-def var(db, dim=None, skipna=True, **kwargs):
+def var(db, dim=None, *, skipna=True, **kwargs):
     """
     Compute the variance along the specified dimension.
 
@@ -521,7 +521,7 @@ def var(db, dim=None, skipna=True, **kwargs):
 
 
 @implements()
-def percentile(db, q, dim=None, skipna=True, **kwargs):
+def percentile(db, q, dim=None, *, skipna=True, **kwargs):
     """
     Compute the q-th percentile of the data along the specified dimension.
 
@@ -558,7 +558,7 @@ def percentile(db, q, dim=None, skipna=True, **kwargs):
 
 
 @implements()
-def quantile(db, q, dim=None, skipna=True, **kwargs):
+def quantile(db, q, dim=None, *, skipna=True, **kwargs):
     """
     Compute the q-th quantile of the data along the specified dimension.
 
@@ -653,3 +653,48 @@ def count_nonzero(db, dim=None, **kwargs):
     else:
         axis = None
     return np.count_nonzero(db, axis, **kwargs)
+
+
+@implements()
+def diff(db, dim, n=1, *, label="upper"):
+    """
+    Calculate the n-th order discrete difference along given axis.
+
+    Parameters
+    ----------
+    db : Database
+        Input data.
+    dim : str, optional
+        Dimension over which to calculate the finite difference.
+    n : int, default: 1
+        The number of times values are differentiated.
+    label : {"upper", "lower"}, default: "upper"
+        The new coordinate in dimension ``dim`` will have the
+        values of either the minuend's or subtrahend's coordinate
+        for values 'upper' and 'lower', respectively.
+
+    Returns
+    -------
+    difference : Database
+        The n-th order finite difference of this object.
+
+    """
+    if dim is not None:
+        axis = db.get_axis_num(dim)
+    else:
+        axis = None
+    data = np.diff(db, n, axis)
+    if label == "upper":
+        coords = {
+            name: coord[1:] if name == dim else coord
+            for name, coord in db.coords.items()
+        }
+    elif label == "lower":
+        coords = {
+            name: coord[:-1] if name == dim else coord
+            for name, coord in db.coords.items()
+        }
+    else:
+        raise ValueError(f"`label` must be either 'upper' or 'lower'")
+    cls = db.__class__
+    return cls(data, coords, db.dims, db.attrs, db.name)

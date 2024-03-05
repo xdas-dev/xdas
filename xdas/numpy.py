@@ -34,7 +34,7 @@ def apply_ufunc(db, ufunc, method, *inputs, **kwargs):
         return db.copy(data=data)
 
 
-def dispatch(dbpos=0, axispos=None, outpos=None, reduce=False):
+def dispatch(dbpos=0, axispos=None, outpos=None, reduce=False, drop_coords=False):
     def decorator(func):
         @implements(func)
         def wrapper(*args, **kwargs):
@@ -85,7 +85,10 @@ def dispatch(dbpos=0, axispos=None, outpos=None, reduce=False):
             else:
                 coords = db.coords
                 dims = db.dims
-            return cls(data, coords, dims, db.name, db.attrs)
+            if drop_coords:
+                return data
+            else:
+                return cls(data, coords, dims, db.name, db.attrs)
 
         return wrapper
 
@@ -157,10 +160,9 @@ reduce_no_out = dispatch(axispos=1, reduce=True)
 reduce_no_out(np.average)
 reduce_no_out(np.count_nonzero)
 
+drop_coords = dispatch(drop_coords=True)
+diff = dispatch(axispos=2, drop_coords=True)(np.diff)
+ediff1d = dispatch(drop_coords=True)(np.ediff1d)
+diff = dispatch(axispos=3, drop_coords=True)(np.trapz)
 
-special = [
-    "diff",
-    "ediff1d",
-    "gradient",
-    "trapz",
-]
+# TODO: gradient
