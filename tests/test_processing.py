@@ -40,7 +40,7 @@ class TestProcessing:
             )
 
             # Process using sequence.execute
-            result1 = sequence.execute(db)
+            result1 = sequence.process(db)
             # Process manually
             result2 = my_mean(np.abs(db) ** 2, dim="time")
 
@@ -92,12 +92,12 @@ class TestProcessing:
             # Get the result for the entire dataset processed at once
             # Make sure to use .copy() to prevent state updates
             # associated with the StateAtom
-            result1 = sequence.copy().execute(db)
+            result1 = sequence.copy().process(db)
             # Initialise the data loader/writer
             data_loader = xdas.processing.DatabaseLoader(db, chunks={"time": 100})
             data_writer = xdas.processing.DatabaseWriter(tempdir)
             # Perform chunked processing
-            result2 = sequence.copy().execute(data_loader, data_writer)
+            result2 = sequence.copy().process(data_loader, data_writer)
 
             # Check that the chunked results are the same as the monolithic result
             assert np.allclose(result1.values, result2.values)

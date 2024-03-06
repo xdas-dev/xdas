@@ -12,519 +12,227 @@ WriterType = Type[DatabaseWriter]
 DatabaseType = Type[Database]
 
 
-class Sequence(UserDict):
+class Sequence(list):
     """
-    A class to handle a sequence of operations.
-    Each operation is represented by an Atom class object,
-    which contains the function and its arguments.
-    For stateful operations, use the StateAtom class.
+    A class to handle a sequence of operations. Each operation is represented by an
+    Atom class object, which contains the function and its arguments. For stateful
+    operations, use the StateAtom class.
 
-    Sequence inherits from UserDict, and therefore behaves
-    as a dictionary. It is extended with convenience
-    methods to reorder the dictionary. (By default, all
-    dict objects in Python >= 3.7 maintain their insertion order).
-
-    Attributes
-    ----------
-    name_counter : Counter
-        Counter object to keep track of (duplicate)
-        dictionary keys
+    Sequence inherits from list, and therefore behaves as it.
 
     Examples
     --------
-    >>> op1 = xdas.Atom(xdas.signal.taper, dim="time")
-    ... op2 = xdas.Atom(xdas.signal.taper, dim="space", name="spatial taper")
-    ... op3 = xdas.Atom(numpy.square)
-    ... op4 = xdas.Atom(my_func, arg1=1.0, arg2=[0, 1, 2])
-    ... sequence = xdas.Sequence(op1, op2, op3, op4)
-    ... sequence["abs"] = xdas.Atom(np.abs)
-    ... del sequence["spatial taper"]
-    ... print(sequence)  # Print a summary of the Sequence
-    ... sequence.execute(db)
+    >>> from xdas import Atom, StateAtom, Sequence
+    >>> import xdas.signal as xp
+    >>> import numpy as np
+
+    >>> sequence = Sequence(
+    ...     [
+    ...         Atom(xp.taper, dim="time"),
+    ...         StateAtom(xp.lfilter, [1.0], [0.5], ..., dim="time"),
+    ...         Atom(np.square),
+    ...     ],
+    ...     name="Low pass filter",
+    ... )
+    ... sequence
+
+    >>> from xdas.synthetics import generate
+
+    >>> db = generate()
+    >>> sequence(db)
+
+    >>> Sequence([sequence] * 2)
 
     """
 
-    def __init__(self, *args: Any) -> None:
+    def __init__(self, atoms: Any, name: str | None = None) -> None:
         """
-        Initialise the Sequence with an arbitrary number of
-        Atom or StateAtom objects. Any non-[State]Atom objects
-        are silently discarded.
+        Initialise the Sequence with an arbitrary number of Atom or StateAtom objects.
         """
-
         super().__init__()
+        for atom in atoms:
+            if not isinstance(atom, (Atom, Sequence)):
+                atom = Atom(atom)
+            self.append(atom)
+        self.name = name
 
-        # Counter for keeping track of the (unique) names
-        self.name_counter = Counter()
+    def __call__(self, x):
+        for atom in self:
+            x = atom(x)
+        return x
 
-        # Loop over arguments
-        for atom in args:
-            # Skip non-Atoms
-            if not isinstance(atom, Atom):
-                continue
-            # Set atom name
-            self._check_name(atom)
-            # Add parent reference
-            atom._parent = self
-            # Insert atom
-            super().__setitem__(atom._name, atom)
-
-        pass
-
-    def __setitem__(self, key: Hashable, val: Any) -> None:
-        """Override set() method to ensure unique atom atom naming"""
-
-        # Only allow [State]Atom instances
-        if not isinstance(val, Atom):
-            return
-
-        # If the key has no length:
-        # get its string representation
-        if not hasattr(key, "__len__"):
-            key = str(key)
-
-        # If a key is provided
-        if len(key) > 0:
-            # If no name is provided with the Atom
-            # set the atom name to key
-            if len(val._name) == 0:
-                val._name = key
-
-        # Bookkeeping (checking for name duplicates)
-        key = self._check_name(val)
-        return super().__setitem__(key, val)
-
-    def __getitem__(self, key: Hashable) -> Any:
-        """
-        Get an item from the Sequence.
-        Overrides `Sequence.get(key)`
-
-        Parameters
-        ----------
-        key : Hashable
-            The key corresponding with the item to delete.
-            If an integer is provided, it is interpreted
-            as the position number in the Sequence.
-        """
-        if isinstance(key, int):
-            key = list(self.keys())[key]
-        return super().__getitem__(key)
-
-    def __delitem__(self, key: Hashable) -> None:
-        """
-        Delete an item from the Sequence.
-        Overrides `del Sequence[key]`
-
-        Parameters
-        ----------
-        key : Hashable
-            The key corresponding with the item to delete.
-            If an integer is provided, it is interpreted
-            as the position number in the Sequence.
-        """
-        # TODO: update counter and rename keys?
-        # self.name_counter[key] -= 1
-        if isinstance(key, int):
-            key = list(self.keys())[key]
-        return super().__delitem__(key)
-
-    def copy(self) -> Self:
-        """
-        Create a copy of the sequence.
-        This overrides the __copy__() method
-        of the Dict / UserDict class
-        """
-
-        # Instantiate a new Sequence
-        # result = Sequence()
-        cls = self.__class__
-        result = cls.__new__(cls)
-        super(Sequence, result).__init__()
-        # Loop over Atoms
-        for key, val in self.data.items():
-            # Create a copy of the Atom
-            new_val = copy(val)
-            # Override the parent pointer
-            new_val._parent = result
-            # Insert key:val without checking the key,
-            # which would re-create unique keys
-            super(Sequence, result).__setitem__(key, new_val)
-
-        # Copy over the current counter
-        result.name_counter = copy(self.name_counter)
-
-        return result
-
-    def __str__(self) -> str:
-        # Get the atom representations and join
-        items = [f"{i:<3} {item}" for i, (_, item) in enumerate(self.data.items())]
-        itemstr = "\n".join(items)
-        # Make a nice header
-        header = "xdas sequence"
-        line = "-" * len(header) + "\n"
-        header += "\n"
-        return line + header + line + itemstr
-
-    def _check_name(self, atom: Any) -> Hashable:
-        """
-        Assign a key to an Atom object. If no key is given
-        by the user (atom.name), create one based on the
-        function name (atom._func.__name__). To ensure that
-        all keys in the sequence are unique, this method
-        uses `name_counter` to keep track of potential
-        duplicates (likely the result of applying the same
-        function multiple times with different arguments).
-
-        Parameters
-        ----------
-        atom : Atom
-            The instantiated Atom object
-
-        Returns
-        -------
-        name : str
-            The key that has been assigned to atom
-
-        """
-
-        # Get atom name
-        name = atom._name
-
-        # If the name has no length:
-        # get its string representation
-        if not hasattr(name, "__len__"):
-            name = str(name)
-
-        if len(name) == 0:
-            name = atom._func.__name__
-
-        # Check for duplicates
-        self.name_counter[name] += 1
-        if self.name_counter[name] > 1:
-            name = f"{name}{self.name_counter[name]}"
-
-        # Update name
-        atom._name = name
-
-        return name
-
-    def _insert(self, pos: Hashable, atom: Any, locator: Callable) -> None:
-        """
-        Insert an Atom at a particular position in the Sequence.
-        This method is called from a parent Atom object using the
-        `Atom.insert_before` or `Atom.insert_after` methods.
-        Example:
-            `Sequence[key].insert_before(Atom)`
-
-        Parameters
-        ----------
-        pos : Hashable
-            Key of the position at which `atom` needs
-            to be inserted. Whether the insertion is
-            before or after is determined by `locator`
-        atom : Atom
-            The instantiated Atom object to be inserted
-        locator : Callable
-            A function passed on from the calling Atom
-            that indicates whether the insertion is made
-            before or after `pos`
-
-        """
-
-        # List of current keys
-        keys = list(self.keys())
-        # Locate insertion position
-        pos = locator(keys, pos)
-        # Add key:item to dictionary (checks for duplicate names)
-        self.__setitem__(atom._name, atom)
-        name = atom._name
-        # Insert key at insertion position
-        keys.insert(pos, name)
-
-        # Reorder dict
-        self.data = {key: self.get(key) for key in keys}
-        pass
-
-    def _move(self, key: Hashable, locator: Callable) -> None:
-        """
-        Move an Atom within the Sequence in a direction indicated
-        by `locator`. This method is called from a parent Atom object
-        using the `Atom.move_up` or `Atom.move_down` methods.
-        Example:
-            `Sequence[key].move_down()`
-
-        Parameters
-        ----------
-        pos : Hashable
-            Key of the position at which `atom` needs
-            to be inserted. Whether the insertion is
-            before or after is determined by `locator`
-        atom : Atom
-            The instantiated Atom object to be inserted
-        locator : Callable
-            A function passed on from the calling Atom
-            that indicates whether the insertion is made
-            before or after `pos`
-
-        """
-
-        # List of current keys
-        keys = list(self.keys())
-        # Current position of key
-        current_pos = keys.index(key)
-        # Target position of key
-        target_pos = locator(keys, key)
-
-        # Moving key up
-        if current_pos == target_pos:
-            target_pos -= 1
-            current_pos += 1
-        # Moving key down
-        else:
-            target_pos += 1
-
-        # Key is already in first spot,
-        # so moving up does nothing
-        if target_pos < 0:
-            return
-
-        # Key is already in last spot,
-        # so moving down does nothing
-        if target_pos > len(keys):
-            return
-
-        # Insert key in target position
-        keys.insert(target_pos, key)
-        # Delete old key position
-        keys.pop(current_pos)
-        # Reorder dict
-        self.data = {key: self.get(key) for key in keys}
-        pass
-
-    def get_chain(self) -> ChainType:
-        """
-        Link Atoms into a processing chain
-
-        Returns
-        -------
-        chain : ProcessingChain
-            The ProcessingChain object that contains
-            additional execution methods.
-
-        """
-        atoms = [atom for _, atom in self.data.items()]
-        chain = ProcessingChain(atoms)
-        return chain
-
-    def execute(
-        self,
-        data_loader: DatabaseType | LoaderType,
-        data_writer: None | WriterType = None,
-    ) -> None | DatabaseType:
-        """
-        A convenience method that executes the current
-        Sequence directly, rather than explicitly requesting
-        the ProcessingChain and executing that.
-
-        Parameters
-        ----------
-        data_loader : Database | DatabaseLoader
-            If an xarray Database is provided, the
-            ProcessingChain is executed directly on the
-            Database. If a DatabaseLoader is provided,
-            chunked processing is applied.
-        data_writer : None | DatabaseWriter
-            If provided, the result of the ProcessingChain
-            is passed on to the DatabaseWriter for
-            persistent storage. If None, the result is
-            kept in memory.
-
-        Returns
-        -------
-        result : Database
-            The result of the ProcessingChain execution
-
-        """
-
-        # Get the list of Atoms in the Sequence
-        chain = self.get_chain()
-        # If a Database is provided, execute
-        # the ProcessingChain directly.
-        if isinstance(data_loader, Database):
-            result = chain(data_loader)
-        # Else, if a DatabaseLoader is provided,
-        # perform the chunked processing
-        elif isinstance(data_loader, DatabaseLoader):
-            result = chain.process(data_loader, data_writer)
-        # If something else is provided, raise an exception
-        else:
-            raise TypeError(f"data_loader type '{type(data_loader)}' not accepted")
-
-        return result
+    def __repr__(self):
+        width = len(str(len(self)))
+        name = self.name if self.name is not None else "sequence"
+        s = f"{name.capitalize()}:\n"
+        for idx, value in enumerate(self):
+            label = f"  {idx:{width}}: "
+            if isinstance(value, Atom):
+                s += label + repr(value) + "\n"
+            else:
+                s += label + "\n"
+                s += "\n".join(f"    {e}" for e in repr(value).split("\n")[:-1]) + "\n"
+        return s
 
 
 class Atom:
     """
-    Base class for an xdas operation, to be used in conjunction
-    with Sequence. Each Atom should be seen as an elementary
-    operation to apply to the data,such as tapering,
-    multiplication, integration, etc. More complex operations
-    (fk-analysis, strain-to-displacement conversion, ...) can be
-    written as a sequence of Atoms, executed in the right order.
-    Each Atom can optionally be labelled with the `name` argument
-    for easy identification in long sequences.
+    Base class for an xdas operation, to be used in conjunction with Sequence. Each
+    Atom should be seen as an elementary operation to apply to the data, such as
+    tapering, multiplication, integration, etc. More complex operations (fk-analysis,
+    strain-to-displacement conversion, ...) can be written as a sequence of Atoms,
+    executed in the right order. Each Atom can optionally be labelled with the `name`
+    argument for easy identification in long sequences.
 
-    Attributes
+    Parameters
     ----------
     func : Callable
-        The function to execute in the Sequence. It
-        takes an xarray Database as the first argument
-        and returns a modified copy of the Database.
-        Subsequent arguments are given by `func`.
+        The function to execute in the Sequence. It takes a unique data object as the
+        first argument and returns a unique output. Subsequent arguments are given by
+        `*args` and `**kwargs`.
+    *arg : Any
+        Positional arguments to pass to `func`.
     name : Hashable
-        Name to identify the function
-    kwargs : Any
-        Arguments to pass to `func`
+        Name to identify the function.
+    **kwargs : Any
+        Keyword arguments to pass to `func`.
 
-    Methods
-    -------
-    delete():
-        Deletes the selected Atom
-    set_args(**kwargs):
-        Override the selected Atom's keyword arguments
-    insert_after(Atom):
-        Inserts a new Atom behind of the selected Atom
-    insert_before(Atom):
-        Inserts a new Atom ahead of the selected Atom
-    mode_down():
-        Moves the selected Atom down in the Sequence
-    mode_up():
-        Moves the selected Atom up in the Sequence
 
     Examples
     --------
-    >>> sequence = xdas.Sequence(
-    ...     xdas.Atom(xdas.signal.taper, dim="space"),
-    ...     xdas.Atom(xdas.signal.taper, dim="time", name="taper space"),
-    ... )
-    ...
-    ... sequence[0].move_down()
-    ... sequence["taper space"].insert_before(
-    ...     xdas.Atom(numpy.square),
-    ... )
-    ... sequence[-1].delete()
+    >>> from xdas import Atom
+
+    >>> import xdas.signal as xp
+    >>> atom = Atom(xp.decimate, 2, dim="time", name="downsampling")
+
+    >>> import numpy as np
+    >>> atom = Atom(np.square)
+
     """
 
-    def __init__(self, func: Callable, name: Hashable = "", **kwargs: Any) -> None:
-        self._func = func
-        if hasattr(kwargs, "name"):
-            del kwargs["name"]
-        self._kwargs = kwargs
-        self._name = name
-        self._key = None
-        self._parent = None
-        pass
+    def __init__(
+        self, func: Callable, *args: Any, name: str | None = None, **kwargs: Any
+    ) -> None:
+        if not ... in args:
+            args = (...,) + args
+        self.func = func
+        self.args = args
+        self.kwargs = kwargs
+        self.name = name
 
-    def __call__(self, db) -> Any:
-        return self._func(db, **self._kwargs)
+    def __call__(self, x) -> Any:
+        args = tuple(x if arg is ... else arg for arg in self.args)
+        return self.func(*args, **self.kwargs)
 
-    def __str__(self) -> str:
-        args = [f"{key}={val}" if (len(str(val)) < 10) else f"{key}=..." for key, val in self._kwargs.items()]
-        argstr = ", ".join(args)
-        func_name = getattr(self._func, "__name__", "[custom]")
-        return f"{self._name:<25}{func_name}({argstr})"
-
-    def _locate_before(self, x, a):
-        return x.index(a)
-
-    def _locate_after(self, x, a):
-        return x.index(a) + 1
-
-    def delete(self) -> None:
-        self._parent.pop(self._name)
-        pass
-
-    def set_args(self, **kwargs) -> None:
-        self._kwargs = kwargs
-        pass
-
-    def insert_after(self, atom) -> None:
-        self._parent._insert(self._name, atom, locator=self._locate_after)
-        pass
-
-    def insert_before(self, atom) -> None:
-        self._parent._insert(self._name, atom, locator=self._locate_before)
-        pass
-
-    def move_down(self) -> None:
-        self._parent._move(self._name, locator=self._locate_after)
-        pass
-
-    def move_up(self) -> None:
-        self._parent._move(self._name, locator=self._locate_before)
-        pass
+    def __repr__(self) -> str:
+        func = getattr(self.func, "__name__", "<function>")
+        args = ["..." if value is ... else str(value) for value in self.args]
+        kwargs = [f"{key}={value}" for key, value in self.kwargs.items()]
+        params = ", ".join(args + kwargs)
+        return f"{func}({params})"
 
 
 class StateAtom(Atom):
     """
-    A subclass of Atom that provides some logic for handling
-    data states, which need to be updated throughout the
-    execution chain. An example of a stateful operation is
-    a recursive filter, passing on the state from t to t+1.
+    A subclass of Atom that provides some logic for handling data states, which need to
+    be updated throughout the execution chain. An example of a stateful operation is a
+    recursive filter, passing on the state from t to t+1.
 
-    The Atom base class assumes that a given function takes
-    an xarray Database as the first argument, and returns
-    a modified copy of this Database. The StateAtom class
-    assumes that the stateful function takes a Database and
-    an initialized state, and returns the modified Database
-    and modified state, i.e.:
+    The StateAtom class assumes that the stateful function takes two inputs: some data
+    and a state. The stateful function must return the modified Database and modified state, i.e.:
 
-    >>> db, state = func(db, state_arg=state, **kwargs)
+    >>> db, state = func(db, <state>=state, **kwargs)
 
-    Here, `state_arg` is the name of the keyword argument
-    that contains the state, which can differ from one function
-    to the next. For example, in scipy.signal.sosfilt, the
-    state argument is `zi`, and so `state_arg` is `zi`.
+    Here, <state> is a given keyword argument that contains the state,
+    which can differ from one function to the next. For example, in
+    scipy.signal.sosfilt, the state argument is `zi`, and so `state_arg` is `zi`.
 
-    Methods
-    -------
-    initialize_state(state):
-        Set the initial state.
+
+    Parameters
+    ----------
+    func : Callable
+        The function to execute in the Sequence. It takes the data object to process as
+        the first argument and the actual state as second argument. It returns the
+        processed data along with the updated state. Subsequent arguments are given by
+        `*args` and `**kwargs`.
+    *arg : Any
+        Positional arguments to pass to `func`.
+    state: Any
+        The initial state that will be passed at the `state` keyword argument of `func`.
+        If `state` is a dict, the key indicates the keyword argument used by `func` for
+        state passing, and the value contains the state. The "init" string is used to
+        indicate than a new state must be initialized.
+    name : Hashable
+        Name to identify the function.
+    **kwargs : Any
+        Keyword arguments to pass to `func`.
 
     Examples
     --------
-    >>> state = np.zeros((2, 2, 100))
-    ... state_op = StateAtom(xp.sosfilt, dim="time", state_arg="zi", state=state)
+    >>> import xdas.signal as xp
+
+    >>> atom = StateAtom(xp.filter, dim="time", state="init")
 
     """
 
-    _state_initialized = False
-
     def __init__(
-        self, func: Callable, state_arg: Hashable, state: str | Any = "init", **kwargs
+        self, func: Callable, *args, state: Any = "init", name=None, **kwargs
     ) -> None:
 
-        self._state_arg = state_arg
-        self._state = state
-        if state != "init":
-            self._state_initialized = True
+        super().__init__(func, *args, name=name, **kwargs)
+        if isinstance(state, dict):
+            self.state = state
+        else:
+            self.state = {"state": state}
 
-        super().__init__(func, **kwargs)
+    def __repr__(self) -> str:
+        return super().__repr__() + "  [stateful]"
 
-    def __str__(self) -> str:
-        return super().__str__() + "  [stateful]"
+    def __call__(self, x) -> Any:
+        args = tuple(x if arg is ... else arg for arg in self.args)
+        x, self.state = self.func(*args, **self.kwargs, **self.state)
+        return x
 
-    def __call__(self, db) -> Any:
-        kwargs = self._kwargs.copy()
-        kwargs.update({self._state_arg: self._state})
-        db, state = self._func(db, **kwargs)
-        self._set_state(state)
-        return db
+    def reset(self):
+        self.state = "init"
 
-    def _set_state(self, state: Any) -> None:
-        self._state = state
-        pass
 
-    def initialize_state(self, state: Any) -> None:
-        self._set_state(state)
-        self._state_initialized = True
-        pass
+def process(
+    sequence,
+    data_loader: DatabaseType | LoaderType,
+    data_writer: None | WriterType = None,
+) -> None | DatabaseType:
+    """
+    A convenience method that executes the current
+    Sequence directly, rather than explicitly requesting
+    the ProcessingChain and executing that.
+
+    Parameters
+    ----------
+    data_loader : Database | DatabaseLoader
+        If an xarray Database is provided, the
+        ProcessingChain is executed directly on the
+        Database. If a DatabaseLoader is provided,
+        chunked processing is applied.
+    data_writer : None | DatabaseWriter
+        If provided, the result of the ProcessingChain
+        is passed on to the DatabaseWriter for
+        persistent storage. If None, the result is
+        kept in memory.
+
+    Returns
+    -------
+    result : Database
+        The result of the ProcessingChain execution
+
+    """
+
+    chain = sequence.get_chain()
+    if isinstance(data_loader, Database):
+        result = chain(data_loader)
+    elif isinstance(data_loader, DatabaseLoader):
+        result = chain.process(data_loader, data_writer)
+    else:
+        raise TypeError(f"data_loader type '{type(data_loader)}' not accepted")
+
+    return result
