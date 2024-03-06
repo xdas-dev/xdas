@@ -1,5 +1,6 @@
 import os
 import tempfile
+
 import numpy as np
 
 import xdas
@@ -23,7 +24,6 @@ class TestCompose:
 class TestProcessing:
     def test_sequence(self):
         with tempfile.TemporaryDirectory() as tempdir:
-
             # Generate and load a temporary dataset
             generate(tempdir)
             db = xdas.open_database(os.path.join(tempdir, "sample.nc"))

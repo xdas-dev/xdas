@@ -4,9 +4,9 @@ import tempfile
 import scipy.signal as sp
 
 import xdas
-from xdas.synthetics import generate
-from xdas.processing import process, DatabaseLoader, DatabaseWriter
+from xdas.processing import DatabaseLoader, DatabaseWriter, process
 from xdas.signal import sosfilt
+from xdas.synthetics import generate
 
 
 class TestProcessing:

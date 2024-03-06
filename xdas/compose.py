@@ -10,6 +10,14 @@ class Sequence(list):
 
     Sequence inherits from list, and therefore behaves as it.
 
+    Parameters
+    ----------
+    atoms: list
+        The sequence of operations. Each element must either be an Atom
+        (or a StateAtom), a Sequence, or an unitary callable.
+    name: str
+        A label given to this sequence.
+
     Examples
     --------
     >>> from xdas import Atom, StateAtom, Sequence
@@ -69,9 +77,6 @@ class Sequence(list):
     """
 
     def __init__(self, atoms: Any, name: str | None = None) -> None:
-        """
-        Initialise the Sequence with an arbitrary number of Atom or StateAtom objects.
-        """
         super().__init__()
         for atom in atoms:
             if not isinstance(atom, (Atom, Sequence)):
@@ -98,6 +103,7 @@ class Sequence(list):
         return s
 
     def reset(self) -> None:
+        """Resets the state of all StateAtom of the sequence."""
         for atom in self:
             if isinstance(atom, StateAtom):
                 atom.reset()
@@ -115,15 +121,20 @@ class Atom:
     Parameters
     ----------
     func : Callable
-        The function to execute in the Sequence. It takes a unique data object as the
-        first argument and returns a unique output. Subsequent arguments are given by
-        `*args` and `**kwargs`.
-    *arg : Any
-        Positional arguments to pass to `func`.
-    name : Hashable
+        The function that is called. It must take a unique data object as first
+        argument and returns a unique output. Subsequent arguments are given by `*args`
+        and `**kwargs`. If the data is not passed as first argument, an Ellipsis must
+        be provided in the `*args` parameters.
+    *args : Any
+        Positional arguments to pass to `func`. If the data to process is passed as the
+        nth argument, the nth element of `args` must contain an Ellipis (`...`).
+    name : str
         Name to identify the function.
     **kwargs : Any
         Keyword arguments to pass to `func`.
+
+    StateAtom uses one reserved keyword arguments that cannot by passed to `func`:
+    'name'.
 
 
     Examples
@@ -143,8 +154,12 @@ class Atom:
     def __init__(
         self, func: Callable, *args: Any, name: str | None = None, **kwargs: Any
     ) -> None:
+        if not callable(func):
+            raise TypeError("`func` should be callable")
         if not any(arg is ... for arg in args):
             args = (...,) + args
+        if sum(arg is ... for arg in args) > 1:
+            raise ValueError("`*args` must contain at most one Ellipsis")
         self.func = func
         self.args = args
         self.kwargs = kwargs
@@ -156,8 +171,19 @@ class Atom:
 
     def __repr__(self) -> str:
         func = getattr(self.func, "__name__", "<function>")
-        args = ["..." if value is ... else str(value) for value in self.args]
-        kwargs = [f"{key}={value}" for key, value in self.kwargs.items()]
+        args = []
+        for value in self.args:
+            if value is ...:
+                args.append("...")
+            elif len(str(value)) > 10:
+                args.append(f"<{type(value).__name__}>")
+            else:
+                args.append(str(value))
+        kwargs = []
+        for key, value in self.kwargs.items():
+            if len(str(value)) > 10:
+                value = type(value).__name__
+            kwargs.append(f"{key}={value}")
         params = ", ".join(args + kwargs)
         return f"{func}({params})"
 
@@ -169,23 +195,33 @@ class StateAtom(Atom):
     recursive filter, passing on the state from t to t+1.
 
     The StateAtom class assumes that the stateful function takes two inputs: some data
-    and a state. The stateful function must return the modified Database and modified state:
+    and a state. The stateful function must return the processed data and modified
+    state.
 
+    >>> def func(x, *args, state="init", **kwargs):
+    ...     return x, state
 
-    Here, <state> is a given keyword argument that contains the state,
-    which can differ from one function to the next. For example, in
-    scipy.signal.sosfilt, the state argument is `zi`, and so `state_arg` is `zi`.
+    Here, `state` is a given keyword argument that contains the state, which can differ
+    from one function to the next. For example, in scipy.signal.sosfilt, the state
+    argument is `zi`. In that case, the user must pass a dict `{"zi": "init"}` to
+    indicate the name of the keyword argument related to the state. Here "init" is a
+    'special' string that most xdas statefull function accepts. It asks to the function
+    to initialize the state and to return it along with the result.
 
+    StateAtom uses to reserved keyword arguments that cannot by passed to `func`:
+    'name' and 'state'.
 
     Parameters
     ----------
     func : Callable
-        The function to execute in the Sequence. It takes the data object to process as
-        the first argument and the actual state as second argument. It returns the
-        processed data along with the updated state. Subsequent arguments are given by
-        `*args` and `**kwargs`.
-    *arg : Any
-        Positional arguments to pass to `func`.
+        The function to call. It takes the data object to process as the first argument
+        and the actual state as second argument. It returns the processed data along
+        with the updated state. Subsequent arguments are given by `*args` and
+        `**kwargs`. If the data is not passed as first argument, an Ellipsis must
+        be provided in the `*args` parameters.
+    *args : Any
+        Positional arguments to pass to `func`. If the data to process is passed as the
+        nth argument, the nth element of `args` must contain an Ellipis (`...`).
     state: Any
         The initial state that will be passed at the `state` keyword argument of `func`.
         If `state` is a dict, the key indicates the keyword argument used by `func` for
@@ -199,9 +235,21 @@ class StateAtom(Atom):
     Examples
     --------
     >>> import xdas.signal as xp
+    >>> import scipy.signal as sp
 
-    >>> StateAtom(xp.filter, dim="time", state="init")
-    filter(..., dim=time)  [stateful]
+    >>> sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
+
+    By default, `state` is the expected keyword argument and 'init' is the send value
+    to ask for initialisation.
+
+    >>> StateAtom(xp.sosfilt, sos, ..., dim="time")
+    sosfilt(<ndarray>, ..., dim=time)  [stateful]
+
+    To manually specify the keyword argument and initial value a dict must be passed to
+    the state keyword argument.
+
+    >>> StateAtom(xp.sosfilt, sos, ..., dim="time", state={"state": "init"})
+    sosfilt(<ndarray>, ..., dim=time)  [stateful]
 
     """
 
