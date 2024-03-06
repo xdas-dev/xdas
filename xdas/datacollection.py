@@ -38,8 +38,8 @@ class AbstractDataCollection:
         >>> db = generate()
         >>> dc = xdas.DataCollection(
         ...     {
-        ...         "das1": xdas.DataCollection([db, db], "acquisition"),
-        ...         "das2": xdas.DataCollection([db, db, db], "acquisition"),
+        ...         "das1": ("acquisition", [db, db]),
+        ...         "das2": ("acquisition", [db, db, db]),
         ...     },
         ...     "instrument",
         ... )
@@ -125,8 +125,8 @@ class DataCollection:
         >>> db = generate()
         >>> dc = xdas.DataCollection(
         ...     {
-        ...         "das1": xdas.DataCollection([db, db], "acquisition"),
-        ...         "das2": xdas.DataCollection([db, db, db], "acquisition"),
+        ...         "das1": ("acquisition", [db, db]),
+        ...         "das2": ("acquisition", [db, db, db]),
         ...     },
         ...     "instrument",
         ... )
