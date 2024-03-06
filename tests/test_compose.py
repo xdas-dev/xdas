@@ -65,3 +65,33 @@ class TestCompose:
         assert sequence1 == sequence2
 
         # TODO: test insertion via insert_before/after
+
+
+class TestProcessing:
+    def test_sequence(self):
+        """
+        Objective: to test a sequence of NumPy functions
+        """
+
+        with tempfile.TemporaryDirectory() as tempdir:
+
+            # Generate a temporary dataset
+            generate(tempdir)
+
+            # Load the database
+            db = xdas.open_database(os.path.join(tempdir, "sample.nc"))
+
+            # Sequence to execute
+            sequence = xdas.Sequence(
+                xdas.Atom(np.abs),
+                xdas.Atom(np.square, name="some square"),
+                xdas.Atom(mean, dim="time"),
+            )
+
+            # Process using sequence.execute
+            result1 = sequence(db)
+            # Process manually
+            result2 = mean(np.abs(db) ** 2, dim="time")
+
+            # Check that automatic and manual results are the same
+            assert np.allclose(result1.values, result2.values)

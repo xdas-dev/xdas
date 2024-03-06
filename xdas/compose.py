@@ -1,15 +1,5 @@
-from collections import Counter, UserDict
-from collections.abc import Callable, Hashable
-from copy import copy
-from typing import Any, Self, Type
-
-from .database import Database
-from .processing import DatabaseLoader, DatabaseWriter, ProcessingChain
-
-ChainType = Type[ProcessingChain]
-LoaderType = Type[DatabaseLoader]
-WriterType = Type[DatabaseWriter]
-DatabaseType = Type[Database]
+from collections.abc import Callable
+from typing import Any
 
 
 class Sequence(list):
@@ -56,12 +46,12 @@ class Sequence(list):
             self.append(atom)
         self.name = name
 
-    def __call__(self, x):
+    def __call__(self, x: Any) -> Any:
         for atom in self:
             x = atom(x)
         return x
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         width = len(str(len(self)))
         name = self.name if self.name is not None else "sequence"
         s = f"{name.capitalize()}:\n"
@@ -73,6 +63,11 @@ class Sequence(list):
                 s += label + "\n"
                 s += "\n".join(f"    {e}" for e in repr(value).split("\n")[:-1]) + "\n"
         return s
+
+    def reset(self) -> None:
+        for atom in self:
+            if isinstance(atom, StateAtom):
+                atom.reset()
 
 
 class Atom:
@@ -113,14 +108,14 @@ class Atom:
     def __init__(
         self, func: Callable, *args: Any, name: str | None = None, **kwargs: Any
     ) -> None:
-        if not ... in args:
+        if not any(arg is ...  for arg in args):
             args = (...,) + args
         self.func = func
         self.args = args
         self.kwargs = kwargs
         self.name = name
 
-    def __call__(self, x) -> Any:
+    def __call__(self, x: Any) -> Any:
         args = tuple(x if arg is ... else arg for arg in self.args)
         return self.func(*args, **self.kwargs)
 
@@ -176,9 +171,13 @@ class StateAtom(Atom):
     """
 
     def __init__(
-        self, func: Callable, *args, state: Any = "init", name=None, **kwargs
+        self,
+        func: Callable,
+        *args: Any,
+        state: Any = "init",
+        name: str | None = None,
+        **kwargs: Any,
     ) -> None:
-
         super().__init__(func, *args, name=name, **kwargs)
         if isinstance(state, dict):
             self.state = state
@@ -188,51 +187,13 @@ class StateAtom(Atom):
     def __repr__(self) -> str:
         return super().__repr__() + "  [stateful]"
 
-    def __call__(self, x) -> Any:
+    def __call__(self, x: Any) -> Any:
         args = tuple(x if arg is ... else arg for arg in self.args)
-        x, self.state = self.func(*args, **self.kwargs, **self.state)
+        x, *state = self.func(*args, **self.kwargs, **self.state)
+        for key, value in zip(self.state, state):
+            self.state[key] = value
         return x
 
-    def reset(self):
-        self.state = "init"
-
-
-def process(
-    sequence,
-    data_loader: DatabaseType | LoaderType,
-    data_writer: None | WriterType = None,
-) -> None | DatabaseType:
-    """
-    A convenience method that executes the current
-    Sequence directly, rather than explicitly requesting
-    the ProcessingChain and executing that.
-
-    Parameters
-    ----------
-    data_loader : Database | DatabaseLoader
-        If an xarray Database is provided, the
-        ProcessingChain is executed directly on the
-        Database. If a DatabaseLoader is provided,
-        chunked processing is applied.
-    data_writer : None | DatabaseWriter
-        If provided, the result of the ProcessingChain
-        is passed on to the DatabaseWriter for
-        persistent storage. If None, the result is
-        kept in memory.
-
-    Returns
-    -------
-    result : Database
-        The result of the ProcessingChain execution
-
-    """
-
-    chain = sequence.get_chain()
-    if isinstance(data_loader, Database):
-        result = chain(data_loader)
-    elif isinstance(data_loader, DatabaseLoader):
-        result = chain.process(data_loader, data_writer)
-    else:
-        raise TypeError(f"data_loader type '{type(data_loader)}' not accepted")
-
-    return result
+    def reset(self) -> None:
+        for key in self.state:
+            self.state[key] = "init"

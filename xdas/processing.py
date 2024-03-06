@@ -3,13 +3,30 @@ from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 
 import numpy as np
-import scipy.signal as sp
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from .core import concatenate, open_database
 from .monitor import Monitor
-from .signal import multithreaded_concatenate
+
+
+def process(seq, data_loader, data_writer):
+    seq.reset()
+    if hasattr(data_loader, "nbytes"):
+        total = data_loader.nbytes
+    else:
+        total = None
+    monitor = Monitor(total=total)
+    monitor.tic("read")
+    for chunk in data_loader:
+        monitor.tic("proc")
+        result = seq(chunk)
+        monitor.tic("write")
+        data_writer.to_netcdf(result)
+        monitor.toc(chunk.nbytes)
+        monitor.tic("read")
+    monitor.close()
+    return data_writer.result()
 
 
 class DatabaseLoader:
@@ -118,77 +135,3 @@ class DatabaseWriter:
         self.queue.put(None)
         self.future.result()
         return concatenate(self.results)
-
-
-class SOSFilter:
-    def __init__(self, sos, dim, parallel=None):
-        self.sos = sos
-        self.dim = dim
-        self.parallel = parallel if parallel is not None else os.cpu_count()
-        self.state = None
-
-    def __call__(self, db):
-        axis = db.get_axis_num(self.dim)
-        if self.state is None:
-            self.state = self.initialize(db.shape, db.dtype, axis)
-        states = np.array_split(self.state, self.parallel, 1 + int(axis == 0))
-        datas = np.array_split(db.values, self.parallel, int(axis == 0))
-        fn = lambda data, state: sp.sosfilt(self.sos, data, axis=axis, zi=state)
-        with ThreadPoolExecutor(self.parallel) as executor:
-            datas, states = zip(*executor.map(fn, datas, states))
-        data = multithreaded_concatenate(datas, int(axis == 0), n_workers=self.parallel)
-        self.state = multithreaded_concatenate(
-            states, 1 + int(axis == 0), n_workers=self.parallel
-        )
-        return db.copy(data=data)
-
-    def initialize(self, shape, dtype, axis):
-        n_sections = self.sos.shape[0]
-        zi_shape = (n_sections,) + tuple(
-            2 if index == axis else element for index, element in enumerate(shape)
-        )
-        return np.zeros(zi_shape, dtype=dtype)
-
-    def reset(self):
-        self.state = None
-
-
-class ProcessingChain:
-    def __init__(self, filters):
-        self.filters = filters
-        self.data_loader = None
-        self.data_writer = None
-
-    def __call__(self, db):
-        for filter in self.filters:
-            db = filter(db)
-        return db
-
-    def __str__(self) -> str:
-        filter_str = [filter.keywords["name"] for filter in self.filters]
-        return " -> ".join(filter_str)
-
-    def reset(self):
-        for filter in self.filters:
-            if hasattr(filter, "reset"):
-                filter.reset()
-
-    def process(self, data_loader, data_writer):
-        self.reset()
-        self.data_loader = data_loader
-        self.data_writer = data_writer
-        if hasattr(self.data_loader, "nbytes"):
-            total = self.data_loader.nbytes
-        else:
-            total = None
-        monitor = Monitor(total=total)
-        monitor.tic("read")
-        for chunk in self.data_loader:
-            monitor.tic("proc")
-            result = self(chunk)
-            monitor.tic("write")
-            self.data_writer.to_netcdf(result)
-            monitor.toc(chunk.nbytes)
-            monitor.tic("read")
-        monitor.close()
-        return self.data_writer.result()
