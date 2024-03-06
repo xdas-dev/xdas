@@ -1,11 +1,12 @@
+import os
+
 import numpy as np
 import scipy.signal as sp
 
 import xdas
-import os
 
 
-def generate(dirpath):
+def generate(dirpath=None):
     """
     Generate some dummy files to bu used in code testing.
 
@@ -14,23 +15,26 @@ def generate(dirpath):
 
     Parameters
     ----------
-    dirpath : str
-        Directory where files will be written.
-    
+    dirpath : str, optional
+        Directory where files will be written. If None, not file will be written.
+
     Examples
     --------
+
     >>> import os
     >>> import xdas
     >>> from xdas.synthetics import generate
     >>> from tempfile import TemporaryDirectory
+
     >>> with TemporaryDirectory() as dirpath:
     ...     generate(dirpath)
     ...     db_monolithic = xdas.open_database(os.path.join(dirpath, "sample.nc"))
     ...     db_chunked = xdas.open_mfdatabase(os.path.join(dirpath, "00*.nc"))
     ...     db_monolithic.equals(db_chunked)
     True
-    
+
     """
+    np.random.seed(42)
     shape = (300, 401)
     resolution = (np.timedelta64(20, "ms"), 25.0)
     starttime = np.datetime64("2023-01-01T00:00:00")
@@ -66,7 +70,10 @@ def generate(dirpath):
             ),
         },
     )
-    db.to_netcdf(os.path.join(dirpath, "sample.nc"))
-    db[:100].to_netcdf(os.path.join(dirpath, "001.nc"))
-    db[100:200].to_netcdf(os.path.join(dirpath, "002.nc"))
-    db[200:].to_netcdf(os.path.join(dirpath, "003.nc"))
+    if dirpath is not None:
+        db.to_netcdf(os.path.join(dirpath, "sample.nc"))
+        db[:100].to_netcdf(os.path.join(dirpath, "001.nc"))
+        db[100:200].to_netcdf(os.path.join(dirpath, "002.nc"))
+        db[200:].to_netcdf(os.path.join(dirpath, "003.nc"))
+    else:
+        return db

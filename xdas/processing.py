@@ -108,7 +108,9 @@ class DatabaseWriter:
             self.results.append(open_database(path))
 
     def get_path(self, db):
-        datetime = np.datetime_as_string(db["time"][0].values, unit="s").replace(":", "-")
+        datetime = np.datetime_as_string(db["time"][0].values, unit="s").replace(
+            ":", "-"
+        )
         fname = f"{datetime}.nc"
         return os.path.join(self.dirpath, fname)
 

@@ -7,9 +7,7 @@ import scipy.signal as sp
 import xdas
 from xdas.core import Database
 from xdas.synthetics import generate
-from xdas.processing import (
-    ProcessingChain, SOSFilter, DatabaseLoader, DatabaseWriter
-)
+from xdas.processing import ProcessingChain, SOSFilter, DatabaseLoader, DatabaseWriter
 
 
 class TestProcessing:
@@ -20,9 +18,9 @@ class TestProcessing:
         """
 
         with tempfile.TemporaryDirectory() as tempdir:
-            
+
             # Generate a temporary dataset
-            generate(tempdir)            
+            generate(tempdir)
 
             # Load the database
             db = xdas.open_database(os.path.join(tempdir, "sample.nc"))
@@ -44,20 +42,20 @@ class TestProcessing:
             # Process using sequence.execute
             result1 = sequence.execute(db)
             # Process manually
-            result2 = my_mean(np.abs(db)**2, dim="time")
+            result2 = my_mean(np.abs(db) ** 2, dim="time")
 
             # Check that automatic and manual results are the same
             assert np.allclose(result1.values, result2.values)
-    
+
     def test_stateful(self):
         """
         Objective: to test state updates of the StateAtom class
         """
 
         with tempfile.TemporaryDirectory() as tempdir:
-            
+
             # Generate a temporary dataset
-            generate(tempdir)            
+            generate(tempdir)
 
             # Load the database
             db = xdas.open_database(os.path.join(tempdir, "sample.nc"))
@@ -66,8 +64,10 @@ class TestProcessing:
             corners = 4
             freq = 1.0
             btype = "lowpass"
-            fs = 50.
-            sos = sp.iirfilter(corners, freq, btype=btype, ftype="butter", output="sos", fs=fs)
+            fs = 50.0
+            sos = sp.iirfilter(
+                corners, freq, btype=btype, ftype="butter", output="sos", fs=fs
+            )
             zi = np.zeros((sos.shape[0], 2, db.shape[1]))
 
             # Wrapper around the SciPy sosfilt
@@ -80,14 +80,17 @@ class TestProcessing:
             # Sequence to execute
             sequence = xdas.Sequence(
                 xdas.StateAtom(
-                    sosfilter, sos=sos,
-                    state_arg="zi", state=zi.copy(), 
-                    dim="time", name="sosfilt"
+                    sosfilter,
+                    sos=sos,
+                    state_arg="zi",
+                    state=zi.copy(),
+                    dim="time",
+                    name="sosfilt",
                 ),
             )
 
             # Get the result for the entire dataset processed at once
-            # Make sure to use .copy() to prevent state updates 
+            # Make sure to use .copy() to prevent state updates
             # associated with the StateAtom
             result1 = sequence.copy().execute(db)
             # Initialise the data loader/writer
@@ -99,16 +102,14 @@ class TestProcessing:
             # Check that the chunked results are the same as the monolithic result
             assert np.allclose(result1.values, result2.values)
 
-
-
     def test_all_old(self):
         with tempfile.TemporaryDirectory() as tempdir:
-            generate(tempdir)            
+            generate(tempdir)
             db = xdas.open_database(os.path.join(tempdir, "sample.nc"))
             dim = "time"
 
             data_loader = DatabaseLoader(db, {dim: 1000})
-            
+
             sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
             sosfilter = SOSFilter(sos, dim, parallel=4)
 

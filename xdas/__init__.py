@@ -1,3 +1,5 @@
+import numpy as np
+
 from .compose import Atom, Sequence, StateAtom
 from .coordinates import Coordinate, Coordinates, InterpCoordinate
 from .core import (
@@ -7,4 +9,5 @@ from .core import (
     open_datacollection,
     open_mfdatabase,
 )
-from .database import Database, DataCollection
+from .database import Database
+from .datacollection import DataCollection

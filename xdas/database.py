@@ -1,38 +1,15 @@
 import copy
-import os
 import re
+from functools import partial
 
-import dask.array as da
 import h5py
 import numpy as np
 import xarray as xr
 
 from .coordinates import Coordinates, InterpCoordinate
+from .numpy import NUMPY_HANDLED_FUNCTIONS, apply_ufunc
 from .virtual import DataLayout, DataSource
-
-
-class DataCollection(dict):
-    """
-    A collection of databases.
-
-    A data collection is a dictionary whose keys are any user defined identifiers and
-    values are database objects.
-    """
-
-    def to_netcdf(self, fname, virtual=False):
-        if os.path.exists(fname):
-            os.remove(fname)
-        for key in self:
-            self[key].to_netcdf(fname, group=key, virtual=virtual, mode="a")
-
-    @classmethod
-    def from_netcdf(cls, fname):
-        with h5py.File(fname, "r") as file:
-            groups = list(file.keys())
-        self = cls()
-        for group in groups:
-            self[group] = Database.from_netcdf(fname, group=group)
-        return self
+from .xarray import XARRAY_HANDLED_METHODS
 
 
 class Database:
@@ -95,11 +72,48 @@ class Database:
             self.data.__setitem__(tuple(query.values()), value)
 
     def __repr__(self):
+        edgeitems = 3 if not np.issubdtype(self.dtype, np.complexfloating) else 2
+        precision = 6 if not np.issubdtype(self.dtype, np.complexfloating) else 4
+        if isinstance(self.data, np.ndarray):
+            data_repr = np.array2string(
+                self.data, precision=precision, threshold=0, edgeitems=edgeitems
+            )
+        else:
+            data_repr = repr(self.data)
         string = "<xdas.Database ("
         string += ", ".join([f"{dim}: {size}" for dim, size in self.sizes.items()])
         string += ")>\n"
-        string += repr(self.data) + "\n" + repr(self.coords)
+        string += data_repr + "\n" + repr(self.coords)
         return string
+
+    def __array__(self):
+        return self.data.__array__()
+
+    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        return apply_ufunc(self, ufunc, method, *inputs, **kwargs)
+
+    def __array_function__(self, func, types, args, kwargs):
+        if func not in NUMPY_HANDLED_FUNCTIONS:
+            return NotImplemented
+        # Note: this allows subclasses that don't override
+        # __array_function__ to handle MyArray objects
+        if not all(issubclass(t, self.__class__) for t in types):
+            return NotImplemented
+        return NUMPY_HANDLED_FUNCTIONS[func](*args, **kwargs)
+
+    def __getattr__(self, name):
+        if name in XARRAY_HANDLED_METHODS:
+            func = XARRAY_HANDLED_METHODS[name]
+            method = partial(func, self)
+            method.__name__ = name
+            method.__doc__ = (
+                f"    Method implementation of {name} function.\n\n"
+                + "    *Original docstring below. Skip first parameter.*\n"
+                + func.__doc__
+            )
+            return method
+        else:
+            raise AttributeError(f"'Database' object has no attribute '{name}'")
 
     def __add__(self, other):
         return self.copy(data=self.data.__add__(other))
@@ -131,18 +145,6 @@ class Database:
     def __rpow__(self, other):
         return self.copy(data=self.data.__rpow__(other))
 
-    def __array__(self):
-        return self.data.__array__()
-
-    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        _, *args = inputs
-        assert _ is self
-        data = getattr(ufunc, method)(self.data, *args, **kwargs)
-        return self.copy(data=data)
-
-    def __array_function__(self, func, types, args, kwargs):
-        return NotImplemented
-
     @property
     def dims(self):
         return self.coords.dims
@@ -170,6 +172,10 @@ class Database:
     @property
     def values(self):
         return self.__array__()
+
+    @property
+    def empty(self):
+        return np.prod(self.shape) == 0
 
     @property
     def loc(self):
@@ -205,7 +211,14 @@ class Database:
         int
             Axis number corresponding to the given dimension
         """
-        return self.dims.index(dim)
+        if dim == "first":
+            return 0
+        elif dim == "last":
+            return -1
+        elif dim in self.dims:
+            return self.dims.index(dim)
+        else:
+            raise ValueError("dim not found")
 
     def isel(self, indexers=None, **indexers_kwargs):
         """
@@ -251,7 +264,7 @@ class Database:
         Returns
         -------
         Database
-            _description_
+            The selected part of the original database.
         """
         if indexers is None:
             indexers = {}

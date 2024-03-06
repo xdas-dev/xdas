@@ -26,13 +26,15 @@ class Coordinates(dict):
 
     Examples
     --------
+    >>> import xdas
+
     >>> coords = {
     ...     "time": {"tie_indices": [0, 999], "tie_values": [0.0, 10.0]},
     ...     "distance": [0, 1, 2],
     ...     "channel": ("distance", ["DAS01", "DAS02", "DAS03"]),
     ...     "interrogator": (None, "SRN"),
     ... }
-    >>> Coordinates(coords)
+    >>> xdas.Coordinates(coords)
     Coordinates:
       * time (time): 0.000 to 10.000
       * distance (distance): [0 1 2]
@@ -113,13 +115,16 @@ class Coordinates(dict):
 
         Examples
         --------
+
+        >>> import xdas
+
         >>> coords = {
         ...     "time": {"tie_indices": [0, 999], "tie_values": [0.0, 10.0]},
         ...     "distance": [0, 1, 2],
         ...     "channel": ("distance", ["DAS01", "DAS02", "DAS03"]),
         ...     "interrogator": (None, "SRN"),
         ... }
-        >>> Coordinates(coords).to_dict()
+        >>> xdas.Coordinates(coords).to_dict()
         {'time': {'dim': 'time',
           'data': {'tie_indices': [0, 999], 'tie_values': [0.0, 10.0]}},
          'distance': {'dim': 'distance', 'data': [0, 1, 2]},
@@ -660,7 +665,12 @@ class ScaleOffset:
 
 def linear_interpolate(x, xp, fp, left=None, right=None):
     if not is_strictly_increasing(xp):
-        raise ValueError("xp must be strictly increasing")
+        raise ValueError(
+            "xp must be strictly increasing. Your coordinate probably has overlaps. "
+            "Try to do: db['dim'] = db['dim'].simplify(np.timedelta64(tolerance, 'ms') "
+            "with a gradually increasing tolerance until minor overlaps are resolved."
+            "Big overlaps needs manual intervention."
+        )
     x_transform = ScaleOffset.floatize(xp)
     f_transform = ScaleOffset.floatize(fp)
     x = x_transform.direct(x)
