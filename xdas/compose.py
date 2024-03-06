@@ -22,16 +22,49 @@ class Sequence(list):
     ...         StateAtom(xp.lfilter, [1.0], [0.5], ..., dim="time"),
     ...         Atom(np.square),
     ...     ],
-    ...     name="Low pass filter",
+    ...     name="Low frequency energy",
     ... )
-    ... sequence
+    >>> sequence
+    Low frequency energy:
+      0: taper(..., dim=time)
+      1: lfilter([1.0], [0.5], ..., dim=time)  [stateful]
+      2: square(...)
+
+    >>> sequence = Sequence(
+    ...     [
+    ...         Atom(xp.decimate, 16, dim="distance"),
+    ...         sequence,
+    ...     ]
+    ... )
+    >>> sequence
+    Sequence:
+      0: decimate(..., 16, dim=distance)
+      1:
+        Low frequency energy:
+          0: taper(..., dim=time)
+          1: lfilter([1.0], [0.5], ..., dim=time)  [stateful]
+          2: square(...)
 
     >>> from xdas.synthetics import generate
-
     >>> db = generate()
     >>> sequence(db)
-
-    >>> Sequence([sequence] * 2)
+    <xdas.Database (time: 300, distance: 26)>
+    [[0.000000e+00 0.000000e+00 0.000000e+00 ... 0.000000e+00 0.000000e+00
+      0.000000e+00]
+     [4.828612e-30 9.894384e-17 3.227090e-14 ... 1.774912e-13 2.119855e-13
+      1.793267e-13]
+     [3.109880e-29 1.530490e-17 1.554244e-14 ... 9.062270e-14 1.612131e-11
+      2.394051e-12]
+     ...
+     [2.056248e-28 2.659485e-15 6.235765e-13 ... 1.724542e-11 5.370072e-13
+      6.058423e-12]
+     [1.570712e-29 4.312953e-16 8.089942e-14 ... 5.433228e-13 6.281834e-13
+      6.815881e-14]
+     [0.000000e+00 0.000000e+00 0.000000e+00 ... 0.000000e+00 0.000000e+00
+      0.000000e+00]]
+    Coordinates:
+      * time (time): 2023-01-01T00:00:00.000 to 2023-01-01T00:00:05.980
+        distance: 0.000 to 10000.000
 
     """
 
@@ -98,17 +131,19 @@ class Atom:
     >>> from xdas import Atom
 
     >>> import xdas.signal as xp
-    >>> atom = Atom(xp.decimate, 2, dim="time", name="downsampling")
+    >>> Atom(xp.decimate, 2, dim="time", name="downsampling")
+    decimate(..., 2, dim=time)
 
     >>> import numpy as np
-    >>> atom = Atom(np.square)
+    >>> Atom(np.square)
+    square(...)
 
     """
 
     def __init__(
         self, func: Callable, *args: Any, name: str | None = None, **kwargs: Any
     ) -> None:
-        if not any(arg is ...  for arg in args):
+        if not any(arg is ... for arg in args):
             args = (...,) + args
         self.func = func
         self.args = args
@@ -134,9 +169,8 @@ class StateAtom(Atom):
     recursive filter, passing on the state from t to t+1.
 
     The StateAtom class assumes that the stateful function takes two inputs: some data
-    and a state. The stateful function must return the modified Database and modified state, i.e.:
+    and a state. The stateful function must return the modified Database and modified state:
 
-    >>> db, state = func(db, <state>=state, **kwargs)
 
     Here, <state> is a given keyword argument that contains the state,
     which can differ from one function to the next. For example, in
@@ -166,7 +200,8 @@ class StateAtom(Atom):
     --------
     >>> import xdas.signal as xp
 
-    >>> atom = StateAtom(xp.filter, dim="time", state="init")
+    >>> StateAtom(xp.filter, dim="time", state="init")
+    filter(..., dim=time)  [stateful]
 
     """
 

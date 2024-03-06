@@ -731,7 +731,7 @@ def sosfiltfilt(sos, db, dim="last", padtype="odd", padlen=None, parallel=None):
     return db.copy(data=data)
 
 
-def decimate(db, q, n=None, ftype=None, zero_phase=None, dim="last", parallel=None):
+def decimate(db, q, n=None, ftype="iir", zero_phase=None, dim="last", parallel=None):
     """
     Downsample the signal after applying an anti-aliasing filter.
 
