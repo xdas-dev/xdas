@@ -365,7 +365,7 @@ class Database:
             the obspy stream version of the database.
 
         """
-        dimdist, dimtime = dim.popitem()
+        dimdist, dimtime = dim.copy().popitem()
         try:
             from obspy import Stream, Trace, UTCDateTime
         except ImportError:

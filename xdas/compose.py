@@ -182,7 +182,7 @@ class Atom:
         kwargs = []
         for key, value in self.kwargs.items():
             if len(str(value)) > 10:
-                value = type(value).__name__
+                value = f"<{type(value).__name__}>"
             kwargs.append(f"{key}={value}")
         params = ", ".join(args + kwargs)
         return f"{func}({params})"
