@@ -84,6 +84,10 @@ class TestDatabase:
         assert np.array_equal(db.values, out.values)
         assert np.array_equal(db["dim"].values, out["dim"].values)
 
+    def test_to_stream(self):
+        db = generate()
+        db.to_stream(dim={"distance": "time"})
+
     def test_dense_str(self):
         coord = [f"D{k}" for k in range(9)]
         coords = Coordinates({"dim": coord})

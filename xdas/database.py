@@ -6,7 +6,7 @@ import h5py
 import numpy as np
 import xarray as xr
 
-from .coordinates import Coordinates, InterpCoordinate
+from .coordinates import Coordinates, InterpCoordinate, get_sampling_interval
 from .numpy import NUMPY_HANDLED_FUNCTIONS, apply_ufunc
 from .virtual import DataLayout, DataSource
 from .xarray import XARRAY_HANDLED_METHODS
@@ -332,6 +332,68 @@ class Database:
     def from_xarray(cls, da):
         return cls(da.data, da.coords, da.dims, da.name, da.attrs)
 
+    def to_stream(
+        self,
+        network="NET",
+        station="DAS{:05}",
+        location="00",
+        channel="{:1}N1",
+        dim={"last": "first"},
+    ):
+        """
+        Convert a database into a stream.
+
+        Parameters
+        ----------
+        network : str, optional
+            The network code, by default "NET".
+        station : str, optional
+            The station code. Must be a string that can be formatted. 
+            By default "DAS{:05}"
+        location : str, optional
+            The location code, by default "00".
+        channel : str, optional
+            The channel code. If the string can be formatted, the band code will be 
+            inferred from the sampling rate. By default "{:1}N1"
+        dim : dict, optional
+            A dict with as key the spatial dimension to split into traces, and as key
+            the temporal dimension. By default {"last": "first"}.
+
+        Returns
+        -------
+        Stream
+            the obspy stream version of the database.
+
+        """
+        dimdist, dimtime = dim.popitem()
+        try:
+            from obspy import Stream, Trace, UTCDateTime
+        except ImportError:
+            raise ImportError("obspy is not installed. Please install it.")
+        if not self.ndim == 2:
+            raise ValueError("the database must be 2D")
+        starttime = UTCDateTime(str(self[dimtime][0].values))
+        delta = get_sampling_interval(self, dimtime)
+        band_code = get_band_code(1.0 / delta)
+        if "{" in channel and "}" in channel:
+            channel = channel.format(band_code)
+        header = {
+            "network": network,
+            "location": location,
+            "channel": channel,
+            "starttime": starttime,
+            "delta": delta,
+        }
+        return Stream(
+            [
+                Trace(
+                    data=self.isel({dimdist: idx}).values,
+                    header=header | {"station": station.format(idx + 1)},
+                )
+                for idx in range(len(self[dimdist]))
+            ]
+        )
+
     def to_netcdf(self, fname, group=None, virtual=False, **kwargs):
         """
         Write Database contents to a netCDF file.
@@ -491,3 +553,13 @@ class LocIndexer:
     def __setitem__(self, key, value):
         key = self.obj.coords.to_index(key)
         self.obj.__setitem__(key, value)
+
+
+def get_band_code(sampling_rate):
+    band_code = ["T", "P", "R", "U", "V", "L", "M", "B", "H", "C", "F"]
+    limits = [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 80, 250, 1000, 5000]
+    index = np.searchsorted(limits, sampling_rate, "right") - 1
+    if index < 0 or index >= len(band_code):
+        return "X"
+    else:
+        return band_code[index]
