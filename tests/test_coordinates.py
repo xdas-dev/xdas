@@ -510,6 +510,11 @@ class TestCoordinates:
         assert coords.isdim("dim_0")
         assert not coords.isdim("dim_1")
 
+    def test_first_last(self):
+        coords = xdas.Coordinates({"dim_0": [1.0, 2.0, 3.0], "dim_1": [1.0, 2.0, 3.0]})
+        assert coords["first"].dim == "dim_0"
+        assert coords["last"].dim == "dim_1"
+
 
 class TestScaleOffset:
     def test_init(self):

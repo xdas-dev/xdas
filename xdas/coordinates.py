@@ -56,6 +56,13 @@ class Coordinates(dict):
             dims = tuple(name for name in self if self.isdim(name))
         self.dims = dims
 
+    def __getitem__(self, key):
+        if key == "first":
+            key = self.dims[0]
+        if key == "last":
+            key = self.dims[-1]
+        return super().__getitem__(key)
+
     def __repr__(self):
         lines = ["Coordinates:"]
         for name, coord in self.items():
