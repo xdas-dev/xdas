@@ -33,7 +33,17 @@
 .. autosummary::
    :toctree: _autosummary
 
-   xdas.processing.SignalProcessingChain
+   xdas.processing.ProcessingChain
    xdas.processing.LFilter
    xdas.processing.SOSFilter
+```
+
+## Compose
+```{eval-rst}
+.. autosummary::
+   :toctree: _autosummary
+
+   xdas.compose.Atom
+   xdas.compose.StateAtom
+   xdas.compose.Sequence
 ```

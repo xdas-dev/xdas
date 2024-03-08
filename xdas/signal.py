@@ -18,7 +18,7 @@ def parse_dim(db, dim):
         if dim in db.dims:
             return dim
         else:
-            ValueError(f"{dim} not in db.dims")
+            raise ValueError(f"{dim} not in db.dims")
 
 
 def get_sampling_interval(db, dim):
@@ -731,7 +731,7 @@ def sosfiltfilt(sos, db, dim="last", padtype="odd", padlen=None, parallel=None):
     return db.copy(data=data)
 
 
-def decimate(db, q, n=None, ftype=None, zero_phase=None, dim="last", parallel=None):
+def decimate(db, q, n=None, ftype="iir", zero_phase=None, dim="last", parallel=None):
     """
     Downsample the signal after applying an anti-aliasing filter.
 

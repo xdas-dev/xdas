@@ -1,5 +1,6 @@
 import numpy as np
 
+from .compose import Atom, Sequence, StateAtom
 from .coordinates import Coordinate, Coordinates, InterpCoordinate
 from .core import (
     asdatabase,
