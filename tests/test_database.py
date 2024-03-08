@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 import numpy as np
 
 import xdas
+from xdas.synthetics import generate
 from xdas.coordinates import Coordinates, DenseCoordinate, InterpCoordinate
 from xdas.database import Database
 
@@ -55,6 +56,15 @@ class TestDatabase:
         db.sel(dim=slice(2, 4))
         db = self.generate(dense=True)
         db.sel(dim=slice(2, 4))
+
+    def test_isel(self):
+        db = generate()
+        result = db.isel(first=0)
+        excepted = db.isel(time=0)
+        assert result.equals(excepted)
+        result = db.isel(last=0)
+        excepted = db.isel(distance=0)
+        assert result.equals(excepted)
 
     def test_to_xarray(self):
         for dense in [True, False]:

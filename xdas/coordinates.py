@@ -97,6 +97,10 @@ class Coordinates(dict):
         """
         query = {dim: slice(None) for dim in self.dims}
         if isinstance(item, dict):
+            if "first" in item:
+                item[self.dims[0]] = item.pop("first")
+            if "last" in item:
+                item[self.dims[-1]] = item.pop("last")
             query.update(item)
         elif isinstance(item, tuple):
             for k in range(len(item)):
