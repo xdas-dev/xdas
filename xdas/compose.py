@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from functools import wraps
 from typing import Any
 
 
@@ -280,3 +281,42 @@ class StateAtom(Atom):
     def reset(self) -> None:
         for key in self.state:
             self.state[key] = "init"
+
+
+def atomize(func):
+    """
+    Make the function return an Atom if `...` is passed.
+
+    Functions that receive a `state` keyword argument which is not None will be
+    considered as statefull atoms.
+
+    Parameters
+    ----------
+    func: callable
+        A function with a main data input that will trigger atomization if `...` is
+        passed. If it has a state keword argument this later will trigger statefull
+        atomization if anything but None is passed.
+
+    Returns
+    -------
+    callable
+        The atomized function. This latter has the same documentation and names than
+        the original function. If `...` is passed as a positional argument, returns an
+        Atom object. If a further `state` keyword argument is pass with a value other
+        than `None`, retruns a StateAtom object.
+
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if any(arg is ... for arg in args):
+            if "state" in kwargs and kwargs["state"] is not None:
+                return StateAtom(func, *args, **kwargs)
+            else:
+                return Atom(func, *args, **kwargs)
+        else:
+            return func(*args, **kwargs)
+
+    wrapper.__atomized__ = True
+
+    return wrapper

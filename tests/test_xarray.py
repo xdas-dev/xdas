@@ -10,15 +10,15 @@ class TestXarray:
         db = generate()
         for name, func in xp.XARRAY_HANDLED_METHODS.items():
             if callable(func):
-                if func in [
-                    xp.percentile,
-                    xp.quantile,
+                if name in [
+                    "percentile",
+                    "quantile",
                 ]:
                     result = func(db, 0.5)
                     assert isinstance(result, Database)
                     result = getattr(db, name)(0.5)
                     assert isinstance(result, Database)
-                elif func == xp.diff:
+                elif name == "diff":
                     result = func(db, "time")
                     assert isinstance(result, Database)
                     result = getattr(db, name)("time")
