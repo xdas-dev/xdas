@@ -5,7 +5,7 @@ import numpy as np
 import scipy.signal as sp
 
 from . import config
-from .coordinates import Coordinate
+from .coordinates import Coordinate, get_sampling_interval
 from .database import Database
 
 
@@ -19,30 +19,6 @@ def parse_dim(db, dim):
             return dim
         else:
             raise ValueError(f"{dim} not in db.dims")
-
-
-def get_sampling_interval(db, dim):
-    """
-    Returns the sample spacing along a given dimension.
-
-    Parameters
-    ----------
-    db : Database or DataArray or Database
-        The data from which extract the sample spacing.
-    dim : str
-        The dimension along which get the sample spacing.
-
-    Returns
-    -------
-    float
-        The sample spacing.
-    """
-    d = (db[dim][-1].values - db[dim][0].values) / (len(db[dim]) - 1)
-    d = np.asarray(d)
-    if np.issubdtype(d.dtype, np.timedelta64):
-        d = d / np.timedelta64(1, "s")
-    d = d.item()
-    return d
 
 
 def parallelize(func, axis, parallel):
