@@ -6,7 +6,7 @@ import h5py
 import numpy as np
 import xarray as xr
 
-from .coordinates import Coordinates, InterpCoordinate, get_sampling_interval
+from .coordinates import Coordinate, Coordinates, get_sampling_interval
 from .numpy import NUMPY_HANDLED_FUNCTIONS, apply_ufunc
 from .virtual import DataLayout, DataSource
 from .xarray import XARRAY_HANDLED_METHODS
@@ -348,12 +348,12 @@ class Database:
         network : str, optional
             The network code, by default "NET".
         station : str, optional
-            The station code. Must be a string that can be formatted. 
+            The station code. Must be a string that can be formatted.
             By default "DAS{:05}"
         location : str, optional
             The location code, by default "00".
         channel : str, optional
-            The channel code. If the string can be formatted, the band code will be 
+            The channel code. If the string can be formatted, the band code will be
             inferred from the sampling rate. By default "{:1}N1"
         dim : dict, optional
             A dict with as key the spatial dimension to split into traces, and as key
@@ -393,6 +393,19 @@ class Database:
                 for idx in range(len(self[dimdist]))
             ]
         )
+
+    @classmethod
+    def from_stream(cls, st, dims=("channel", "time")):
+        data = np.stack([tr.data for tr in st])
+        channel = [tr.id for tr in st]
+        time = {
+            "tie_indices": [0, st[0].stats.npts - 1],
+            "tie_values": [
+                np.datetime64(st[0].stats.starttime.datetime),
+                np.datetime64(st[0].stats.endtime.datetime),
+            ],
+        }
+        return cls(data, {dims[0]: channel, dims[1]: time})
 
     def to_netcdf(self, fname, group=None, virtual=False, **kwargs):
         """
@@ -525,7 +538,7 @@ class Database:
                 for match in matches:
                     dim, indices, values = match
                     data = {"tie_indices": ds[indices], "tie_values": ds[values]}
-                    coords[dim] = InterpCoordinate(data, dim)
+                    coords[dim] = Coordinate(data, dim)
         with h5py.File(fname) as file:
             if group:
                 file = file[group]

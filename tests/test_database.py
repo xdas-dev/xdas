@@ -4,9 +4,9 @@ from tempfile import TemporaryDirectory
 import numpy as np
 
 import xdas
-from xdas.synthetics import generate
 from xdas.coordinates import Coordinates, DenseCoordinate, InterpCoordinate
 from xdas.database import Database
+from xdas.synthetics import generate
 
 
 class TestDatabase:
@@ -84,9 +84,21 @@ class TestDatabase:
         assert np.array_equal(db.values, out.values)
         assert np.array_equal(db["dim"].values, out["dim"].values)
 
-    def test_to_stream(self):
+    def test_stream(self):
         db = generate()
-        db.to_stream(dim={"distance": "time"})
+        st = db.to_stream(dim={"distance": "time"})
+        assert st[0].id == "NET.DAS00001.00.BN1"
+        assert len(st) == db.sizes["distance"]
+        assert st[0].stats.npts == db.sizes["time"]
+        assert np.datetime64(st[0].stats.starttime.datetime) == db["time"][0].values
+        assert np.datetime64(st[0].stats.endtime.datetime) == db["time"][-1].values
+        result = Database.from_stream(st)
+        assert np.array_equal(result.values.T, db.values)
+        assert result.sizes == {
+            "channel": db.sizes["distance"],
+            "time": db.sizes["time"],
+        }
+        assert result["time"].equals(db["time"])
 
     def test_dense_str(self):
         coord = [f"D{k}" for k in range(9)]
