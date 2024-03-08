@@ -37,9 +37,9 @@ class Coordinates(dict):
     >>> xdas.Coordinates(coords)
     Coordinates:
       * time (time): 0.000 to 10.000
-      * distance (distance): [0 1 2]
-        channel (distance): ['DAS01' 'DAS02' 'DAS03']
-        interrogator: SRN
+      * distance (distance): [0 ... 2]
+        channel (distance): ['DAS01' ... 'DAS03']
+        interrogator: 'SRN'
     """
 
     def __init__(self, coords=None, dims=None):
@@ -178,7 +178,7 @@ class AbstractCoordinate:
         return self.data.__len__()
 
     def __repr__(self):
-        return self.data.__str__()
+        return np.array2string(self.data, threshold=0, edgeitems=1)
 
     def __add__(self, other):
         return self.__class__(self.data + other, self.dim)

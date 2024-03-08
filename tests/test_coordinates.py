@@ -56,7 +56,9 @@ class TestScalarCoordinate:
 
     def test_repr(self):
         for data in self.valid:
-            assert ScalarCoordinate(data).__repr__() == str(np.array(data))
+            assert ScalarCoordinate(data).__repr__() == np.array2string(
+                np.asarray(data), threshold=0, edgeitems=1
+            )
 
     def test_array(self):
         for data in self.valid:
@@ -141,7 +143,9 @@ class TestDenseCoordinate:
 
     def test_repr(self):
         for data in self.valid:
-            assert DenseCoordinate(data).__repr__() == str(np.array(data))
+            assert DenseCoordinate(data).__repr__() == np.array2string(
+                np.asarray(data), threshold=0, edgeitems=1
+            )
 
     def test_array(self):
         for data in self.valid:
