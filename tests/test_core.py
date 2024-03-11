@@ -33,8 +33,17 @@ class TestCore:
             db_monolithic = xdas.open_database(os.path.join(dirpath, "sample.nc"))
             db_chunked = xdas.open_mfdatabase(os.path.join(dirpath, "00*.nc"))
             assert db_monolithic.equals(db_chunked)
+            db_chunked = xdas.open_mfdatabase(
+                [
+                    os.path.join(dirpath, fname)
+                    for fname in ["001.nc", "002.nc", "003.nc"]
+                ]
+            )
+            assert db_monolithic.equals(db_chunked)
         with pytest.raises(FileNotFoundError):
             xdas.open_mfdatabase("not_existing_files_*.nc")
+        with pytest.raises(FileNotFoundError):
+            xdas.open_mfdatabase(["not_existing_file.nc"])
 
     def test_concatenate(self):
         for datetime in [False, True]:

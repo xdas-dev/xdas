@@ -18,8 +18,8 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
 
     Parameters
     ----------
-    paths: str
-        The path names given using shell=style wildcards.
+    paths: str or list
+        The path names given as a shell-style wildcards string or a list of paths.
     engine: str
         The engine to use to read the file.
     tolerance: timedelta64
@@ -36,17 +36,26 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
     FileNotFound
         If no file can be found.
     """
-    fnames = sorted(glob(paths))
-    if len(fnames) == 0:
+    if isinstance(paths, str):
+        paths = sorted(glob(paths))
+    elif isinstance(paths, list):
+        for path in paths:
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"could not find {path}")
+    else:
+        raise ValueError(
+            f"`paths` must be either a string or a list, found {type(paths)}"
+        )
+    if len(paths) == 0:
         raise FileNotFoundError("no file to open")
-    if len(fnames) > 100_000:
+    if len(paths) > 100_000:
         raise NotImplementedError(
             "The maximum number of file that can be opened at once is for now limited "
             "to 100 000."
         )
     with ProcessPoolExecutor() as executor:
         futures = [
-            executor.submit(open_database, fname, engine=engine) for fname in fnames
+            executor.submit(open_database, path, engine=engine) for path in paths
         ]
         dbs = [
             future.result()
