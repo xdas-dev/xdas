@@ -2,6 +2,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from xinterp import forward, inverse
 
 
 class Coordinates(dict):
@@ -462,7 +463,7 @@ class InterpCoordinate(AbstractCoordinate):
 
     def get_value(self, index):
         index = self.format_index(index)
-        return linear_interpolate(index, self.tie_indices, self.tie_values)
+        return forward(index, self.tie_indices, self.tie_values)
 
     def format_index(self, idx, bounds="raise"):
         idx = np.asarray(idx)
@@ -530,41 +531,7 @@ class InterpCoordinate(AbstractCoordinate):
             value = np.datetime64(value)
         else:
             value = np.asarray(value)
-        if method is None:
-            index = linear_interpolate(value, self.tie_values, self.tie_indices)
-            index = np.rint(index).astype("int")
-            index_value = self.get_value(index)
-            if np.issubdtype(self.dtype, np.datetime64):
-                if not np.all(index_value == value):
-                    raise KeyError("value not found in index")
-                else:
-                    return index
-            else:
-                if not np.allclose(index_value, value):
-                    raise KeyError("value not found in index")
-                else:
-                    return index
-        elif method == "nearest":
-            index = linear_interpolate(value, self.tie_values, self.tie_indices)
-            return np.rint(index).astype("int")
-        elif method == "ffill":
-            index = linear_interpolate(
-                value, self.tie_values, self.tie_indices, left=np.nan
-            )
-            if np.any(np.isnan(index)):
-                raise KeyError("value not found in index")
-            else:
-                return np.floor(index).astype("int")
-        elif method == "bfill":
-            index = linear_interpolate(
-                value, self.tie_values, self.tie_indices, right=np.nan
-            )
-            if np.any(np.isnan(index)):
-                raise KeyError("value not found in index")
-            else:
-                return np.ceil(index).astype("int")
-        else:
-            raise ValueError("valid methods are: 'nearest', 'before', 'after'")
+        return inverse(value, self.tie_indices, self.tie_values, method)
 
     def slice_indexer(self, start=None, stop=None, step=None):
         if start is not None:
@@ -653,69 +620,6 @@ def get_sampling_interval(db, dim):
     return d
 
 
-class ScaleOffset:
-    def __init__(self, scale, offset):
-        self.scale = scale
-        self.offset = offset
-
-    def __eq__(self, other):
-        try:
-            return (self.scale - other.scale == 0) and (self.offset - other.offset == 0)
-        except:
-            return False
-
-    @classmethod
-    def floatize(cls, arr):
-        arr = np.asarray(arr)
-        if np.issubdtype(arr.dtype, np.datetime64):
-            unit, count = np.datetime_data(arr.dtype)
-            scale = np.timedelta64(count, unit)
-            offset = np.min(arr) + (np.max(arr) - np.min(arr)) / 2
-        else:
-            scale = 1.0
-            offset = 0.0
-        transform = cls(scale, offset)
-        transform.check_resolution(arr)
-        return transform
-
-    def direct(self, arr):
-        arr = np.asarray(arr)
-        self.check_resolution(arr)
-        return (arr - self.offset) / self.scale
-
-    def inverse(self, arr):
-        arr = np.asarray(arr)
-        if np.issubdtype(np.asarray(self.scale).dtype, np.timedelta64):
-            arr = np.rint(arr)
-        return self.scale * arr + self.offset
-
-    def check_resolution(self, arr):
-        arr = np.asarray(arr)
-        nmax = 2 ** np.finfo("float").nmant
-        if not np.all((arr - self.offset).astype("int") < nmax):
-            warnings.warn(
-                "float resolution is not sufficient to represent the full integer range"
-            )
-
-
-def linear_interpolate(x, xp, fp, left=None, right=None):
-    if not is_strictly_increasing(xp):
-        raise ValueError(
-            "xp must be strictly increasing. Your coordinate probably has overlaps. "
-            "Try to do: db['dim'] = db['dim'].simplify(np.timedelta64(tolerance, 'ms') "
-            "with a gradually increasing tolerance until minor overlaps are resolved."
-            "Big overlaps needs manual intervention."
-        )
-    x_transform = ScaleOffset.floatize(xp)
-    f_transform = ScaleOffset.floatize(fp)
-    x = x_transform.direct(x)
-    xp = x_transform.direct(xp)
-    fp = f_transform.direct(fp)
-    f = np.interp(x, xp, fp, left=left, right=right)
-    f = f_transform.inverse(f)
-    return f
-
-
 def is_strictly_increasing(x):
     if np.issubdtype(x.dtype, np.datetime64):
         return np.all(np.diff(x) > np.timedelta64(0, "us"))
@@ -728,7 +632,7 @@ def douglas_peucker(x, y, epsilon):
     stack = [(0, len(x))]
     while stack:
         start, stop = stack.pop()
-        ysimple = linear_interpolate(
+        ysimple = forward(
             x[start:stop],
             x[[start, stop - 1]],
             y[[start, stop - 1]],

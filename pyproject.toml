@@ -18,6 +18,7 @@ dependencies = [
     "scipy",
     "tqdm",
     "xarray",
+    "xinterp",
     "watchdog",
 ]
 
