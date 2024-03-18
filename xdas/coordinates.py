@@ -1,8 +1,21 @@
-import warnings
+from copy import copy, deepcopy
+from functools import wraps
 
 import numpy as np
 import pandas as pd
 from xinterp import forward, inverse
+
+
+def wraps_first_last(func):
+    @wraps(func)
+    def wrapper(self, dim):
+        if dim == "first":
+            dim = self.dims[0]
+        if dim == "last":
+            dim = self.dims[-1]
+        return func(self, dim)
+
+    return wrapper
 
 
 class Coordinates(dict):
@@ -57,11 +70,8 @@ class Coordinates(dict):
             dims = tuple(name for name in self if self.isdim(name))
         self.dims = dims
 
+    @wraps_first_last
     def __getitem__(self, key):
-        if key == "first":
-            key = self.dims[0]
-        if key == "last":
-            key = self.dims[-1]
         return super().__getitem__(key)
 
     def __repr__(self):
@@ -145,6 +155,19 @@ class Coordinates(dict):
         """
 
         return {name: self[name].to_dict() for name in self}
+
+    def copy(self, deep=True):
+        if deep:
+            func = deepcopy
+        else:
+            func = copy
+        return self.__class__({key: func(value) for key, value in self.items()})
+
+    @wraps_first_last
+    def drop(self, dim):
+        return self.__class__(
+            {key: value for key, value in self.items() if not value.dim == dim}
+        )
 
 
 class Coordinate:

@@ -187,6 +187,8 @@ class DataMapping(AbstractDataCollection, dict):
         self.name = name
 
     def __repr__(self):
+        if len(self) == 0:
+            return "Empty"
         width = max([len(str(key)) for key in self])
         name = self.name if self.name is not None else "sequence"
         s = f"{name.capitalize()}:\n"

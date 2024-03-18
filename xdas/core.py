@@ -36,8 +36,7 @@ def open_mfdatacollection(paths, engine="netcdf"):
     --------
     >>> import xdas
     >>> paths = "/data/{location}/{cable}/{}/proc/{}.h5"
-    >>> xdas.open_mfdatacollection(paths, engine="asn")
-    ...
+    >>> xdas.open_mfdatacollection(paths, engine="asn") # doctest: +SKIP
     Location:
         SER:
             Cable:
@@ -98,7 +97,7 @@ def collect(tree, fields, engine="netcdf"):
         if isinstance(value, list):
             collection[key] = open_mfdatabase(value, engine)
         else:
-            collection[key] = collect(value, fields)
+            collection[key] = collect(value, fields, engine)
     return collection
 
 
@@ -163,7 +162,29 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
                 desc="Fetching metadata from files",
             )
         ]
-    return concatenate(dbs, tolerance=tolerance, verbose=True)
+    return aggregate(dbs, "time", tolerance, True, True, True)
+
+
+def aggregate(dbs, dim, tolerance, virtual, verbose, squeeze):
+    dbs = sorted(dbs, key=lambda db: db[dim][0].values)
+    out = []
+    bag = []
+    for db in dbs:
+        if not bag:
+            bag = [db]
+        elif db.coords.drop(dim).equals(bag[-1].coords.drop(dim)):
+            bag.append(db)
+        else:
+            out.append(bag)
+            bag = []
+    out.append(bag)
+    collection = DataCollection(
+        [concatenate(bag, dim, tolerance, virtual, verbose) for bag in out]
+    )
+    if squeeze and len(collection) == 1:
+        return collection[0]
+    else:
+        return collection
 
 
 def concatenate(dbs, dim="time", tolerance=None, virtual=None, verbose=None):
@@ -224,7 +245,7 @@ def concatenate(dbs, dim="time", tolerance=None, virtual=None, verbose=None):
         {"tie_indices": tie_indices, "tie_values": tie_values}, dim
     )
     coord = coord.simplify(tolerance)
-    coords = dbs[0].coords
+    coords = dbs[0].coords.copy()
     coords[dim] = coord
     return Database(data, coords)
 
