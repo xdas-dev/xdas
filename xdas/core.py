@@ -1,6 +1,9 @@
 import os
+import re
+from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from glob import glob
+from string import Formatter
 
 import numpy as np
 import xarray as xr
@@ -10,6 +13,101 @@ from .coordinates import InterpCoordinate
 from .database import Database
 from .datacollection import DataCollection
 from .virtual import DataLayout, DataSource
+
+
+def open_mfdatacollection(paths, engine="netcdf"):
+    """
+    Open directory tree structures as data collections.
+
+    Parameters
+    ----------
+    paths : str
+        A path descriptor provided as a formatable string with `{field}` placeholders
+        that indicates how to map each level or the tree structure to a given field of
+        the data collection object. Empty `{}` placeholders indicates the lowest level
+        that will be concatenated into databases using `open_mfdatabase`.
+
+    Returns
+    -------
+    DataCollection
+        The collected data.
+
+    Examples
+    --------
+    >>> import xdas
+    >>> paths = "/data/{location}/{cable}/{}/proc/{}.h5"
+    >>> xdas.open_mfdatacollection(paths, engine="asn")
+    ...
+    Location:
+        SER:
+            Cable:
+            N: <xdas.Database (time: ..., distance: ...)>
+            S: <xdas.Database (time: ..., distance: ...)>
+
+    """
+    place_holders = list(
+        field for (_, field, _, _) in Formatter().parse(paths) if field is not None
+    )
+    fields = tuple(field for field in place_holders if not field == "")
+    nargs = len(place_holders) - len(fields)
+    nkwargs = len(fields)
+
+    args = ["*"] * nargs
+    kwargs = dict(zip(fields, ["*"] * nkwargs))
+    wildcard = paths.format(*args, **kwargs)
+    fnames = sorted(glob(wildcard))
+
+    args = [".*"] * nargs
+    kwargs = {field: f"(?P<{field}>.+)" for field in fields}
+    regex = re.compile(paths.format(*args, **kwargs))
+
+    tree = defaulttree(len(fields))
+    for fname in fnames:
+        match = regex.search(fname)
+        bag = tree
+        for field in fields:
+            bag = bag[match.group(field)]
+        bag.append(fname)
+
+    return collect(tree, fields, engine)
+
+
+def collect(tree, fields, engine="netcdf"):
+    """
+    Collects the data from a tree of paths using `fields` as level names.
+
+    Parameters
+    ----------
+    tree : nested dict of lists
+        The paths grouped in a tree hierarchy.
+    fields : tuple of str
+        The names of the levels of the tree hierarchy.
+    engine : str
+        The engine used to open files.
+
+    Returns
+    -------
+    DataCollection
+        The collected data.
+    """
+    fields = list(fields)
+    name = fields.pop(0)
+    collection = DataCollection({}, name=name)
+
+    for key, value in tree.items():
+        if isinstance(value, list):
+            collection[key] = open_mfdatabase(value, engine)
+        else:
+            collection[key] = collect(value, fields)
+    return collection
+
+
+def defaulttree(depth):
+    """Generate a default tree of lists with given depth."""
+    if depth == 0:
+        return list()
+    else:
+        return defaultdict(lambda: defaulttree(depth - 1))
 
 
 def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):

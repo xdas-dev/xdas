@@ -27,6 +27,20 @@ class TestCore:
             },
         )
 
+    def test_open_mfdatacollection(self):
+        with TemporaryDirectory() as dirpath:
+            keys = ["LOC01", "LOC02"]
+            dirnames = [os.path.join(dirpath, key) for key in keys]
+            [os.mkdir(dirname) for dirname in dirnames]
+            [generate(dirname) for dirname in dirnames]
+            db = generate()
+            dc = xdas.open_mfdatacollection(
+                os.path.join(dirpath, "{location}", "00{}.nc")
+            )
+            assert list(dc.keys()) == keys
+            for key in keys:
+                assert dc[key].load().equals(db)
+
     def test_open_mfdatabase(self):
         with TemporaryDirectory() as dirpath:
             generate(dirpath)

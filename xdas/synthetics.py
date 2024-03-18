@@ -37,7 +37,7 @@ def generate(dirpath=None):
     np.random.seed(42)
     shape = (300, 401)
     resolution = (np.timedelta64(20, "ms"), 25.0)
-    starttime = np.datetime64("2023-01-01T00:00:00")
+    starttime = np.datetime64("2023-01-01T00:00:00").astype("datetime64[ns]")
     snr = 10
     vp = 4000
     vs = vp / 1.75
