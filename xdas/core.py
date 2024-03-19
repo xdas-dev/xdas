@@ -9,7 +9,7 @@ import numpy as np
 import xarray as xr
 from tqdm import tqdm
 
-from .coordinates import InterpCoordinate
+from .coordinates import InterpCoordinate, get_sampling_interval
 from .database import Database
 from .datacollection import DataCollection
 from .virtual import DataLayout, DataSource
@@ -172,11 +172,13 @@ def aggregate(dbs, dim, tolerance, virtual, verbose, squeeze):
     for db in dbs:
         if not bag:
             bag = [db]
-        elif db.coords.drop(dim).equals(bag[-1].coords.drop(dim)):
+        elif db.coords.drop(dim).equals(bag[-1].coords.drop(dim)) and (
+            get_sampling_interval(db, dim) == get_sampling_interval(bag[-1], dim)
+        ):
             bag.append(db)
         else:
             out.append(bag)
-            bag = []
+            bag = [db]
     out.append(bag)
     collection = DataCollection(
         [concatenate(bag, dim, tolerance, virtual, verbose) for bag in out]

@@ -63,6 +63,36 @@ class TestCore:
         with pytest.raises(FileNotFoundError):
             xdas.open_mfdatabase(["not_existing_file.nc"])
 
+    def test_open_mfdatabase_grouping(self):
+        with TemporaryDirectory() as dirpath:
+            acqs = [
+                {
+                    "starttime": "2023-01-01T00:00:00",
+                    "resolution": (np.timedelta64(20, "ms"), 20.0),
+                    "nchunk": 10,
+                },
+                {
+                    "starttime": "2023-01-01T06:00:00",
+                    "resolution": (np.timedelta64(10, "ms"), 20.0),
+                    "nchunk": 10,
+                },
+                {
+                    "starttime": "2023-01-01T12:00:00",
+                    "resolution": (np.timedelta64(10, "ms"), 10.0),
+                    "nchunk": 10,
+                },
+            ]
+            count = 1
+            for acq in acqs:
+                for db in generate(**acq):
+                    db.to_netcdf(os.path.join(dirpath, f"{count:03d}.nc"))
+                    count += 1
+            dc = xdas.open_mfdatabase(os.path.join(dirpath, "*.nc"))
+            assert len(dc) == 3
+            for db, acq in zip(dc, acqs):
+                acq |= {"nchunk": None}
+                assert db.equals(generate(**acq))
+
     def test_concatenate(self):
         for datetime in [False, True]:
             db = self.generate(datetime)
