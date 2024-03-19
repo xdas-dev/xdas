@@ -23,24 +23,22 @@ class TestCompose:
 
 class TestProcessing:
     def test_sequence(self):
-        with tempfile.TemporaryDirectory() as tempdir:
-            # Generate and load a temporary dataset
-            generate(tempdir)
-            db = xdas.open_database(os.path.join(tempdir, "sample.nc"))
+        # Generate a temporary dataset
+        db = generate()
 
-            # Declare sequence to execute
-            sequence = xdas.Sequence(
-                [
-                    xdas.Atom(np.abs),
-                    xdas.Atom(np.square, name="some square"),
-                    xdas.Atom(mean, dim="time"),
-                ]
-            )
+        # Declare sequence to execute
+        sequence = xdas.Sequence(
+            [
+                xdas.Atom(np.abs),
+                xdas.Atom(np.square, name="some square"),
+                xdas.Atom(mean, dim="time"),
+            ]
+        )
 
-            # Sequence processing
-            result1 = sequence(db)
-            # Manual processing
-            result2 = mean(np.abs(db) ** 2, dim="time")
+        # Sequence processing
+        result1 = sequence(db)
+        # Manual processing
+        result2 = mean(np.abs(db) ** 2, dim="time")
 
-            # Test
-            assert np.allclose(result1.values, result2.values)
+        # Test
+        assert np.allclose(result1.values, result2.values)

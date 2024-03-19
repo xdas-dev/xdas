@@ -7,9 +7,10 @@ import xdas
 
 
 def generate(
-    dirpath=None,
+    *,
     starttime="2023-01-01T00:00:00",
     resolution=(np.timedelta64(20, "ms"), 25.0),
+    nchunk=None,
 ):
     """
     Generate some dummy files to bu used in code testing.
@@ -35,58 +36,62 @@ def generate(
     >>> from tempfile import TemporaryDirectory
 
     >>> with TemporaryDirectory() as dirpath:
-    ...     generate(
-    ...         dirpath, 
-    ...         starttime="2024-01-01T00:00:00", 
-    ...         resolution=(np.timedelta64(5, "ms"), 10.0),
-    ...     )
-    ...     db_monolithic = xdas.open_database(os.path.join(dirpath, "sample.nc"))
-    ...     db_chunked = xdas.open_mfdatabase(os.path.join(dirpath, "00*.nc"))
+    ...     os.chdir(dirpath)
+    ...     generate().to_netcdf("sample.nc")
+    ...     for idx, db in enumerate(generate(nchunk=3), start=1):
+    ...         db.to_netcdf(f"{idx:03}.nc")
+    ...     db_monolithic = xdas.open_database("sample.nc")
+    ...     db_chunked = xdas.open_mfdatabase("00*.nc")
     ...     db_monolithic.equals(db_chunked)
     True
 
     """
-    np.random.seed(42)
-    span = (np.timedelta64(6, "s"), 10000.0)
-    shape = (span[0] // resolution[0], int(span[1] // resolution[1]) + 1)
+    # sampling
     starttime = np.datetime64(starttime).astype("datetime64[ns]")
-    snr = 10
-    vp = 4000
-    vs = vp / 1.75
-    xc = 5_000
-    fc = 10.0
-    t0 = 1.0
-    t = np.arange(shape[0]) * resolution[0] / np.timedelta64(1, "s")
-    s = np.arange(shape[1]) * resolution[1]
-    d = np.hypot(xc, (s - np.mean(s)))
-    ttp = d / vp
-    tts = d / vs
+    span = (np.timedelta64(6, "s"), 10000.0)  # (6 s, 10 km)
+    shape = (span[0] // resolution[0], int(span[1] // resolution[1]) + 1)
+    t = np.arange(shape[0]) * resolution[0] / np.timedelta64(1, "s")  # time values [s]
+    s = np.arange(shape[1]) * resolution[1]  # distance values [m]
+
+    # physical parameters
+    snr = 10  # signal to noise ration
+    vp = 4000  # P-wave speed [m/s]
+    vs = vp / 1.75  # S-wave speed [m/s]
+    xc = 5_000  # source distance along [m]
+    fc = 10.0  # source central frequency [Hz]
+    t0 = 1.0  # source origin time relative to start of file [s]
+
+    d = np.hypot(xc, (s - np.mean(s)))  # channel distance to source [m]
+    ttp = d / vp  # P-wave travel time [s]
+    tts = d / vs  # S-wave travel time [s]
     data = np.zeros(shape)
     for k in range(shape[1]):
-        data[:, k] += sp.gausspulse(t - ttp[k] - t0, fc) / 2
+        data[:, k] += sp.gausspulse(t - ttp[k] - t0, fc) / 2  # P is twice weaker
         data[:, k] += sp.gausspulse(t - tts[k] - t0, fc)
-    data /= np.max(np.abs(data), axis=0, keepdims=True)
-    data += np.random.randn(*shape) / snr
+    data /= np.max(np.abs(data), axis=0, keepdims=True)  # normalize
+    np.random.seed(42)
+    data += np.random.randn(*shape) / snr  # add noise
+
+    # strain rate like response
     data = np.diff(data, prepend=0, axis=-1)
     data = np.diff(data, prepend=0, axis=0)
+
+    # pack data and coordinates as Database or DataCollection if chunking.
     db = xdas.Database(
         data=data,
         coords={
-            "time": dict(
-                tie_indices=[0, shape[0] - 1],
-                tie_values=[starttime, starttime + resolution[0] * (shape[0] - 1)],
-            ),
-            "distance": dict(
-                tie_indices=[0, shape[1] - 1],
-                tie_values=[0.0, resolution[1] * (shape[1] - 1)],
-            ),
+            "time": {
+                "tie_indices": [0, shape[0] - 1],
+                "tie_values": [starttime, starttime + resolution[0] * (shape[0] - 1)],
+            },
+            "distance": {
+                "tie_indices": [0, shape[1] - 1],
+                "tie_values": [0.0, resolution[1] * (shape[1] - 1)],
+            },
         },
     )
-    if dirpath is not None:
-        db.to_netcdf(os.path.join(dirpath, "sample.nc"))
-        dbs = chunk(db, 3)
-        for idx, db in enumerate(dbs, start=1):
-            db.to_netcdf(os.path.join(dirpath, f"{idx:03d}.nc"))
+    if nchunk is not None:
+        return chunk(db, nchunk)
     else:
         return db
 
@@ -103,7 +108,9 @@ def chunk(db, nchunk, dim="first"):
     chunk_size, extras = divmod(nsamples, nchunk)
     chunks = [0] + extras * [chunk_size + 1] + (nchunk - extras) * [chunk_size]
     div_points = np.cumsum(chunks, dtype=np.int64)
-    return [
-        db.isel({dim: slice(div_points[idx], div_points[idx + 1])})
-        for idx in range(nchunk)
-    ]
+    return xdas.DataCollection(
+        [
+            db.isel({dim: slice(div_points[idx], div_points[idx + 1])})
+            for idx in range(nchunk)
+        ]
+    )

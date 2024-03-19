@@ -31,8 +31,10 @@ class TestCore:
         with TemporaryDirectory() as dirpath:
             keys = ["LOC01", "LOC02"]
             dirnames = [os.path.join(dirpath, key) for key in keys]
-            [os.mkdir(dirname) for dirname in dirnames]
-            [generate(dirname) for dirname in dirnames]
+            for dirname in dirnames:
+                os.mkdir(dirname)
+                for idx, db in enumerate(generate(nchunk=3), start=1):
+                    db.to_netcdf(os.path.join(dirname, f"{idx:03d}.nc"))
             db = generate()
             dc = xdas.open_mfdatacollection(
                 os.path.join(dirpath, "{location}", "00{}.nc")
@@ -43,7 +45,9 @@ class TestCore:
 
     def test_open_mfdatabase(self):
         with TemporaryDirectory() as dirpath:
-            generate(dirpath)
+            generate().to_netcdf(os.path.join(dirpath, "sample.nc"))
+            for idx, db in enumerate(generate(nchunk=3), start=1):
+                db.to_netcdf(os.path.join(dirpath, f"{idx:03}.nc"))
             db_monolithic = xdas.open_database(os.path.join(dirpath, "sample.nc"))
             db_chunked = xdas.open_mfdatabase(os.path.join(dirpath, "00*.nc"))
             assert db_monolithic.equals(db_chunked)

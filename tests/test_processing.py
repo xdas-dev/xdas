@@ -13,7 +13,7 @@ class TestProcessing:
     def test_stateful(self):
         with tempfile.TemporaryDirectory() as tempdir:
             # generate test database
-            generate(tempdir)
+            generate().to_netcdf(os.path.join(tempdir, "sample.nc"))
             db = xdas.open_database(os.path.join(tempdir, "sample.nc"))
 
             # declare processing sequence
