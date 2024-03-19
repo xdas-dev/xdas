@@ -6,7 +6,11 @@ import scipy.signal as sp
 import xdas
 
 
-def generate(dirpath=None):
+def generate(
+    dirpath=None,
+    starttime="2023-01-01T00:00:00",
+    resolution=(np.timedelta64(20, "ms"), 25.0),
+):
     """
     Generate some dummy files to bu used in code testing.
 
@@ -17,6 +21,10 @@ def generate(dirpath=None):
     ----------
     dirpath : str, optional
         Directory where files will be written. If None, not file will be written.
+    starttime : str
+        The starttime of the file, will be parsed by `np.datetime64(starttime)`.
+    resolution : (timedelta64, float)
+        The temporal and spatial sampling intervals.
 
     Examples
     --------
@@ -27,7 +35,11 @@ def generate(dirpath=None):
     >>> from tempfile import TemporaryDirectory
 
     >>> with TemporaryDirectory() as dirpath:
-    ...     generate(dirpath)
+    ...     generate(
+    ...         dirpath, 
+    ...         starttime="2024-01-01T00:00:00", 
+    ...         resolution=(np.timedelta64(5, "ms"), 10.0),
+    ...     )
     ...     db_monolithic = xdas.open_database(os.path.join(dirpath, "sample.nc"))
     ...     db_chunked = xdas.open_mfdatabase(os.path.join(dirpath, "00*.nc"))
     ...     db_monolithic.equals(db_chunked)
@@ -35,9 +47,9 @@ def generate(dirpath=None):
 
     """
     np.random.seed(42)
-    shape = (300, 401)
-    resolution = (np.timedelta64(20, "ms"), 25.0)
-    starttime = np.datetime64("2023-01-01T00:00:00").astype("datetime64[ns]")
+    span = (np.timedelta64(6, "s"), 10000.0)
+    shape = (span[0] // resolution[0], int(span[1] // resolution[1]) + 1)
+    starttime = np.datetime64(starttime).astype("datetime64[ns]")
     snr = 10
     vp = 4000
     vs = vp / 1.75
@@ -72,8 +84,26 @@ def generate(dirpath=None):
     )
     if dirpath is not None:
         db.to_netcdf(os.path.join(dirpath, "sample.nc"))
-        db[:100].to_netcdf(os.path.join(dirpath, "001.nc"))
-        db[100:200].to_netcdf(os.path.join(dirpath, "002.nc"))
-        db[200:].to_netcdf(os.path.join(dirpath, "003.nc"))
+        dbs = chunk(db, 3)
+        for idx, db in enumerate(dbs, start=1):
+            db.to_netcdf(os.path.join(dirpath, f"{idx:03d}.nc"))
     else:
         return db
+
+
+def chunk(db, nchunk, dim="first"):
+    axis = db.get_axis_num(dim)
+    nsamples = db.shape[axis]
+    if not isinstance(nchunk, int):
+        raise TypeError("`n` must be an integer")
+    if nchunk <= 0:
+        raise ValueError("`n` must be larger than 0")
+    if nchunk >= nsamples:
+        raise ValueError("`n` must be smaller than the number of samples")
+    chunk_size, extras = divmod(nsamples, nchunk)
+    chunks = [0] + extras * [chunk_size + 1] + (nchunk - extras) * [chunk_size]
+    div_points = np.cumsum(chunks, dtype=np.int64)
+    return [
+        db.isel({dim: slice(div_points[idx], div_points[idx + 1])})
+        for idx in range(nchunk)
+    ]
