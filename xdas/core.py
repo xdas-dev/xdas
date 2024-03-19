@@ -182,7 +182,7 @@ def combine(dcs):
     elif nodes and not leaves:
         (name,) = set(dc.name for dc in nodes)
         keys = sorted(set.union(*[set(dc.keys()) for dc in nodes]))
-        return xdas.DataCollection(
+        return DataCollection(
             {key: combine([dc[key] for dc in dcs if key in dc]) for key in keys},
             name,
         )
