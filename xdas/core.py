@@ -165,6 +165,31 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
     return aggregate(dbs, "time", tolerance, True, True, True)
 
 
+def combine(dcs):
+    leaves = [
+        dc if isinstance(dc, list) else [dc] for dc in dcs if not isinstance(dc, dict)
+    ]
+    nodes = [dc for dc in dcs if isinstance(dc, dict)]
+    if leaves and not nodes:
+        return aggregate(
+            [db for dc in leaves for db in dc],
+            "time",
+            np.timedelta64(0, "ns"),
+            True,
+            False,
+            True,
+        )
+    elif nodes and not leaves:
+        (name,) = set(dc.name for dc in nodes)
+        keys = sorted(set.union(*[set(dc.keys()) for dc in nodes]))
+        return xdas.DataCollection(
+            {key: combine([dc[key] for dc in dcs if key in dc]) for key in keys},
+            name,
+        )
+    else:
+        raise NotImplementedError("cannot combine mixed node/leave levels for now")
+
+
 def aggregate(dbs, dim, tolerance, virtual, verbose, squeeze):
     dbs = sorted(dbs, key=lambda db: db[dim][0].values)
     out = []
