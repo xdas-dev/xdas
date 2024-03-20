@@ -12,7 +12,7 @@ def read(fname):
         dt = np.timedelta64(round(1e9 * header["dt"][()]), "ns")
         dx = header["dx"][()] * np.median(np.diff(header["channels"]))
         data = DataSource(file["data"])
-    nt, nd = data.shape
+    nt, nx = data.shape
     time = {"tie_indices": [0, nt - 1], "tie_values": [t0, t0 + (nt - 1) * dt]}
-    distance = {"tie_indices": [0, nd - 1], "tie_values": [0.0, (nd - 1) * dx]}
+    distance = {"tie_indices": [0, nx - 1], "tie_values": [0.0, (nx - 1) * dx]}
     return Database(data, {"time": time, "distance": distance})

@@ -230,6 +230,12 @@ class Database:
         indexers : dict, optional
             A dict with keys matching dimensions and values given by integers, slice
             objects or arrays.
+        method : {None, "nearest", "ffill", "bfill"}, optional
+            Method to use for inexact matches:
+            - None (default): only exact matches
+            - nearest: use nearest valid index value
+            - ffill: propagate last valid index value forward
+            - bfill: propagate next valid index value backward
         **indexers_kwargs : dict, optional
             The keyword arguments form of integers. Overwrite indexers input if both
             are provided.
@@ -244,7 +250,7 @@ class Database:
         indexers.update(indexers_kwargs)
         return self[indexers]
 
-    def sel(self, indexers=None, **indexers_kwargs):
+    def sel(self, indexers=None, method=None, **indexers_kwargs):
         """
         Return a new Database whose data is given by selecting index labels along the
         specified dimension(s).
@@ -269,7 +275,8 @@ class Database:
         if indexers is None:
             indexers = {}
         indexers.update(indexers_kwargs)
-        return self.loc[indexers]
+        key = self.coords.to_index(indexers, method)
+        return self[key]
 
     def copy(self, deep=True, data=None):
         """

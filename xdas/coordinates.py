@@ -110,9 +110,9 @@ class Coordinates(dict):
             query[self.dims[0]] = item
         return query
 
-    def to_index(self, item):
+    def to_index(self, item, method=None):
         query = self.get_query(item)
-        return {dim: self[dim].to_index(query[dim]) for dim in query}
+        return {dim: self[dim].to_index(query[dim], method) for dim in query}
 
     def equals(self, other):
         if not isinstance(other, Coordinates):
@@ -219,11 +219,11 @@ class AbstractCoordinate:
     def equals(self, other):
         return NotImplementedError
 
-    def to_index(self, item):
+    def to_index(self, item, method=None):
         if isinstance(item, slice):
             return self.slice_indexer(item.start, item.stop, item.step)
         else:
-            return self.get_indexer(item)
+            return self.get_indexer(item, method)
 
     def isscalar(self):
         return isinstance(self, ScalarCoordinate)
@@ -263,7 +263,7 @@ class ScalarCoordinate(AbstractCoordinate):
         else:
             return False
 
-    def to_index(self, item):
+    def to_index(self, item, method=None):
         raise NotImplementedError("cannot get index of scalar coordinate")
 
     def to_dict(self):
@@ -298,9 +298,12 @@ class DenseCoordinate(AbstractCoordinate):
 
     def get_indexer(self, value, method=None):
         if np.isscalar(value):
-            return self.index.get_indexer([value], method).item()
+            out = self.index.get_indexer([value], method).item()
         else:
-            return self.index.get_indexer(value, method)
+            out = self.index.get_indexer(value, method)
+        if np.any(out == -1):
+            raise KeyError("index not found")
+        return out
 
     def slice_indexer(self, start=None, end=None, step=None):
         return self.index.slice_indexer(start, end, step)

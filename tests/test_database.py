@@ -2,6 +2,7 @@ import os
 from tempfile import TemporaryDirectory
 
 import numpy as np
+import pytest
 
 import xdas
 from xdas.coordinates import Coordinates, DenseCoordinate, InterpCoordinate
@@ -52,10 +53,22 @@ class TestDatabase:
         # assert db[0].data == -100.0
 
     def test_sel(self):
+        # interp
         db = self.generate()
         db.sel(dim=slice(2, 4))
+        assert db.sel(dim=225, method="nearest").values == 0.1
+        assert db.sel(dim=225, method="ffill").values == 0.1
+        assert db.sel(dim=225, method="bfill").values == 0.2
+        with pytest.raises(KeyError):
+            db.sel(dim=225, method=None)
+        # dense
         db = self.generate(dense=True)
         db.sel(dim=slice(2, 4))
+        with pytest.raises(KeyError):
+            db.sel(dim=225, method=None)
+        assert db.sel(dim=225, method="nearest").values == 0.1
+        assert db.sel(dim=225, method="ffill").values == 0.1
+        assert db.sel(dim=225, method="bfill").values == 0.2
 
     def test_isel(self):
         db = generate()
