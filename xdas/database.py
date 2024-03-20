@@ -414,7 +414,7 @@ class Database:
         }
         return cls(data, {dims[0]: channel, dims[1]: time})
 
-    def to_netcdf(self, fname, group=None, virtual=False, **kwargs):
+    def to_netcdf(self, fname, group=None, virtual=None, **kwargs):
         """
         Write Database contents to a netCDF file.
 
@@ -426,13 +426,16 @@ class Database:
             Path to the netCDF4 group in the given file to open.
         virtual : bool, optional
             Weather to write a virtual dataset. The Database data must be a DataSource
-            or a DataLayout. Default is False.
+            or a DataLayout. Default (None) is to try to write a virtual dataset if
+            possible.
 
         Raises
         ------
         ValueError
             _description_
         """
+        if virtual is None:
+            virtual = isinstance(self.data, (DataSource, DataLayout))
         data_vars = []
         mapping = ""
         for dim in self.coords:

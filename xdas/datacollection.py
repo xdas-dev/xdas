@@ -211,7 +211,7 @@ class DataMapping(AbstractDataCollection, dict):
         )
         return uniquifiy(out)
 
-    def to_netcdf(self, fname, group=None, virtual=False, **kwargs):
+    def to_netcdf(self, fname, group=None, virtual=None, **kwargs):
         if group is None and os.path.exists(fname):
             os.remove(fname)
         for key in self:
@@ -300,7 +300,7 @@ class DataSequence(AbstractDataCollection, list):
     def from_mapping(cls, data):
         return cls(data.values(), data.name)
 
-    def to_netcdf(self, fname, group=None, virtual=False, **kwargs):
+    def to_netcdf(self, fname, group=None, virtual=None, **kwargs):
         self.to_mapping().to_netcdf(fname, group, virtual, **kwargs)
 
     @classmethod
