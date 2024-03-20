@@ -163,7 +163,7 @@ class Database:
 
     @property
     def sizes(self):
-        return {dim: len(self.coords[dim]) for dim in self.dims}
+        return DimSizer(self)
 
     @property
     def nbytes(self):
@@ -576,6 +576,18 @@ class LocIndexer:
     def __setitem__(self, key, value):
         key = self.obj.coords.to_index(key)
         self.obj.__setitem__(key, value)
+
+
+class DimSizer(dict):
+    def __init__(self, obj):
+        super().__init__({dim: len(obj.coords[dim]) for dim in obj.dims})
+
+    def __getitem__(self, key):
+        if key == "first":
+            key = list(self.keys())[0]
+        if key == "last":
+            key = list(self.keys())[-1]
+        return super().__getitem__(key)
 
 
 def get_band_code(sampling_rate):

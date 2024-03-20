@@ -27,6 +27,8 @@ class TestDatabase:
         assert db.ndim == 1
         assert db.shape == (9,)
         assert db.sizes == {"dim": 9}
+        assert db.sizes["first"] == 9
+        assert db.sizes["last"] == 9
         assert np.allclose(db.data, 0.1 * np.arange(9))
         assert np.all(np.equal(db.values, db.data))
         assert db.get_axis_num("dim") == 0
