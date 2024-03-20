@@ -110,9 +110,9 @@ class Coordinates(dict):
             query[self.dims[0]] = item
         return query
 
-    def to_index(self, item, method=None):
+    def to_index(self, item, method=None, inclusive=True):
         query = self.get_query(item)
-        return {dim: self[dim].to_index(query[dim], method) for dim in query}
+        return {dim: self[dim].to_index(query[dim], method, inclusive) for dim in query}
 
     def equals(self, other):
         if not isinstance(other, Coordinates):
@@ -219,9 +219,9 @@ class AbstractCoordinate:
     def equals(self, other):
         return NotImplementedError
 
-    def to_index(self, item, method=None):
+    def to_index(self, item, method=None, inclusive=True):
         if isinstance(item, slice):
-            return self.slice_indexer(item.start, item.stop, item.step)
+            return self.slice_indexer(item.start, item.stop, item.step, inclusive)
         else:
             return self.get_indexer(item, method)
 
@@ -263,7 +263,7 @@ class ScalarCoordinate(AbstractCoordinate):
         else:
             return False
 
-    def to_index(self, item, method=None):
+    def to_index(self, item, method=None, inclusive=True):
         raise NotImplementedError("cannot get index of scalar coordinate")
 
     def to_dict(self):
@@ -305,8 +305,15 @@ class DenseCoordinate(AbstractCoordinate):
             raise KeyError("index not found")
         return out
 
-    def slice_indexer(self, start=None, end=None, step=None):
-        return self.index.slice_indexer(start, end, step)
+    def slice_indexer(self, start=None, stop=None, step=None, inclusive=True):
+        slc = self.index.slice_indexer(start, stop, step)
+        if (
+            (not inclusive)
+            and (stop is not None)
+            and (self[slc.stop - 1].values == stop)
+        ):
+            slc = slice(slc.start, slc.stop - 1, slc.step)
+        return slc
 
     def to_dict(self):
         if np.issubdtype(self.dtype, np.datetime64):
@@ -536,7 +543,7 @@ class InterpCoordinate(AbstractCoordinate):
             value = np.asarray(value)
         return inverse(value, self.tie_indices, self.tie_values, method)
 
-    def slice_indexer(self, start=None, stop=None, step=None):
+    def slice_indexer(self, start=None, stop=None, step=None, inclusive=True):
         if start is not None:
             try:
                 start = self.get_indexer(start, method="bfill")
@@ -550,6 +557,8 @@ class InterpCoordinate(AbstractCoordinate):
                 stop = 0
         if step is not None:
             raise NotImplementedError("cannot use step yet")
+        if (not inclusive) and (stop is not None) and (self[stop - 1].values == stop):
+            stop -= 1
         return slice(start, stop)
 
     def decimate(self, q):

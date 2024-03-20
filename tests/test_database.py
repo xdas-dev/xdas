@@ -61,14 +61,18 @@ class TestDatabase:
         assert db.sel(dim=225, method="bfill").values == 0.2
         with pytest.raises(KeyError):
             db.sel(dim=225, method=None)
+        assert db.sel(dim=slice(100.0, 300.0)).equals(db[0:3])
+        # assert db.sel(dim=slice(100.0, 300.0), inclusive=False).equals(db[0:2])
         # dense
         db = self.generate(dense=True)
         db.sel(dim=slice(2, 4))
-        with pytest.raises(KeyError):
-            db.sel(dim=225, method=None)
         assert db.sel(dim=225, method="nearest").values == 0.1
         assert db.sel(dim=225, method="ffill").values == 0.1
         assert db.sel(dim=225, method="bfill").values == 0.2
+        with pytest.raises(KeyError):
+            db.sel(dim=225, method=None)
+        assert db.sel(dim=slice(100.0, 300.0)).equals(db[0:3])
+        assert db.sel(dim=slice(100.0, 300.0), inclusive=False).equals(db[0:2])
 
     def test_isel(self):
         db = generate()
