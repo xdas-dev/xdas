@@ -213,7 +213,7 @@ class DataMapping(AbstractDataCollection, dict):
         )
         return uniquifiy(out)
 
-    def to_netcdf(self, fname, group=None, virtual=False, **kwargs):
+    def to_netcdf(self, fname, group=None, virtual=None, **kwargs):
         if group is None and os.path.exists(fname):
             os.remove(fname)
         for key in self:
@@ -253,9 +253,10 @@ class DataMapping(AbstractDataCollection, dict):
             return False
         return True
 
-    def sel(self, indexers=None, **indexers_kwargs):
+    def sel(self, indexers=None, method=None, inclusive=True, **indexers_kwargs):
         data = {
-            key: value.sel(indexers, **indexers_kwargs) for key, value in self.items()
+            key: value.sel(indexers, method, inclusive, **indexers_kwargs)
+            for key, value in self.items()
         }
         data = {
             key: value
@@ -301,7 +302,7 @@ class DataSequence(AbstractDataCollection, list):
     def from_mapping(cls, data):
         return cls(data.values(), data.name)
 
-    def to_netcdf(self, fname, group=None, virtual=False, **kwargs):
+    def to_netcdf(self, fname, group=None, virtual=None, **kwargs):
         self.to_mapping().to_netcdf(fname, group, virtual, **kwargs)
 
     @classmethod
@@ -319,8 +320,10 @@ class DataSequence(AbstractDataCollection, list):
             return False
         return True
 
-    def sel(self, indexers=None, **indexers_kwargs):
-        data = [value.sel(indexers, **indexers_kwargs) for value in self]
+    def sel(self, indexers=None, method=None, inclusive=True, **indexers_kwargs):
+        data = [
+            value.sel(indexers, method, inclusive, **indexers_kwargs) for value in self
+        ]
         data = [
             value
             for value in data

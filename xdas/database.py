@@ -163,7 +163,7 @@ class Database:
 
     @property
     def sizes(self):
-        return {dim: len(self.coords[dim]) for dim in self.dims}
+        return DimSizer(self)
 
     @property
     def nbytes(self):
@@ -230,6 +230,12 @@ class Database:
         indexers : dict, optional
             A dict with keys matching dimensions and values given by integers, slice
             objects or arrays.
+        method : {None, "nearest", "ffill", "bfill"}, optional
+            Method to use for inexact matches:
+            - None (default): only exact matches
+            - nearest: use nearest valid index value
+            - ffill: propagate last valid index value forward
+            - bfill: propagate next valid index value backward
         **indexers_kwargs : dict, optional
             The keyword arguments form of integers. Overwrite indexers input if both
             are provided.
@@ -244,7 +250,7 @@ class Database:
         indexers.update(indexers_kwargs)
         return self[indexers]
 
-    def sel(self, indexers=None, **indexers_kwargs):
+    def sel(self, indexers=None, method=None, inclusive=True, **indexers_kwargs):
         """
         Return a new Database whose data is given by selecting index labels along the
         specified dimension(s).
@@ -269,7 +275,8 @@ class Database:
         if indexers is None:
             indexers = {}
         indexers.update(indexers_kwargs)
-        return self.loc[indexers]
+        key = self.coords.to_index(indexers, method, inclusive)
+        return self[key]
 
     def copy(self, deep=True, data=None):
         """
@@ -407,7 +414,7 @@ class Database:
         }
         return cls(data, {dims[0]: channel, dims[1]: time})
 
-    def to_netcdf(self, fname, group=None, virtual=False, **kwargs):
+    def to_netcdf(self, fname, group=None, virtual=None, **kwargs):
         """
         Write Database contents to a netCDF file.
 
@@ -419,13 +426,16 @@ class Database:
             Path to the netCDF4 group in the given file to open.
         virtual : bool, optional
             Weather to write a virtual dataset. The Database data must be a DataSource
-            or a DataLayout. Default is False.
+            or a DataLayout. Default (None) is to try to write a virtual dataset if
+            possible.
 
         Raises
         ------
         ValueError
             _description_
         """
+        if virtual is None:
+            virtual = isinstance(self.data, (DataSource, DataLayout))
         data_vars = []
         mapping = ""
         for dim in self.coords:
@@ -566,6 +576,18 @@ class LocIndexer:
     def __setitem__(self, key, value):
         key = self.obj.coords.to_index(key)
         self.obj.__setitem__(key, value)
+
+
+class DimSizer(dict):
+    def __init__(self, obj):
+        super().__init__({dim: len(obj.coords[dim]) for dim in obj.dims})
+
+    def __getitem__(self, key):
+        if key == "first":
+            key = list(self.keys())[0]
+        if key == "last":
+            key = list(self.keys())[-1]
+        return super().__getitem__(key)
 
 
 def get_band_code(sampling_rate):

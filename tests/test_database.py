@@ -2,6 +2,7 @@ import os
 from tempfile import TemporaryDirectory
 
 import numpy as np
+import pytest
 
 import xdas
 from xdas.coordinates import Coordinates, DenseCoordinate, InterpCoordinate
@@ -26,6 +27,8 @@ class TestDatabase:
         assert db.ndim == 1
         assert db.shape == (9,)
         assert db.sizes == {"dim": 9}
+        assert db.sizes["first"] == 9
+        assert db.sizes["last"] == 9
         assert np.allclose(db.data, 0.1 * np.arange(9))
         assert np.all(np.equal(db.values, db.data))
         assert db.get_axis_num("dim") == 0
@@ -52,10 +55,26 @@ class TestDatabase:
         # assert db[0].data == -100.0
 
     def test_sel(self):
+        # interp
         db = self.generate()
         db.sel(dim=slice(2, 4))
+        assert db.sel(dim=225, method="nearest").values == 0.1
+        assert db.sel(dim=225, method="ffill").values == 0.1
+        assert db.sel(dim=225, method="bfill").values == 0.2
+        with pytest.raises(KeyError):
+            db.sel(dim=225, method=None)
+        assert db.sel(dim=slice(100.0, 300.0)).equals(db[0:3])
+        # assert db.sel(dim=slice(100.0, 300.0), inclusive=False).equals(db[0:2])
+        # dense
         db = self.generate(dense=True)
         db.sel(dim=slice(2, 4))
+        assert db.sel(dim=225, method="nearest").values == 0.1
+        assert db.sel(dim=225, method="ffill").values == 0.1
+        assert db.sel(dim=225, method="bfill").values == 0.2
+        with pytest.raises(KeyError):
+            db.sel(dim=225, method=None)
+        assert db.sel(dim=slice(100.0, 300.0)).equals(db[0:3])
+        assert db.sel(dim=slice(100.0, 300.0), inclusive=False).equals(db[0:2])
 
     def test_isel(self):
         db = generate()
