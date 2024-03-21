@@ -178,22 +178,18 @@ def defaulttree(depth):
 
 
 def open_mfdatabase(
-    paths,
-    engine="netcdf",
-    tolerance=np.timedelta64(0, "us"),
-    squeeze=True,
-    verbose=False,
+    paths, engine="netcdf", tolerance=None, squeeze=True, verbose=False
 ):
     """
     Open a multiple file database.
 
     Parameters
     ----------
-    paths: str or list
+    paths : str or list
         The path names given as a shell-style wildcards string or a list of paths.
-    engine: str
+    engine : str
         The engine to use to read the file.
-    tolerance: timedelta64
+    tolerance : float or timedelta64, optional
         The tolerance to consider that the end of a file is continuous with the begging
         of the following
 
@@ -240,12 +236,7 @@ def open_mfdatabase(
 
 
 def combine(
-    dcs,
-    dim="first",
-    tolerance=np.timedelta64(0, "ns"),
-    squeeze=False,
-    virtual=None,
-    verbose=False,
+    dcs, dim="first", tolerance=None, squeeze=False, virtual=None, verbose=False
 ):
     leaves = [dc for dc in dcs if isinstance(dc, list)]
     nodes = [dc for dc in dcs if isinstance(dc, dict)]
@@ -266,12 +257,7 @@ def combine(
 
 
 def aggregate(
-    dbs,
-    dim="first",
-    tolerance=np.timedelta64(0, "ns"),
-    squeeze=False,
-    virtual=None,
-    verbose=False,
+    dbs, dim="first", tolerance=None, squeeze=False, virtual=None, verbose=False
 ):
     dbs = sorted(dbs, key=lambda db: db[dim][0].values)
     out = []

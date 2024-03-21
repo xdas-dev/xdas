@@ -600,7 +600,7 @@ class InterpCoordinate(AbstractCoordinate):
     def simplify(self, tolerance=None):
         if tolerance is None:
             if np.issubdtype(self.dtype, np.datetime64):
-                tolerance = np.timedelta64(0, "us")
+                tolerance = np.timedelta64(0, "ns")
             else:
                 tolerance = 0.0
         tie_indices, tie_values = douglas_peucker(
@@ -670,7 +670,7 @@ def get_sampling_interval(db, dim):
 
 def is_strictly_increasing(x):
     if np.issubdtype(x.dtype, np.datetime64):
-        return np.all(np.diff(x) > np.timedelta64(0, "us"))
+        return np.all(np.diff(x) > np.timedelta64(0, "ns"))
     else:
         return np.all(np.diff(x) > 0)
 
