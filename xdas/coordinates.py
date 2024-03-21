@@ -573,20 +573,24 @@ class InterpCoordinate(AbstractCoordinate):
     def slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
         if start is not None:
             try:
-                start = self.get_indexer(start, method="bfill")
+                start_index = self.get_indexer(start, method="bfill")
             except KeyError:
-                start = len(self)
+                start_index = len(self)
         if stop is not None:
             try:
-                end = self.get_indexer(stop, method="ffill")
-                stop = end + 1
+                end_index = self.get_indexer(stop, method="ffill")
+                stop_index = end_index + 1
             except KeyError:
-                stop = 0
+                stop_index = 0
         if step is not None:
             raise NotImplementedError("cannot use step yet")
-        if (not endpoint) and (stop is not None) and (self[stop - 1].values == stop):
-            stop -= 1
-        return slice(start, stop)
+        if (
+            (not endpoint)
+            and (stop is not None)
+            and (self[stop_index - 1].values == stop)
+        ):
+            stop_index -= 1
+        return slice(start_index, stop_index)
 
     def decimate(self, q):
         tie_indices = (self.tie_indices // q) * q
