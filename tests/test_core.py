@@ -27,7 +27,8 @@ class TestCore:
             },
         )
 
-    def test_open_mfdatacollection(self): ...  # TODO
+    def test_open_mfdatacollection(self):
+        ...  # TODO
 
     def test_open_treedatacollection(self):
         with TemporaryDirectory() as dirpath:

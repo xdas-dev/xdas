@@ -250,7 +250,7 @@ class Database:
         indexers.update(indexers_kwargs)
         return self[indexers]
 
-    def sel(self, indexers=None, method=None, inclusive=True, **indexers_kwargs):
+    def sel(self, indexers=None, method=None, endpoint=True, **indexers_kwargs):
         """
         Return a new Database whose data is given by selecting index labels along the
         specified dimension(s).
@@ -275,7 +275,7 @@ class Database:
         if indexers is None:
             indexers = {}
         indexers.update(indexers_kwargs)
-        key = self.coords.to_index(indexers, method, inclusive)
+        key = self.coords.to_index(indexers, method, endpoint)
         return self[key]
 
     def copy(self, deep=True, data=None):

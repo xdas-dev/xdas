@@ -124,9 +124,6 @@ def open_treedatacollection(paths, engine="netcdf"):
             regex = regex.replace(placeholder, r".*")
     regex = re.compile(regex)
 
-    print(wildcard)
-    print(regex)
-
     tree = defaulttree(len(fields))
     for fname in fnames:
         match = regex.match(fname)

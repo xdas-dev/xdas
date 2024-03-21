@@ -64,7 +64,7 @@ class TestDatabase:
         with pytest.raises(KeyError):
             db.sel(dim=225, method=None)
         assert db.sel(dim=slice(100.0, 300.0)).equals(db[0:3])
-        # assert db.sel(dim=slice(100.0, 300.0), inclusive=False).equals(db[0:2])
+        assert db.sel(dim=slice(100.0, 300.0), endpoint=False).equals(db[0:2])
         # dense
         db = self.generate(dense=True)
         db.sel(dim=slice(2, 4))
@@ -74,7 +74,7 @@ class TestDatabase:
         with pytest.raises(KeyError):
             db.sel(dim=225, method=None)
         assert db.sel(dim=slice(100.0, 300.0)).equals(db[0:3])
-        assert db.sel(dim=slice(100.0, 300.0), inclusive=False).equals(db[0:2])
+        assert db.sel(dim=slice(100.0, 300.0), endpoint=False).equals(db[0:2])
 
     def test_isel(self):
         db = generate()

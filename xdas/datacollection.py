@@ -253,9 +253,9 @@ class DataMapping(AbstractDataCollection, dict):
             return False
         return True
 
-    def sel(self, indexers=None, method=None, inclusive=True, **indexers_kwargs):
+    def sel(self, indexers=None, method=None, endpoint=True, **indexers_kwargs):
         data = {
-            key: value.sel(indexers, method, inclusive, **indexers_kwargs)
+            key: value.sel(indexers, method, endpoint, **indexers_kwargs)
             for key, value in self.items()
         }
         data = {
@@ -320,9 +320,9 @@ class DataSequence(AbstractDataCollection, list):
             return False
         return True
 
-    def sel(self, indexers=None, method=None, inclusive=True, **indexers_kwargs):
+    def sel(self, indexers=None, method=None, endpoint=True, **indexers_kwargs):
         data = [
-            value.sel(indexers, method, inclusive, **indexers_kwargs) for value in self
+            value.sel(indexers, method, endpoint, **indexers_kwargs) for value in self
         ]
         data = [
             value
