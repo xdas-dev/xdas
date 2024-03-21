@@ -15,6 +15,37 @@ from .datacollection import DataCollection
 from .virtual import DataLayout, DataSource
 
 
+def open_mfdatacollection(paths):
+    if isinstance(paths, str):
+        paths = sorted(glob(paths))
+    elif isinstance(paths, list):
+        for path in paths:
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"could not find {path}")
+    else:
+        raise ValueError(
+            f"`paths` must be either a string or a list, found {type(paths)}"
+        )
+    if len(paths) == 0:
+        raise FileNotFoundError("no file to open")
+    if len(paths) > 100_000:
+        raise NotImplementedError(
+            "The maximum number of file that can be opened at once is for now limited "
+            "to 100 000."
+        )
+    with ProcessPoolExecutor() as executor:
+        futures = [executor.submit(open_datacollection, path) for path in paths]
+        dcs = [
+            future.result()
+            for future in tqdm(
+                as_completed(futures),
+                total=len(futures),
+                desc="Fetching metadata from files",
+            )
+        ]
+    return combine(dcs)
+
+
 def open_treedatacollection(paths, engine="netcdf"):
     """
     Open directory tree structures as data collections.
@@ -147,7 +178,11 @@ def defaulttree(depth):
 
 
 def open_mfdatabase(
-    paths, engine="netcdf", tolerance=np.timedelta64(0, "us"), squeeze=True
+    paths,
+    engine="netcdf",
+    tolerance=np.timedelta64(0, "us"),
+    squeeze=True,
+    verbose=False,
 ):
     """
     Open a multiple file database.
@@ -201,21 +236,24 @@ def open_mfdatabase(
                 desc="Fetching metadata from files",
             )
         ]
-    return aggregate(dbs, "time", tolerance, True, True, squeeze)
+    return aggregate(dbs, "time", tolerance, squeeze, None, verbose)
 
 
-def combine(dcs):
+def combine(
+    dcs,
+    dim="first",
+    tolerance=np.timedelta64(0, "ns"),
+    squeeze=False,
+    virtual=None,
+    verbose=False,
+):
     leaves = [dc for dc in dcs if isinstance(dc, list)]
     nodes = [dc for dc in dcs if isinstance(dc, dict)]
     if leaves and not nodes:
-        return aggregate(
-            [db for dc in leaves for db in dc],
-            "time",
-            np.timedelta64(0, "ns"),
-            True,
-            False,
-            True,
-        )
+        dbs = [db for dc in leaves for db in dc]
+        dc = aggregate(dbs, dim, tolerance, squeeze, virtual, verbose)
+        dc.name = leaves[0].name
+        return dc
     elif nodes and not leaves:
         (name,) = set(dc.name for dc in nodes)
         keys = sorted(set.union(*[set(dc.keys()) for dc in nodes]))
@@ -227,7 +265,14 @@ def combine(dcs):
         raise NotImplementedError("cannot combine mixed node/leave levels for now")
 
 
-def aggregate(dbs, dim, tolerance, virtual, verbose, squeeze):
+def aggregate(
+    dbs,
+    dim="first",
+    tolerance=np.timedelta64(0, "ns"),
+    squeeze=False,
+    virtual=None,
+    verbose=False,
+):
     dbs = sorted(dbs, key=lambda db: db[dim][0].values)
     out = []
     bag = []
@@ -251,7 +296,7 @@ def aggregate(dbs, dim, tolerance, virtual, verbose, squeeze):
         return collection
 
 
-def concatenate(dbs, dim="time", tolerance=None, virtual=None, verbose=None):
+def concatenate(dbs, dim="first", tolerance=None, virtual=None, verbose=None):
     """
     Concatenate several databases along a given dimension.
 
@@ -275,6 +320,7 @@ def concatenate(dbs, dim="time", tolerance=None, virtual=None, verbose=None):
     """
     dbs = sorted(dbs, key=lambda db: db[dim][0].values)
     axis = dbs[0].get_axis_num(dim)
+    dim = dbs[0].dims[axis]
     dims = dbs[0].dims
     dtype = dbs[0].dtype
     shape = tuple(

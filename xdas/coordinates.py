@@ -8,12 +8,12 @@ from xinterp import forward, inverse
 
 def wraps_first_last(func):
     @wraps(func)
-    def wrapper(self, dim):
+    def wrapper(self, dim, *args, **kwargs):
         if dim == "first":
             dim = self.dims[0]
         if dim == "last":
             dim = self.dims[-1]
-        return func(self, dim)
+        return func(self, dim, *args, **kwargs)
 
     return wrapper
 
@@ -73,6 +73,10 @@ class Coordinates(dict):
     @wraps_first_last
     def __getitem__(self, key):
         return super().__getitem__(key)
+
+    @wraps_first_last
+    def __setitem__(self, key, value):
+        return super().__setitem__(key, value)
 
     def __repr__(self):
         lines = ["Coordinates:"]
