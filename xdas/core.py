@@ -15,17 +15,30 @@ from .datacollection import DataCollection
 from .virtual import DataLayout, DataSource
 
 
-def open_mfdatacollection(paths, engine="netcdf"):
+def open_treedatacollection(paths, engine="netcdf"):
     """
     Open directory tree structures as data collections.
+
+    The resulting data collection will be a nesting of dicts down to the lower level
+    which will be a list of databases.
 
     Parameters
     ----------
     paths : str
-        A path descriptor provided as a formatable string with `{field}` placeholders
-        that indicates how to map each level or the tree structure to a given field of
-        the data collection object. Empty `{}` placeholders indicates the lowest level
-        that will be concatenated into databases using `open_mfdatabase`.
+        A path descriptor provided as a string containings placeholders that describes
+        the tree structure.
+        Two flavours of placeholder can be provided:
+        - `{field}`: this level of the tree will behave as a dict. It will use the
+        directory/file names as keys.
+        - `[field]`: this level of the tree will behave as a list. The directory/file
+        names are not considered (as if the placeholder was replaced by a `*`) and
+        files are gathered and combined as if using `open_mfdatabase`.
+
+        Several dict placeholders with different names can be provided. They must be
+        followed by one or more list placeholders that must share a unique name.
+
+    engine: str
+        The type of file to open.
 
     Returns
     -------
@@ -35,36 +48,59 @@ def open_mfdatacollection(paths, engine="netcdf"):
     Examples
     --------
     >>> import xdas
-    >>> paths = "/data/{location}/{cable}/{}/proc/{}.h5"
+    >>> paths = "/data/{node}/{cable}/[acquisition]/proc/[acquisition].h5"
     >>> xdas.open_mfdatacollection(paths, engine="asn") # doctest: +SKIP
-    Location:
-        SER:
-            Cable:
-            N: <xdas.Database (time: ..., distance: ...)>
-            S: <xdas.Database (time: ..., distance: ...)>
+    Node:
+      CCN:
+        Cable:
+          N:
+            Acquisition:
+              0: <xdas.Database (time: ..., distance: ...)>
+              1: <xdas.Database (time: ..., distance: ...)>
+      SER:
+        Cable:
+          N:
+            Acquisition:
+              0: <xdas.Database (time: ..., distance: ...)>
+          S:
+            Acquisition:
+              0: <xdas.Database (time: ..., distance: ...)>
+              1: <xdas.Database (time: ..., distance: ...)>
+              2: <xdas.Database (time: ..., distance: ...)>
+
 
     """
-    place_holders = list(
-        field for (_, field, _, _) in Formatter().parse(paths) if field is not None
-    )
-    fields = tuple(field for field in place_holders if not field == "")
-    nargs = len(place_holders) - len(fields)
-    nkwargs = len(fields)
+    placeholders = re.findall(r"[\{\[].*?[\}\]]", paths)
 
-    args = ["*"] * nargs
-    kwargs = dict(zip(fields, ["*"] * nkwargs))
-    wildcard = paths.format(*args, **kwargs)
+    seen = set()
+    fields = tuple(
+        placeholder[1:-1]
+        for placeholder in placeholders
+        if not (placeholder in seen or seen.add(placeholder))
+    )
+
+    wildcard = paths
+    for placeholder in placeholders:
+        wildcard = wildcard.replace(placeholder, "*")
     fnames = sorted(glob(wildcard))
 
-    args = [".*"] * nargs
-    kwargs = {field: f"(?P<{field}>.+)" for field in fields}
-    regex = re.compile(paths.format(*args, **kwargs))
+    regex = paths
+    regex = regex.replace(".", r"\.")
+    for placeholder in placeholders:
+        if placeholder.startswith("{") and placeholder.endswith("}"):
+            regex = regex.replace(placeholder, f"(?P<{placeholder[1:-1]}>.+)")
+        else:
+            regex = regex.replace(placeholder, r".*")
+    regex = re.compile(regex)
+
+    print(wildcard)
+    print(regex)
 
     tree = defaulttree(len(fields))
     for fname in fnames:
-        match = regex.search(fname)
+        match = regex.match(fname)
         bag = tree
-        for field in fields:
+        for field in fields[:-1]:
             bag = bag[match.group(field)]
         bag.append(fname)
 
@@ -92,10 +128,11 @@ def collect(tree, fields, engine="netcdf"):
     fields = list(fields)
     name = fields.pop(0)
     collection = DataCollection({}, name=name)
-
     for key, value in tree.items():
         if isinstance(value, list):
-            collection[key] = open_mfdatabase(value, engine)
+            dc = open_mfdatabase(value, engine, squeeze=False)
+            dc.name = fields[0]
+            collection[key] = dc
         else:
             collection[key] = collect(value, fields, engine)
     return collection
@@ -103,13 +140,15 @@ def collect(tree, fields, engine="netcdf"):
 
 def defaulttree(depth):
     """Generate a default tree of lists with given depth."""
-    if depth == 0:
+    if depth == 1:
         return list()
     else:
         return defaultdict(lambda: defaulttree(depth - 1))
 
 
-def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
+def open_mfdatabase(
+    paths, engine="netcdf", tolerance=np.timedelta64(0, "us"), squeeze=True
+):
     """
     Open a multiple file database.
 
@@ -162,13 +201,11 @@ def open_mfdatabase(paths, engine="netcdf", tolerance=np.timedelta64(0, "us")):
                 desc="Fetching metadata from files",
             )
         ]
-    return aggregate(dbs, "time", tolerance, True, True, True)
+    return aggregate(dbs, "time", tolerance, True, True, squeeze)
 
 
 def combine(dcs):
-    leaves = [
-        dc if isinstance(dc, list) else [dc] for dc in dcs if not isinstance(dc, dict)
-    ]
+    leaves = [dc for dc in dcs if isinstance(dc, list)]
     nodes = [dc for dc in dcs if isinstance(dc, dict)]
     if leaves and not nodes:
         return aggregate(

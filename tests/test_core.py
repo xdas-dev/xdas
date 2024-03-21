@@ -27,7 +27,7 @@ class TestCore:
             },
         )
 
-    def test_open_mfdatacollection(self):
+    def test_open_treedatacollection(self):
         with TemporaryDirectory() as dirpath:
             keys = ["LOC01", "LOC02"]
             dirnames = [os.path.join(dirpath, key) for key in keys]
@@ -36,12 +36,12 @@ class TestCore:
                 for idx, db in enumerate(generate(nchunk=3), start=1):
                     db.to_netcdf(os.path.join(dirname, f"{idx:03d}.nc"))
             db = generate()
-            dc = xdas.open_mfdatacollection(
-                os.path.join(dirpath, "{location}", "00{}.nc")
+            dc = xdas.open_treedatacollection(
+                os.path.join(dirpath, "{node}", "00[acquisition].nc")
             )
             assert list(dc.keys()) == keys
             for key in keys:
-                assert dc[key].load().equals(db)
+                assert dc[key][0].load().equals(db)
 
     def test_open_mfdatabase(self):
         with TemporaryDirectory() as dirpath:
