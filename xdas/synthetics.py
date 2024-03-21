@@ -3,7 +3,8 @@ import os
 import numpy as np
 import scipy.signal as sp
 
-import xdas
+from .core import chunk
+from .database import Database
 
 
 def generate(
@@ -77,7 +78,7 @@ def generate(
     data = np.diff(data, prepend=0, axis=0)
 
     # pack data and coordinates as Database or DataCollection if chunking.
-    db = xdas.Database(
+    db = Database(
         data=data,
         coords={
             "time": {
@@ -94,23 +95,3 @@ def generate(
         return chunk(db, nchunk)
     else:
         return db
-
-
-def chunk(db, nchunk, dim="first"):
-    axis = db.get_axis_num(dim)
-    nsamples = db.shape[axis]
-    if not isinstance(nchunk, int):
-        raise TypeError("`n` must be an integer")
-    if nchunk <= 0:
-        raise ValueError("`n` must be larger than 0")
-    if nchunk >= nsamples:
-        raise ValueError("`n` must be smaller than the number of samples")
-    chunk_size, extras = divmod(nsamples, nchunk)
-    chunks = [0] + extras * [chunk_size + 1] + (nchunk - extras) * [chunk_size]
-    div_points = np.cumsum(chunks, dtype=np.int64)
-    return xdas.DataCollection(
-        [
-            db.isel({dim: slice(div_points[idx], div_points[idx + 1])})
-            for idx in range(nchunk)
-        ]
-    )

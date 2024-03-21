@@ -448,3 +448,36 @@ def asdatabase(obj, tolerance=None):
         return Database.from_xarray(obj)
     else:
         raise ValueError("Cannot convert to database.")
+
+
+def split(db, dim="first"):
+    if not isinstance(db[dim], InterpCoordinate):
+        raise TypeError("the dimension to split must have as type `InterpCoordinate`.")
+    (points,) = np.nonzero(np.diff(db[dim].tie_indices, prepend=[0]) == 1)
+    indices = [db[dim].tie_indices[point] for point in points]
+    div_indices = [0] + indices + [db.sizes[dim]]
+    return DataCollection(
+        [
+            db.isel({dim: slice(div_indices[idx], div_indices[idx + 1])})
+            for idx in range(len(div_indices) - 1)
+        ]
+    )
+
+
+def chunk(db, nchunk, dim="first"):
+    nsamples = db.sizes[dim]
+    if not isinstance(nchunk, int):
+        raise TypeError("`n` must be an integer")
+    if nchunk <= 0:
+        raise ValueError("`n` must be larger than 0")
+    if nchunk >= nsamples:
+        raise ValueError("`n` must be smaller than the number of samples")
+    chunk_size, extras = divmod(nsamples, nchunk)
+    chunks = [0] + extras * [chunk_size + 1] + (nchunk - extras) * [chunk_size]
+    div_points = np.cumsum(chunks, dtype=np.int64)
+    return DataCollection(
+        [
+            db.isel({dim: slice(div_points[idx], div_points[idx + 1])})
+            for idx in range(nchunk)
+        ]
+    )

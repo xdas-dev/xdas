@@ -122,3 +122,19 @@ class TestCore:
         assert np.array_equal(out.data, db.data)
         for dim in db.dims:
             assert np.array_equal(out[dim].values, db[dim].values)
+
+    def test_split(self):
+        db = xdas.Database(
+            np.ones(30),
+            {
+                "time": {
+                    "tie_indices": [0, 9, 10, 19, 20, 29],
+                    "tie_values": [0.0, 9.0, 20.0, 29.0, 40.0, 49.0],
+                },
+            },
+        )
+        assert xdas.concatenate(xdas.split(db)).equals(db)
+
+    def test_core(self):
+        db = generate()
+        assert xdas.concatenate(xdas.chunk(db, 3)).equals(db)

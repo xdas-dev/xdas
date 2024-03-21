@@ -576,12 +576,16 @@ class InterpCoordinate(AbstractCoordinate):
                 start_index = self.get_indexer(start, method="bfill")
             except KeyError:
                 start_index = len(self)
+        else:
+            start_index = None
         if stop is not None:
             try:
                 end_index = self.get_indexer(stop, method="ffill")
                 stop_index = end_index + 1
             except KeyError:
                 stop_index = 0
+        else:
+            stop_index = None
         if step is not None:
             raise NotImplementedError("cannot use step yet")
         if (
