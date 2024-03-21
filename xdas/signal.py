@@ -5,7 +5,7 @@ import numpy as np
 import scipy.signal as sp
 
 from . import config
-from .compose import atomize
+from .compose import atomized
 from .coordinates import Coordinate, get_sampling_interval
 from .database import Database
 
@@ -103,7 +103,7 @@ def multithreaded_concatenate(arrays, axis=0, out=None, dtype=None, n_workers=No
     return out
 
 
-@atomize
+@atomized
 def detrend(db, type="linear", dim="last"):
     """
     Detrend data along given dimension
@@ -128,7 +128,7 @@ def detrend(db, type="linear", dim="last"):
     return db.copy(data=data)
 
 
-@atomize
+@atomized
 def taper(db, window="hann", fftbins=False, dim="last"):
     """
     Apply a tapering window along the given dimension
@@ -158,7 +158,7 @@ def taper(db, window="hann", fftbins=False, dim="last"):
     return db.copy(data=data)
 
 
-@atomize
+@atomized
 def filter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=None):
     """
     SOS IIR filtering along given dimension.
@@ -194,7 +194,7 @@ def filter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=Non
     return db.copy(data=data)
 
 
-@atomize
+@atomized
 def hilbert(db, N=None, dim="last", parallel=None):
     """
     Compute the analytic signal, using the Hilbert transform.
@@ -245,7 +245,7 @@ def hilbert(db, N=None, dim="last", parallel=None):
     return db.copy(data=data)
 
 
-@atomize
+@atomized
 def resample(db, num, dim="last", window=None, domain="time"):
     """
     Resample db to num samples using Fourier method along the given dimension.
@@ -308,7 +308,7 @@ def resample(db, num, dim="last", window=None, domain="time"):
     return Database(data, coords, db.dims, db.name, db.attrs)
 
 
-@atomize
+@atomized
 def resample_poly(
     db, up, down, dim="last", window=("kaiser", 5.0), padtype="constant", cval=None
 ):
@@ -398,7 +398,7 @@ def resample_poly(
     return Database(data, coords, db.dims, db.name, db.attrs)
 
 
-@atomize
+@atomized
 def lfilter(b, a, db, dim="last", state=None, parallel=None):
     """
     Filter data along one-dimension with an IIR or FIR filter.
@@ -473,7 +473,7 @@ def lfilter(b, a, db, dim="last", state=None, parallel=None):
         return db.copy(data=data), state
 
 
-@atomize
+@atomized
 def filtfilt(
     b,
     a,
@@ -566,7 +566,7 @@ def filtfilt(
     return db.copy(data=data)
 
 
-@atomize
+@atomized
 def sosfilt(sos, db, dim="last", state=None, parallel=None):
     """
     Filter data along one dimension using cascaded second-order sections.
@@ -644,7 +644,7 @@ def sosfilt(sos, db, dim="last", state=None, parallel=None):
         return db.copy(data=data), state
 
 
-@atomize
+@atomized
 def sosfiltfilt(sos, db, dim="last", padtype="odd", padlen=None, parallel=None):
     """
     A forward-backward digital filter using cascaded second-order sections.
@@ -718,7 +718,7 @@ def sosfiltfilt(sos, db, dim="last", padtype="odd", padlen=None, parallel=None):
     return db.copy(data=data)
 
 
-@atomize
+@atomized
 def decimate(db, q, n=None, ftype="iir", zero_phase=None, dim="last", parallel=None):
     """
     Downsample the signal after applying an anti-aliasing filter.
@@ -760,7 +760,7 @@ def decimate(db, q, n=None, ftype="iir", zero_phase=None, dim="last", parallel=N
     return db[{dim: slice(None, None, q)}].copy(data=data)
 
 
-@atomize
+@atomized
 def integrate(db, midpoints=False, dim="last"):
     """
     Integrate along a given dimension.
@@ -789,7 +789,7 @@ def integrate(db, midpoints=False, dim="last"):
     return out
 
 
-@atomize
+@atomized
 def differentiate(db, midpoints=False, dim="last"):
     """
     Differentiate along a given dimension.
@@ -818,7 +818,7 @@ def differentiate(db, midpoints=False, dim="last"):
     return out
 
 
-@atomize
+@atomized
 def segment_mean_removal(db, limits, window="hann", dim="last"):
     """
     Piecewise mean removal.
@@ -853,7 +853,7 @@ def segment_mean_removal(db, limits, window="hann", dim="last"):
     return out
 
 
-@atomize
+@atomized
 def sliding_mean_removal(db, wlen, window="hann", pad_mode="reflect", dim="last"):
     """
     Sliding mean removal.
@@ -892,7 +892,7 @@ def sliding_mean_removal(db, wlen, window="hann", pad_mode="reflect", dim="last"
     return db.copy(data=data)
 
 
-@atomize
+@atomized
 def medfilt(db, kernel_dim):
     """
     Perform a median filter along given dimensions
@@ -946,7 +946,7 @@ def medfilt(db, kernel_dim):
     return db.copy(data=data)
 
 
-@atomize
+@atomized
 def fft(db, n=None, dim={"last": "frequency"}, norm=None):
     ((olddim, newdim),) = dim.items()
     olddim = parse_dim(db, olddim)
@@ -964,7 +964,7 @@ def fft(db, n=None, dim={"last": "frequency"}, norm=None):
     return Database(data, coords, dims, db.name, db.attrs)
 
 
-@atomize
+@atomized
 def rfft(db, n=None, dim={"last": "frequency"}, norm=None):
     ((olddim, newdim),) = dim.items()
     olddim = parse_dim(db, olddim)

@@ -1,6 +1,5 @@
 import os
 from fnmatch import fnmatch
-from functools import wraps
 
 import h5py
 
@@ -344,20 +343,3 @@ def get_depth(group):
 def uniquifiy(seq):
     seen = set()
     return tuple(x for x in seq if x not in seen and not seen.add(x))
-
-
-def maps_on_collection(func):
-    @wraps(func)
-    def wrapper(obj, *args, **kwargs):
-        if isinstance(obj, DataSequence):
-            return DataSequence(
-                [wrapper(value, *args, **kwargs) for value in obj], obj.name
-            )
-        elif isinstance(obj, DataMapping):
-            return DataMapping(
-                {key: wrapper(obj[key], *args, **kwargs) for key in obj}, obj.name
-            )
-        else:
-            return func(obj, *args, **kwargs)
-
-    return wrapper

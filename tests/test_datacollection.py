@@ -5,7 +5,7 @@ import h5py
 import pytest
 
 import xdas
-from xdas.datacollection import get_depth, maps_on_collection
+from xdas.datacollection import get_depth
 from xdas.synthetics import generate
 
 
@@ -113,16 +113,3 @@ class TestDataCollection:
         db = generate()
         dc = self.nest(db)
         assert dc.fields == ("instrument", "acquisition")
-
-    def test_maps_on_collection(self):
-        @maps_on_collection
-        def double(db):
-            return db * 2
-
-        db = generate()
-        dc = xdas.DataCollection(("node", {"DAS": ("acquisition", [db, db])}))
-        expected = xdas.DataCollection(
-            ("node", {"DAS": ("acquisition", [db * 2, db * 2])})
-        )
-        result = double(dc)
-        assert result.equals(expected)

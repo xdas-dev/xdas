@@ -2,8 +2,9 @@ import os
 import re
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from functools import wraps
 from glob import glob
-from string import Formatter
+from inspect import signature
 
 import numpy as np
 import xarray as xr
@@ -11,7 +12,7 @@ from tqdm import tqdm
 
 from .coordinates import InterpCoordinate, get_sampling_interval
 from .database import Database
-from .datacollection import DataCollection
+from .datacollection import DataCollection, DataMapping, DataSequence
 from .virtual import DataLayout, DataSource
 
 
@@ -481,3 +482,44 @@ def chunk(db, nchunk, dim="first"):
             for idx in range(nchunk)
         ]
     )
+
+
+def collects(func):
+    @wraps(func)
+    def wrapper(obj, *args, **kwargs):
+        if isinstance(obj, DataSequence):
+            return DataSequence(
+                [wrapper(value, *args, **kwargs) for value in obj], obj.name
+            )
+        elif isinstance(obj, DataMapping):
+            return DataMapping(
+                {key: wrapper(obj[key], *args, **kwargs) for key in obj}, obj.name
+            )
+        else:
+            return func(obj, *args, **kwargs)
+
+    wrapper.__collects__ = True
+
+    return wrapper
+
+
+def splits(func):
+    if not hasattr(func, "__collects__"):
+        raise TypeError("callable must be able to `collects`")
+
+    dim = signature(func).parameters["dim"].default
+    print(dim)
+    print(dim)
+    print(dim)
+    print(dim)
+    print(dim)
+
+    @wraps(func)
+    def wrapper(db, *args, dim=dim, **kwargs):
+        dc = split(db, dim)
+        dc = func(dc, *args, dim=dim, **kwargs)
+        return concatenate(dc, dim)
+
+    wrapper.__splits__ = True
+
+    return wrapper

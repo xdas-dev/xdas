@@ -283,7 +283,7 @@ class StateAtom(Atom):
             self.state[key] = "init"
 
 
-def atomize(func):
+def atomized(func):
     """
     Make the function return an Atom if `...` is passed.
 

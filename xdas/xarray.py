@@ -1,6 +1,6 @@
 import numpy as np
 
-from .compose import atomize
+from .compose import atomized
 
 XARRAY_HANDLED_METHODS = {}
 
@@ -14,7 +14,7 @@ def implements(name=None):
     return decorator
 
 
-@atomize
+@atomized
 @implements()
 def cumprod(db, dim="last", *, skipna=True, **kwargs):
     """
@@ -45,7 +45,7 @@ def cumprod(db, dim="last", *, skipna=True, **kwargs):
         return np.cumprod(db, axis, **kwargs)
 
 
-@atomize
+@atomized
 @implements()
 def cumsum(db, dim="last", *, skipna=True, **kwargs):
     """
@@ -76,7 +76,7 @@ def cumsum(db, dim="last", *, skipna=True, **kwargs):
         return np.cumsum(db, axis, **kwargs)
 
 
-@atomize
+@atomized
 @implements()
 def all(db, dim=None, **kwargs):
     """
@@ -106,7 +106,7 @@ def all(db, dim=None, **kwargs):
     return np.all(db, axis, **kwargs)
 
 
-@atomize
+@atomized
 @implements()
 def any(db, dim=None, **kwargs):
     """
@@ -139,7 +139,7 @@ def any(db, dim=None, **kwargs):
 import numpy as np
 
 
-@atomize
+@atomized
 @implements()
 def max(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -175,7 +175,7 @@ def max(db, dim=None, *, skipna=True, **kwargs):
         return np.nanmax(db, axis, **kwargs)
 
 
-@atomize
+@atomized
 @implements()
 def min(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -211,7 +211,7 @@ def min(db, dim=None, *, skipna=True, **kwargs):
         return np.nanmin(db, axis, **kwargs)
 
 
-@atomize
+@atomized
 @implements()
 def argmax(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -248,7 +248,7 @@ def argmax(db, dim=None, *, skipna=True, **kwargs):
         return np.nanargmax(db, axis, **kwargs)
 
 
-@atomize
+@atomized
 @implements()
 def argmin(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -285,7 +285,7 @@ def argmin(db, dim=None, *, skipna=True, **kwargs):
         return np.nanargmin(db, axis, **kwargs)
 
 
-@atomize
+@atomized
 @implements()
 def median(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -321,7 +321,7 @@ def median(db, dim=None, *, skipna=True, **kwargs):
         return np.nanmedian(db, axis, **kwargs)
 
 
-@atomize
+@atomized
 @implements()
 def ptp(db, dim=None, **kwargs):
     """
@@ -354,7 +354,7 @@ def ptp(db, dim=None, **kwargs):
 import numpy as np
 
 
-@atomize
+@atomized
 @implements()
 def mean(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -390,7 +390,7 @@ def mean(db, dim=None, *, skipna=True, **kwargs):
         return np.nanmean(db, axis, **kwargs)
 
 
-@atomize
+@atomized
 @implements()
 def prod(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -426,7 +426,7 @@ def prod(db, dim=None, *, skipna=True, **kwargs):
         return np.nanprod(db, axis, **kwargs)
 
 
-@atomize
+@atomized
 @implements()
 def std(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -463,7 +463,7 @@ def std(db, dim=None, *, skipna=True, **kwargs):
         return np.nanstd(db, axis, **kwargs)
 
 
-@atomize
+@atomized
 @implements()
 def sum(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -499,7 +499,7 @@ def sum(db, dim=None, *, skipna=True, **kwargs):
         return np.nansum(db, axis, **kwargs)
 
 
-@atomize
+@atomized
 @implements()
 def var(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -535,7 +535,7 @@ def var(db, dim=None, *, skipna=True, **kwargs):
         return np.nanvar(db, axis, **kwargs)
 
 
-@atomize
+@atomized
 @implements()
 def percentile(db, q, dim=None, *, skipna=True, **kwargs):
     """
@@ -573,7 +573,7 @@ def percentile(db, q, dim=None, *, skipna=True, **kwargs):
         return np.nanpercentile(db, q, axis, **kwargs)
 
 
-@atomize
+@atomized
 @implements()
 def quantile(db, q, dim=None, *, skipna=True, **kwargs):
     """
@@ -611,7 +611,7 @@ def quantile(db, q, dim=None, *, skipna=True, **kwargs):
         return np.nanquantile(db, q, axis, **kwargs)
 
 
-@atomize
+@atomized
 @implements()
 def average(db, dim=None, weights=None, **kwargs):
     """
@@ -644,7 +644,7 @@ def average(db, dim=None, weights=None, **kwargs):
     return np.average(db, axis, weights, **kwargs)
 
 
-@atomize
+@atomized
 @implements()
 def count_nonzero(db, dim=None, **kwargs):
     """
@@ -674,7 +674,7 @@ def count_nonzero(db, dim=None, **kwargs):
     return np.count_nonzero(db, axis, **kwargs)
 
 
-@atomize
+@atomized
 @implements()
 def diff(db, dim, n=1, *, label="upper"):
     """

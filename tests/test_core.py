@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 import xdas
+from xdas.core import collects, splits
 from xdas.synthetics import generate
 
 
@@ -135,6 +136,34 @@ class TestCore:
         )
         assert xdas.concatenate(xdas.split(db)).equals(db)
 
-    def test_core(self):
+    def test_chunk(self):
         db = generate()
         assert xdas.concatenate(xdas.chunk(db, 3)).equals(db)
+
+    def test_collects(self):
+        @collects
+        def double(db):
+            return db * 2
+
+        db = generate()
+        dc = xdas.DataCollection(("node", {"DAS": ("acquisition", [db, db])}))
+        expected = xdas.DataCollection(
+            ("node", {"DAS": ("acquisition", [db * 2, db * 2])})
+        )
+        result = double(dc)
+        assert result.equals(expected)
+
+    def test_spits(self):
+        @splits
+        @collects
+        def diff(db, dim="last"):
+            return db.diff(dim=dim)
+
+        db1 = generate(starttime="2023-01-01T00:00:00")
+        db2 = generate(starttime="2023-01-01T00:00:10")
+        db = xdas.concatenate([db1, db2])
+        result = diff(db, dim="time")
+        naive = db.diff("time")
+        expected = xdas.concatenate([db1.diff("time"), db2.diff("time")])
+        assert not result.equals(naive)
+        assert result.equals(expected)
