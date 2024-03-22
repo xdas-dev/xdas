@@ -135,6 +135,7 @@ class TestCore:
             },
         )
         assert xdas.concatenate(xdas.split(db)).equals(db)
+        assert xdas.split(db, tolerance=20.0)[0].equals(db)
 
     def test_chunk(self):
         db = generate()
@@ -153,7 +154,7 @@ class TestCore:
         result = double(dc)
         assert result.equals(expected)
 
-    def test_spits(self):
+    def test_splits(self):
         @splits
         @collects
         def diff(db, dim="last"):

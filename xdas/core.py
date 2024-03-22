@@ -451,11 +451,12 @@ def asdatabase(obj, tolerance=None):
         raise ValueError("Cannot convert to database.")
 
 
-def split(db, dim="first"):
+def split(db, dim="first", tolerance=None):
     if not isinstance(db[dim], InterpCoordinate):
         raise TypeError("the dimension to split must have as type `InterpCoordinate`.")
-    (points,) = np.nonzero(np.diff(db[dim].tie_indices, prepend=[0]) == 1)
-    indices = [db[dim].tie_indices[point] for point in points]
+    coord = db[dim].simplify(tolerance)
+    (points,) = np.nonzero(np.diff(coord.tie_indices, prepend=[0]) == 1)
+    indices = [coord.tie_indices[point] for point in points]
     div_indices = [0] + indices + [db.sizes[dim]]
     return DataCollection(
         [
@@ -505,14 +506,9 @@ def collects(func):
 
 def splits(func):
     if not hasattr(func, "__collects__"):
-        raise TypeError("callable must be able to `collects`")
+        raise TypeError("callable must be able to `collect`")
 
     dim = signature(func).parameters["dim"].default
-    print(dim)
-    print(dim)
-    print(dim)
-    print(dim)
-    print(dim)
 
     @wraps(func)
     def wrapper(db, *args, dim=dim, **kwargs):
