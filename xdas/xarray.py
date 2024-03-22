@@ -694,7 +694,7 @@ def count_nonzero(db, dim=None, **kwargs):
 
 
 @atomized
-#@splits()
+# @splits()
 @collects()
 @implements()
 def diff(db, dim, n=1, *, label="upper"):

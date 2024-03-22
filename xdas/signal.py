@@ -1,14 +1,11 @@
-import os
-from concurrent.futures import ThreadPoolExecutor
-
 import numpy as np
 import scipy.signal as sp
 
-from . import config
 from .compose import atomized
 from .coordinates import Coordinate, get_sampling_interval
 from .core import collects, splits
 from .database import Database
+from .parallel import parallelize
 
 
 def parse_dim(db, dim):
@@ -23,89 +20,8 @@ def parse_dim(db, dim):
             raise ValueError(f"{dim} not in db.dims")
 
 
-def parallelize(func, axis, parallel):
-    n_workers = get_workers_count(parallel)
-    if n_workers == 1:
-        return func
-    else:
-        return multithread_along_axis(func, int(axis == 0), n_workers)
-
-
-def get_workers_count(parallel):
-    if parallel is None:
-        return config.get("n_workers")
-    elif isinstance(parallel, bool):
-        if parallel:
-            return os.cpu_count()
-        else:
-            return 1
-    elif isinstance(parallel, int):
-        return parallel
-    else:
-        raise TypeError("`parallel` must be either bool or int.")
-
-
-def multithread_along_axis(func, axis, n_workers):
-    def wrapper(x, *args, **kwargs):
-        def fn(x):
-            return func(x, *args, **kwargs)
-
-        xs = np.array_split(x, n_workers, axis)
-        with ThreadPoolExecutor(n_workers) as executor:
-            ys = list(executor.map(fn, xs))
-        return multithreaded_concatenate(ys, axis, n_workers=n_workers)
-
-    return wrapper
-
-
-def multithreaded_concatenate(arrays, axis=0, out=None, dtype=None, n_workers=None):
-    arrays = [np.asarray(array, dtype) for array in arrays]
-
-    ndim = set(array.ndim for array in arrays)
-    if len(ndim) == 1:
-        (ndim,) = ndim
-    else:
-        raise ValueError("arrays must have the same number of dimensions.")
-
-    dtype = set(array.dtype for array in arrays)
-    if len(dtype) == 1:
-        (dtype,) = dtype
-    else:
-        raise ValueError("arrays must have the same dtype.")
-
-    shapes = [list(array.shape) for array in arrays]
-    section_sizes = [shape.pop(axis) for shape in shapes]
-    subshape = set([tuple(shape) for shape in shapes])
-    if len(subshape) == 1:
-        (subshape,) = subshape
-    else:
-        raise ValueError("arrays must have the same shape on axes other than `axis`.")
-    shape = list(subshape)
-    shape.insert(axis, sum(section_sizes))
-    shape = tuple(shape)
-
-    if out is None:
-        out = np.empty(shape, dtype=dtype)
-    else:
-        if not (out.ndim == ndim and out.dtype == dtype, out.shape == shape):
-            raise ValueError("`out` does not match with provided arrays.")
-
-    div_points = np.cumsum([0] + section_sizes, dtype=int)
-
-    with ThreadPoolExecutor(n_workers) as executor:
-        for idx, array in enumerate(arrays):
-            start = div_points[idx]
-            end = div_points[idx + 1]
-            slices = tuple(
-                slice(start, end) if n == axis else slice(None) for n in range(ndim)
-            )
-            executor.submit(out.__setitem__, slices, array)
-
-    return out
-
-
 @atomized
-#@splits(dimpos=2)
+# @splits(dimpos=2)
 @collects()
 def detrend(db, type="linear", dim="last"):
     """
@@ -137,7 +53,7 @@ def detrend(db, type="linear", dim="last"):
 
 
 @atomized
-#@splits(dimpos=3)
+# @splits(dimpos=3)
 @collects()
 def taper(db, window="hann", fftbins=False, dim="last"):
     """
@@ -169,7 +85,7 @@ def taper(db, window="hann", fftbins=False, dim="last"):
 
 
 @atomized
-#@splits(dimpos=5)
+# @splits(dimpos=5)
 @collects()
 def filter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=None):
     """
@@ -198,16 +114,16 @@ def filter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=Non
     sos = sp.iirfilter(corners, freq, btype=btype, ftype="butter", output="sos", fs=fs)
     if zerophase:
         func = lambda x, sos, axis: sp.sosfiltfilt(sos, x, axis)
-        func = parallelize(func, axis, parallel)
+        func = parallelize(axis, parallel)(func)
     else:
         func = lambda x, sos, axis: sp.sosfilt(sos, x, axis)
-        func = parallelize(func, axis, parallel)
+        func = parallelize(axis, parallel)(func)
     data = func(db.values, sos, axis=axis)
     return db.copy(data=data)
 
 
 @atomized
-#@splits(dimpos=2)
+# @splits(dimpos=2)
 @collects()
 def hilbert(db, N=None, dim="last", parallel=None):
     """
@@ -258,13 +174,13 @@ def hilbert(db, N=None, dim="last", parallel=None):
     """
     dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
-    func = parallelize(sp.hilbert, axis, parallel)
+    func = parallelize(axis, parallel)(sp.hilbert)
     data = func(db.values, N, axis)
     return db.copy(data=data)
 
 
 @atomized
-#@splits(dimpos=2)
+# @splits(dimpos=2)
 @collects()
 def resample(db, num, dim="last", window=None, domain="time"):
     """
@@ -333,7 +249,7 @@ def resample(db, num, dim="last", window=None, domain="time"):
 
 
 @atomized
-#@splits(dimpos=3)
+# @splits(dimpos=3)
 @collects()
 def resample_poly(
     db, up, down, dim="last", window=("kaiser", 5.0), padtype="constant", cval=None
@@ -428,7 +344,7 @@ def resample_poly(
 
 
 @atomized
-#@splits(dbpos=2, dimpos=3)
+# @splits(dbpos=2, dimpos=3)
 @collects(dbpos=2)
 def lfilter(b, a, db, dim="last", state=None, parallel=None):
     """
@@ -493,7 +409,7 @@ def lfilter(b, a, db, dim="last", state=None, parallel=None):
     axis = db.get_axis_num(dim)
     func = lambda x, b, a, axis, zi: sp.lfilter(b, a, x, axis, zi)
     if state is None:  # TODO: parallelize should also split state
-        func = parallelize(func, axis, parallel)
+        func = parallelize(axis, parallel)(func)
     if state == "init":
         n_sections = max(len(a), len(b)) - 1
         shape = tuple(
@@ -509,7 +425,7 @@ def lfilter(b, a, db, dim="last", state=None, parallel=None):
 
 
 @atomized
-#@splits(dbpos=2, dimpos=3)
+# @splits(dbpos=2, dimpos=3)
 @collects(dbpos=2)
 def filtfilt(
     b,
@@ -602,13 +518,13 @@ def filtfilt(
     func = lambda x, b, a, axis, padtype, padlen, method, irlen: sp.filtfilt(
         b, a, x, axis, padtype, padlen, method, irlen
     )
-    func = parallelize(func, axis, parallel)
+    func = parallelize(axis, parallel)(func)
     data = func(db.values, b, a, axis, padtype, padlen, method, irlen)
     return db.copy(data=data)
 
 
 @atomized
-#@splits(dbpos=1, dimpos=2)
+# @splits(dbpos=1, dimpos=2)
 @collects(dbpos=1)
 def sosfilt(sos, db, dim="last", state=None, parallel=None):
     """
@@ -675,7 +591,7 @@ def sosfilt(sos, db, dim="last", state=None, parallel=None):
     axis = db.get_axis_num(dim)
     func = lambda x, sos, axis, state: sp.sosfilt(sos, x, axis, state)
     if state is None:  # TODO: parallelize should also split state
-        func = parallelize(func, axis, parallel)
+        func = parallelize(axis, parallel)(func)
     if state == "init":
         n_sections = sos.shape[0]
         shape = (n_sections,) + tuple(
@@ -691,7 +607,7 @@ def sosfilt(sos, db, dim="last", state=None, parallel=None):
 
 
 @atomized
-#@splits(dbpos=1, dimpos=2)
+# @splits(dbpos=1, dimpos=2)
 @collects(dbpos=1)
 def sosfiltfilt(sos, db, dim="last", padtype="odd", padlen=None, parallel=None):
     """
@@ -765,13 +681,13 @@ def sosfiltfilt(sos, db, dim="last", padtype="odd", padlen=None, parallel=None):
     func = lambda x, sos, axis, padtype, padlen: sp.sosfiltfilt(
         sos, x, axis, padtype, padlen
     )
-    func = parallelize(func, axis, parallel)
+    func = parallelize(axis, parallel)(func)
     data = func(db.values, sos, axis, padtype, padlen)
     return db.copy(data=data)
 
 
 @atomized
-#@splits(dimpos=5)
+# @splits(dimpos=5)
 @collects()
 def decimate(db, q, n=None, ftype="iir", zero_phase=None, dim="last", parallel=None):
     """
@@ -814,13 +730,13 @@ def decimate(db, q, n=None, ftype="iir", zero_phase=None, dim="last", parallel=N
     """
     dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
-    func = parallelize(sp.decimate, axis, parallel)
+    func = parallelize(axis, parallel)(sp.decimate)
     data = func(db.values, q, n, ftype, axis, zero_phase)
     return db[{dim: slice(None, None, q)}].copy(data=data)
 
 
 @atomized
-#@splits(dimpos=2)
+# @splits(dimpos=2)
 @collects()
 def integrate(db, midpoints=False, dim="last"):
     """
@@ -856,7 +772,7 @@ def integrate(db, midpoints=False, dim="last"):
 
 
 @atomized
-#@splits(dimpos=2)
+# @splits(dimpos=2)
 @collects()
 def differentiate(db, midpoints=False, dim="last"):
     """
@@ -928,7 +844,7 @@ def segment_mean_removal(db, limits, window="hann", dim="last"):
 
 
 @atomized
-#@splits(dimpos=4)
+# @splits(dimpos=4)
 @collects()
 def sliding_mean_removal(db, wlen, window="hann", pad_mode="reflect", dim="last"):
     """

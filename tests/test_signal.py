@@ -94,15 +94,6 @@ class TestSignal:
         db.data = np.zeros(db.shape)
         assert db.equals(xp.medfilt(db, {"time": 7, "distance": 3}))
 
-    def test_multithreaded_concatenate(self):
-        arrays = [np.random.rand(100, 20) for _ in range(100)]
-        expected = np.concatenate(arrays)
-        result = xp.multithreaded_concatenate(arrays)
-        assert np.array_equal(expected, result)
-        expected = np.concatenate(arrays, axis=1)
-        result = xp.multithreaded_concatenate(arrays, axis=1)
-        assert np.array_equal(expected, result)
-
     def test_hilbert(self):
         db = generate()
         result = xp.hilbert(db, dim="time")
