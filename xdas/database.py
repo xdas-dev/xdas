@@ -7,9 +7,10 @@ import numpy as np
 import xarray as xr
 
 from .coordinates import Coordinate, Coordinates, get_sampling_interval
-from .numpy import NUMPY_HANDLED_FUNCTIONS, apply_ufunc
 from .virtual import DataLayout, DataSource
-from .xarray import XARRAY_HANDLED_METHODS
+
+NUMPY_HANDLED_FUNCTIONS = {}
+XARRAY_HANDLED_METHODS = {}
 
 
 class Database:
@@ -90,7 +91,27 @@ class Database:
         return self.data.__array__()
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        return apply_ufunc(self, ufunc, method, *inputs, **kwargs)
+        if not method == "__call__":
+            return NotImplemented
+        inputs = tuple(
+            value.data if isinstance(value, self.__class__) else value
+            for value in inputs
+        )
+        if "out" in kwargs:
+            kwargs["out"] = tuple(
+                value.data if isinstance(value, self.__class__) else value
+                for value in kwargs["out"]
+            )
+        if "where" in kwargs:
+            kwargs["where"] = tuple(
+                value.data if isinstance(value, self.__class__) else value
+                for value in kwargs["where"]
+            )
+        data = getattr(ufunc, method)(*inputs, **kwargs)
+        if isinstance(data, tuple):
+            return tuple(self.copy(data=d) for d in data)
+        else:
+            return self.copy(data=data)
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in NUMPY_HANDLED_FUNCTIONS:

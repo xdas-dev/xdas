@@ -1,8 +1,7 @@
 import numpy as np
 
 from .compose import atomized
-
-XARRAY_HANDLED_METHODS = {}
+from .database import XARRAY_HANDLED_METHODS
 
 
 def implements(name=None):
