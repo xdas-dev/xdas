@@ -151,7 +151,7 @@ class DataCollection:
         elif isinstance(data, dict):
             return DataMapping(data, name)
         else:
-            raise TypeError("could not parse `data`")
+            raise TypeError(f"could not parse `data` of type {type(data).__name__}")
 
     @classmethod
     def from_netcdf(cls, fname, group=None):

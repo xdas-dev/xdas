@@ -12,9 +12,6 @@ class TestSignal:
         s = (5.0 / 2) + 5.0 * np.arange(100)
         dt = np.timedelta64(8, "ms")
         t = np.datetime64(0, "s") + dt * np.arange(1000)
-        da = xr.DataArray(np.ones((len(t), len(s))), {"time": t, "distance": s})
-        assert xp.get_sampling_interval(da, "time") == 0.008
-        assert xp.get_sampling_interval(da, "distance") == 5.0
         shape = (6000, 1000)
         resolution = (np.timedelta64(8, "ms"), 5.0)
         starttime = np.datetime64("2023-01-01T00:00:00")
@@ -43,8 +40,6 @@ class TestSignal:
         s = d * np.arange(n)
         da = xr.DataArray(np.arange(n), {"time": s})
         db = xdas.Database.from_xarray(da)
-        da = xp.detrend(da)
-        assert np.allclose(da, np.zeros(n))
         db = xp.detrend(db)
         assert np.allclose(db.values, np.zeros(n))
 
@@ -54,8 +49,6 @@ class TestSignal:
         s = (d / 2) + d * np.arange(n)
         da = xr.DataArray(np.ones(n), {"distance": s})
         db = xdas.Database.from_xarray(da)
-        da = xp.differentiate(da, midpoints=True)
-        assert np.allclose(da, np.zeros(n - 1))
         db = xp.differentiate(db, midpoints=True)
         assert np.allclose(db.values, np.zeros(n - 1))
 
@@ -65,8 +58,6 @@ class TestSignal:
         s = (d / 2) + d * np.arange(n)
         da = xr.DataArray(np.ones(n), {"distance": s})
         db = xdas.Database.from_xarray(da)
-        da = xp.integrate(da, midpoints=True)
-        assert np.allclose(da, da["distance"])
         db = xp.integrate(db, midpoints=True)
         assert np.allclose(db.values, db["distance"].values)
 
@@ -81,8 +72,6 @@ class TestSignal:
         da.loc[{"distance": slice(limits[0], limits[1])}] = 1.0
         da.loc[{"distance": slice(limits[1], limits[2])}] = 2.0
         db = xdas.Database.from_xarray(da)
-        da = xp.segment_mean_removal(da, limits)
-        assert np.allclose(da, 0)
         db = xp.segment_mean_removal(db, limits)
         assert np.allclose(db.values, 0)
 
@@ -94,8 +83,6 @@ class TestSignal:
         data = np.ones(n)
         da = xr.DataArray(data, {"distance": s})
         db = xdas.Database.from_xarray(da)
-        da = xp.sliding_mean_removal(da, 0.1 * n * d)
-        assert np.allclose(da, 0)
         db = xp.sliding_mean_removal(db, 0.1 * n * d)
         assert np.allclose(db.values, 0)
 

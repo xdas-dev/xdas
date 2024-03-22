@@ -142,7 +142,7 @@ class TestCore:
         assert xdas.concatenate(xdas.chunk(db, 3)).equals(db)
 
     def test_collects(self):
-        @collects
+        @collects()
         def double(db):
             return db * 2
 
@@ -155,8 +155,8 @@ class TestCore:
         assert result.equals(expected)
 
     def test_splits(self):
-        @splits
-        @collects
+        @splits()
+        @collects()
         def diff(db, dim="last"):
             return db.diff(dim=dim)
 

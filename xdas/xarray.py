@@ -1,7 +1,7 @@
 import numpy as np
 
 from .compose import atomized
-from .core import collects
+from .core import collects, splits
 from .database import XARRAY_HANDLED_METHODS
 
 
@@ -15,7 +15,7 @@ def implements(name=None):
 
 
 @atomized
-@collects
+#@collects()
 @implements()
 def cumprod(db, dim="last", *, skipna=True, **kwargs):
     """
@@ -47,7 +47,7 @@ def cumprod(db, dim="last", *, skipna=True, **kwargs):
 
 
 @atomized
-@collects
+#@collects()
 @implements()
 def cumsum(db, dim="last", *, skipna=True, **kwargs):
     """
@@ -79,7 +79,7 @@ def cumsum(db, dim="last", *, skipna=True, **kwargs):
 
 
 @atomized
-@collects
+#@collects()
 @implements()
 def all(db, dim=None, **kwargs):
     """
@@ -110,7 +110,7 @@ def all(db, dim=None, **kwargs):
 
 
 @atomized
-@collects
+#@collects()
 @implements()
 def any(db, dim=None, **kwargs):
     """
@@ -144,7 +144,7 @@ import numpy as np
 
 
 @atomized
-@collects
+#@collects()
 @implements()
 def max(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -181,7 +181,7 @@ def max(db, dim=None, *, skipna=True, **kwargs):
 
 
 @atomized
-@collects
+#@collects()
 @implements()
 def min(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -218,7 +218,7 @@ def min(db, dim=None, *, skipna=True, **kwargs):
 
 
 @atomized
-@collects
+#@collects()
 @implements()
 def argmax(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -256,7 +256,7 @@ def argmax(db, dim=None, *, skipna=True, **kwargs):
 
 
 @atomized
-@collects
+#@collects()
 @implements()
 def argmin(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -294,7 +294,7 @@ def argmin(db, dim=None, *, skipna=True, **kwargs):
 
 
 @atomized
-@collects
+#@collects()
 @implements()
 def median(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -331,7 +331,7 @@ def median(db, dim=None, *, skipna=True, **kwargs):
 
 
 @atomized
-@collects
+#@collects()
 @implements()
 def ptp(db, dim=None, **kwargs):
     """
@@ -365,7 +365,7 @@ import numpy as np
 
 
 @atomized
-@collects
+#@collects()
 @implements()
 def mean(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -402,7 +402,7 @@ def mean(db, dim=None, *, skipna=True, **kwargs):
 
 
 @atomized
-@collects
+#@collects()
 @implements()
 def prod(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -439,7 +439,7 @@ def prod(db, dim=None, *, skipna=True, **kwargs):
 
 
 @atomized
-@collects
+#@collects()
 @implements()
 def std(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -477,7 +477,7 @@ def std(db, dim=None, *, skipna=True, **kwargs):
 
 
 @atomized
-@collects
+#@collects()
 @implements()
 def sum(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -514,7 +514,7 @@ def sum(db, dim=None, *, skipna=True, **kwargs):
 
 
 @atomized
-@collects
+#@collects()
 @implements()
 def var(db, dim=None, *, skipna=True, **kwargs):
     """
@@ -551,7 +551,7 @@ def var(db, dim=None, *, skipna=True, **kwargs):
 
 
 @atomized
-@collects
+#@collects()
 @implements()
 def percentile(db, q, dim=None, *, skipna=True, **kwargs):
     """
@@ -590,7 +590,7 @@ def percentile(db, q, dim=None, *, skipna=True, **kwargs):
 
 
 @atomized
-@collects
+#@collects()
 @implements()
 def quantile(db, q, dim=None, *, skipna=True, **kwargs):
     """
@@ -629,7 +629,7 @@ def quantile(db, q, dim=None, *, skipna=True, **kwargs):
 
 
 @atomized
-@collects
+#@collects()
 @implements()
 def average(db, dim=None, weights=None, **kwargs):
     """
@@ -663,7 +663,7 @@ def average(db, dim=None, weights=None, **kwargs):
 
 
 @atomized
-@collects
+#@collects()
 @implements()
 def count_nonzero(db, dim=None, **kwargs):
     """
@@ -694,7 +694,8 @@ def count_nonzero(db, dim=None, **kwargs):
 
 
 @atomized
-@collects
+#@splits()
+#@collects()
 @implements()
 def diff(db, dim, n=1, *, label="upper"):
     """

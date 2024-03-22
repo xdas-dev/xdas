@@ -485,37 +485,76 @@ def chunk(db, nchunk, dim="first"):
     )
 
 
-def collects(func):
-    @wraps(func)
-    def wrapper(obj, *args, **kwargs):
-        if isinstance(obj, DataSequence):
-            return DataSequence(
-                [wrapper(value, *args, **kwargs) for value in obj], obj.name
-            )
-        elif isinstance(obj, DataMapping):
-            return DataMapping(
-                {key: wrapper(obj[key], *args, **kwargs) for key in obj}, obj.name
-            )
-        else:
-            return func(obj, *args, **kwargs)
+def collects(dbpos=0):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            if len(args) > dbpos:
+                obj = args[dbpos]
+            else:
+                raise TypeError(
+                    f"{func.__name__}() missing 1 required positional argument"
+                )
+            if isinstance(obj, DataSequence):
+                data = []
+                for db in obj:
+                    args = tuple(
+                        db if pos == dbpos else value for pos, value in enumerate(args)
+                    )
+                    data.append(wrapper(*args, **kwargs))
+                return DataSequence(data, obj.name)
+            elif isinstance(obj, DataMapping):
+                data = {}
+                for key in obj:
+                    args = tuple(
+                        obj[key] if pos == dbpos else value
+                        for pos, value in enumerate(args)
+                    )
+                    data[key] = wrapper(*args, **kwargs)
+                return DataMapping(data, obj.name)
+            else:
+                return func(*args, **kwargs)
 
-    wrapper.__collects__ = True
+        wrapper.__collects__ = True
 
-    return wrapper
+        return wrapper
+
+    return decorator
 
 
-def splits(func):
-    if not hasattr(func, "__collects__"):
-        raise TypeError("callable must be able to `collect`")
+def splits(dbpos=0, dimpos=1, dimdft="last"):
+    def decorator(func):
+        if not hasattr(func, "__collects__"):
+            raise TypeError("callable must be able to `collect`")
 
-    dim = signature(func).parameters["dim"].default
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            if len(args) > dbpos:
+                db = args[dbpos]
+            else:
+                raise TypeError(
+                    f"{func.__name__}() missing 1 required positional argument"
+                )
+            if len(args) > dimpos:
+                dim = args[dimpos]
+            elif "dim" in kwargs:
+                dim = kwargs["dim"]
+            else:
+                dim = dimdft
+            if not isinstance(db[dim], InterpCoordinate):
+                return func(*args, **kwargs)
+            else:
+                dc = split(db, dim)
+                args = tuple(
+                    dc if position == dbpos else value
+                    for position, value in enumerate(args)
+                )
+                dc = func(*args, **kwargs)
+                return concatenate(dc, dim)
 
-    @wraps(func)
-    def wrapper(db, *args, dim=dim, **kwargs):
-        dc = split(db, dim)
-        dc = func(dc, *args, dim=dim, **kwargs)
-        return concatenate(dc, dim)
+        wrapper.__collects__ = True
+        wrapper.__splits__ = True
 
-    wrapper.__splits__ = True
+        return wrapper
 
-    return wrapper
+    return decorator
