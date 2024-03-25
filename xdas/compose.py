@@ -73,7 +73,7 @@ class Sequence(list):
       0.000000e+00]]
     Coordinates:
       * time (time): 2023-01-01T00:00:00.000 to 2023-01-01T00:00:05.980
-        distance: 0.000 to 10000.000
+      * distance (distance): 0.000 to 10000.000
 
     """
 

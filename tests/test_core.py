@@ -142,7 +142,7 @@ class TestCore:
         assert xdas.concatenate(xdas.chunk(db, 3)).equals(db)
 
     def test_collects(self):
-        @collects()
+        @collects
         def double(db):
             return db * 2
 
@@ -155,16 +155,21 @@ class TestCore:
         assert result.equals(expected)
 
     def test_splits(self):
-        @splits()
-        @collects()
-        def diff(db, dim="last"):
-            return db.diff(dim=dim)
+        def roll(db, shift, dim="last"):
+            axis = db.get_axis_num(dim)
+            data = np.roll(db.values, shift, axis)
+            return db.copy(data=data)
+
+        roll_decorated = splits(collects(roll))
 
         db1 = generate(starttime="2023-01-01T00:00:00")
-        db2 = generate(starttime="2023-01-01T00:00:10")
-        db = xdas.concatenate([db1, db2])
-        result = diff(db, dim="time")
-        naive = db.diff("time")
-        expected = xdas.concatenate([db1.diff("time"), db2.diff("time")])
+        db2 = generate(starttime="2023-01-01T00:00:10") + 1
+        db = xdas.concatenate([db1, db2], dim="time")
+        naive = roll(db, 1, dim="time")
+        result = roll_decorated(db, 1, dim="time")
+        expected = xdas.concatenate(
+            [roll(db1, 1, dim="time"), roll(db2, 1, dim="time")]
+        )
+        assert not expected.equals(naive)
         assert not result.equals(naive)
         assert result.equals(expected)

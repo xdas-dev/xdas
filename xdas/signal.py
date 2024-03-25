@@ -21,8 +21,8 @@ def parse_dim(db, dim):
 
 
 @atomized
-# @splits(dimpos=2)
-@collects()
+@splits
+@collects
 def detrend(db, type="linear", dim="last"):
     """
     Detrend data along given dimension
@@ -53,8 +53,8 @@ def detrend(db, type="linear", dim="last"):
 
 
 @atomized
-# @splits(dimpos=3)
-@collects()
+@splits
+@collects
 def taper(db, window="hann", fftbins=False, dim="last"):
     """
     Apply a tapering window along the given dimension
@@ -85,8 +85,8 @@ def taper(db, window="hann", fftbins=False, dim="last"):
 
 
 @atomized
-# @splits(dimpos=5)
-@collects()
+@splits
+@collects
 def filter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=None):
     """
     SOS IIR filtering along given dimension.
@@ -123,8 +123,8 @@ def filter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=Non
 
 
 @atomized
-# @splits(dimpos=2)
-@collects()
+@splits
+@collects
 def hilbert(db, N=None, dim="last", parallel=None):
     """
     Compute the analytic signal, using the Hilbert transform.
@@ -180,8 +180,8 @@ def hilbert(db, N=None, dim="last", parallel=None):
 
 
 @atomized
-# @splits(dimpos=2)
-@collects()
+@splits
+@collects
 def resample(db, num, dim="last", window=None, domain="time"):
     """
     Resample db to num samples using Fourier method along the given dimension.
@@ -249,8 +249,8 @@ def resample(db, num, dim="last", window=None, domain="time"):
 
 
 @atomized
-# @splits(dimpos=3)
-@collects()
+@splits
+@collects
 def resample_poly(
     db, up, down, dim="last", window=("kaiser", 5.0), padtype="constant", cval=None
 ):
@@ -344,8 +344,8 @@ def resample_poly(
 
 
 @atomized
-# @splits(dbpos=2, dimpos=3)
-@collects(dbpos=2)
+# @splits
+@collects
 def lfilter(b, a, db, dim="last", state=None, parallel=None):
     """
     Filter data along one-dimension with an IIR or FIR filter.
@@ -425,8 +425,8 @@ def lfilter(b, a, db, dim="last", state=None, parallel=None):
 
 
 @atomized
-# @splits(dbpos=2, dimpos=3)
-@collects(dbpos=2)
+# @splits
+@collects
 def filtfilt(
     b,
     a,
@@ -524,8 +524,8 @@ def filtfilt(
 
 
 @atomized
-# @splits(dbpos=1, dimpos=2)
-@collects(dbpos=1)
+# @splits
+@collects
 def sosfilt(sos, db, dim="last", state=None, parallel=None):
     """
     Filter data along one dimension using cascaded second-order sections.
@@ -607,8 +607,8 @@ def sosfilt(sos, db, dim="last", state=None, parallel=None):
 
 
 @atomized
-# @splits(dbpos=1, dimpos=2)
-@collects(dbpos=1)
+@splits
+@collects
 def sosfiltfilt(sos, db, dim="last", padtype="odd", padlen=None, parallel=None):
     """
     A forward-backward digital filter using cascaded second-order sections.
@@ -687,8 +687,8 @@ def sosfiltfilt(sos, db, dim="last", padtype="odd", padlen=None, parallel=None):
 
 
 @atomized
-# @splits(dimpos=5)
-@collects()
+@splits
+@collects
 def decimate(db, q, n=None, ftype="iir", zero_phase=None, dim="last", parallel=None):
     """
     Downsample the signal after applying an anti-aliasing filter.
@@ -736,8 +736,8 @@ def decimate(db, q, n=None, ftype="iir", zero_phase=None, dim="last", parallel=N
 
 
 @atomized
-# @splits(dimpos=2)
-@collects()
+@splits
+@collects
 def integrate(db, midpoints=False, dim="last"):
     """
     Integrate along a given dimension.
@@ -772,8 +772,8 @@ def integrate(db, midpoints=False, dim="last"):
 
 
 @atomized
-# @splits(dimpos=2)
-@collects()
+@splits
+@collects
 def differentiate(db, midpoints=False, dim="last"):
     """
     Differentiate along a given dimension.
@@ -808,7 +808,7 @@ def differentiate(db, midpoints=False, dim="last"):
 
 
 @atomized
-@collects()
+@collects
 def segment_mean_removal(db, limits, window="hann", dim="last"):
     """
     Piecewise mean removal.
@@ -844,8 +844,8 @@ def segment_mean_removal(db, limits, window="hann", dim="last"):
 
 
 @atomized
-# @splits(dimpos=4)
-@collects()
+@splits
+@collects
 def sliding_mean_removal(db, wlen, window="hann", pad_mode="reflect", dim="last"):
     """
     Sliding mean removal.
@@ -890,7 +890,7 @@ def sliding_mean_removal(db, wlen, window="hann", pad_mode="reflect", dim="last"
 
 
 @atomized
-@collects()
+@collects
 def medfilt(db, kernel_dim):
     """
     Perform a median filter along given dimensions
@@ -945,7 +945,7 @@ def medfilt(db, kernel_dim):
 
 
 @atomized
-@collects()
+@collects
 def fft(db, n=None, dim={"last": "frequency"}, norm=None):
     ((olddim, newdim),) = dim.items()
     olddim = parse_dim(db, olddim)
@@ -964,7 +964,7 @@ def fft(db, n=None, dim={"last": "frequency"}, norm=None):
 
 
 @atomized
-@collects()
+@collects
 def rfft(db, n=None, dim={"last": "frequency"}, norm=None):
     ((olddim, newdim),) = dim.items()
     olddim = parse_dim(db, olddim)
