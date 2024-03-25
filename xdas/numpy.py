@@ -1,6 +1,8 @@
+from inspect import signature
+
 import numpy as np
 
-from .database import NUMPY_HANDLED_FUNCTIONS
+from .database import NUMPY_HANDLED_FUNCTIONS, Database
 
 
 def implements(numpy_function):
@@ -11,39 +13,23 @@ def implements(numpy_function):
     return decorator
 
 
-def dispatch(dbpos=0, axispos=None, outpos=None, reduce=False, drop_coords=False):
+def handled(reduce=False, drop_coords=False):
     def decorator(func):
+        sig = signature(func)
+
         @implements(func)
         def wrapper(*args, **kwargs):
-            nargs = len(args)
-            db = args[dbpos]
-            cls = db.__class__
-            args = tuple(db.data if idx == dbpos else args[idx] for idx in range(nargs))
-            if axispos is not None:
-                if nargs > axispos:
-                    axis = args[axispos]
-                elif "axis" in kwargs:
-                    axis = kwargs["axis"]
-                else:
-                    axis = None
-            if outpos is not None:
-                if nargs > outpos:
-                    out = args[outpos]
-                    if isinstance(out, cls):
-                        args = tuple(
-                            out.data if idx == outpos else args[idx]
-                            for idx in range(nargs)
-                        )
-                elif "out" in kwargs:
-                    out = kwargs["out"]
-                    if isinstance(out, cls):
-                        kwargs = {
-                            key: out.data if key == "out" else value
-                            for key, value in kwargs.items()
-                        }
-                else:
-                    out = None
-            data = func(*args, **kwargs)
+            ba = sig.bind(*args, **kwargs)
+            ba.apply_defaults()
+            key = next(iter(ba.arguments))
+            db = ba.arguments.get(key)
+            axis = ba.arguments.get("axis")
+            out = ba.arguments.get("out")
+            if isinstance(db, Database):
+                ba.arguments[key] = db.data
+            if isinstance(out, Database):
+                ba.arguments["out"] = out.data
+            data = func(*ba.args, **ba.kwargs)
             if reduce:
                 if axis is None:
                     coords = {
@@ -65,81 +51,65 @@ def dispatch(dbpos=0, axispos=None, outpos=None, reduce=False, drop_coords=False
             if drop_coords:
                 return data
             else:
-                return cls(data, coords, dims, db.name, db.attrs)
+                return Database(data, coords, dims, db.name, db.attrs)
 
         return wrapper
 
     return decorator
 
 
-elementwise = dispatch(outpos=1)
-elementwise(np.fix)
+handled()(np.fix)
+handled()(np.around)
+handled()(np.round)
+handled()(np.clip)
+handled()(np.angle)
+handled()(np.i0)
+handled()(np.imag)
+handled()(np.nan_to_num)
+handled()(np.nonzero)
+handled()(np.real_if_close)
+handled()(np.real)
+handled()(np.sinc)
+handled()(np.cumprod)
+handled()(np.nancumprod)
+handled()(np.cumsum)
+handled()(np.nancumsum)
 
-elementwise_one_arg = dispatch(outpos=2)
-elementwise_one_arg(np.around)
-elementwise_one_arg(np.round)
+handled(reduce=True)(np.all)
+handled(reduce=True)(np.any)
+handled(reduce=True)(np.amax)
+handled(reduce=True)(np.max)
+handled(reduce=True)(np.nanmax)
+handled(reduce=True)(np.amin)
+handled(reduce=True)(np.min)
+handled(reduce=True)(np.nanmin)
+handled(reduce=True)(np.argmax)
+handled(reduce=True)(np.nanargmax)
+handled(reduce=True)(np.argmin)
+handled(reduce=True)(np.nanargmin)
+handled(reduce=True)(np.median)
+handled(reduce=True)(np.nanmedian)
+handled(reduce=True)(np.ptp)
+handled(reduce=True)(np.mean)
+handled(reduce=True)(np.nanmean)
+handled(reduce=True)(np.prod)
+handled(reduce=True)(np.nanprod)
+handled(reduce=True)(np.std)
+handled(reduce=True)(np.nanstd)
+handled(reduce=True)(np.sum)
+handled(reduce=True)(np.nansum)
+handled(reduce=True)(np.var)
+handled(reduce=True)(np.nanvar)
+handled(reduce=True)(np.percentile)
+handled(reduce=True)(np.nanpercentile)
+handled(reduce=True)(np.quantile)
+handled(reduce=True)(np.nanquantile)
+handled(reduce=True)(np.average)
+handled(reduce=True)(np.count_nonzero)
 
-elementwise_two_args = dispatch(outpos=3)
-elementwise_two_args(np.clip)
-
-elementwise_no_out = dispatch()
-elementwise_no_out(np.angle)
-elementwise_no_out(np.i0)
-elementwise_no_out(np.imag)
-elementwise_no_out(np.nan_to_num)
-elementwise_no_out(np.nonzero)
-elementwise_no_out(np.real_if_close)
-elementwise_no_out(np.real)
-elementwise_no_out(np.sinc)
-
-along = dispatch(axispos=1, outpos=3)
-along(np.cumprod)
-along(np.nancumprod)
-along(np.cumsum)
-along(np.nancumsum)
-
-reduce = dispatch(axispos=1, outpos=2, reduce=True)
-reduce(np.all)
-reduce(np.any)
-reduce(np.amax)
-reduce(np.max)
-reduce(np.nanmax)
-reduce(np.amin)
-reduce(np.min)
-reduce(np.nanmin)
-reduce(np.argmax)
-reduce(np.nanargmax)
-reduce(np.argmin)
-reduce(np.nanargmin)
-reduce(np.median)
-reduce(np.nanmedian)
-reduce(np.ptp)
-
-reduce_dtype = dispatch(axispos=1, outpos=3, reduce=True)
-reduce_dtype(np.mean)
-reduce_dtype(np.nanmean)
-reduce_dtype(np.prod)
-reduce_dtype(np.nanprod)
-reduce_dtype(np.std)
-reduce_dtype(np.nanstd)
-reduce_dtype(np.sum)
-reduce_dtype(np.nansum)
-reduce_dtype(np.var)
-reduce_dtype(np.nanvar)
-
-reduce_one_arg = dispatch(axispos=2, outpos=3, reduce=True)
-reduce_one_arg(np.percentile)
-reduce_one_arg(np.nanpercentile)
-reduce_one_arg(np.quantile)
-reduce_one_arg(np.nanquantile)
-
-reduce_no_out = dispatch(axispos=1, reduce=True)
-reduce_no_out(np.average)
-reduce_no_out(np.count_nonzero)
-
-drop_coords = dispatch(drop_coords=True)
-diff = dispatch(axispos=2, drop_coords=True)(np.diff)
-ediff1d = dispatch(drop_coords=True)(np.ediff1d)
-diff = dispatch(axispos=3, drop_coords=True)(np.trapz)
+handled(drop_coords=True)
+handled(drop_coords=True)(np.diff)
+handled(drop_coords=True)(np.ediff1d)
+handled(drop_coords=True)(np.trapz)
 
 # TODO: gradient
