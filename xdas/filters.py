@@ -1,3 +1,9 @@
+import numpy as np
+import scipy.signal as sp
+
+from xdas.coordinates import get_sampling_interval
+
+
 class State:
     def __init__(self, state):
         self.state = state
@@ -35,11 +41,6 @@ class Filter:
         if not self.state:
             self.initialize(db, chunk)
         return self.call(db, chunk)
-
-
-import scipy.signal as sp
-from xdas.coordinates import get_sampling_interval
-import numpy as np
 
 
 class IIRFilter(Filter):
