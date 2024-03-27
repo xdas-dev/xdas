@@ -346,7 +346,7 @@ def resample_poly(
 @atomized
 # @splits
 @collects
-def lfilter(b, a, db, dim="last", state=None, parallel=None):
+def lfilter(b, a, db, dim="last", zi=None, parallel=None):
     """
     Filter data along one-dimension with an IIR or FIR filter.
 
@@ -365,8 +365,8 @@ def lfilter(b, a, db, dim="last", state=None, parallel=None):
     dim : str, optional
         The dimension of the input data array along which to apply the
         linear filter. Default is last.
-    state : array_like or str, optional
-        Initial conditions for the filter delays. If `state` is None or "init" then
+    zi : array_like or str, optional
+        Initial conditions for the filter delays. If `zi` is None or "init" then
         initial rest is assumed.
     parallel: bool or int, optional
         Whether to parallelize the function, if true: all cores are used, if false:
@@ -375,8 +375,8 @@ def lfilter(b, a, db, dim="last", state=None, parallel=None):
     -------
     db : Database
         The output of the digital filter.
-    state : array, optional
-        If `state` is None, this is not returned. If `state` is given or "init" `state`
+    zf : array, optional
+        If `zi` is None, this is not returned. If `zi` is given or "init" then `zf`
         holds the final filter delay values.
 
     Notes
@@ -408,20 +408,20 @@ def lfilter(b, a, db, dim="last", state=None, parallel=None):
     dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
     func = lambda x, b, a, axis, zi: sp.lfilter(b, a, x, axis, zi)
-    if state is None:  # TODO: parallelize should also split state
+    if zi is None:  # TODO: parallelize should also split state
         func = parallelize(axis, parallel)(func)
-    if state == "init":
+    if zi == "init":
         n_sections = max(len(a), len(b)) - 1
         shape = tuple(
             n_sections if name == dim else size for name, size in db.sizes.items()
         )
-        state = np.zeros(shape)
-    if state is None:
-        data = func(db.values, b, a, axis, state)
+        zi = np.zeros(shape)
+    if zi is None:
+        data = func(db.values, b, a, axis, zi)
         return db.copy(data=data)
     else:
-        data, state = func(db.values, b, a, axis, state)
-        return db.copy(data=data), state
+        data, zf = func(db.values, b, a, axis, zi)
+        return db.copy(data=data), zf
 
 
 @atomized
@@ -526,7 +526,7 @@ def filtfilt(
 @atomized
 # @splits
 @collects
-def sosfilt(sos, db, dim="last", state=None, parallel=None):
+def sosfilt(sos, db, dim="last", zi=None, parallel=None):
     """
     Filter data along one dimension using cascaded second-order sections.
 
@@ -546,20 +546,20 @@ def sosfilt(sos, db, dim="last", state=None, parallel=None):
     dim : str, optional
         The dimension of the input database  along which to apply the
         linear filter. Default is -1.
-    state : array_like or str, optional
+    zi : array_like or str, optional
         Initial conditions for the cascaded filter delays.  It is a (at
         least 2D) vector of shape ``(n_sections, ..., 2, ...)``, where
         ``..., 2, ...`` denotes the shape of `db`, but with ``db.sizes[dim]``
-        replaced by 2.  If `state` is None, "init", or is not given then initial rest
+        replaced by 2.  If `zi` is None, "init", or is not given then initial rest
         (i.e. all zeros) is assumed.
 
     Returns
     -------
     y : Database
         The output of the digital filter.
-    state : ndarray, optional
-        If `state` is None, this is not returned. If `state` is given or "init",
-        `state` holds the final filter delay values.
+    zi : ndarray, optional
+        If `zi` is None, this is not returned. If `zi` is given or "init" then `zf`
+        holds the final filter delay values.
 
     Notes
     -----
@@ -590,20 +590,20 @@ def sosfilt(sos, db, dim="last", state=None, parallel=None):
     dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
     func = lambda x, sos, axis, state: sp.sosfilt(sos, x, axis, state)
-    if state is None:  # TODO: parallelize should also split state
+    if zi is None:  # TODO: parallelize should also split state
         func = parallelize(axis, parallel)(func)
-    if state == "init":
+    if zi == "init":
         n_sections = sos.shape[0]
         shape = (n_sections,) + tuple(
             2 if index == axis else element for index, element in enumerate(db.shape)
         )
-        state = np.zeros(shape)
-    if state is None:
-        data = func(db.values, sos, axis, state)
+        zi = np.zeros(shape)
+    if zi is None:
+        data = func(db.values, sos, axis, zi)
         return db.copy(data=data)
     else:
-        data, state = func(db.values, sos, axis, state)
-        return db.copy(data=data), state
+        data, zf = func(db.values, sos, axis, zi)
+        return db.copy(data=data), zf
 
 
 @atomized

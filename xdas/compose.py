@@ -30,7 +30,7 @@ class Sequence(list):
     >>> sequence = Sequence(
     ...     [
     ...         Atom(xp.taper, dim="time"),
-    ...         StateAtom(xp.lfilter, [1.0], [0.5], ..., dim="time"),
+    ...         StateAtom(xp.lfilter, [1.0], [0.5], ..., dim="time", state="zi"),
     ...         Atom(np.square),
     ...     ],
     ...     name="Low frequency energy",
@@ -202,17 +202,16 @@ class StateAtom(Atom):
     and a state. The stateful function must return the processed data and modified
     state.
 
-    >>> def func(x, *args, state="init", **kwargs):
-    ...     return x, state
+    >>> def func(x, *args, state="zi", **kwargs):
+    ...     return x, zf
 
     Here, `state` is a given keyword argument that contains the state, which can differ
-    from one function to the next. For example, in scipy.signal.sosfilt, the state
-    argument is `zi`. In that case, the user must pass a dict `{"zi": "init"}` to
-    indicate the name of the keyword argument related to the state. Here "init" is a
-    'special' string that most xdas statefull function accepts. It asks to the function
-    to initialize the state and to return it along with the result.
+    from one function to the next. The user must pass a dict `{"zi": value}` to provide
+    the initial state. If no initial state is provided, the "init" string will be used.
+    That special string indicates to the function to initialize the state and to return
+    it along with the result. All xdas statefull function accepts this convention.
 
-    StateAtom uses to reserved keyword arguments that cannot by passed to `func`:
+    StateAtom uses reserved keyword arguments that cannot by passed to `func`:
     'name' and 'state'.
 
     Parameters
@@ -227,10 +226,11 @@ class StateAtom(Atom):
         Positional arguments to pass to `func`. If the data to process is passed as the
         nth argument, the nth element of `args` must contain an Ellipis (`...`).
     state: Any
-        The initial state that will be passed at the `state` keyword argument of `func`.
-        If `state` is a dict, the key indicates the keyword argument used by `func` for
-        state passing, and the value contains the state. The "init" string is used to
-        indicate than a new state must be initialized.
+        The initial state that will be passed at the `func`. If `state` is a dict, the
+        key indicates the keyword argument used by `func` for state passing, and the
+        value contains the state. The "init" string is used to indicate than a new
+        state must be initialized. If `state` is a string, it will use the default
+        "init" code by default for that keyword argument.
     name : Hashable
         Name to identify the function.
     **kwargs : Any
@@ -246,44 +246,42 @@ class StateAtom(Atom):
     By default, `state` is the expected keyword argument and 'init' is the send value
     to ask for initialisation.
 
-    >>> StateAtom(xp.sosfilt, sos, ..., dim="time")
+    >>> StateAtom(xp.sosfilt, sos, ..., dim="time", state="zi")
     sosfilt(<ndarray>, ..., dim=time)  [stateful]
 
     To manually specify the keyword argument and initial value a dict must be passed to
     the state keyword argument.
 
-    >>> StateAtom(xp.sosfilt, sos, ..., dim="time", state={"state": "init"})
+    >>> StateAtom(xp.sosfilt, sos, ..., dim="time", state={"zi": "init"})
     sosfilt(<ndarray>, ..., dim=time)  [stateful]
 
     """
 
-    def __init__(
-        self,
-        func: Callable,
-        *args: Any,
-        state: Any = "init",
-        name: str | None = None,
-        **kwargs: Any,
-    ) -> None:
+    def __init__(self, func, *args, state, name=None, **kwargs):
         super().__init__(func, *args, name=name, **kwargs)
-        if isinstance(state, dict):
-            self.buffer = state
-        else:
-            self.buffer = {"state": state}
+        if isinstance(state, str):
+            state = {state: "init"}
+        if isinstance(state, tuple):
+            state = dict(zip(state, ["init"] * len(state)))
+        for key, value in state.items():
+            if key == "state":
+                raise KeyError("`state` is a reserved word")
+            setattr(self, key, State(value))
 
     def __repr__(self) -> str:
         return super().__repr__() + "  [stateful]"
 
     def __call__(self, x: Any) -> Any:
         args = tuple(x if arg is ... else arg for arg in self.args)
-        x, *state = self.func(*args, **self.kwargs, **self.buffer)
-        for key, value in zip(self.buffer, state):
-            self.buffer[key] = value
+        kwargs = self.kwargs | self._state
+        x, *state = self.func(*args, **kwargs)
+        for key, value in zip(self._state, state):
+            setattr(self, key, State(value))
         return x
 
-    def reset(self) -> None:
-        for key in self.buffer:
-            self.buffer[key] = "init"
+    def reset(self):
+        for key in self._state:
+            setattr(self, key, State("init"))
 
 
 def atomized(func):
