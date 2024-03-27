@@ -24,8 +24,8 @@ class DataSource:
         self._sel = self._sel.__getitem__(key)
         return self
 
-    def __array__(self):
-        return self.to_layout().__array__()
+    def __array__(self, dtype=None):
+        return self.to_layout().__array__(dtype)
 
     def __repr__(self):
         return f"DataSource: {to_human(self.nbytes)} ({self.dtype})"
@@ -80,7 +80,7 @@ class DataLayout(h5py.VirtualLayout):
     A composite lazy array pointing toward multiple netCDF4/HDF5 files.
     """
 
-    def __array__(self):
+    def __array__(self, dtype=None):
         with TemporaryDirectory() as tmpdirname:
             fname = os.path.join(tmpdirname, "vds.h5")
             with h5py.File(fname, "w") as file:
@@ -90,6 +90,8 @@ class DataLayout(h5py.VirtualLayout):
             with h5py.File(fname, "r") as file:
                 dataset = file["__values__"]
                 out = dataset[...]
+            if dtype is not None:
+                out = out.astype(dtype)
         return out
 
     def __repr__(self):

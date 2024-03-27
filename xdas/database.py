@@ -101,8 +101,11 @@ class Database:
         string += data_repr + "\n" + repr(self.coords)
         return string
 
-    def __array__(self):
-        return self.data.__array__()
+    def __array__(self, dtype=None):
+        if dtype is None:
+            return self.data.__array__()
+        else:
+            return self.data.__array__(dtype)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         if not method == "__call__":

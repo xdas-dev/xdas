@@ -228,8 +228,11 @@ class AbstractCoordinate:
     def __sub__(self, other):
         return self.__class__(self.data - other, self.dim)
 
-    def __array__(self):
-        return self.data.__array__()
+    def __array__(self, dtype=None):
+        if dtype is None:
+            return self.data.__array__()
+        else:
+            return self.data.__array__(dtype)
 
     def __array__ufunc__(self, ufunc, method, *inputs, **kwargs):
         return self.data.__array__ufunc__(ufunc, method, *inputs, **kwargs)
@@ -460,8 +463,11 @@ class InterpCoordinate(AbstractCoordinate):
             self.dim,
         )
 
-    def __array__(self):
-        return self.values
+    def __array__(self, dtype=None):
+        out = self.values
+        if dtype is not None:
+            out = out.__array__(dtype)
+        return out
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         raise NotImplementedError()
