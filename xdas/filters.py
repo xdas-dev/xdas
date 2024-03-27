@@ -1,16 +1,21 @@
 import numpy as np
 import scipy.signal as sp
 
-from xdas.coordinates import get_sampling_interval
+from .coordinates import Coordinate, get_sampling_interval
+from .core import open_datacollection
+from .database import Database
+from .datacollection import DataCollection
 
 
 class State:
     def __init__(self, state):
+        if not isinstance(state, (np.ndarray, Database)):
+            raise ValueError("states must be databases")
         self.state = state
 
 
 class Filter:
-    def __init__(self, *args):
+    def __init__(self):
         self._state = {}
         self._filters = {}
 
@@ -31,16 +36,40 @@ class Filter:
             name: filter.state for name, filter in self._filters.items() if filter.state
         }
 
-    def initialize(self, db, chunk=None):
+    @property
+    def filters(self):
+        return {"data": self._filters} | {
+            "children": {
+                name: filter.filters
+                for name, filter in self._filters.items()
+                if filter.filters
+            }
+        }
+
+    def initialize(self, x, **kwargs):
         return NotImplemented
 
-    def call(self, db, chunk=None):
+    def call(self, x, **kwargs):
         return NotImplemented
 
-    def __call__(self, db, chunk=None):
+    def __call__(self, x, **kwargs):
         if not self.state:
-            self.initialize(db, chunk)
-        return self.call(db, chunk)
+            self.initialize(x, **kwargs)
+        return self.call(x, **kwargs)
+
+    def save_state(self, path):
+        DataCollection(self.state).to_netcdf(path)
+
+    def set_state(self, state):
+        for key, value in state.items():
+            if isinstance(value, Database):
+                setattr(self, key, value)
+            else:
+                getattr(self, key).set_state(value)
+
+    def load_state(self, path):
+        state = open_datacollection(path)
+        self.set_state(state)
 
 
 class IIRFilter(Filter):
@@ -64,8 +93,14 @@ class IIRFilter(Filter):
         self.rp = rp
         self.rs = rs
         self.dim = dim
+        if self.stype == "ba":
+            self.iirfilter = LFilter(..., ..., self.dim)
+        elif self.stype == "sos":
+            self.iirfilter = SOSFilter(..., self.dim)
+        else:
+            raise ValueError()
 
-    def initialize(self, db, chunk=None):
+    def initialize(self, db, **kwargs):
         fs = 1.0 / get_sampling_interval(db, self.dim)
         coeffs = sp.iirfilter(
             self.order,
@@ -78,14 +113,15 @@ class IIRFilter(Filter):
             self.stype,
             fs,
         )
-        match self.stype:
-            case "ba":
-                self.iirfilter = LFilter(*coeffs, self.dim)
-            case "sos":
-                self.iirfilter = SOSFilter(coeffs, self.dim)
+        if self.stype == "ba":
+            self.iirfilter.b, self.iirfilter.a = coeffs
+        elif self.stype == "sos":
+            self.iirfilter.sos = coeffs
+        else:
+            raise ValueError()
 
-    def call(self, db, chunk=None):
-        return self.iirfilter(db, chunk)
+    def call(self, db, **kwargs):
+        return self.iirfilter(db, **kwargs)
 
 
 class LFilter(Filter):
@@ -95,7 +131,7 @@ class LFilter(Filter):
         self.a = a
         self.dim = dim
 
-    def initialize(self, db, chunk=None):
+    def initialize(self, db, chunk=None, **kwargs):
         self.axis = db.get_axis_num(self.dim)
         if self.dim == chunk:
             n_sections = max(len(self.a), len(self.b)) - 1
@@ -103,14 +139,18 @@ class LFilter(Filter):
                 n_sections if name == self.dim else size
                 for name, size in db.sizes.items()
             )
-            self.zi = State(np.zeros(shape))
+            coords = db.coords.copy(deep=False)
+            coords[self.dim] = np.arange(n_sections)
+            data = np.zeros(shape)
+            zi = Database(data, coords)
+            self.zi = State(zi)
 
-    def call(self, db, chunk=None):
+    def call(self, db, **kwargs):
         if hasattr(self, "zi"):
-            data, state = sp.lfilter(self.b, self.a, db, self.axis, self.zi)
-            self.zi = State(state)
+            data, zi = sp.lfilter(self.sos, db.values, self.axis, self.zi.values)
+            self.zi = State(self.zi.copy(data=zi))
         else:
-            data, state = sp.lfilter(self.b, self.a, db, self.axis)
+            data = sp.lfilter(self.sos, db.values, self.axis)
         return db.copy(data=data)
 
 
@@ -120,7 +160,7 @@ class SOSFilter(Filter):
         self.sos = sos
         self.dim = dim
 
-    def initialize(self, db, chunk=None):
+    def initialize(self, db, chunk=None, **kwargs):
         self.axis = db.get_axis_num(self.dim)
         if self.dim == chunk:
             n_sections = self.sos.shape[0]
@@ -128,12 +168,17 @@ class SOSFilter(Filter):
                 2 if index == self.axis else element
                 for index, element in enumerate(db.shape)
             )
-            self.zi = State(np.zeros(shape))
-
-    def call(self, db, chunk=None):
-        if hasattr(self, "zi"):
-            data, zi = sp.sosfilt(self.sos, db.values, self.axis, self.zi)
+            coords = db.coords.copy(deep=False)
+            coords[self.dim] = np.arange(2)
+            coords = {"section": np.arange(n_sections)} | coords
+            data = np.zeros(shape)
+            zi = Database(data, coords)
             self.zi = State(zi)
+
+    def call(self, db, **kwargs):
+        if hasattr(self, "zi"):
+            data, zi = sp.sosfilt(self.sos, db.values, self.axis, self.zi.values)
+            self.zi = State(self.zi.copy(data=zi))
         else:
             data = sp.sosfilt(self.sos, db.values, self.axis)
         return db.copy(data=data)
