@@ -76,6 +76,18 @@ class Coordinates(dict):
 
     @wraps_first_last
     def __setitem__(self, key, value):
+        if isinstance(value, AbstractCoordinate):
+            pass
+        elif isinstance(value, tuple):
+            dim, data = value
+            value = Coordinate(data, dim)
+        elif key in self:
+            dim = self[key].dim
+            value = Coordinate(value, dim)
+        elif key in self.dims:
+            value = Coordinate(value, key)
+        else:
+            raise KeyError("cannot assign unknown coordinate")
         return super().__setitem__(key, value)
 
     def __repr__(self):
