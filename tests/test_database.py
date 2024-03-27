@@ -168,19 +168,24 @@ class TestDatabase:
         assert db_sel.equals(db_expected)
 
     def test_io(self):
-        db = Database(
-            data=np.arange(12).reshape(3, 4),
-            coords={
-                "time": {
-                    "tie_indices": [0, 2],
-                    "tie_values": np.array(
-                        ["2000-01-01T00:00:00", "2000-01-01T00:00:02"],
-                        dtype="datetime64[s]",
-                    ),
-                },
-                "distance": [0.0, 100.0, 200.0, 300.0],
-            },
-        )
+        # both coords interpolated
+        db = generate()
+        with TemporaryDirectory() as dirpath:
+            path = os.path.join(dirpath, "tmp.nc")
+            db.to_netcdf(path)
+            db_recovered = Database.from_netcdf(path)
+            assert db.equals(db_recovered)
+
+        # mixed interpolated and dense
+        db["time"] = np.asarray(db["time"])
+        with TemporaryDirectory() as dirpath:
+            path = os.path.join(dirpath, "tmp.nc")
+            db.to_netcdf(path)
+            db_recovered = Database.from_netcdf(path)
+            assert db.equals(db_recovered)
+
+        # only dense coords
+        db["distance"] = np.asarray(db["distance"])
         with TemporaryDirectory() as dirpath:
             path = os.path.join(dirpath, "tmp.nc")
             db.to_netcdf(path)

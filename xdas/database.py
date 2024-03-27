@@ -353,6 +353,11 @@ class Database:
             copy_fn(self.attrs),
         )
 
+    def rename(self, name):
+        db = self.copy(deep=False)
+        db.name = name
+        return db
+
     def load(self):
         return self.copy(data=self.data.__array__())
 
@@ -503,13 +508,14 @@ class Database:
             for dim in self.coords
             if not self.coords[dim].isinterp()
         }
+        attrs = {"coordinate_interpolation": mapping} if mapping else None
         if not virtual:
             da = xr.DataArray(
                 data=self.values,
                 coords=coords,
                 dims=self.dims,
                 name=self.name,
-                attrs={"coordinate_interpolation": mapping},
+                attrs=attrs,
             )
             ds[da.name] = da
             ds.to_netcdf(fname, group=group, **kwargs)
@@ -519,7 +525,7 @@ class Database:
                 coords=coords,
                 dims=self.dims,
                 name="__tmp__",
-                attrs={"coordinate_interpolation": mapping},
+                attrs=attrs,
             )
             ds[da.name] = da
             ds.to_netcdf(fname, group=group, **kwargs)
@@ -545,7 +551,7 @@ class Database:
     def from_netcdf(cls, fname, group=None, **kwargs):
         with xr.open_dataset(fname, group=group, **kwargs) as ds:
             if len(ds) == 1:
-                name, da = next(ds.items())
+                name, da = next(iter(ds.items()))
                 coords = {
                     name: (
                         coord.dims[0],
