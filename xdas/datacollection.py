@@ -267,6 +267,10 @@ class DataMapping(AbstractDataCollection, dict):
         }
         return self.__class__(data, self.name)
 
+    def load(self):
+        data = {key: value.load() for key, value in self.items()}
+        return self.__class__(data, self.name)
+
 
 class DataSequence(AbstractDataCollection, list):
     """
@@ -331,6 +335,10 @@ class DataSequence(AbstractDataCollection, list):
             for value in data
             if (isinstance(value, AbstractDataCollection) or not value.empty)
         ]
+        return self.__class__(data, self.name)
+
+    def load(self):
+        data = [value.load() for value in self]
         return self.__class__(data, self.name)
 
 
