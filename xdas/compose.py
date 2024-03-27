@@ -311,13 +311,12 @@ def atomized(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         if any(arg is ... for arg in args):
-            if "state" in kwargs and kwargs["state"] is not None:
-                return StateAtom(func, *args, **kwargs)
+            state = {key: "init" for key, value in kwargs.items() if value is ...}
+            if state:
+                return StateAtom(func, *args, state=state, **kwargs)
             else:
                 return Atom(func, *args, **kwargs)
         else:
             return func(*args, **kwargs)
-
-    wrapper.__atomized__ = True
 
     return wrapper

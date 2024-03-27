@@ -7,6 +7,8 @@ import xdas
 import xdas.signal as xp
 from xdas.synthetics import generate
 from xdas.xarray import mean
+from xdas.signal import lfilter
+from xdas.compose import Atom, StateAtom
 
 
 class TestCompose:
@@ -42,3 +44,14 @@ class TestProcessing:
 
         # Test
         assert np.allclose(result1.values, result2.values)
+
+
+class TestDecorator:
+    def test_decorator(self):
+        a = [1, 1]
+        b = [1, 1]
+        atom = lfilter(b, a, ..., "time")
+        statefull = lfilter(b, a, ..., "time", zi=...)
+        assert isinstance(atom, Atom)
+        assert isinstance(statefull, StateAtom)
+        assert statefull.state == {"zi": "init"}
