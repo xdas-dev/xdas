@@ -19,6 +19,8 @@ class TestFilters:
 
         filter = IIRFilter(4, 10.0, "lowpass", dim="time")
         monolithic = filter(db)
+
+        filter = IIRFilter(4, 10.0, "lowpass", dim="time")
         chunked = concatenate([filter(chunk, chunk="time") for chunk in chunks], "time")
 
         assert monolithic.equals(expected)
@@ -32,7 +34,6 @@ class TestFilters:
             filter_a.save_state(path)
 
             filter_b = IIRFilter(4, 10.0, "lowpass", dim="time")
-            # filter_b(chunks[0], chunk="time")  # TODO``
             filter_b.load_state(path)
             chunks_b = [filter_b(chunk, chunk="time") for chunk in chunks[3:]]
 

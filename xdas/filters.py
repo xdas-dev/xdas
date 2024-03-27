@@ -9,8 +9,6 @@ from .datacollection import DataCollection
 
 class State:
     def __init__(self, state):
-        if not isinstance(state, (np.ndarray, Database)):
-            raise ValueError("states must be databases")
         self.state = state
 
 
@@ -49,6 +47,9 @@ class Filter:
     def initialize(self, x, **kwargs):
         return NotImplemented
 
+    def initialize_from_state(self):
+        return NotImplemented
+
     def call(self, x, **kwargs):
         return NotImplemented
 
@@ -63,12 +64,16 @@ class Filter:
     def set_state(self, state):
         for key, value in state.items():
             if isinstance(value, Database):
-                setattr(self, key, value)
+                setattr(
+                    self, key, State(value.__array__())
+                )  # TODO: shouldn't need __array__
+                self.initialize_from_state()
             else:
-                getattr(self, key).set_state(value)
+                filter = getattr(self, key)
+                filter.set_state(value)
 
     def load_state(self, path):
-        state = open_datacollection(path)
+        state = open_datacollection(path).load()
         self.set_state(state)
 
 
@@ -101,7 +106,10 @@ class IIRFilter(Filter):
             raise ValueError()
 
     def initialize(self, db, **kwargs):
-        fs = 1.0 / get_sampling_interval(db, self.dim)
+        self.fs = State(1.0 / get_sampling_interval(db, self.dim))
+        self.initialize_from_state()
+
+    def initialize_from_state(self):
         coeffs = sp.iirfilter(
             self.order,
             self.cutoff,
@@ -111,7 +119,7 @@ class IIRFilter(Filter):
             False,
             self.ftype,
             self.stype,
-            fs,
+            self.fs,
         )
         if self.stype == "ba":
             self.iirfilter.b, self.iirfilter.a = coeffs
@@ -132,22 +140,18 @@ class LFilter(Filter):
         self.dim = dim
 
     def initialize(self, db, chunk=None, **kwargs):
-        self.axis = db.get_axis_num(self.dim)
+        self.axis = State(db.get_axis_num(self.dim))
         if self.dim == chunk:
             n_sections = max(len(self.a), len(self.b)) - 1
             shape = tuple(
                 n_sections if name == self.dim else size
                 for name, size in db.sizes.items()
             )
-            coords = db.coords.copy(deep=False)
-            coords[self.dim] = np.arange(n_sections)
-            data = np.zeros(shape)
-            zi = Database(data, coords)
-            self.zi = State(zi)
+            self.zi = State(np.zeros(shape))
 
     def call(self, db, **kwargs):
         if hasattr(self, "zi"):
-            data, zi = sp.lfilter(self.sos, db.values, self.axis, self.zi.values)
+            data, zi = sp.lfilter(self.sos, db.values, self.axis, self.zi)
             self.zi = State(self.zi.copy(data=zi))
         else:
             data = sp.lfilter(self.sos, db.values, self.axis)
@@ -161,24 +165,19 @@ class SOSFilter(Filter):
         self.dim = dim
 
     def initialize(self, db, chunk=None, **kwargs):
-        self.axis = db.get_axis_num(self.dim)
+        self.axis = State(db.get_axis_num(self.dim))
         if self.dim == chunk:
             n_sections = self.sos.shape[0]
             shape = (n_sections,) + tuple(
                 2 if index == self.axis else element
                 for index, element in enumerate(db.shape)
             )
-            coords = db.coords.copy(deep=False)
-            coords[self.dim] = np.arange(2)
-            coords = {"section": np.arange(n_sections)} | coords
-            data = np.zeros(shape)
-            zi = Database(data, coords)
-            self.zi = State(zi)
+            self.zi = State(np.zeros(shape))
 
     def call(self, db, **kwargs):
         if hasattr(self, "zi"):
-            data, zi = sp.sosfilt(self.sos, db.values, self.axis, self.zi.values)
-            self.zi = State(self.zi.copy(data=zi))
+            data, zf = sp.sosfilt(self.sos, db.values, self.axis, self.zi)
+            self.zi = State(zf)
         else:
             data = sp.sosfilt(self.sos, db.values, self.axis)
         return db.copy(data=data)
