@@ -150,8 +150,10 @@ class DataCollection:
             return DataSequence(data, name)
         elif isinstance(data, dict):
             return DataMapping(data, name)
+        elif isinstance(data, Database):
+            return data.rename(name)
         else:
-            raise TypeError(f"could not parse `data` of type {type(data).__name__}")
+            return Database(data, name)
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
