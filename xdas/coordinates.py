@@ -58,6 +58,8 @@ class Coordinates(dict):
 
     def __init__(self, coords=None, dims=None):
         super().__init__()
+        if coords is None:
+            coords = {}
         for name in coords:
             if isinstance(coords[name], AbstractCoordinate):
                 self[name] = coords[name]
@@ -67,7 +69,7 @@ class Coordinates(dict):
             else:
                 self[name] = Coordinate(coords[name], name)
         if dims is None:
-            dims = tuple(name for name in self if self.isdim(name))
+            dims = tuple(name for name, value in self.items() if value.dim == name)
         self.dims = dims
 
     @wraps_first_last

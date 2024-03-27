@@ -42,9 +42,23 @@ class Database:
         If dims do not match the keys of coords.
     """
 
-    def __init__(self, data, coords, dims=None, name=None, attrs=None):
+    def __init__(self, data=None, coords=None, dims=None, name=None, attrs=None):
+        if data is None:
+            data = np.array(np.nan)
+        if not hasattr(data, "__array__"):
+            data = np.asarray(data)
+        if coords is None and dims is None:
+            dims = tuple(f"dim_{index}" for index in range(data.ndim))
+        if dims is not None and len(dims) != data.ndim:
+            raise ValueError("different number of dimensions on `data` and `dims`")
+        coords = Coordinates(coords, dims)
+        if not len(coords.dims) == data.ndim:
+            raise ValueError(
+                "infered dimension number from `coords` does not match "
+                "`data` dimensionality`"
+            )
         self.data = data
-        self.coords = Coordinates(coords, dims)
+        self.coords = coords
         self.name = name
         self.attrs = attrs
 

@@ -35,6 +35,16 @@ class TestDatabase:
         assert db.dtype == np.float64
         db = self.generate(dense=True)
         assert isinstance(db["dim"], DenseCoordinate)
+        db = Database()
+        assert np.array_equal(db.values, np.array(np.nan), equal_nan=True)
+        assert db.coords == {}
+        assert db.dims == tuple()
+        db = Database([[]])
+        assert db.dims == ("dim_0", "dim_1")
+        assert db.ndim == 2
+        db = Database(1)
+        assert db.dims == tuple()
+        assert db.ndim == 0
 
     def test_getitem(self):
         db = self.generate()

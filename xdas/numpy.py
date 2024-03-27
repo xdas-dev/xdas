@@ -13,7 +13,7 @@ def implements(numpy_function):
     return decorator
 
 
-def handled(reduce=False, drop_coords=False):
+def handled(reduce=False, drop_coords=False, **defaults):
     def decorator(func):
         sig = signature(func)
 
@@ -21,6 +21,7 @@ def handled(reduce=False, drop_coords=False):
         def wrapper(*args, **kwargs):
             ba = sig.bind(*args, **kwargs)
             ba.apply_defaults()
+            ba.arguments.update(defaults)
             key = next(iter(ba.arguments))
             db = ba.arguments.get(key)
             axis = ba.arguments.get("axis")
@@ -70,10 +71,11 @@ handled()(np.nonzero)
 handled()(np.real_if_close)
 handled()(np.real)
 handled()(np.sinc)
-handled()(np.cumprod)
-handled()(np.nancumprod)
-handled()(np.cumsum)
-handled()(np.nancumsum)
+
+handled(axis=-1)(np.cumprod)
+handled(axis=-1)(np.nancumprod)
+handled(axis=-1)(np.cumsum)
+handled(axis=-1)(np.nancumsum)
 
 handled(reduce=True)(np.all)
 handled(reduce=True)(np.any)

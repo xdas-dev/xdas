@@ -508,6 +508,9 @@ class TestCoordinates:
         )
         assert coords.isdim("dim_0")
         assert not coords.isdim("dim_1")
+        coords = xdas.Coordinates()
+        assert coords == dict()
+        assert coords.dims == tuple()
 
     def test_first_last(self):
         coords = xdas.Coordinates({"dim_0": [1.0, 2.0, 3.0], "dim_1": [1.0, 2.0, 3.0]})
