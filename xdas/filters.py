@@ -34,16 +34,6 @@ class Filter:
             name: filter.state for name, filter in self._filters.items() if filter.state
         }
 
-    @property
-    def filters(self):
-        return {"data": self._filters} | {
-            "children": {
-                name: filter.filters
-                for name, filter in self._filters.items()
-                if filter.filters
-            }
-        }
-
     def initialize(self, x, **kwargs):
         return NotImplemented
 

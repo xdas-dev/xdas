@@ -2,6 +2,8 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
+from .filters import Filter, State
+
 
 class Sequence(list):
     """
@@ -110,7 +112,7 @@ class Sequence(list):
                 atom.reset()
 
 
-class Atom:
+class Atom(Filter):
     """
     Base class for an xdas operation, to be used in conjunction with Sequence. Each
     Atom should be seen as an elementary operation to apply to the data, such as
@@ -155,6 +157,7 @@ class Atom:
     def __init__(
         self, func: Callable, *args: Any, name: str | None = None, **kwargs: Any
     ) -> None:
+        super().__init__()
         if not callable(func):
             raise TypeError("`func` should be callable")
         if not any(arg is ... for arg in args):
@@ -264,23 +267,23 @@ class StateAtom(Atom):
     ) -> None:
         super().__init__(func, *args, name=name, **kwargs)
         if isinstance(state, dict):
-            self.state = state
+            self.buffer = state
         else:
-            self.state = {"state": state}
+            self.buffer = {"state": state}
 
     def __repr__(self) -> str:
         return super().__repr__() + "  [stateful]"
 
     def __call__(self, x: Any) -> Any:
         args = tuple(x if arg is ... else arg for arg in self.args)
-        x, *state = self.func(*args, **self.kwargs, **self.state)
-        for key, value in zip(self.state, state):
-            self.state[key] = value
+        x, *state = self.func(*args, **self.kwargs, **self.buffer)
+        for key, value in zip(self.buffer, state):
+            self.buffer[key] = value
         return x
 
     def reset(self) -> None:
-        for key in self.state:
-            self.state[key] = "init"
+        for key in self.buffer:
+            self.buffer[key] = "init"
 
 
 def atomized(func):
