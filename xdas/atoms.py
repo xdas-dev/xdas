@@ -14,30 +14,29 @@ from .datacollection import DataCollection
 class Sequential(list):
     """
     A class to handle a sequence of operations. Each operation is represented by an
-    Atom class object, which contains the function and its arguments. For stateful
-    operations, use the StateAtom class.
+    Atom class object, which contains the function and its arguments.
 
     Sequence inherits from list, and therefore behaves as it.
 
     Parameters
     ----------
     atoms: list
-        The sequence of operations. Each element must either be an Atom
-        (or a StateAtom), a Sequence, or an unitary callable.
+        The sequence of operations. Each element must either be an Atom, a Sequence, or 
+        an unitary callable.
     name: str
         A label given to this sequence.
 
     Examples
     --------
-    >>> from xdas import Atom, StateAtom, Sequence
+    >>> from xdas import PartialAtom, PartialStateAtom, Sequential
     >>> import xdas.signal as xp
     >>> import numpy as np
 
-    >>> sequence = Sequence(
+    >>> sequence = Sequential(
     ...     [
-    ...         Atom(xp.taper, dim="time"),
-    ...         StateAtom(xp.lfilter, [1.0], [0.5], ..., dim="time", state="zi"),
-    ...         Atom(np.square),
+    ...         PartialAtom(xp.taper, dim="time"),
+    ...         PartialStateAtom(xp.lfilter, [1.0], [0.5], ..., dim="time", state="zi"),
+    ...         PartialAtom(np.square),
     ...     ],
     ...     name="Low frequency energy",
     ... )
@@ -47,9 +46,9 @@ class Sequential(list):
       1: lfilter([1.0], [0.5], ..., dim=time)  [stateful]
       2: square(...)
 
-    >>> sequence = Sequence(
+    >>> sequence = Sequential(
     ...     [
-    ...         Atom(xp.decimate, 16, dim="distance"),
+    ...         PartialAtom(xp.decimate, 16, dim="distance"),
     ...         sequence,
     ...     ]
     ... )
@@ -220,14 +219,13 @@ class PartialAtom(Filter):
 
     Examples
     --------
-    >>> from xdas import Atom
-
+    >>> from xdas import PartialAtom
     >>> import xdas.signal as xp
-    >>> Atom(xp.decimate, 2, dim="time", name="downsampling")
+    >>> PartialAtom(xp.decimate, 2, dim="time", name="downsampling")
     decimate(..., 2, dim=time)
 
     >>> import numpy as np
-    >>> Atom(np.square)
+    >>> PartialAtom(np.square)
     square(...)
 
     """
@@ -316,6 +314,7 @@ class PartialStateAtom(PartialAtom):
 
     Examples
     --------
+    >>> from xdas import PartialStateAtom
     >>> import xdas.signal as xp
     >>> import scipy.signal as sp
 
@@ -324,13 +323,13 @@ class PartialStateAtom(PartialAtom):
     By default, `state` is the expected keyword argument and 'init' is the send value
     to ask for initialisation.
 
-    >>> StateAtom(xp.sosfilt, sos, ..., dim="time", state="zi")
+    >>> PartialStateAtom(xp.sosfilt, sos, ..., dim="time", state="zi")
     sosfilt(<ndarray>, ..., dim=time)  [stateful]
 
     To manually specify the keyword argument and initial value a dict must be passed to
     the state keyword argument.
 
-    >>> StateAtom(xp.sosfilt, sos, ..., dim="time", state={"zi": "init"})
+    >>> PartialStateAtom(xp.sosfilt, sos, ..., dim="time", state={"zi": "init"})
     sosfilt(<ndarray>, ..., dim=time)  [stateful]
 
     """
