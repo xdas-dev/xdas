@@ -18,8 +18,8 @@ class TestProcessing:
 
             # declare processing sequence
             sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
-            sequence = xdas.Sequence(
-                [xdas.StateAtom(sosfilt, sos, ..., dim="time", state="zi")]
+            sequence = xdas.Sequential(
+                [xdas.PartialStateAtom(sosfilt, sos, ..., dim="time", state="zi")]
             )
 
             # monolithic processing

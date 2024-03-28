@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.signal as sp
 
-from .compose import atomized
+from .atoms import atomized
 from .coordinates import Coordinate, get_sampling_interval
 from .core import collects, splits
 from .database import Database

@@ -1,6 +1,6 @@
 import numpy as np
 
-from .compose import atomized
+from .atoms import atomized
 from .core import collects, splits
 from .database import XARRAY_HANDLED_METHODS
 

@@ -43,7 +43,7 @@
 .. autosummary::
    :toctree: _autosummary
 
-   xdas.compose.Atom
-   xdas.compose.StateAtom
-   xdas.compose.Sequence
+   xdas.atoms.PartialAtom
+   xdas.atoms.PartialStateAtom
+   xdas.atoms.Sequence
 ```
