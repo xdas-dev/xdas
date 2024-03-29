@@ -468,6 +468,10 @@ class TestInterpCoordinate:
         # TODO
         pass
 
+    def test_singleton(self):
+        coord = InterpCoordinate({"tie_indices": [0], "tie_values": [1.0]})
+        assert coord[0].values == 1.0
+
 
 class TestCoordinate:
     def test_new(self):

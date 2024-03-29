@@ -6,8 +6,9 @@ import numpy as np
 import scipy.signal as sp
 
 import xdas
+import xdas.atoms as atoms
 import xdas.signal as xp
-from xdas.atoms import PartialAtom, PartialStateAtom, IIRFilter
+from xdas.atoms import IIRFilter, PartialAtom, PartialStateAtom
 from xdas.core import chunk, concatenate
 from xdas.signal import lfilter
 from xdas.synthetics import generate
@@ -69,11 +70,11 @@ class TestFilters:
         data = sp.sosfilt(sos, db.values, axis=0)
         expected = db.copy(data=data)
 
-        filter = IIRFilter(4, 10.0, "lowpass", dim="time")
-        monolithic = filter(db)
+        atom = IIRFilter(4, 10.0, "lowpass", dim="time")
+        monolithic = atom(db)
 
-        filter = IIRFilter(4, 10.0, "lowpass", dim="time")
-        chunked = concatenate([filter(chunk, chunk="time") for chunk in chunks], "time")
+        atom = IIRFilter(4, 10.0, "lowpass", dim="time")
+        chunked = concatenate([atom(chunk, chunk="time") for chunk in chunks], "time")
 
         assert monolithic.equals(expected)
         assert chunked.equals(expected)
@@ -81,13 +82,31 @@ class TestFilters:
         with TemporaryDirectory() as dirpath:
             path = os.path.join(dirpath, "state.nc")
 
-            filter_a = IIRFilter(4, 10.0, "lowpass", dim="time")
-            chunks_a = [filter_a(chunk, chunk="time") for chunk in chunks[:3]]
-            filter_a.save_state(path)
+            atom_a = IIRFilter(4, 10.0, "lowpass", dim="time")
+            chunks_a = [atom_a(chunk, chunk="time") for chunk in chunks[:3]]
+            atom_a.save_state(path)
 
-            filter_b = IIRFilter(4, 10.0, "lowpass", dim="time")
-            filter_b.load_state(path)
-            chunks_b = [filter_b(chunk, chunk="time") for chunk in chunks[3:]]
+            atom_b = IIRFilter(4, 10.0, "lowpass", dim="time")
+            atom_b.load_state(path)
+            chunks_b = [atom_b(chunk, chunk="time") for chunk in chunks[3:]]
 
             result = concatenate(chunks_a + chunks_b, "time")
             assert result.equals(expected)
+
+    def test_downsample(self):
+        db = generate()
+        chunks = chunk(db, 6, "time")
+        expected = db.isel(time=slice(None, None, 3))
+        atom = atoms.DownSample(3, "time")
+        result = atom(db)
+        assert result.equals(expected)
+        result = concatenate([atom(chunk, chunk="time") for chunk in chunks], "time")
+        assert result.equals(expected)
+
+    def test_upsample(self):
+        db = generate()
+        chunks = chunk(db, 6, "time")
+        atom = atoms.UpSample(3, "time")
+        expected = atom(db)
+        result = concatenate([atom(chunk, chunk="time") for chunk in chunks], "time")
+        assert result.equals(expected)

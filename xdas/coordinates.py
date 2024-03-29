@@ -623,7 +623,9 @@ class InterpCoordinate(AbstractCoordinate):
                 tie_indices[k] += q
         tie_values = [self.get_value(idx) for idx in tie_indices]
         tie_indices //= q
-        return self.__class__(dict(tie_indices=tie_indices, tie_values=tie_values))
+        return self.__class__(
+            dict(tie_indices=tie_indices, tie_values=tie_values), self.dim
+        )
 
     def simplify(self, tolerance=None):
         if tolerance is None:

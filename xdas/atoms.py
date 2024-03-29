@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from fractions import Fraction
 from functools import wraps
 from typing import Any
 
@@ -6,7 +7,7 @@ import numpy as np
 import scipy.signal as sp
 
 from .coordinates import Coordinate, get_sampling_interval
-from .core import open_datacollection
+from .core import concatenate, open_datacollection, split
 from .database import Database
 from .datacollection import DataCollection
 
@@ -21,7 +22,7 @@ class Sequential(list):
     Parameters
     ----------
     atoms: list
-        The sequence of operations. Each element must either be an Atom, a Sequence, or 
+        The sequence of operations. Each element must either be an Atom, a Sequence, or
         an unitary callable.
     name: str
         A label given to this sequence.
@@ -122,7 +123,7 @@ class State:
         self.state = state
 
 
-class Filter:
+class Atom:
     def __init__(self):
         super().__setattr__("_config", {})
         super().__setattr__("_state", {})
@@ -143,7 +144,7 @@ class Filter:
             case State(state=state):
                 self._state[name] = state
                 super().__setattr__(name, state)
-            case Filter():
+            case Atom():
                 self._filters[name] = value
                 super().__setattr__(name, value)
             case other:
@@ -189,7 +190,7 @@ class Filter:
         self.set_state(state)
 
 
-class PartialAtom(Filter):
+class PartialAtom(Atom):
     """
     Base class for an xdas operation, to be used in conjunction with Sequence. Each
     Atom should be seen as an elementary operation to apply to the data, such as
@@ -399,7 +400,7 @@ def atomized(func):
     return wrapper
 
 
-class IIRFilter(Filter):
+class IIRFilter(Atom):
     def __init__(
         self,
         order,
@@ -454,7 +455,7 @@ class IIRFilter(Filter):
         return self.iirfilter(db, **kwargs)
 
 
-class LFilter(Filter):
+class LFilter(Atom):
     def __init__(self, b, a, dim):
         super().__init__()
         self.b = b
@@ -480,7 +481,7 @@ class LFilter(Filter):
         return db.copy(data=data)
 
 
-class SOSFilter(Filter):
+class SOSFilter(Atom):
     def __init__(self, sos, dim):
         super().__init__()
         self.sos = sos
@@ -503,3 +504,71 @@ class SOSFilter(Filter):
         else:
             data = sp.sosfilt(self.sos, db.values, self.axis)
         return db.copy(data=data)
+
+
+class Resample(Atom):
+    def __init__(
+        self, target, maxup=1000, maxdown=1000, window=("kaiser", 5.0), dim="last"
+    ):
+        super().__init__()
+        self.target = target
+        self.maxup = maxup
+        self.maxdown = maxdown
+        self.dim = dim
+        self.upsampling = None
+        self.firfilter = None
+        self.downsampling = None
+
+    def initialize(self, db, chunk=None, **kwargs):
+        ...
+
+    def call(self, db, **kwargs):
+        db = self.upsampling(db)
+
+
+class DownSample(Atom):
+    def __init__(self, factor, dim="last"):
+        super().__init__()
+        self.factor = factor
+        self.dim = dim
+
+    def initialize(self, db, chunk=None, **kwargs):
+        if chunk == self.dim:
+            self.buffer = State(db.isel({self.dim: slice(0, 0)}))
+
+    def call(self, db, **kwargs):
+        if hasattr(self, "buffer"):
+            print(self.buffer)
+            db = concatenate([self.buffer, db], self.dim)
+            divpoint = db.sizes[self.dim] - db.sizes[self.dim] % self.factor
+            db, buffer = split(db, [divpoint], self.dim)
+            self.buffer = State(buffer)
+        return db.isel({self.dim: slice(None, None, self.factor)})
+
+
+class UpSample(Atom):
+    def __init__(self, factor, dim="last"):
+        super().__init__()
+        self.factor = factor
+        self.dim = dim
+
+    def call(self, db, **kwargs):
+        shape = tuple(
+            self.factor * size if dim == self.dim else size
+            for dim, size in db.sizes.items()
+        )
+        slc = tuple(
+            slice(None, None, self.factor) if dim == self.dim else slice(None)
+            for dim in db.dims
+        )
+        data = np.zeros(shape, dtype=db.dtype)
+        data[slc] = db.values
+        coords = db.coords.copy()
+        coords[self.dim] = Coordinate(
+            {
+                "tie_indices": coords[self.dim].tie_indices * self.factor,
+                "tie_values": coords[self.dim].tie_values,
+            },
+            self.dim,
+        )
+        return Database(data, coords, name=db.name, attrs=db.attrs)
