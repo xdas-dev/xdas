@@ -452,17 +452,22 @@ def asdatabase(obj, tolerance=None):
         raise ValueError("Cannot convert to database.")
 
 
-def split(db, dim="first", tolerance=None):
-    if not isinstance(db[dim], InterpCoordinate):
-        raise TypeError("the dimension to split must have as type `InterpCoordinate`.")
-    coord = db[dim].simplify(tolerance)
-    (points,) = np.nonzero(np.diff(coord.tie_indices, prepend=[0]) == 1)
-    indices = [coord.tie_indices[point] for point in points]
-    div_indices = [0] + indices + [db.sizes[dim]]
+def split(db, divpoints="discontinuities", dim="first", tolerance=None):
+    if divpoints == "discontinuities":
+        if isinstance(db[dim], InterpCoordinate):
+            coord = db[dim].simplify(tolerance)
+            (points,) = np.nonzero(np.diff(coord.tie_indices, prepend=[0]) == 1)
+            divpoints = [coord.tie_indices[point] for point in points]
+        else:
+            raise TypeError(
+                "discontinuities can only be found on dimension that have as type "
+                "`InterpCoordinate`."
+            )
+    divpoints = [0] + divpoints + [db.sizes[dim]]
     return DataCollection(
         [
-            db.isel({dim: slice(div_indices[idx], div_indices[idx + 1])})
-            for idx in range(len(div_indices) - 1)
+            db.isel({dim: slice(divpoints[idx], divpoints[idx + 1])})
+            for idx in range(len(divpoints) - 1)
         ]
     )
 
@@ -528,7 +533,7 @@ def splits(func):
         if not isinstance(db[dim], InterpCoordinate):
             return func(*ba.args, **ba.kwargs)
         else:
-            dc = split(db, dim)
+            dc = split(db, dim=dim)
             ba.arguments["db"] = dc
             dc = func(*ba.args, **ba.kwargs)
             return concatenate(dc, dim)
