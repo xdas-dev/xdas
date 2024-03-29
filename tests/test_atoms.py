@@ -8,7 +8,7 @@ import scipy.signal as sp
 import xdas
 import xdas.atoms as atoms
 import xdas.signal as xp
-from xdas.atoms import IIRFilter, PartialAtom, PartialStateAtom
+from xdas.atoms import FIRFilter, IIRFilter, PartialAtom, PartialStateAtom
 from xdas.core import chunk, concatenate
 from xdas.signal import lfilter
 from xdas.synthetics import generate
@@ -62,7 +62,38 @@ class TestDecorator:
 
 
 class TestFilters:
-    def test_iirfilter(self):
+    def test_lfilter(self):
+        db = generate()
+        chunks = chunk(db, 6, "time")
+
+        b, a = sp.iirfilter(4, 10.0, btype="lowpass", fs=50.0)
+        data = sp.lfilter(b, a, db.values, axis=0)
+        expected = db.copy(data=data)
+
+        atom = IIRFilter(4, 10.0, "lowpass", dim="time", stype="ba")
+        monolithic = atom(db)
+
+        atom = IIRFilter(4, 10.0, "lowpass", dim="time", stype="ba")
+        chunked = concatenate([atom(chunk, chunk="time") for chunk in chunks], "time")
+
+        assert monolithic.equals(expected)
+        assert chunked.equals(expected)
+
+        with TemporaryDirectory() as dirpath:
+            path = os.path.join(dirpath, "state.nc")
+
+            atom_a = IIRFilter(4, 10.0, "lowpass", dim="time", stype="ba")
+            chunks_a = [atom_a(chunk, chunk="time") for chunk in chunks[:3]]
+            atom_a.save_state(path)
+
+            atom_b = IIRFilter(4, 10.0, "lowpass", dim="time", stype="ba")
+            atom_b.load_state(path)
+            chunks_b = [atom_b(chunk, chunk="time") for chunk in chunks[3:]]
+
+            result = concatenate(chunks_a + chunks_b, "time")
+            assert result.equals(expected)
+
+    def test_sosfilter(self):
         db = generate()
         chunks = chunk(db, 6, "time")
 
@@ -110,3 +141,19 @@ class TestFilters:
         expected = atom(db)
         result = concatenate([atom(chunk, chunk="time") for chunk in chunks], "time")
         assert result.equals(expected)
+
+    def test_firfilter(self):
+        db = generate()
+        chunks = chunk(db, 6, "time")
+        taps = sp.firwin(11, 0.2, pass_zero="lowpass")
+        expected = xp.lfilter(taps, 1.0, db, "time")
+        atom = FIRFilter(11, 10.0, "lowpass", dim="time")
+        result = atom(db)
+        assert result.equals(expected)
+
+        atom = FIRFilter(11, 10.0, "lowpass", dim="time")
+        result = concatenate([atom(chunk, chunk="time") for chunk in chunks], "time")
+        assert np.allclose(result.values, expected.values, atol=1e-16, rtol=1e-11)
+        assert result.coords.equals(expected.coords)
+        assert result.attrs == expected.attrs
+        assert result.name == expected.name

@@ -474,10 +474,10 @@ class LFilter(Atom):
 
     def call(self, db, **kwargs):
         if hasattr(self, "zi"):
-            data, zi = sp.lfilter(self.sos, db.values, self.axis, self.zi)
-            self.zi = State(self.zi.copy(data=zi))
+            data, zf = sp.lfilter(self.b, self.a, db.values, self.axis, self.zi)
+            self.zi = State(zf)
         else:
-            data = sp.lfilter(self.sos, db.values, self.axis)
+            data = sp.lfilter(self.b, self.a, db.values, self.axis)
         return db.copy(data=data)
 
 
@@ -524,6 +524,9 @@ class Resample(Atom):
 
     def call(self, db, **kwargs):
         db = self.upsampling(db)
+        db = self.firfilter(db)
+        db = self.downsampling(db)
+        return db
 
 
 class DownSample(Atom):
@@ -572,3 +575,44 @@ class UpSample(Atom):
             self.dim,
         )
         return Database(data, coords, name=db.name, attrs=db.attrs)
+
+
+class FIRFilter(Atom):
+    def __init__(
+        self,
+        order,
+        cutoff,
+        btype="bandpass",
+        wtype="hamming",
+        width=None,
+        scale=True,
+        dim="last",
+    ):
+        super().__init__()
+        self.order = order
+        self.cutoff = cutoff
+        self.btype = btype
+        self.wtype = wtype
+        self.width = width
+        self.scale = scale
+        self.dim = dim
+        self.lfilter = LFilter(..., [1.0], self.dim)
+
+    def initialize(self, db, **kwargs):
+        self.fs = State(1.0 / get_sampling_interval(db, self.dim))
+        self.initialize_from_state()
+
+    def initialize_from_state(self):
+        taps = sp.firwin(
+            self.order,
+            self.cutoff,
+            self.width,
+            self.wtype,
+            self.btype,
+            self.scale,
+            self.fs,
+        )
+        self.lfilter.b = taps
+
+    def call(self, db, **kwargs):
+        return self.lfilter(db, **kwargs)
