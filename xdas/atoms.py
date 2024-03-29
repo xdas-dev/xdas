@@ -567,10 +567,17 @@ class UpSample(Atom):
         data = np.zeros(shape, dtype=db.dtype)
         data[slc] = db.values
         coords = db.coords.copy()
+        delta = get_sampling_interval(db, self.dim, cast=False)
+        tie_indices = coords[self.dim].tie_indices * self.factor
+        tie_values = coords[self.dim].tie_values
+        tie_indices[-1] += self.factor - 1
+        print(delta)
+        print((self.factor - 1) / self.factor)
+        tie_values[-1] += (self.factor - 1) / self.factor * delta
         coords[self.dim] = Coordinate(
             {
-                "tie_indices": coords[self.dim].tie_indices * self.factor,
-                "tie_values": coords[self.dim].tie_values,
+                "tie_indices": tie_indices,
+                "tie_values": tie_values,
             },
             self.dim,
         )

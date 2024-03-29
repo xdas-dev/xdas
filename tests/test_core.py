@@ -112,6 +112,10 @@ class TestCore:
         sel = db.isel(time=slice(0, 0))
         result = xdas.concatenate([sel, db])
         assert result.equals(db)
+        db1 = db.isel(time=slice(None, 1))
+        db2 = db.isel(time=slice(1, None))
+        result = xdas.concatenate([db1, db2])
+        assert result.equals(db)
 
     def test_open_database(self):
         with pytest.raises(FileNotFoundError):

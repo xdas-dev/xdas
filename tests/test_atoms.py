@@ -135,6 +135,17 @@ class TestFilters:
         assert result.equals(expected)
 
     def test_upsample(self):
+        db = xdas.Database(
+            [1, 1, 1], {"time": {"tie_indices": [0, 2], "tie_values": [0.0, 6.0]}}
+        )
+        expected = xdas.Database(
+            [1, 0, 0, 1, 0, 0, 1, 0, 0],
+            {"time": {"tie_indices": [0, 8], "tie_values": [0.0, 8.0]}},
+        )
+        atom = atoms.UpSample(3, "time")
+        result = atom(db)
+        assert result.equals(expected)
+
         db = generate()
         chunks = chunk(db, 6, "time")
         atom = atoms.UpSample(3, "time")

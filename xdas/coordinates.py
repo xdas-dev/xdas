@@ -665,7 +665,7 @@ class InterpCoordinate(AbstractCoordinate):
         return {"dim": self.dim, "data": data}
 
 
-def get_sampling_interval(db, dim):
+def get_sampling_interval(db, dim, cast=True):
     """
     Returns the sample spacing along a given dimension.
 
@@ -692,9 +692,8 @@ def get_sampling_interval(db, dim):
     else:
         d = (coord[-1].values - coord[0].values) / (len(coord) - 1)
         d = np.asarray(d)
-    if np.issubdtype(d.dtype, np.timedelta64):
+    if cast and np.issubdtype(d.dtype, np.timedelta64):
         d = d / np.timedelta64(1, "s")
-    d = d.item()
     return d
 
 
