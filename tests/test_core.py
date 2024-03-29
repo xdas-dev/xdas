@@ -108,6 +108,10 @@ class TestCore:
             _db = xdas.concatenate(dbs, "distance")
             assert np.array_equal(_db.data, db.data)
             assert _db["distance"].equals(db["distance"])
+        db = generate()
+        sel = db.isel(time=slice(0, 0))
+        result = xdas.concatenate([sel, db])
+        assert result.equals(db)
 
     def test_open_database(self):
         with pytest.raises(FileNotFoundError):

@@ -302,6 +302,7 @@ def concatenate(dbs, dim="first", tolerance=None, virtual=None, verbose=None):
     Database
         The concatenated database.
     """
+    dbs = [db for db in dbs if not db[dim].empty]
     dbs = sorted(dbs, key=lambda db: db[dim][0].values)
     axis = dbs[0].get_axis_num(dim)
     dim = dbs[0].dims[axis]
