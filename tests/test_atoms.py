@@ -8,7 +8,7 @@ import scipy.signal as sp
 import xdas
 import xdas.atoms as atoms
 import xdas.signal as xp
-from xdas.atoms import FIRFilter, IIRFilter, PartialAtom, PartialStateAtom
+from xdas.atoms import FIRFilter, IIRFilter, PartialAtom, PartialStateAtom, ResamplePoly
 from xdas.core import chunk, concatenate
 from xdas.signal import lfilter
 from xdas.synthetics import generate
@@ -139,16 +139,16 @@ class TestFilters:
             [1, 1, 1], {"time": {"tie_indices": [0, 2], "tie_values": [0.0, 6.0]}}
         )
         expected = xdas.Database(
-            [1, 0, 0, 1, 0, 0, 1, 0, 0],
+            [3, 0, 0, 3, 0, 0, 3, 0, 0],
             {"time": {"tie_indices": [0, 8], "tie_values": [0.0, 8.0]}},
         )
-        atom = atoms.UpSample(3, "time")
+        atom = atoms.UpSample(3, dim="time")
         result = atom(db)
         assert result.equals(expected)
 
         db = generate()
         chunks = chunk(db, 6, "time")
-        atom = atoms.UpSample(3, "time")
+        atom = atoms.UpSample(3, dim="time")
         expected = atom(db)
         result = concatenate([atom(chunk, chunk="time") for chunk in chunks], "time")
         assert result.equals(expected)
@@ -156,8 +156,9 @@ class TestFilters:
     def test_firfilter(self):
         db = generate()
         chunks = chunk(db, 6, "time")
-        taps = sp.firwin(11, 0.2, pass_zero="lowpass")
+        taps = sp.firwin(11, 0.4, pass_zero="lowpass")
         expected = xp.lfilter(taps, 1.0, db, "time")
+        expected["time"] -= np.timedelta64(20, "ms") * 5
         atom = FIRFilter(11, 10.0, "lowpass", dim="time")
         result = atom(db)
         assert result.equals(expected)
@@ -165,6 +166,32 @@ class TestFilters:
         atom = FIRFilter(11, 10.0, "lowpass", dim="time")
         result = concatenate([atom(chunk, chunk="time") for chunk in chunks], "time")
         assert np.allclose(result.values, expected.values, atol=1e-16, rtol=1e-11)
+        assert result.coords.equals(expected.coords)
+        assert result.attrs == expected.attrs
+        assert result.name == expected.name
+
+    def test_resample_poly(self):
+        db = generate()
+        chunks = chunk(db, 6, "time")
+
+        expected = xp.resample_poly(db, 5, 2, "time")
+        atom = ResamplePoly(125, maxfactor=10, dim="time")
+        result = atom(db)
+        atom = ResamplePoly(125, maxfactor=10, dim="time")
+        result_chunked = concatenate(
+            [atom(chunk, chunk="time") for chunk in chunks], "time"
+        )
+
+        assert np.allclose(result.values, result_chunked.values, atol=1e-15, rtol=1e-12)
+        assert result.coords.equals(result_chunked.coords)
+        assert result.attrs == result_chunked.attrs
+        assert result.name == result_chunked.name
+
+        result = result.sel(time=slice("2023-01-01T00:00:01", "2023-01-01T00:00:05"))
+        expected = expected.sel(
+            time=slice("2023-01-01T00:00:01", "2023-01-01T00:00:05")
+        )
+        assert np.allclose(result.values, expected.values, atol=1e-15, rtol=1e-12)
         assert result.coords.equals(expected.coords)
         assert result.attrs == expected.attrs
         assert result.name == expected.name

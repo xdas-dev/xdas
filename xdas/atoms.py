@@ -167,7 +167,7 @@ class Atom:
         return NotImplemented
 
     def __call__(self, x, **kwargs):
-        if not self.state:
+        if not self._state:
             self.initialize(x, **kwargs)
         return self.call(x, **kwargs)
 
@@ -506,26 +506,39 @@ class SOSFilter(Atom):
         return db.copy(data=data)
 
 
-class Resample(Atom):
-    def __init__(
-        self, target, maxup=1000, maxdown=1000, window=("kaiser", 5.0), dim="last"
-    ):
+class ResamplePoly(Atom):
+    def __init__(self, target, maxfactor=100, window=("kaiser", 5.0), dim="last"):
         super().__init__()
         self.target = target
-        self.maxup = maxup
-        self.maxdown = maxdown
+        self.maxfactor = maxfactor
+        self.window = window
         self.dim = dim
-        self.upsampling = None
-        self.firfilter = None
-        self.downsampling = None
+        self.upsampling = UpSample(..., dim=self.dim)
+        self.firfilter = FIRFilter(..., ..., "lowpass", self.window, dim=self.dim)
+        self.downsampling = DownSample(..., self.dim)
 
-    def initialize(self, db, chunk=None, **kwargs):
-        ...
+    def initialize(self, db, **kwargs):
+        self.fs = State(1.0 / get_sampling_interval(db, self.dim))
+        self.initialize_from_state()
+
+    def initialize_from_state(self):
+        fraction = Fraction(self.target / self.fs)
+        fraction = fraction.limit_denominator(self.maxfactor)
+        fraction = 1 / (1 / fraction).limit_denominator(self.maxfactor)
+        up = fraction.numerator
+        down = fraction.denominator
+        cutoff = min(self.target / 2, self.fs / 2)
+        max_rate = max(up, down)
+        order = 20 * max_rate + 1
+        self.upsampling.factor = up
+        self.firfilter.order = order
+        self.firfilter.cutoff = cutoff
+        self.downsampling.factor = down
 
     def call(self, db, **kwargs):
-        db = self.upsampling(db)
-        db = self.firfilter(db)
-        db = self.downsampling(db)
+        db = self.upsampling(db, **kwargs)
+        db = self.firfilter(db, **kwargs)
+        db = self.downsampling(db, **kwargs)
         return db
 
 
@@ -541,7 +554,6 @@ class DownSample(Atom):
 
     def call(self, db, **kwargs):
         if hasattr(self, "buffer"):
-            print(self.buffer)
             db = concatenate([self.buffer, db], self.dim)
             divpoint = db.sizes[self.dim] - db.sizes[self.dim] % self.factor
             db, buffer = split(db, [divpoint], self.dim)
@@ -550,10 +562,12 @@ class DownSample(Atom):
 
 
 class UpSample(Atom):
-    def __init__(self, factor, dim="last"):
+    def __init__(self, factor, scale=True, dim="last"):
         super().__init__()
         self.factor = factor
+        self.scale = scale
         self.dim = dim
+        # self.__dummy__ = State(...)
 
     def call(self, db, **kwargs):
         shape = tuple(
@@ -565,14 +579,15 @@ class UpSample(Atom):
             for dim in db.dims
         )
         data = np.zeros(shape, dtype=db.dtype)
-        data[slc] = db.values
+        if self.scale:
+            data[slc] = db.values * self.factor
+        else:
+            data[slc] = db.values
         coords = db.coords.copy()
         delta = get_sampling_interval(db, self.dim, cast=False)
         tie_indices = coords[self.dim].tie_indices * self.factor
         tie_values = coords[self.dim].tie_values
         tie_indices[-1] += self.factor - 1
-        print(delta)
-        print((self.factor - 1) / self.factor)
         tie_values[-1] += (self.factor - 1) / self.factor * delta
         coords[self.dim] = Coordinate(
             {
@@ -613,13 +628,16 @@ class FIRFilter(Atom):
         taps = sp.firwin(
             self.order,
             self.cutoff,
-            self.width,
-            self.wtype,
-            self.btype,
-            self.scale,
-            self.fs,
+            width=self.width,
+            window=self.wtype,
+            pass_zero=self.btype,
+            scale=self.scale,
+            fs=self.fs,
         )
+        self.lag = (len(taps) - 1) // 2
         self.lfilter.b = taps
 
     def call(self, db, **kwargs):
-        return self.lfilter(db, **kwargs)
+        db = self.lfilter(db, **kwargs)
+        db[self.dim] -= get_sampling_interval(db, self.dim, cast=False) * self.lag
+        return db
