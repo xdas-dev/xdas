@@ -400,6 +400,42 @@ def atomized(func):
     return wrapper
 
 
+class ResamplePoly(Atom):
+    def __init__(self, target, maxfactor=100, window=("kaiser", 5.0), dim="last"):
+        super().__init__()
+        self.target = target
+        self.maxfactor = maxfactor
+        self.window = window
+        self.dim = dim
+        self.upsampling = UpSample(..., dim=self.dim)
+        self.firfilter = FIRFilter(..., ..., "lowpass", self.window, dim=self.dim)
+        self.downsampling = DownSample(..., self.dim)
+
+    def initialize(self, db, **kwargs):
+        self.fs = State(1.0 / get_sampling_interval(db, self.dim))
+        self.initialize_from_state()
+
+    def initialize_from_state(self):
+        fraction = Fraction(self.target / self.fs)
+        fraction = fraction.limit_denominator(self.maxfactor)
+        fraction = 1 / (1 / fraction).limit_denominator(self.maxfactor)
+        up = fraction.numerator
+        down = fraction.denominator
+        cutoff = min(self.target / 2, self.fs / 2)
+        max_rate = max(up, down)
+        order = 20 * max_rate + 1
+        self.upsampling.factor = up
+        self.firfilter.order = order
+        self.firfilter.cutoff = cutoff
+        self.downsampling.factor = down
+
+    def call(self, db, **kwargs):
+        db = self.upsampling(db, **kwargs)
+        db = self.firfilter(db, **kwargs)
+        db = self.downsampling(db, **kwargs)
+        return db
+
+
 class IIRFilter(Atom):
     def __init__(
         self,
@@ -455,6 +491,50 @@ class IIRFilter(Atom):
         return self.iirfilter(db, **kwargs)
 
 
+class FIRFilter(Atom):
+    def __init__(
+        self,
+        order,
+        cutoff,
+        btype="bandpass",
+        wtype="hamming",
+        width=None,
+        scale=True,
+        dim="last",
+    ):
+        super().__init__()
+        self.order = order
+        self.cutoff = cutoff
+        self.btype = btype
+        self.wtype = wtype
+        self.width = width
+        self.scale = scale
+        self.dim = dim
+        self.lfilter = LFilter(..., [1.0], self.dim)
+
+    def initialize(self, db, **kwargs):
+        self.fs = State(1.0 / get_sampling_interval(db, self.dim))
+        self.initialize_from_state()
+
+    def initialize_from_state(self):
+        taps = sp.firwin(
+            self.order,
+            self.cutoff,
+            width=self.width,
+            window=self.wtype,
+            pass_zero=self.btype,
+            scale=self.scale,
+            fs=self.fs,
+        )
+        self.lag = (len(taps) - 1) // 2
+        self.lfilter.b = taps
+
+    def call(self, db, **kwargs):
+        db = self.lfilter(db, **kwargs)
+        db[self.dim] -= get_sampling_interval(db, self.dim, cast=False) * self.lag
+        return db
+
+
 class LFilter(Atom):
     def __init__(self, b, a, dim):
         super().__init__()
@@ -504,42 +584,6 @@ class SOSFilter(Atom):
         else:
             data = sp.sosfilt(self.sos, db.values, self.axis)
         return db.copy(data=data)
-
-
-class ResamplePoly(Atom):
-    def __init__(self, target, maxfactor=100, window=("kaiser", 5.0), dim="last"):
-        super().__init__()
-        self.target = target
-        self.maxfactor = maxfactor
-        self.window = window
-        self.dim = dim
-        self.upsampling = UpSample(..., dim=self.dim)
-        self.firfilter = FIRFilter(..., ..., "lowpass", self.window, dim=self.dim)
-        self.downsampling = DownSample(..., self.dim)
-
-    def initialize(self, db, **kwargs):
-        self.fs = State(1.0 / get_sampling_interval(db, self.dim))
-        self.initialize_from_state()
-
-    def initialize_from_state(self):
-        fraction = Fraction(self.target / self.fs)
-        fraction = fraction.limit_denominator(self.maxfactor)
-        fraction = 1 / (1 / fraction).limit_denominator(self.maxfactor)
-        up = fraction.numerator
-        down = fraction.denominator
-        cutoff = min(self.target / 2, self.fs / 2)
-        max_rate = max(up, down)
-        order = 20 * max_rate + 1
-        self.upsampling.factor = up
-        self.firfilter.order = order
-        self.firfilter.cutoff = cutoff
-        self.downsampling.factor = down
-
-    def call(self, db, **kwargs):
-        db = self.upsampling(db, **kwargs)
-        db = self.firfilter(db, **kwargs)
-        db = self.downsampling(db, **kwargs)
-        return db
 
 
 class DownSample(Atom):
@@ -597,47 +641,3 @@ class UpSample(Atom):
             self.dim,
         )
         return Database(data, coords, name=db.name, attrs=db.attrs)
-
-
-class FIRFilter(Atom):
-    def __init__(
-        self,
-        order,
-        cutoff,
-        btype="bandpass",
-        wtype="hamming",
-        width=None,
-        scale=True,
-        dim="last",
-    ):
-        super().__init__()
-        self.order = order
-        self.cutoff = cutoff
-        self.btype = btype
-        self.wtype = wtype
-        self.width = width
-        self.scale = scale
-        self.dim = dim
-        self.lfilter = LFilter(..., [1.0], self.dim)
-
-    def initialize(self, db, **kwargs):
-        self.fs = State(1.0 / get_sampling_interval(db, self.dim))
-        self.initialize_from_state()
-
-    def initialize_from_state(self):
-        taps = sp.firwin(
-            self.order,
-            self.cutoff,
-            width=self.width,
-            window=self.wtype,
-            pass_zero=self.btype,
-            scale=self.scale,
-            fs=self.fs,
-        )
-        self.lag = (len(taps) - 1) // 2
-        self.lfilter.b = taps
-
-    def call(self, db, **kwargs):
-        db = self.lfilter(db, **kwargs)
-        db[self.dim] -= get_sampling_interval(db, self.dim, cast=False) * self.lag
-        return db
