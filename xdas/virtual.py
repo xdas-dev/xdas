@@ -167,7 +167,7 @@ class DataSource:
         self._sel = Selection(self._vsource.shape)
 
     def __getitem__(self, key):
-        self = deepcopy(self)
+        self = copy(self)
         self._sel = self._sel.__getitem__(key)
         return self
 
@@ -347,7 +347,7 @@ class SliceSelector:
         if isinstance(item, int):
             return SingleSelector(item)
         else:
-            sel = deepcopy(self)
+            sel = copy(self)
             sel._range = item
             return sel
 
