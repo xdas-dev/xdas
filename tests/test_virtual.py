@@ -1,6 +1,7 @@
 import os
 import tempfile
 
+import h5py
 import numpy as np
 import pytest
 import xarray as xr
@@ -45,13 +46,95 @@ class TestFunctional:
 
 
 class TestDataLayout:
-    def test_init(self):
-        ...
+    @pytest.fixture(scope="class")
+    def shared_path(self, tmp_path_factory):
+        tmp_path = tmp_path_factory.mktemp("virtual_data_layout")
+        yield tmp_path
+
+    @pytest.fixture(scope="class")
+    def layout_from_data(self, shared_path):
+        shape = (10, 3)
+        data = np.arange(np.prod(shape)).reshape(*shape)
+        chunks = np.split(data, 5, axis=0)
+        sources = []
+        for index, chunk in enumerate(chunks, start=1):
+            with h5py.File(shared_path / f"{index}.h5", "w") as file:
+                file.create_dataset("data", chunk.shape, chunk.dtype, chunk)
+                source = DataSource(file["data"])
+            sources.append(source)
+        layout = DataLayout(data.shape, data.dtype)
+        index = 0
+        for source in sources:
+            layout[index : index + source.shape[0]] = source
+            index += source.shape[0]
+        yield layout, data
+
+    def test_init(self, layout_from_data):
+        layout, data = layout_from_data
+        assert layout.shape == data.shape
+        assert layout.dtype == data.dtype
+        assert layout.ndim == data.ndim
+        assert layout.nbytes == data.nbytes
+
+    def test_to_dataset(self, layout_from_data, shared_path):
+        layout, data = layout_from_data
+        with h5py.File(shared_path / "vds.h5", "w") as file:
+            layout.to_dataset(file, "data")
+            source = DataSource(file["data"])
+        assert np.array_equal(np.asarray(source), data)
+
+    def test_array(self, layout_from_data):
+        layout, data = layout_from_data
+        print(np.asarray(layout))
+        assert np.array_equal(np.asarray(layout), data)
+
+    def test_sel(self, layout_from_data):
+        layout, data = layout_from_data
+        layout = layout[0][1:-1][::2]
+        data = data[0][1:-1][::2]
+        assert np.array_equal(np.asarray(layout), data)
+        print(layout._sel._whole)
+        with pytest.raises(NotImplementedError, match="cannot link DataSources"):
+            layout[...] = ...
 
 
 class TestDataSource:
-    def test_init(self):
-        ...
+    @pytest.fixture(scope="class")
+    def shared_path(self, tmp_path_factory):
+        tmp_path = tmp_path_factory.mktemp("virtual_data_source")
+        yield tmp_path
+
+    def test_init(self, shared_path):
+        shape = (2, 3, 5)
+        data = np.arange(np.prod(shape)).reshape(*shape)
+        with h5py.File(shared_path / "source.h5", "w") as file:
+            file.create_dataset("data", data.shape, data.dtype, data)
+        with h5py.File(shared_path / "source.h5") as file:
+            source = DataSource(file["data"])
+        assert source.shape == data.shape
+        assert source.dtype == data.dtype
+        assert source.ndim == data.ndim
+        assert source.nbytes == data.nbytes
+
+    def test_to_dataset(self, shared_path):
+        with h5py.File(shared_path / "source.h5") as file:
+            source = DataSource(file["data"])
+            data = file["data"][...]
+        assert np.array_equal(np.asarray(source), data)
+
+    def test_array(self, shared_path):
+        with h5py.File(shared_path / "source.h5") as file:
+            source = DataSource(file["data"])
+            data = file["data"][...]
+        assert np.array_equal(np.asarray(source), data)
+
+    def test_sel(self, shared_path):
+        with h5py.File(shared_path / "source.h5") as file:
+            source = DataSource(file["data"])
+            data = file["data"][...]
+        source = source[0][1:-1, ::2][:, :-1]
+        data = data[0][1:-1, ::2][:, :-1]
+        assert np.array_equal(np.asarray(source), data)
 
 
 class TestSelection:
@@ -81,6 +164,12 @@ class TestSelection:
         assert np.array_equal(arr[slc], expected)
         assert sub.shape == expected.shape
         assert sub.ndim == expected.ndim
+
+    def test_raises_to_many_indexers(self):
+        arr = np.arange(2 * 3 * 5).reshape(2, 3, 5)
+        sel = Selection(arr.shape)
+        with pytest.raises(IndexError, match="too many indices for selection"):
+            sel[:, :, :, :]
 
 
 class TestSingleSelector:

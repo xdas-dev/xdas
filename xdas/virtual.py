@@ -1,5 +1,5 @@
 import os
-from copy import deepcopy
+from copy import copy, deepcopy
 from tempfile import TemporaryDirectory
 
 import h5py
@@ -75,13 +75,15 @@ class DataLayout:
         return f"DataLayout: {to_human(self.nbytes)} ({self.dtype})"
 
     def __getitem__(self, key):
-        self = deepcopy(self)
+        self = copy(self)
         self._sel = self._sel.__getitem__(key)
         return self
 
     def __setitem__(self, key, value):
         if not self._sel._whole:
             raise NotImplementedError("cannot link DataSources to a sliced DataLayout")
+        if isinstance(value, DataSource):
+            value = value.vsource
         self._layout.__setitem__(key, value)
 
     @property
@@ -200,8 +202,8 @@ class DataSource:
         layout[...] = self.vsource
         return layout
 
-    def to_dataset(self, file, name):
-        self._to_layout().to_dataset(file, name)
+    def to_dataset(self, file_or_group, name):
+        self._to_layout().to_dataset(file_or_group, name)
 
 
 class Selection:
@@ -262,22 +264,18 @@ class Selection:
 
     def __init__(self, shape):
         self._shape = shape
-        self._selectors = [SliceSelector(size) for size in shape]
+        self._selectors = Selectors([SliceSelector(size) for size in shape])
         self._whole = True
 
     def __getitem__(self, key):
         sel = deepcopy(self)
-        self._whole = False
+        sel._whole = False
         if not isinstance(key, tuple):
             key = (key,)
         dim = 0
         for k in key:
             while isinstance(sel._selectors[dim], SingleSelector):
                 dim += 1
-                if dim >= len(self._shape):
-                    raise IndexError(
-                        f"too many indices for array: array is {len(self._shape)}-dimensional"
-                    )
             sel._selectors[dim] = sel._selectors[dim][k]
             dim += 1
         return sel
@@ -296,6 +294,17 @@ class Selection:
 
     def get_indexer(self):
         return tuple(selector.get_indexer() for selector in self._selectors)
+
+
+class Selectors(list):
+    """Selector list that raises informative error on out of bound indexing."""
+
+    def __getitem__(self, key):
+        if key >= len(self):
+            raise IndexError(
+                f"too many indices for selection: selection is {len(self)}-dimensional"
+            )
+        return super().__getitem__(key)
 
 
 class SingleSelector:

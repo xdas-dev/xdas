@@ -330,7 +330,7 @@ def concatenate(dbs, dim="first", tolerance=None, virtual=None, verbose=None):
             slice(idx, idx + db.shape[axis]) if d == dim else slice(None) for d in dims
         )
         if virtual:
-            data[selection] = db.data.vsource
+            data[selection] = db.data
         else:
             data[selection] = db.values
         tie_indices.extend(idx + db[dim].tie_indices)
