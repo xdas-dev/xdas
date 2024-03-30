@@ -85,7 +85,6 @@ class TestDataLayout:
 
     def test_array(self, layout_from_data):
         layout, data = layout_from_data
-        print(np.asarray(layout))
         assert np.array_equal(np.asarray(layout), data)
 
     def test_sel(self, layout_from_data):
@@ -93,7 +92,6 @@ class TestDataLayout:
         layout = layout[0][1:-1][::2]
         data = data[0][1:-1][::2]
         assert np.array_equal(np.asarray(layout), data)
-        print(layout._sel._whole)
         with pytest.raises(NotImplementedError, match="cannot link DataSources"):
             layout[...] = ...
 

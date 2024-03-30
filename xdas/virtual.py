@@ -153,9 +153,29 @@ class DataSource:
     Methods
     -------
     to_dataset(file_or_group, name)
-        Puts the source into a layout and writes virtuallyit into the specified HDF5
+        Puts the source into a layout and writes it virtually into the specified HDF5
         file of group with the given name.
 
+    Examples
+    --------
+    >>> import os
+    >>> from tempfile import TemporaryDirectory
+
+    >>> import h5py
+    >>> import numpy as np
+
+    >>> from xdas.virtual import DataSource
+
+    >>> with TemporaryDirectory() as tmpdir: # doctest:+ELLIPSIS
+    ...     shape = (2, 3, 5)
+    ...     data = np.arange(np.prod(shape)).reshape(*shape)
+    ...     with h5py.File(os.path.join(tmpdir, "source.h5"), "w") as file:
+    ...         file.create_dataset("data", data.shape, data.dtype, data)
+    ...         source = DataSource(file["data"])  # we both write and get source here
+    ...     source = source[1:-1]  # the source can be sliced
+    ...     result = np.asarray(source)
+    ...     assert np.array_equal(result, data[1:-1])
+    <...>
     """
 
     def __init__(
