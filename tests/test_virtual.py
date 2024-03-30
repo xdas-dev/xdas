@@ -172,6 +172,14 @@ class TestSelection:
             sel[:, :, :, :]
 
 
+class TestSelectors:
+    def test(self):
+        sel = Selectors([1, 2, 3])
+        sel[2] = 3
+        with pytest.raises(IndexError, match="too many indices for selection"):
+            sel[3]
+
+
 class TestSingleSelector:
     def test_init(self):
         sel = SingleSelector(0)
