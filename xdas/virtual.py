@@ -6,7 +6,171 @@ import h5py
 import numpy as np
 
 
-class DataLayout:
+class VirtualData:
+    def __getitem__(self, key):
+        NotImplemented
+
+    def __array__(self, dtype=None):
+        NotImplemented
+
+    @property
+    def shape(self):
+        NotImplemented
+
+    @property
+    def dtype(self):
+        NotImplemented
+
+    def to_dataset(self, file_or_group, name):
+        NotImplemented
+
+    @property
+    def ndim(self):
+        return len(self.shape)
+
+    @property
+    def size(self):
+        return np.prod(self.shape)
+
+    @property
+    def nbytes(self):
+        return self.size * self.dtype.itemsize
+
+
+class DataStack(VirtualData):
+    def __init__(self, sources=(), axis=0):
+        self._sources = list()
+        self._axis = axis
+        self.extend(sources)
+
+    def __getitem__(self, key):
+        self = deepcopy(self)
+        if not isinstance(key, tuple):
+            indexers = [
+                key,
+            ]
+        else:
+            indexers = list(key)
+        if self._axis in range(len(indexers)):
+            indexer = indexers[self._axis]
+            if isinstance(indexer, int):
+                source_index, relative_index = self._get_position(indexer)
+                indexer = relative_index
+                self._sources = [self._sources[source_index][indexers]]
+            if isinstance(indexer, slice):
+                if indexer.step is not None or not indexer.stop == 1:
+                    raise NotImplementedError(
+                        "cannot make stepped slicing along stacked dimension."
+                    )
+                sources = []
+                start_source, relative_index = self._get_position(
+                    indexers[self._start].start
+                )
+                indexer = slice(relative_index, None)
+                sources.append(self._sources[start_source][indexers])
+                indexer = slice(None)
+                sources.extend(
+                    [
+                        source[indexers]
+                        for source in self._sources[start_source + 1 : stop_source]
+                    ]
+                )
+                stop_source, relative_index = self._get_position(
+                    indexers[self._stop].stop
+                )
+                indexer = slice(None, relative_index)
+                sources.append(self._sources[stop_source][indexers])
+                self._sources = sources
+        else:
+            self._sources = [source[indexers] for source in self._sources]
+
+    def __array__(self, dtype=None):
+        return self._to_layout().__array__(dtype)
+
+    @property
+    def sources(self):
+        return self.sources
+
+    @property
+    def axis(self):
+        return self._axis
+
+    @property
+    def shape(self):
+        return tuple(
+            (
+                sum(source.shape[self._axis] for source in self._sources)
+                if axis == self._axis
+                else size
+            )
+            for axis, size in enumerate(self._shape)
+        )
+
+    @property
+    def dtype(self):
+        return self._dtype
+
+    def append(self, source):
+        if not self._sources:
+            self._initialize(source)
+        self._check(source)
+        self._sources.append(source)
+
+    def extend(self, sources):
+        for source in sources:
+            self.append(source)
+
+    def to_dataset(self, file_or_group, name):
+        self._to_layout().to_dataset(file_or_group, name)
+
+    def _initialize(self, source):
+        self._shape = tuple(
+            None if axis == self._axis else size
+            for axis, size in enumerate(source.shape)
+        )
+        self._dtype = source.dtype
+
+    def _check(self, source):
+        if not isinstance(source, DataSource):
+            raise TypeError("only `DataSource` object can be provided")
+        if not all(
+            True if size_self is None else size_self == size_other
+            for size_self, size_other in zip(self._shape, source.shape)
+        ):
+            raise ValueError(
+                "all sources must share the same shape "
+                "except along the concatenation axis"
+            )
+
+    def _get_position(self, index):
+        sizes = [source.shape[self._axis] for source in self._source]
+        div_points = np.cumsum([0] + sizes)
+        source_index = np.searchsorted(div_points, index, side="right") - 1
+        if source_index < 0 or source_index >= len(self.sources):
+            raise IndexError(
+                f"index {index} is out of bounds for axis {self._axis} "
+                f"with size {self.shape[self._axis]}"
+            )
+        relative_index = index - div_points[source_index]
+        return source_index, relative_index
+
+    def _to_layout(self):
+        layout = DataLayout(self.shape, self.dtype)
+        index = 0
+        for source in self.sources:
+            slc = tuple(
+                (
+                    slice(index, index := index + source.shape[self.axis])
+                    if axis == self.axis
+                    else slice(None)
+                )
+                for axis in range(self.ndim)
+            )
+            layout[slc] = source
+        return layout
+
+
+class DataLayout(VirtualData):
     """
     A lazy array layout pointing toward multiple netCDF4/HDF5 files.
 
@@ -72,7 +236,7 @@ class DataLayout:
         return out
 
     def __repr__(self):
-        return f"DataLayout: {to_human(self.nbytes)} ({self.dtype})"
+        return f"DataLayout: {_to_human(self.nbytes)} ({self.dtype})"
 
     def __getitem__(self, key):
         self = copy(self)
@@ -94,21 +258,13 @@ class DataLayout:
     def dtype(self):
         return self._layout.dtype
 
-    @property
-    def ndim(self):
-        return len(self.shape)
-
-    @property
-    def nbytes(self):
-        return np.prod(self.shape) * self.dtype.itemsize
-
     def to_dataset(self, file_or_group, name):
         return file_or_group.create_virtual_dataset(
             name, self._layout, fillvalue=np.nan
         )
 
 
-class DataSource:
+class DataSource(VirtualData):
     """
     A lazy array object pointing toward a netCDF4/HDF5 file.
 
@@ -195,7 +351,7 @@ class DataSource:
         return self._to_layout().__array__(dtype)
 
     def __repr__(self):
-        return f"DataSource: {to_human(self.nbytes)} ({self.dtype})"
+        return f"DataSource: {_to_human(self.nbytes)} ({self.dtype})"
 
     @property
     def vsource(self):
@@ -209,21 +365,13 @@ class DataSource:
     def dtype(self):
         return self.vsource.dtype
 
-    @property
-    def ndim(self):
-        return len(self.vsource.shape)
-
-    @property
-    def nbytes(self):
-        return np.prod(self.shape) * self.dtype.itemsize
+    def to_dataset(self, file_or_group, name):
+        self._to_layout().to_dataset(file_or_group, name)
 
     def _to_layout(self):
         layout = DataLayout(self.shape, self.dtype)
-        layout[...] = self.vsource
+        layout[...] = self
         return layout
-
-    def to_dataset(self, file_or_group, name):
-        self._to_layout().to_dataset(file_or_group, name)
 
 
 class Selection:
@@ -383,7 +531,7 @@ class SliceSelector:
             return slice(self._range.start, self._range.stop, self._range.step)
 
 
-def to_human(size):
+def _to_human(size):
     """Convert raw byte numbers into a human readable ones with units."""
     unit = {0: "B", 1: "KB", 2: "MB", 3: "GB", 4: "TB"}
     n = 0
