@@ -76,12 +76,88 @@ def layout_from_data(sources_from_data):
     yield layout, data
 
 
+class TestDataStack:
+    def test_init(self, sources_from_data):
+        # empty
+        stack = DataStack()
+        assert stack.sources == []
+        assert stack.empty
+        assert stack.shape == ()
+        with pytest.raises(AttributeError, match="no dtype"):
+            stack.dtype
+        assert stack.ndim == 0
+        assert stack.size == 0
+        assert stack.nbytes == 0
+        # axis=0
+        sources, data = sources_from_data
+        stack = DataStack(sources, axis=0)
+        assert stack.sources == sources
+        assert not stack.empty
+        assert stack.shape == data.shape
+        assert stack.dtype == data.dtype
+        assert stack.ndim == data.ndim
+        assert stack.size == data.size
+        assert stack.nbytes == data.nbytes
+        stack = DataStack([sources[0][1:-1], *sources[1:]], axis=0)
+        assert stack.shape[0] == data.shape[0] - 2
+        with pytest.raises(ValueError, match="must share the same shape"):
+            stack = DataStack([sources[0][:, 1:-1], *sources[1:]], axis=0)
+        with pytest.raises(TypeError, match="only `DataSource`"):
+            stack = DataStack([np.asarray(sources[0]), *sources[1:]], axis=0)
+        # axis=1
+        stack = DataStack(sources, axis=1)
+        assert stack.shape == data.reshape(sources[0].shape[0], -1).shape
+        stack = DataStack([sources[0][:, 1:-1], *sources[1:]], axis=1)
+        assert stack.shape[1] == data.reshape(sources[0].shape[0], -1).shape[1] - 2
+        with pytest.raises(ValueError, match="must share the same shape"):
+            stack = DataStack([sources[0][1:-1], *sources[1:]], axis=1)
+
+    def test_array(self, sources_from_data):
+        sources, data = sources_from_data
+        stack = DataStack(sources)
+        assert np.array_equal(np.asarray(stack), data)
+        stack = DataStack(sources, axis=1)
+        transposed = np.concatenate(np.split(data, 5), axis=1)
+        assert np.array_equal(np.asarray(stack), transposed)
+        stack = DataStack()
+        with pytest.raises(ValueError, match="no sources"):
+            np.asarray(stack)
+
+    def test_append(self, sources_from_data):
+        sources, data = sources_from_data
+        stack = DataStack()
+        for source in sources:
+            stack.append(source)
+        assert np.array_equal(np.asarray(stack), data)
+        with pytest.raises(TypeError):
+            stack.append(np.array(0))
+        with pytest.raises(ValueError):
+            stack.append(source[:, 1:-1])
+        stack = DataStack(axis=1)
+        for source in sources:
+            stack.append(source)
+        transposed = np.concatenate(np.split(data, 5), axis=1)
+        assert np.array_equal(np.asarray(stack), transposed)
+        with pytest.raises(TypeError):
+            stack.append([source])
+
+    def test_extend(self, sources_from_data):
+        sources, data = sources_from_data
+        stack = DataStack()
+        stack.extend(sources)
+        assert np.array_equal(np.asarray(stack), data)
+        print(type(sources[0]))
+        with pytest.raises(TypeError, match="must be a list"):
+            stack.extend(sources[0])
+
+
 class TestDataLayout:
     def test_init(self, layout_from_data):
         layout, data = layout_from_data
         assert layout.shape == data.shape
         assert layout.dtype == data.dtype
         assert layout.ndim == data.ndim
+        assert layout.size == data.size
         assert layout.nbytes == data.nbytes
 
     def test_to_dataset(self, layout_from_data, shared_path):
@@ -115,6 +191,7 @@ class TestDataSource:
         assert source.shape == data.shape
         assert source.dtype == data.dtype
         assert source.ndim == data.ndim
+        assert source.size == data.size
         assert source.nbytes == data.nbytes
 
     def test_to_dataset(self, shared_path):

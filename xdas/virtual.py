@@ -30,17 +30,24 @@ class VirtualData:
 
     @property
     def size(self):
-        return np.prod(self.shape)
+        if self.shape:
+            return np.prod(self.shape)
+        else:
+            return 0
 
     @property
     def nbytes(self):
-        return self.size * self.dtype.itemsize
+        if self.shape:
+            return self.size * self.dtype.itemsize
+        else:
+            return 0
 
 
 class DataStack(VirtualData):
-    def __init__(self, sources=(), axis=0):
+    def __init__(self, sources=[], axis=0):
         self._sources = list()
         self._axis = axis
+        self._shape = ()
         self.extend(sources)
 
     def __getitem__(self, key):
@@ -85,11 +92,17 @@ class DataStack(VirtualData):
             self._sources = [source[indexers] for source in self._sources]
 
     def __array__(self, dtype=None):
+        if self.empty:
+            raise ValueError("no sources in stack")
         return self._to_layout().__array__(dtype)
 
     @property
     def sources(self):
-        return self.sources
+        return self._sources
+
+    @property
+    def empty(self):
+        return not bool(self._sources)
 
     @property
     def axis(self):
@@ -108,6 +121,8 @@ class DataStack(VirtualData):
 
     @property
     def dtype(self):
+        if not hasattr(self, "_dtype"):
+            raise AttributeError("empty stack has no dtype")
         return self._dtype
 
     def append(self, source):
@@ -117,6 +132,8 @@ class DataStack(VirtualData):
         self._sources.append(source)
 
     def extend(self, sources):
+        if not isinstance(sources, list):
+            raise TypeError("`sources` must be a list")
         for source in sources:
             self.append(source)
 
@@ -133,6 +150,8 @@ class DataStack(VirtualData):
     def _check(self, source):
         if not isinstance(source, DataSource):
             raise TypeError("only `DataSource` object can be provided")
+        if not (source.dtype == self.dtype):
+            raise ValueError("all sources must share the same dtype")
         if not all(
             True if size_self is None else size_self == size_other
             for size_self, size_other in zip(self._shape, source.shape)
