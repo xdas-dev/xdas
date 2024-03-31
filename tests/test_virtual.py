@@ -11,7 +11,7 @@ from xdas.synthetics import generate
 from xdas.virtual import *
 
 
-class TestFunctional:
+class TestFunctional:  # TODO: move elsewhere
     def test_all(self):
         with tempfile.TemporaryDirectory() as dirpath:
             expected = generate()
@@ -45,30 +45,38 @@ class TestFunctional:
             assert db1.equals(db2)
 
 
+@pytest.fixture(scope="module")
+def shared_path(tmp_path_factory):
+    tmp_path = tmp_path_factory.mktemp("virtual")
+    yield tmp_path
+
+
+@pytest.fixture(scope="module")
+def sources_from_data(shared_path):
+    shape = (10, 3)
+    data = np.arange(np.prod(shape)).reshape(*shape)
+    chunks = np.split(data, 5, axis=0)
+    sources = []
+    for index, chunk in enumerate(chunks, start=1):
+        with h5py.File(shared_path / f"{index}.h5", "w") as file:
+            file.create_dataset("data", chunk.shape, chunk.dtype, chunk)
+            source = DataSource(file["data"])
+        sources.append(source)
+    yield sources, data
+
+
+@pytest.fixture(scope="module")
+def layout_from_data(sources_from_data):
+    sources, data = sources_from_data
+    layout = DataLayout(data.shape, data.dtype)
+    index = 0
+    for source in sources:
+        layout[index : index + source.shape[0]] = source
+        index += source.shape[0]
+    yield layout, data
+
+
 class TestDataLayout:
-    @pytest.fixture(scope="class")
-    def shared_path(self, tmp_path_factory):
-        tmp_path = tmp_path_factory.mktemp("virtual_data_layout")
-        yield tmp_path
-
-    @pytest.fixture(scope="class")
-    def layout_from_data(self, shared_path):
-        shape = (10, 3)
-        data = np.arange(np.prod(shape)).reshape(*shape)
-        chunks = np.split(data, 5, axis=0)
-        sources = []
-        for index, chunk in enumerate(chunks, start=1):
-            with h5py.File(shared_path / f"{index}.h5", "w") as file:
-                file.create_dataset("data", chunk.shape, chunk.dtype, chunk)
-                source = DataSource(file["data"])
-            sources.append(source)
-        layout = DataLayout(data.shape, data.dtype)
-        index = 0
-        for source in sources:
-            layout[index : index + source.shape[0]] = source
-            index += source.shape[0]
-        yield layout, data
-
     def test_init(self, layout_from_data):
         layout, data = layout_from_data
         assert layout.shape == data.shape
@@ -97,11 +105,6 @@ class TestDataLayout:
 
 
 class TestDataSource:
-    @pytest.fixture(scope="class")
-    def shared_path(self, tmp_path_factory):
-        tmp_path = tmp_path_factory.mktemp("virtual_data_source")
-        yield tmp_path
-
     def test_init(self, shared_path):
         shape = (2, 3, 5)
         data = np.arange(np.prod(shape)).reshape(*shape)
