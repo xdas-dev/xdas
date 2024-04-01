@@ -59,37 +59,46 @@ class DataStack(VirtualData):
         else:
             indexers = list(key)
         if self._axis in range(len(indexers)):
+            div_points = np.cumsum(
+                [0] + [source.shape[self._axis] for source in self._sources]
+            )
             indexer = indexers[self._axis]
             if isinstance(indexer, int):
-                source_index, relative_index = self._get_position(indexer)
-                indexer = relative_index
-                self._sources = [self._sources[source_index][indexers]]
+                indexer = indexer if indexer >= 0 else indexer + self.shape[self._axis]
+                source_index = np.searchsorted(div_points, indexer, side="right") - 1
+                relative_index = indexer - div_points[source_index]
+                indexers[self._axis] = relative_index
+                sources = [self._sources[source_index][tuple(indexers)]]
             if isinstance(indexer, slice):
-                if indexer.step is not None or not indexer.stop == 1:
+                start, stop, step = indexer.indices(self.shape[self._axis])
+                if not step == 1:
                     raise NotImplementedError(
                         "cannot make stepped slicing along stacked dimension."
                     )
                 sources = []
-                start_source, relative_index = self._get_position(
-                    indexers[self._start].start
+                start_source, stop_source = (
+                    np.searchsorted(div_points, [start, stop], side="right") - 1
                 )
-                indexer = slice(relative_index, None)
-                sources.append(self._sources[start_source][indexers])
-                indexer = slice(None)
+                if stop == self.shape[self._axis]:
+                    stop_source = len(self._sources) - 1
+                start_index, stop_index = (
+                    np.array([start, stop]) - div_points[[start_source, stop_source]]
+                )
+
+                indexers[self._axis] = slice(start_index, None)
+                sources.append(self._sources[start_source][tuple(indexers)])
+                indexers[self._axis] = slice(None)
                 sources.extend(
                     [
-                        source[indexers]
+                        source[tuple(indexers)]
                         for source in self._sources[start_source + 1 : stop_source]
                     ]
                 )
-                stop_source, relative_index = self._get_position(
-                    indexers[self._stop].stop
-                )
-                indexer = slice(None, relative_index)
-                sources.append(self._sources[stop_source][indexers])
-                self._sources = sources
+                indexers[self._axis] = slice(None, stop_index)
+                sources.append(self._sources[stop_source][tuple(indexers)])
         else:
-            self._sources = [source[indexers] for source in self._sources]
+            sources = [source[tuple(indexers)] for source in self._sources]
+        return DataStack(sources, self._axis)
 
     def __array__(self, dtype=None):
         if self.empty:
@@ -161,26 +170,14 @@ class DataStack(VirtualData):
                 "except along the concatenation axis"
             )
 
-    def _get_position(self, index):
-        sizes = [source.shape[self._axis] for source in self._source]
-        div_points = np.cumsum([0] + sizes)
-        source_index = np.searchsorted(div_points, index, side="right") - 1
-        if source_index < 0 or source_index >= len(self.sources):
-            raise IndexError(
-                f"index {index} is out of bounds for axis {self._axis} "
-                f"with size {self.shape[self._axis]}"
-            )
-        relative_index = index - div_points[source_index]
-        return source_index, relative_index
-
     def _to_layout(self):
         layout = DataLayout(self.shape, self.dtype)
         index = 0
-        for source in self.sources:
+        for source in self._sources:
             slc = tuple(
                 (
-                    slice(index, index := index + source.shape[self.axis])
-                    if axis == self.axis
+                    slice(index, index := index + source.shape[self._axis])
+                    if axis == self._axis
                     else slice(None)
                 )
                 for axis in range(self.ndim)

@@ -150,6 +150,25 @@ class TestDataStack:
         with pytest.raises(TypeError, match="must be a list"):
             stack.extend(sources[0])
 
+    def test_getitem(self, sources_from_data):
+        sources, data = sources_from_data
+        stack = DataStack(sources)
+        stack = stack[:, 1:-1]
+        data = data[:, 1:-1]
+        assert stack.shape == data.shape
+        assert stack.dtype == data.dtype
+        assert np.array_equal(np.asarray(stack), data)
+        stack = stack[1:-1, 1:-1]
+        data = data[1:-1, 1:-1]
+        assert stack.shape == data.shape
+        assert stack.dtype == data.dtype
+        assert np.array_equal(np.asarray(stack), data)
+        stack = stack[:1, 1:-1]
+        data = data[:1, 1:-1]
+        assert stack.shape == data.shape
+        assert stack.dtype == data.dtype
+        assert np.array_equal(np.asarray(stack), data)
+
 
 class TestDataLayout:
     def test_init(self, layout_from_data):
