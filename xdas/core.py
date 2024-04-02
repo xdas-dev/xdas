@@ -13,7 +13,7 @@ from tqdm import tqdm
 from .coordinates import InterpCoordinate, get_sampling_interval
 from .database import Database
 from .datacollection import DataCollection, DataMapping, DataSequence
-from .virtual import DataLayout, DataSource
+from .virtual import DataLayout, DataSource, DataStack
 
 
 def open_mfdatacollection(paths):
@@ -302,46 +302,32 @@ def concatenate(dbs, dim="first", tolerance=None, virtual=None, verbose=None):
     Database
         The concatenated database.
     """
+    if virtual is None:
+        virtual = all(isinstance(db.data, (DataSource, DataStack)) for db in dbs)
+    if not all(isinstance(db[dim], InterpCoordinate) for db in dbs):
+        raise NotImplementedError("can only concatenate along interpolated coordinate")
     dbs = [db for db in dbs if not db[dim].empty]
-    dbs = sorted(dbs, key=lambda db: db[dim][0].values)
     axis = dbs[0].get_axis_num(dim)
     dim = dbs[0].dims[axis]
-    dims = dbs[0].dims
-    dtype = dbs[0].dtype
-    shape = tuple(
-        sum([db.shape[a] for db in dbs]) if a == axis else dbs[0].shape[a]
-        for a in range(len(dims))
-    )
-    if virtual is None:
-        virtual = all(isinstance(db.data, DataSource) for db in dbs)
-    if virtual:
-        data = DataLayout(shape, dtype)
-    else:
-        data = np.zeros(shape, dtype)
-    idx = 0
+    coords = dbs[0].coords.copy()
+    dbs = sorted(dbs, key=lambda db: db[dim][0].values)
+    iterator = tqdm(dbs, desc="Linking database") if verbose else dbs
+    data = []
     tie_indices = []
     tie_values = []
-    if verbose:
-        iterator = tqdm(dbs, desc="Linking database")
-    else:
-        iterator = dbs
+    idx = 0
     for db in iterator:
-        selection = tuple(
-            slice(idx, idx + db.shape[axis]) if d == dim else slice(None) for d in dims
-        )
-        if virtual:
-            data[selection] = db.data
-        else:
-            data[selection] = db.values
+        data.append(db.data)
         tie_indices.extend(idx + db[dim].tie_indices)
         tie_values.extend(db[dim].tie_values)
         idx += db.shape[axis]
-    coord = InterpCoordinate(
+    if virtual:
+        data = DataStack(data, axis)
+    else:
+        data = np.concatenate(data, axis)
+    coords[dim] = InterpCoordinate(
         {"tie_indices": tie_indices, "tie_values": tie_values}, dim
-    )
-    coord = coord.simplify(tolerance)
-    coords = dbs[0].coords.copy()
-    coords[dim] = coord
+    ).simplify(tolerance)
     return Database(data, coords)
 
 
