@@ -7,7 +7,7 @@ import numpy as np
 import xarray as xr
 
 from .coordinates import Coordinate, Coordinates, get_sampling_interval
-from .virtual import DataLayout, DataSource
+from .virtual import DataSource, VirtualData
 
 NUMPY_HANDLED_FUNCTIONS = {}
 XARRAY_HANDLED_METHODS = {}
@@ -478,11 +478,15 @@ class Database:
             _description_
         """
         if virtual is None:
-            virtual = isinstance(self.data, (DataSource, DataLayout))
+            virtual = isinstance(self.data, VirtualData)
         data_vars = []
         mapping = ""
         for dim in self.coords:
             if self.coords[dim].isinterp():
+                tie_indices = self.coords[dim].tie_indices
+                tie_values = self.coords[dim].tie_values
+                if np.issubdtype(tie_values.dtype, np.datetime64):
+                    tie_values = tie_values.astype("M8[ns]")
                 mapping += f"{dim}: {dim}_indices {dim}_values "
                 interpolation = xr.DataArray(
                     name=f"{dim}_interpolation",
@@ -493,12 +497,12 @@ class Database:
                 )
                 indices = xr.DataArray(
                     name=f"{dim}_indices",
-                    data=self.coords[dim].tie_indices,
+                    data=tie_indices,
                     dims=f"{dim}_points",
                 )
                 values = xr.DataArray(
                     name=f"{dim}_values",
-                    data=self.coords[dim].tie_values,
+                    data=tie_values,
                     dims=f"{dim}_points",
                 )
                 data_vars.extend([interpolation, indices, values])
@@ -522,15 +526,10 @@ class Database:
             )
             ds[da.name] = da
             ds.to_netcdf(fname, group=group, **kwargs)
-        elif virtual and isinstance(self.data, (DataSource, DataLayout)):
-            da = xr.DataArray(
-                data=np.empty((0, 0)),
+        elif virtual and isinstance(self.data, VirtualData):
+            ds = xr.Dataset(
                 coords=coords,
-                dims=self.dims,
-                name="__tmp__",
-                attrs=attrs,
             )
-            ds[da.name] = da
             ds.to_netcdf(fname, group=group, **kwargs)
             with h5py.File(fname, "r+") as file:
                 if self.name is None:
@@ -542,9 +541,8 @@ class Database:
                 self.data.to_dataset(file, name)
                 for axis, dim in enumerate(self.dims):
                     file[name].dims[axis].attach_scale(file[dim])
-                for key in file["__tmp__"].attrs:
-                    file[name].attrs[key] = file["__tmp__"].attrs[key]
-                del file["__tmp__"]
+                for key in attrs:
+                    file[name].attrs[key] = attrs[key]
         else:
             raise ValueError(
                 "can only use `virtual=True` with a DataSource or a DataLayout"

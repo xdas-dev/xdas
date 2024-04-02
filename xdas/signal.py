@@ -410,7 +410,7 @@ def lfilter(b, a, db, dim="last", zi=None, parallel=None):
     func = lambda x, b, a, axis, zi: sp.lfilter(b, a, x, axis, zi)
     if zi is None:  # TODO: parallelize should also split state
         func = parallelize(axis, parallel)(func)
-    if zi == "init":
+    if isinstance(zi, str) and zi == "init":
         n_sections = max(len(a), len(b)) - 1
         shape = tuple(
             n_sections if name == dim else size for name, size in db.sizes.items()
@@ -592,7 +592,7 @@ def sosfilt(sos, db, dim="last", zi=None, parallel=None):
     func = lambda x, sos, axis, state: sp.sosfilt(sos, x, axis, state)
     if zi is None:  # TODO: parallelize should also split state
         func = parallelize(axis, parallel)(func)
-    if zi == "init":
+    if isinstance(zi, str) and zi == "init":
         n_sections = sos.shape[0]
         shape = (n_sections,) + tuple(
             2 if index == axis else element for index, element in enumerate(db.shape)
