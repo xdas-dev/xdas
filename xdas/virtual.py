@@ -7,6 +7,9 @@ import numpy as np
 
 
 class VirtualData:
+    def __repr__(self):
+        return f"{self.__class__.__name__}: {_to_human(self.nbytes)} ({self.dtype})"
+
     def __getitem__(self, key):
         NotImplemented
 
@@ -257,9 +260,6 @@ class DataLayout(VirtualData):
                 out = out.astype(dtype)
         return out
 
-    def __repr__(self):
-        return f"DataLayout: {_to_human(self.nbytes)} ({self.dtype})"
-
     def __getitem__(self, key):
         self = copy(self)
         self._sel = self._sel.__getitem__(key)
@@ -371,9 +371,6 @@ class DataSource(VirtualData):
 
     def __array__(self, dtype=None):
         return self._to_layout().__array__(dtype)
-
-    def __repr__(self):
-        return f"DataSource: {_to_human(self.nbytes)} ({self.dtype})"
 
     @property
     def vsource(self):
