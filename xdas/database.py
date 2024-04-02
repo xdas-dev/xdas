@@ -1,6 +1,7 @@
 import copy
 import re
 from functools import partial
+import warnings
 
 import h5py
 import numpy as np
@@ -417,7 +418,9 @@ class Database:
         """
         dimdist, dimtime = dim.copy().popitem()
         try:
-            from obspy import Stream, Trace, UTCDateTime
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                from obspy import Stream, Trace, UTCDateTime
         except ImportError:
             raise ImportError("obspy is not installed. Please install it.")
         if not self.ndim == 2:
@@ -525,7 +528,9 @@ class Database:
                 attrs=attrs,
             )
             ds[da.name] = da
-            ds.to_netcdf(fname, group=group, **kwargs)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                ds.to_netcdf(fname, group=group, **kwargs)
         elif virtual and isinstance(self.data, VirtualData):
             ds = xr.Dataset(
                 coords=coords,
