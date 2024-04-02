@@ -553,6 +553,11 @@ class Database:
     @classmethod
     def from_netcdf(cls, fname, group=None, **kwargs):
         with xr.open_dataset(fname, group=group, **kwargs) as ds:
+            if not ("Conventions" in ds.attrs and "CF" in ds.attrs["Conventions"]):
+                raise TypeError(
+                    "file format not recognized. please provide the file format "
+                    "with the `engine` keyword argument"
+                )
             if len(ds) == 1:
                 name, da = next(iter(ds.items()))
                 coords = {
