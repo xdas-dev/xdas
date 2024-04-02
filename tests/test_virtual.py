@@ -199,6 +199,8 @@ class TestDataLayout:
         assert layout.ndim == data.ndim
         assert layout.size == data.size
         assert layout.nbytes == data.nbytes
+        layout = DataLayout((0,), np.float64)
+        assert layout.empty
 
     def test_to_dataset(self, layout_from_data, shared_path):
         layout, data = layout_from_data
@@ -231,6 +233,8 @@ class TestDataSource:
         assert source.ndim == data.ndim
         assert source.size == data.size
         assert source.nbytes == data.nbytes
+        source = DataSource("path.h5", "name", (0,), np.float64)
+        assert source.empty
 
     def test_to_dataset(self, shared_path):
         with h5py.File(shared_path / "source.h5") as file:

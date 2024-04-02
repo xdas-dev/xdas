@@ -36,6 +36,10 @@ class VirtualData:
             return 0
 
     @property
+    def empty(self):
+        return self.size == 0
+
+    @property
     def nbytes(self):
         if self.shape:
             return self.size * self.dtype.itemsize
@@ -107,17 +111,13 @@ class DataStack(VirtualData):
         return DataStack(sources, self._axis)
 
     def __array__(self, dtype=None):
-        if self.empty:
+        if not self._sources:
             raise ValueError("no sources in stack")
         return self._to_layout().__array__(dtype)
 
     @property
     def sources(self):
         return self._sources
-
-    @property
-    def empty(self):
-        return not bool(self._sources)
 
     @property
     def axis(self):
