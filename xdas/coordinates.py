@@ -136,6 +136,12 @@ class Coordinates(dict):
                 query[self.dims[k]] = item[k]
         else:
             query[self.dims[0]] = item
+        for dim, item in query.items():
+            if isinstance(item, tuple):
+                msg = f"cannot use tuple {item} to index dim '{dim}'"
+                if len(item) == 2:
+                    msg += f". Did you mean: {dim}=slice({item[0]}, {item[1]})?"
+                raise TypeError(msg)
         return query
 
     def to_index(self, item, method=None, endpoint=True):
