@@ -47,7 +47,7 @@ def open_mfdatacollection(paths):
     return combine(dcs)
 
 
-def open_treedatacollection(paths, engine="netcdf"):
+def open_treedatacollection(paths, engine=None):
     """
     Open directory tree structures as data collections.
 
@@ -136,7 +136,7 @@ def open_treedatacollection(paths, engine="netcdf"):
     return collect(tree, fields, engine)
 
 
-def collect(tree, fields, engine="netcdf"):
+def collect(tree, fields, engine=None):
     """
     Collects the data from a tree of paths using `fields` as level names.
 
@@ -175,9 +175,7 @@ def defaulttree(depth):
         return defaultdict(lambda: defaulttree(depth - 1))
 
 
-def open_mfdatabase(
-    paths, engine="netcdf", tolerance=None, squeeze=True, verbose=False
-):
+def open_mfdatabase(paths, engine=None, tolerance=None, squeeze=True, verbose=False):
     """
     Open a multiple file database.
 
@@ -335,7 +333,7 @@ def concatenate(dbs, dim="first", tolerance=None, virtual=None, verbose=None):
     return Database(data, coords)
 
 
-def open_database(fname, group=None, engine="netcdf", **kwargs):
+def open_database(fname, group=None, engine=None, **kwargs):
     """
     Open a database.
 
@@ -347,7 +345,7 @@ def open_database(fname, group=None, engine="netcdf", **kwargs):
         The file group where the database is located, by default None which corresponds
         to the root of the file.
     engine : str, optional
-        The file format, by default "netcdf".
+        The file format, by default None.
 
     Returns
     -------
@@ -366,22 +364,15 @@ def open_database(fname, group=None, engine="netcdf", **kwargs):
     """
     if not os.path.exists(fname):
         raise FileNotFoundError("no file to open")
-    if engine == "netcdf":
+    if engine == None:
         return Database.from_netcdf(fname, group=group, **kwargs)
-    elif engine == "asn":
-        from .io.asn import read
-
-        return read(fname)
-    elif engine == "optasense":
-        from .io.optasense import read
-
-        return read(fname)
-    elif engine == "sintela":
-        from .io.sintela import read
-
-        return read(fname)
     elif callable(engine):
         return engine(fname)
+    elif isinstance(engine, str):
+        from . import io
+
+        module = getattr(io, engine)
+        return module.read(fname)
     else:
         raise ValueError("engine not recognized")
 
