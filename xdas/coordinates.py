@@ -266,8 +266,7 @@ class AbstractCoordinate:
     def values(self):
         return self.__array__()
 
-    def equals(self, other):
-        return NotImplementedError
+    def equals(self, other): ...
 
     def to_index(self, item, method=None, endpoint=True):
         if isinstance(item, slice):

@@ -1,7 +1,7 @@
 import copy
 import re
-from functools import partial
 import warnings
+from functools import partial
 
 import h5py
 import numpy as np

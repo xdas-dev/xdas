@@ -157,14 +157,11 @@ class Atom:
             name: filter.state for name, filter in self._filters.items() if filter.state
         }
 
-    def initialize(self, x, **kwargs):
-        return NotImplemented
+    def initialize(self, x, **kwargs): ...
 
-    def initialize_from_state(self):
-        return NotImplemented
+    def initialize_from_state(self): ...
 
-    def call(self, x, **kwargs):
-        return NotImplemented
+    def call(self, x, **kwargs): ...
 
     def __call__(self, x, **kwargs):
         if not self._state:
