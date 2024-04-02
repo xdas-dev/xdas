@@ -51,7 +51,6 @@ class DataStack(VirtualData):
         self.extend(sources)
 
     def __getitem__(self, key):
-        self = deepcopy(self)
         if not isinstance(key, tuple):
             indexers = [
                 key,
@@ -64,38 +63,45 @@ class DataStack(VirtualData):
             )
             indexer = indexers[self._axis]
             if isinstance(indexer, int):
-                indexer = indexer if indexer >= 0 else indexer + self.shape[self._axis]
-                source_index = np.searchsorted(div_points, indexer, side="right") - 1
-                relative_index = indexer - div_points[source_index]
-                indexers[self._axis] = relative_index
-                sources = [self._sources[source_index][tuple(indexers)]]
+                idx = indexer if indexer >= 0 else indexer + self.shape[self._axis]
+                if idx < 0 or idx >= self.shape[self._axis]:
+                    raise IndexError(
+                        f"index {idx} is out of bounds for axis {self._axis} "
+                        f"with size {self.shape[self._axis]}"
+                    )
+                isrc = np.searchsorted(div_points, idx, side="right") - 1
+                irel = idx - div_points[isrc]
+                indexers[self._axis] = irel
+                sources = [self._sources[isrc][tuple(indexers)]]
             if isinstance(indexer, slice):
                 start, stop, step = indexer.indices(self.shape[self._axis])
                 if not step == 1:
                     raise NotImplementedError(
                         "cannot make stepped slicing along stacked dimension."
                     )
+                isrc_start, isrc_stop = (
+                    np.searchsorted(div_points[:-1], [start, stop], side="right") - 1
+                )
+                irel_start, irel_stop = (
+                    np.array([start, stop]) - div_points[[isrc_start, isrc_stop]]
+                )
                 sources = []
-                start_source, stop_source = (
-                    np.searchsorted(div_points, [start, stop], side="right") - 1
-                )
-                if stop == self.shape[self._axis]:
-                    stop_source = len(self._sources) - 1
-                start_index, stop_index = (
-                    np.array([start, stop]) - div_points[[start_source, stop_source]]
-                )
-
-                indexers[self._axis] = slice(start_index, None)
-                sources.append(self._sources[start_source][tuple(indexers)])
-                indexers[self._axis] = slice(None)
-                sources.extend(
-                    [
-                        source[tuple(indexers)]
-                        for source in self._sources[start_source + 1 : stop_source]
-                    ]
-                )
-                indexers[self._axis] = slice(None, stop_index)
-                sources.append(self._sources[stop_source][tuple(indexers)])
+                if isrc_start == isrc_stop:
+                    indexers[self._axis] = slice(irel_start, irel_stop)
+                    sources = [self._sources[isrc_start][tuple(indexers)]]
+                else:
+                    sources = []
+                    indexers[self._axis] = slice(irel_start, None)
+                    sources.append(self._sources[isrc_start][tuple(indexers)])
+                    indexers[self._axis] = slice(None)
+                    sources.extend(
+                        [
+                            source[tuple(indexers)]
+                            for source in self._sources[isrc_start + 1 : isrc_stop]
+                        ]
+                    )
+                    indexers[self._axis] = slice(None, irel_stop)
+                    sources.append(self._sources[isrc_stop][tuple(indexers)])
         else:
             sources = [source[tuple(indexers)] for source in self._sources]
         return DataStack(sources, self._axis)
@@ -268,7 +274,7 @@ class DataLayout(VirtualData):
 
     @property
     def shape(self):
-        return self._layout.shape
+        return self._sel.shape
 
     @property
     def dtype(self):
@@ -527,7 +533,12 @@ class SliceSelector:
         self._range = range(size)
 
     def __getitem__(self, key):
-        item = self._range[key]
+        try:
+            item = self._range[key]
+        except IndexError:
+            raise IndexError(
+                f"index {key} is out of bounds for axis with size {len(self)}"
+            )
         if isinstance(item, int):
             return SingleSelector(item)
         else:

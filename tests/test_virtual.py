@@ -33,7 +33,7 @@ class TestFunctional:  # TODO: move elsewhere
             with pytest.raises(IndexError):
                 datasource[1, 2, 3]
             assert np.allclose(np.asarray(datasource[10:][1]), db.load().values[10:][1])
-            assert np.array_equal(db.load().data, db.load().data)
+            assert array_identical(db.load().data, db.load().data)
             db1 = db.sel(
                 time=slice("2023-01-01T00:00:03", None),
                 distance=slice(1000, None),
@@ -43,6 +43,14 @@ class TestFunctional:  # TODO: move elsewhere
                 distance=slice(1000, None),
             )
             assert db1.equals(db2)
+
+
+def array_identical(x, y):
+    return (
+        x.shape == y.shape
+        and x.dtype == y.dtype
+        and np.array_equal(np.asarray(x), np.asarray(y))
+    )
 
 
 @pytest.fixture(scope="module")
@@ -115,10 +123,10 @@ class TestDataStack:
     def test_array(self, sources_from_data):
         sources, data = sources_from_data
         stack = DataStack(sources)
-        assert np.array_equal(np.asarray(stack), data)
+        assert array_identical(stack, data)
         stack = DataStack(sources, axis=1)
         transposed = np.concatenate(np.split(data, 5), axis=1)
-        assert np.array_equal(np.asarray(stack), transposed)
+        assert array_identical(stack, transposed)
         stack = DataStack()
         with pytest.raises(ValueError, match="no sources"):
             np.asarray(stack)
@@ -128,7 +136,7 @@ class TestDataStack:
         stack = DataStack()
         for source in sources:
             stack.append(source)
-        assert np.array_equal(np.asarray(stack), data)
+        assert array_identical(stack, data)
         with pytest.raises(TypeError):
             stack.append(np.array(0))
         with pytest.raises(ValueError):
@@ -137,7 +145,7 @@ class TestDataStack:
         for source in sources:
             stack.append(source)
         transposed = np.concatenate(np.split(data, 5), axis=1)
-        assert np.array_equal(np.asarray(stack), transposed)
+        assert array_identical(stack, transposed)
         with pytest.raises(TypeError):
             stack.append([source])
 
@@ -145,7 +153,7 @@ class TestDataStack:
         sources, data = sources_from_data
         stack = DataStack()
         stack.extend(sources)
-        assert np.array_equal(np.asarray(stack), data)
+        assert array_identical(stack, data)
         print(type(sources[0]))
         with pytest.raises(TypeError, match="must be a list"):
             stack.extend(sources[0])
@@ -153,21 +161,34 @@ class TestDataStack:
     def test_getitem(self, sources_from_data):
         sources, data = sources_from_data
         stack = DataStack(sources)
-        stack = stack[:, 1:-1]
-        data = data[:, 1:-1]
-        assert stack.shape == data.shape
-        assert stack.dtype == data.dtype
-        assert np.array_equal(np.asarray(stack), data)
-        stack = stack[1:-1, 1:-1]
-        data = data[1:-1, 1:-1]
-        assert stack.shape == data.shape
-        assert stack.dtype == data.dtype
-        assert np.array_equal(np.asarray(stack), data)
-        stack = stack[:1, 1:-1]
-        data = data[:1, 1:-1]
-        assert stack.shape == data.shape
-        assert stack.dtype == data.dtype
-        assert np.array_equal(np.asarray(stack), data)
+        assert array_identical(stack[:, 1:-1], data[:, 1:-1])
+        assert array_identical(stack[1:-1, 1:-1], data[1:-1, 1:-1])
+        assert array_identical(stack[:1, 1:-1], data[:1, 1:-1])
+        assert array_identical(stack[1:2, 1:-2], data[1:2, 1:-2])
+        assert array_identical(stack[5, 1:-2], data[5, 1:-2])
+        assert array_identical(stack[5, 2], data[5, 2])
+        assert array_identical(stack[-1, -1], data[-1, -1])
+        assert array_identical(stack[0], data[0])
+        with pytest.raises(IndexError, match="is out of bounds"):
+            stack[10]
+        with pytest.raises(IndexError, match="is out of bounds"):
+            stack[:, 3]
+        with pytest.raises(IndexError, match="is out of bounds"):
+            stack[-11]
+        with pytest.raises(IndexError, match="is out of bounds"):
+            stack[:, -4]
+
+    def test_to_dataset(self, sources_from_data, shared_path):
+        sources, data = sources_from_data
+        stack = DataStack(sources)
+        with h5py.File(shared_path / "vds.h5", "w") as file:
+            stack.to_dataset(file, "data")
+            source = DataSource(file["data"])
+        assert array_identical(source, data)
+        with h5py.File(shared_path / "vds.h5", "w") as file:
+            stack[1:-1, 1:-1].to_dataset(file, "data")
+            source = DataSource(file["data"])
+        assert array_identical(source, data[1:-1, 1:-1])
 
 
 class TestDataLayout:
@@ -184,19 +205,17 @@ class TestDataLayout:
         with h5py.File(shared_path / "vds.h5", "w") as file:
             layout.to_dataset(file, "data")
             source = DataSource(file["data"])
-        assert np.array_equal(np.asarray(source), data)
+        assert array_identical(source, data)
 
     def test_array(self, layout_from_data):
         layout, data = layout_from_data
-        assert np.array_equal(np.asarray(layout), data)
+        assert array_identical(layout, data)
 
     def test_sel(self, layout_from_data):
         layout, data = layout_from_data
-        layout = layout[0][1:-1][::2]
-        data = data[0][1:-1][::2]
-        assert np.array_equal(np.asarray(layout), data)
+        assert array_identical(layout[0][1:-1][::2], data[0][1:-1][::2])
         with pytest.raises(NotImplementedError, match="cannot link DataSources"):
-            layout[...] = ...
+            layout[0][1:-1][::2] = ...
 
 
 class TestDataSource:
@@ -217,13 +236,13 @@ class TestDataSource:
         with h5py.File(shared_path / "source.h5") as file:
             source = DataSource(file["data"])
             data = file["data"][...]
-        assert np.array_equal(np.asarray(source), data)
+        assert array_identical(source, data)
 
     def test_array(self, shared_path):
         with h5py.File(shared_path / "source.h5") as file:
             source = DataSource(file["data"])
             data = file["data"][...]
-        assert np.array_equal(np.asarray(source), data)
+        assert array_identical(source, data)
 
     def test_sel(self, shared_path):
         with h5py.File(shared_path / "source.h5") as file:
@@ -231,7 +250,7 @@ class TestDataSource:
             data = file["data"][...]
         source = source[0][1:-1, ::2][:, :-1]
         data = data[0][1:-1, ::2][:, :-1]
-        assert np.array_equal(np.asarray(source), data)
+        assert array_identical(source, data)
 
 
 class TestSelection:
@@ -251,14 +270,14 @@ class TestSelection:
         expected = arr[0][:, 1:-1][::2]
         sub = sel[0][:, 1:-1][::2]
         slc = sub.get_indexer()
-        assert np.array_equal(arr[slc], expected)
+        assert array_identical(arr[slc], expected)
         assert sub.shape == expected.shape
         assert sub.ndim == expected.ndim
 
         expected = arr[:][1:0][:, 1]
         sub = sel[:][1:0][:, 1]
         slc = sub.get_indexer()
-        assert np.array_equal(arr[slc], expected)
+        assert array_identical(arr[slc], expected)
         assert sub.shape == expected.shape
         assert sub.ndim == expected.ndim
 
