@@ -302,11 +302,11 @@ def concatenate(dbs, dim="first", tolerance=None, virtual=None, verbose=None):
     Database
         The concatenated database.
     """
+    dbs = [db for db in dbs if not db.empty]
     if virtual is None:
         virtual = all(isinstance(db.data, (DataSource, DataStack)) for db in dbs)
     if not all(isinstance(db[dim], InterpCoordinate) for db in dbs):
         raise NotImplementedError("can only concatenate along interpolated coordinate")
-    dbs = [db for db in dbs if not db[dim].empty]
     axis = dbs[0].get_axis_num(dim)
     dim = dbs[0].dims[axis]
     coords = dbs[0].coords.copy()
@@ -317,7 +317,11 @@ def concatenate(dbs, dim="first", tolerance=None, virtual=None, verbose=None):
     tie_values = []
     idx = 0
     for db in iterator:
-        data.append(db.data)
+        if isinstance(db.data, DataStack):
+            for source in db.data.sources:
+                data.append(source)
+        else:
+            data.append(db.data)
         tie_indices.extend(idx + db[dim].tie_indices)
         tie_values.extend(db[dim].tie_values)
         idx += db.shape[axis]

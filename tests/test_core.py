@@ -7,6 +7,7 @@ import pytest
 import xdas
 from xdas.core import collects, splits
 from xdas.synthetics import generate
+from xdas.virtual import DataStack
 
 
 class TestCore:
@@ -98,24 +99,37 @@ class TestCore:
                 assert db.equals(generate(**acq))
 
     def test_concatenate(self):
-        for datetime in [False, True]:
-            db = self.generate(datetime)
-            dbs = [db[100 * k : 100 * (k + 1)] for k in range(3)]
-            _db = xdas.concatenate(dbs)
-            assert np.array_equal(_db.data, db.data)
-            assert _db["time"].equals(db["time"])
-            dbs = [db[:, 20 * k : 20 * (k + 1)] for k in range(5)]
-            _db = xdas.concatenate(dbs, "distance")
-            assert np.array_equal(_db.data, db.data)
-            assert _db["distance"].equals(db["distance"])
-        db = generate()
-        sel = db.isel(time=slice(0, 0))
-        result = xdas.concatenate([sel, db])
-        assert result.equals(db)
-        db1 = db.isel(time=slice(None, 1))
-        db2 = db.isel(time=slice(1, None))
+        # concatenate two databases
+        db1 = generate(starttime="2023-01-01T00:00:00")
+        db2 = generate(starttime="2023-01-01T00:00:06")
+        data = np.concatenate([db1.data, db2.data])
+        coords = {
+            "time": {
+                "tie_indices": [0, db1.sizes["time"] + db2.sizes["time"] - 1],
+                "tie_values": [db1["time"][0].values, db2["time"][-1].values],
+            },
+            "distance": db1["distance"],
+        }
+        expected = xdas.Database(data, coords)
         result = xdas.concatenate([db1, db2])
-        assert result.equals(db)
+        assert result.equals(expected)
+        # concatenate an empty databse
+        result = xdas.concatenate([db1, db2.isel(time=slice(0, 0))])
+        assert result.equals(db1)
+        # concat of sources and stacks
+        with TemporaryDirectory() as tmp_path:
+            db1.to_netcdf(os.path.join(tmp_path, "db1.nc"))
+            db2.to_netcdf(os.path.join(tmp_path, "db2.nc"))
+            db1 = xdas.open_database(os.path.join(tmp_path, "db1.nc"))
+            db2 = xdas.open_database(os.path.join(tmp_path, "db2.nc"))
+            result = xdas.concatenate([db1, db2])
+            assert isinstance(result.data, DataStack)
+            assert result.equals(expected)
+            db1.data = DataStack([db1.data])
+            db2.data = DataStack([db2.data])
+            result = xdas.concatenate([db1, db2])
+            assert isinstance(result.data, DataStack)
+            assert result.equals(expected)
 
     def test_open_database(self):
         with pytest.raises(FileNotFoundError):
