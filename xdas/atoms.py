@@ -10,6 +10,7 @@ from .coordinates import Coordinate, get_sampling_interval
 from .core import concatenate, open_datacollection, split
 from .database import Database
 from .datacollection import DataCollection
+from .parallel import parallelize
 
 
 class Sequential(list):
@@ -391,10 +392,7 @@ def atomized(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         if any(arg is ... for arg in args):
-            if any(value is ... for value in kwargs.values()):
-                return Partial(func, *args, **kwargs)
-            else:
-                return Partial(func, *args, **kwargs)
+            return Partial(func, *args, **kwargs)
         else:
             return func(*args, **kwargs)
 
@@ -425,9 +423,9 @@ class ResamplePoly(Atom):
         down = fraction.denominator
         cutoff = min(self.target / 2, self.fs / 2)
         max_rate = max(up, down)
-        order = 20 * max_rate + 1
+        numtaps = 20 * max_rate + 1
         self.upsampling.factor = up
-        self.firfilter.order = order
+        self.firfilter.numtaps = numtaps
         self.firfilter.cutoff = cutoff
         self.downsampling.factor = down
 
@@ -497,19 +495,19 @@ class IIRFilter(Atom):
 class FIRFilter(Atom):
     def __init__(
         self,
-        order,
+        numtaps,
         cutoff,
         btype="bandpass",
-        wtype="hamming",
+        window="hamming",
         width=None,
         scale=True,
         dim="last",
     ):
         super().__init__()
-        self.order = order
+        self.numtaps = numtaps
         self.cutoff = cutoff
         self.btype = btype
-        self.wtype = wtype
+        self.window = window
         self.width = width
         self.scale = scale
         self.dim = dim
@@ -522,10 +520,10 @@ class FIRFilter(Atom):
 
     def initialize_from_state(self):
         taps = sp.firwin(
-            self.order,
+            self.numtaps,
             self.cutoff,
             width=self.width,
-            window=self.wtype,
+            window=self.window,
             pass_zero=self.btype,
             scale=self.scale,
             fs=self.fs,
@@ -540,11 +538,12 @@ class FIRFilter(Atom):
 
 
 class LFilter(Atom):
-    def __init__(self, b, a, dim):
+    def __init__(self, b, a, dim="last", parallel=None):
         super().__init__()
         self.b = b
         self.a = a
         self.dim = dim
+        self.parallel = parallel
         self.axis = State(...)
         self.zi = State(...)
 
@@ -561,19 +560,25 @@ class LFilter(Atom):
             self.zi = State(None)
 
     def call(self, db, **kwargs):
+        across = int(self.axis == 0)
         if self.zi is None:
-            data = sp.lfilter(self.b, self.a, db.values, self.axis)
+            func = parallelize((None, None, across), across, self.parallel)(sp.lfilter)
+            data = func(self.b, self.a, db.values, self.axis)
         else:
-            data, zf = sp.lfilter(self.b, self.a, db.values, self.axis, self.zi)
+            func = parallelize(
+                (None, None, across, None, across), (across, across), self.parallel
+            )(sp.lfilter)
+            data, zf = func(self.b, self.a, db.values, self.axis, self.zi)
             self.zi = State(zf)
         return db.copy(data=data)
 
 
 class SOSFilter(Atom):
-    def __init__(self, sos, dim):
+    def __init__(self, sos, dim="last", parallel=None):
         super().__init__()
         self.sos = sos
         self.dim = dim
+        self.parallel = parallel
         self.axis = State(...)
         self.zi = State(...)
 
@@ -590,10 +595,15 @@ class SOSFilter(Atom):
             self.zi = State(None)
 
     def call(self, db, **kwargs):
+        across = int(self.axis == 0)
         if self.zi is None:
-            data = sp.sosfilt(self.sos, db.values, self.axis)
+            func = parallelize((None, across), across, self.parallel)(sp.sosfilt)
+            data = func(self.sos, db.values, self.axis)
         else:
-            data, zf = sp.sosfilt(self.sos, db.values, self.axis, self.zi)
+            func = parallelize(
+                (None, across, None, across + 1), (across, across + 1), self.parallel
+            )(sp.sosfilt)
+            data, zf = func(self.sos, db.values, self.axis, self.zi)
             self.zi = State(zf)
         return db.copy(data=data)
 
