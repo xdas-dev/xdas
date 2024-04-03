@@ -2,6 +2,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
+from pytest import raises
 
 from . import config
 
@@ -15,6 +16,8 @@ def parallelize(mode, parallel):
             case {"along": axis}:
                 return multithread_along_axis(func, axis, n_workers)
             case {"across": axis}:
+                if axis < 0:
+                    raise ValueError("axis must be provided as positive")
                 return multithread_along_axis(func, int(axis == 0), n_workers)
 
     return decorator
@@ -39,10 +42,13 @@ def multithread_along_axis(func, axis, n_workers):
         def fn(x):
             return func(x, *args, **kwargs)
 
-        xs = np.array_split(x, n_workers, axis)
-        with ThreadPoolExecutor(n_workers) as executor:
-            ys = list(executor.map(fn, xs))
-        return multithreaded_concatenate(ys, axis, n_workers=n_workers)
+        if x.ndim > axis:
+            xs = np.array_split(x, n_workers, axis)
+            with ThreadPoolExecutor(n_workers) as executor:
+                ys = list(executor.map(fn, xs))
+            return multithreaded_concatenate(ys, axis, n_workers=n_workers)
+        else:
+            return fn(x)
 
     return wrapper
 

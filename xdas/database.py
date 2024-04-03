@@ -253,7 +253,7 @@ class Database:
         if dim == "first":
             return 0
         elif dim == "last":
-            return -1
+            return self.ndim - 1
         elif dim in self.dims:
             return self.dims.index(dim)
         else:

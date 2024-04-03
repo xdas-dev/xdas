@@ -8,22 +8,10 @@ from .database import Database
 from .parallel import parallelize
 
 
-def parse_dim(db, dim):
-    if dim == "first":
-        return db.dims[0]
-    elif dim == "last":
-        return db.dims[-1]
-    else:
-        if dim in db.dims:
-            return dim
-        else:
-            raise ValueError(f"{dim} not in db.dims")
-
-
 @atomized
 @splits
 @collects
-def detrend(db, type="linear", dim="last"):
+def detrend(db, type="linear", dim="last", parallel=None):
     """
     Detrend data along given dimension
 
@@ -46,16 +34,16 @@ def detrend(db, type="linear", dim="last"):
     Splits on data discontinuities along `dim`.
 
     """
-    dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
-    data = sp.detrend(db.values, axis, type)
+    func = parallelize({"across": axis}, parallel)(sp.detrend)
+    data = func(db.values, axis, type)
     return db.copy(data=data)
 
 
 @atomized
 @splits
 @collects
-def taper(db, window="hann", fftbins=False, dim="last"):
+def taper(db, window="hann", fftbins=False, dim="last", parallel=None):
     """
     Apply a tapering window along the given dimension
 
@@ -75,12 +63,12 @@ def taper(db, window="hann", fftbins=False, dim="last"):
     Database or DataArray
         The tapered data.
     """
-    dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
     w = sp.get_window(window, db.shape[axis], fftbins=fftbins)
     shape = [-1 if ax == axis else 1 for ax in range(db.ndim)]
     w = w.reshape(shape)
-    data = w * db.values
+    func = parallelize({"across": axis}, parallel)(np.multiply)
+    data = func(db.values, w)
     return db.copy(data=data)
 
 
@@ -108,7 +96,6 @@ def filter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=Non
     dim: str, optional
         The dimension along which to filter.
     """
-    dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
     fs = 1.0 / get_sampling_interval(db, dim)
     sos = sp.iirfilter(corners, freq, btype=btype, ftype="butter", output="sos", fs=fs)
@@ -172,7 +159,6 @@ def hilbert(db, N=None, dim="last", parallel=None):
       * distance (distance): 0.000 to 10000.000
 
     """
-    dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
     func = parallelize({"across": axis}, parallel)(sp.hilbert)
     data = func(db.values, N, axis)
@@ -182,7 +168,7 @@ def hilbert(db, N=None, dim="last", parallel=None):
 @atomized
 @splits
 @collects
-def resample(db, num, dim="last", window=None, domain="time"):
+def resample(db, num, dim="last", window=None, domain="time"):  # TODO: parallelize
     """
     Resample db to num samples using Fourier method along the given dimension.
 
@@ -236,8 +222,8 @@ def resample(db, num, dim="last", window=None, domain="time"):
       * time (time): 2023-01-01T00:00:00.000 to 2023-01-01T00:00:05.940
       * distance (distance): 0.000 to 10000.000
     """
-    dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
+    dim = db.dims[axis]
     (data, t) = sp.resample(db.values, num, db[dim].values, axis, window, domain)
     new_coord = {"tie_indices": [0, num - 1], "tie_values": [t[0], t[-1]]}
     coords = {
@@ -252,7 +238,14 @@ def resample(db, num, dim="last", window=None, domain="time"):
 @splits
 @collects
 def resample_poly(
-    db, up, down, dim="last", window=("kaiser", 5.0), padtype="constant", cval=None
+    db,
+    up,
+    down,
+    dim="last",
+    window=("kaiser", 5.0),
+    padtype="constant",
+    cval=None,
+    parallel=None,
 ):
     """
     Resample db along the given dimension using polyphase filtering.
@@ -321,9 +314,10 @@ def resample_poly(
       * distance (distance): 0.000 to 10000.000
 
     """
-    dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
-    data = sp.resample_poly(db.values, up, down, axis, window, padtype, cval)
+    dim = db.dims[axis]
+    func = parallelize({"across": axis}, parallel)(sp.resample_poly)
+    data = func(db.values, up, down, axis, window, padtype, cval)
     start = db[dim][0].values
     d = db[dim][-1].values - db[dim][-2].values
     end = db[dim][-1].values + d
@@ -512,7 +506,6 @@ def filtfilt(
       * distance (distance): 0.000 to 10000.000
 
     """
-    dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
     func = lambda x, b, a, axis, padtype, padlen, method, irlen: sp.filtfilt(
         b, a, x, axis, padtype, padlen, method, irlen
@@ -673,7 +666,6 @@ def sosfiltfilt(sos, db, dim="last", padtype="odd", padlen=None, parallel=None):
       * distance (distance): 0.000 to 10000.000
 
     """
-    dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
     func = lambda x, sos, axis, padtype, padlen: sp.sosfiltfilt(
         sos, x, axis, padtype, padlen
@@ -725,7 +717,6 @@ def decimate(db, q, n=None, ftype="iir", zero_phase=None, dim="last", parallel=N
     Splits on data discontinuities along `dim`.
 
     """
-    dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
     func = parallelize({"across": axis}, parallel)(sp.decimate)
     data = func(db.values, q, n, ftype, axis, zero_phase)
@@ -735,7 +726,7 @@ def decimate(db, q, n=None, ftype="iir", zero_phase=None, dim="last", parallel=N
 @atomized
 @splits
 @collects
-def integrate(db, midpoints=False, dim="last"):
+def integrate(db, midpoints=False, dim="last", parallel=None):
     """
     Integrate along a given dimension.
 
@@ -758,10 +749,10 @@ def integrate(db, midpoints=False, dim="last"):
     Splits on data discontinuities along `dim`.
 
     """
-    dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
     d = get_sampling_interval(db, dim)
-    data = np.cumsum(db.values, axis=axis) * d
+    func = parallelize({"across": axis}, parallel)(np.cumsum)
+    data = func(db.values, axis=axis) * d
     out = db.copy(data=data)
     if midpoints:
         out[dim] = out[dim] + d / 2
@@ -771,7 +762,7 @@ def integrate(db, midpoints=False, dim="last"):
 @atomized
 @splits
 @collects
-def differentiate(db, midpoints=False, dim="last"):
+def differentiate(db, midpoints=False, dim="last", parallel=None):
     """
     Differentiate along a given dimension.
 
@@ -794,10 +785,11 @@ def differentiate(db, midpoints=False, dim="last"):
     Splits on data discontinuities along `dim`.
 
     """
-    dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
     d = get_sampling_interval(db, dim)
-    data = np.diff(db.values, axis=axis) / d
+    func = lambda x: np.diff(x, axis=axis) / d
+    func = parallelize({"across": axis}, parallel)(func)
+    data = func(db.values)
     out = db.isel({dim: slice(None, -1)}).copy(data=data)
     if midpoints:
         out[dim] = out[dim] + d / 2
@@ -806,7 +798,7 @@ def differentiate(db, midpoints=False, dim="last"):
 
 @atomized
 @collects
-def segment_mean_removal(db, limits, window="hann", dim="last"):
+def segment_mean_removal(db, limits, window="hann", dim="last"):  # TODO: parallelize
     """
     Piecewise mean removal.
 
@@ -826,7 +818,6 @@ def segment_mean_removal(db, limits, window="hann", dim="last"):
     Database or DataArray
         The data with segment means removed.
     """
-    dim = parse_dim(db, dim)
     out = db.copy()
     axis = db.get_axis_num(dim)
     for sstart, send in zip(limits[:-1], limits[1:]):
@@ -843,7 +834,9 @@ def segment_mean_removal(db, limits, window="hann", dim="last"):
 @atomized
 @splits
 @collects
-def sliding_mean_removal(db, wlen, window="hann", pad_mode="reflect", dim="last"):
+def sliding_mean_removal(
+    db, wlen, window="hann", pad_mode="reflect", dim="last", parallel=None
+):
     """
     Sliding mean removal.
 
@@ -870,25 +863,26 @@ def sliding_mean_removal(db, wlen, window="hann", pad_mode="reflect", dim="last"
     Splits on data discontinuities along `dim`.
 
     """
-    dim = parse_dim(db, dim)
+    axis = db.get_axis_num(dim)
     d = get_sampling_interval(db, dim)
     n = round(wlen / d)
     if n % 2 == 0:
         n += 1
     win = sp.get_window(window, n)
     win /= np.sum(win)
-    shape = tuple(-1 if d == dim else 1 for d in db.dims)
+    shape = tuple(-1 if a == axis else 1 for a in range(db.ndim))
     win = np.reshape(win, shape)
-    data = db.data
-    pad_width = tuple((n // 2, n // 2) if d == dim else (0, 0) for d in db.dims)
-    mean = sp.fftconvolve(np.pad(data, pad_width, mode=pad_mode), win, mode="valid")
-    data = data - mean
-    return db.copy(data=data)
+    pad_width = tuple((n // 2, n // 2) if a == axis else (0, 0) for a in range(db.ndim))
+    func = lambda x: x - sp.fftconvolve(
+        np.pad(x, pad_width, mode=pad_mode), win, mode="valid"
+    )
+    func = parallelize({"across": axis}, parallel)(func)
+    return db.copy(data=func(db.data))
 
 
 @atomized
 @collects
-def medfilt(db, kernel_dim):
+def medfilt(db, kernel_dim):  # TODO: parallelize
     """
     Perform a median filter along given dimensions
 
@@ -943,15 +937,17 @@ def medfilt(db, kernel_dim):
 
 @atomized
 @collects
-def fft(db, n=None, dim={"last": "frequency"}, norm=None):
+def fft(db, n=None, dim={"last": "frequency"}, norm=None, parallel=None):
     ((olddim, newdim),) = dim.items()
-    olddim = parse_dim(db, olddim)
+    olddim = db.dims[db.get_axis_num(olddim)]
     if n is None:
         n = db.sizes[olddim]
     axis = db.get_axis_num(olddim)
     d = get_sampling_interval(db, olddim)
     f = np.fft.fftshift(np.fft.fftfreq(n, d))
-    data = np.fft.fftshift(np.fft.fft(db.values, n, axis, norm), axis)
+    func = lambda x: np.fft.fftshift(np.fft.fft(x, n, axis, norm), axis)
+    func = parallelize({"across": axis}, parallel)(func)
+    data = func(db.values)
     coords = {
         newdim if name == olddim else name: f if name == olddim else db.coords[name]
         for name in db.coords
@@ -962,15 +958,16 @@ def fft(db, n=None, dim={"last": "frequency"}, norm=None):
 
 @atomized
 @collects
-def rfft(db, n=None, dim={"last": "frequency"}, norm=None):
+def rfft(db, n=None, dim={"last": "frequency"}, norm=None, parallel=None):
     ((olddim, newdim),) = dim.items()
-    olddim = parse_dim(db, olddim)
+    olddim = db.dims[db.get_axis_num(olddim)]
     if n is None:
         n = db.sizes[olddim]
     axis = db.get_axis_num(olddim)
     d = get_sampling_interval(db, olddim)
+    func = parallelize({"across": axis}, parallel)(np.fft.rfft)
     f = np.fft.rfftfreq(n, d)
-    data = np.fft.rfft(db.values, n, axis, norm)
+    data = func(db.values, n, axis, norm)
     coords = {
         newdim if name == olddim else name: f if name == olddim else db.coords[name]
         for name in db.coords
