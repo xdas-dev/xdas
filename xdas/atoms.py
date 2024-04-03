@@ -29,15 +29,15 @@ class Sequential(list):
 
     Examples
     --------
-    >>> from xdas import PartialAtom, PartialStateAtom, Sequential
+    >>> from xdas.atoms import Partial, StatePartial, Sequential
     >>> import xdas.signal as xp
     >>> import numpy as np
 
     >>> sequence = Sequential(
     ...     [
-    ...         PartialAtom(xp.taper, dim="time"),
-    ...         PartialStateAtom(xp.lfilter, [1.0], [0.5], ..., dim="time", state="zi"),
-    ...         PartialAtom(np.square),
+    ...         Partial(xp.taper, dim="time"),
+    ...         StatePartial(xp.lfilter, [1.0], [0.5], ..., dim="time", zi=...),
+    ...         Partial(np.square),
     ...     ],
     ...     name="Low frequency energy",
     ... )
@@ -49,7 +49,7 @@ class Sequential(list):
 
     >>> sequence = Sequential(
     ...     [
-    ...         PartialAtom(xp.decimate, 16, dim="distance"),
+    ...         Partial(xp.decimate, 16, dim="distance"),
     ...         sequence,
     ...     ]
     ... )
@@ -217,13 +217,13 @@ class Partial(Atom):
 
     Examples
     --------
-    >>> from xdas import PartialAtom
+    >>> from xdas.atoms import Partial
     >>> import xdas.signal as xp
-    >>> PartialAtom(xp.decimate, 2, dim="time", name="downsampling")
+    >>> Partial(xp.decimate, 2, dim="time", name="downsampling")
     decimate(..., 2, dim=time)
 
     >>> import numpy as np
-    >>> PartialAtom(np.square)
+    >>> Partial(np.square)
     square(...)
 
     """
@@ -312,7 +312,7 @@ class StatePartial(Partial):
 
     Examples
     --------
-    >>> from xdas import PartialStateAtom
+    >>> from xdas.atoms import StatePartial, State
     >>> import xdas.signal as xp
     >>> import scipy.signal as sp
 
@@ -321,27 +321,30 @@ class StatePartial(Partial):
     By default, `state` is the expected keyword argument and 'init' is the send value
     to ask for initialisation.
 
-    >>> PartialStateAtom(xp.sosfilt, sos, ..., dim="time", state="zi")
+    >>> StatePartial(xp.sosfilt, sos, ..., dim="time", zi=...)
     sosfilt(<ndarray>, ..., dim=time)  [stateful]
 
     To manually specify the keyword argument and initial value a dict must be passed to
     the state keyword argument.
 
-    >>> PartialStateAtom(xp.sosfilt, sos, ..., dim="time", state={"zi": "init"})
+    >>> StatePartial(xp.sosfilt, sos, ..., dim="time", zi=State("init"))
     sosfilt(<ndarray>, ..., dim=time)  [stateful]
 
     """
 
-    def __init__(self, func, *args, state, name=None, **kwargs):
+    def __init__(self, func, *args, name=None, **kwargs):
         super().__init__(func, *args, name=name, **kwargs)
-        if isinstance(state, str):
-            state = {state: "init"}
-        if isinstance(state, tuple):
-            state = dict(zip(state, ["init"] * len(state)))
-        for key, value in state.items():
-            if key == "state":
-                raise KeyError("`state` is a reserved word")
-            setattr(self, key, State(value))
+        for key, value in kwargs.items():
+            if value is ...:
+                setattr(self, key, State("init"))
+            elif isinstance(value, State):
+                setattr(self, key, value)
+        self.kwargs = {
+            key: value for key, value in kwargs.items() if key not in self._state
+        }
+
+        if not self._state:
+            raise ValueError("no keyword argument specified as state")
 
     def __repr__(self) -> str:
         return super().__repr__() + "  [stateful]"
@@ -386,9 +389,8 @@ def atomized(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         if any(arg is ... for arg in args):
-            state = {key: "init" for key, value in kwargs.items() if value is ...}
-            if state:
-                return StatePartial(func, *args, state=state, **kwargs)
+            if any(value is ... for value in kwargs.values()):
+                return StatePartial(func, *args, **kwargs)
             else:
                 return Partial(func, *args, **kwargs)
         else:
