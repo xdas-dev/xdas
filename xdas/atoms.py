@@ -281,7 +281,7 @@ class StatePartial(Partial):
 
     Here, `state` is a given keyword argument that contains the state, which can differ
     from one function to the next. The user must pass a dict `{"zi": value}` to provide
-    the initial state. If no initial state is provided, the "init" string will be used.
+    the initial state. If no initial state is provided, the ... flag will be used.
     That special string indicates to the function to initialize the state and to return
     it along with the result. All xdas statefull function accepts this convention.
 
@@ -302,9 +302,9 @@ class StatePartial(Partial):
     state: Any
         The initial state that will be passed at the `func`. If `state` is a dict, the
         key indicates the keyword argument used by `func` for state passing, and the
-        value contains the state. The "init" string is used to indicate than a new
-        state must be initialized. If `state` is a string, it will use the default
-        "init" code by default for that keyword argument.
+        value contains the state. The ... flag is used to indicate than a new
+        state must be initialized. If `state` is a string, it will use the default ...
+        flag by default for that keyword argument.
     name : Hashable
         Name to identify the function.
     **kwargs : Any
@@ -327,7 +327,7 @@ class StatePartial(Partial):
     To manually specify the keyword argument and initial value a dict must be passed to
     the state keyword argument.
 
-    >>> StatePartial(xp.sosfilt, sos, ..., dim="time", zi=State("init"))
+    >>> StatePartial(xp.sosfilt, sos, ..., dim="time", zi=State(...))
     sosfilt(<ndarray>, ..., dim=time)  [stateful]
 
     """
@@ -336,7 +336,7 @@ class StatePartial(Partial):
         super().__init__(func, *args, name=name, **kwargs)
         for key, value in kwargs.items():
             if value is ...:
-                setattr(self, key, State("init"))
+                setattr(self, key, State(...))
             elif isinstance(value, State):
                 setattr(self, key, value)
         self.kwargs = {
@@ -359,7 +359,7 @@ class StatePartial(Partial):
 
     def reset(self):
         for key in self._state:
-            setattr(self, key, State("init"))
+            setattr(self, key, State(...))
 
 
 def atomized(func):

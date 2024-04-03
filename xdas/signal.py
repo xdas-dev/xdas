@@ -366,7 +366,7 @@ def lfilter(b, a, db, dim="last", zi=None, parallel=None):
         The dimension of the input data array along which to apply the
         linear filter. Default is last.
     zi : array_like or str, optional
-        Initial conditions for the filter delays. If `zi` is None or "init" then
+        Initial conditions for the filter delays. If `zi` is None or ... then
         initial rest is assumed.
     parallel: bool or int, optional
         Whether to parallelize the function, if true: all cores are used, if false:
@@ -376,7 +376,7 @@ def lfilter(b, a, db, dim="last", zi=None, parallel=None):
     db : Database
         The output of the digital filter.
     zf : array, optional
-        If `zi` is None, this is not returned. If `zi` is given or "init" then `zf`
+        If `zi` is None, this is not returned. If `zi` is given or ... then `zf`
         holds the final filter delay values.
 
     Notes
@@ -410,7 +410,7 @@ def lfilter(b, a, db, dim="last", zi=None, parallel=None):
     func = lambda x, b, a, axis, zi: sp.lfilter(b, a, x, axis, zi)
     if zi is None:  # TODO: parallelize should also split state
         func = parallelize(axis, parallel)(func)
-    if isinstance(zi, str) and zi == "init":
+    if zi is ...:
         n_sections = max(len(a), len(b)) - 1
         shape = tuple(
             n_sections if name == dim else size for name, size in db.sizes.items()
@@ -550,7 +550,7 @@ def sosfilt(sos, db, dim="last", zi=None, parallel=None):
         Initial conditions for the cascaded filter delays.  It is a (at
         least 2D) vector of shape ``(n_sections, ..., 2, ...)``, where
         ``..., 2, ...`` denotes the shape of `db`, but with ``db.sizes[dim]``
-        replaced by 2.  If `zi` is None, "init", or is not given then initial rest
+        replaced by 2.  If `zi` is None,... , or is not given then initial rest
         (i.e. all zeros) is assumed.
 
     Returns
@@ -558,7 +558,7 @@ def sosfilt(sos, db, dim="last", zi=None, parallel=None):
     y : Database
         The output of the digital filter.
     zi : ndarray, optional
-        If `zi` is None, this is not returned. If `zi` is given or "init" then `zf`
+        If `zi` is None, this is not returned. If `zi` is given or is ... then `zf`
         holds the final filter delay values.
 
     Notes
@@ -592,7 +592,7 @@ def sosfilt(sos, db, dim="last", zi=None, parallel=None):
     func = lambda x, sos, axis, state: sp.sosfilt(sos, x, axis, state)
     if zi is None:  # TODO: parallelize should also split state
         func = parallelize(axis, parallel)(func)
-    if isinstance(zi, str) and zi == "init":
+    if zi is ...:
         n_sections = sos.shape[0]
         shape = (n_sections,) + tuple(
             2 if index == axis else element for index, element in enumerate(db.shape)

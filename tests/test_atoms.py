@@ -8,7 +8,7 @@ import scipy.signal as sp
 import xdas
 import xdas.atoms as atoms
 import xdas.signal as xp
-from xdas.atoms import FIRFilter, IIRFilter, Partial, StatePartial, ResamplePoly
+from xdas.atoms import FIRFilter, IIRFilter, Partial, ResamplePoly, StatePartial
 from xdas.core import chunk, concatenate
 from xdas.signal import lfilter
 from xdas.synthetics import generate
@@ -58,7 +58,7 @@ class TestDecorator:
         statefull = lfilter(b, a, ..., "time", zi=...)
         assert isinstance(atom, Partial)
         assert isinstance(statefull, StatePartial)
-        assert statefull.state == {"zi": "init"}
+        assert statefull.state == {"zi": ...}
 
 
 class TestFilters:
