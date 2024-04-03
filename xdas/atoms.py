@@ -29,14 +29,14 @@ class Sequential(list):
 
     Examples
     --------
-    >>> from xdas.atoms import Partial, StatePartial, Sequential
+    >>> from xdas.atoms import Partial, Partial, Sequential
     >>> import xdas.signal as xp
     >>> import numpy as np
 
     >>> sequence = Sequential(
     ...     [
     ...         Partial(xp.taper, dim="time"),
-    ...         StatePartial(xp.lfilter, [1.0], [0.5], ..., dim="time", zi=...),
+    ...         Partial(xp.lfilter, [1.0], [0.5], ..., dim="time", zi=...),
     ...         Partial(np.square),
     ...     ],
     ...     name="Low frequency energy",
@@ -114,7 +114,7 @@ class Sequential(list):
     def reset(self) -> None:
         """Resets the state of all StateAtom of the sequence."""
         for atom in self:
-            if isinstance(atom, StatePartial):
+            if isinstance(atom, Partial):
                 atom.reset()
 
 
@@ -252,10 +252,29 @@ class Partial(Atom):
         self.args = args
         self.kwargs = kwargs
         self.name = name
+        for key, value in kwargs.items():
+            if value is ...:
+                setattr(self, key, State(...))
+            elif isinstance(value, State):
+                setattr(self, key, value)
+        self.kwargs = {
+            key: value for key, value in kwargs.items() if key not in self._state
+        }
+
+    @property
+    def stateful(self):
+        return bool(self._state)
 
     def call(self, x: Any) -> Any:
         args = tuple(x if arg is ... else arg for arg in self.args)
-        return self.func(*args, **self.kwargs)
+        kwargs = self.kwargs | self._state
+        if self.stateful:
+            x, *state = self.func(*args, **kwargs)
+            for key, value in zip(self._state, state):
+                setattr(self, key, State(value))
+            return x
+        else:
+            return self.func(*args, **self.kwargs)
 
     def __repr__(self) -> str:
         func = getattr(self.func, "__name__", "<function>")
@@ -273,7 +292,7 @@ class Partial(Atom):
                 value = f"<{type(value).__name__}>"
             kwargs.append(f"{key}={value}")
         params = ", ".join(args + kwargs)
-        return f"{func}({params})"
+        return f"{func}({params})" + ("  [stateful]" if self.stateful else "")
 
 
 class StatePartial(Partial):
@@ -322,7 +341,7 @@ class StatePartial(Partial):
 
     Examples
     --------
-    >>> from xdas.atoms import StatePartial, State
+    >>> from xdas.atoms import Partial, State
     >>> import xdas.signal as xp
     >>> import scipy.signal as sp
 
@@ -331,13 +350,13 @@ class StatePartial(Partial):
     By default, `state` is the expected keyword argument and 'init' is the send value
     to ask for initialisation.
 
-    >>> StatePartial(xp.sosfilt, sos, ..., dim="time", zi=...)
+    >>> Partial(xp.sosfilt, sos, ..., dim="time", zi=...)
     sosfilt(<ndarray>, ..., dim=time)  [stateful]
 
     To manually specify the keyword argument and initial value a dict must be passed to
     the state keyword argument.
 
-    >>> StatePartial(xp.sosfilt, sos, ..., dim="time", zi=State(...))
+    >>> Partial(xp.sosfilt, sos, ..., dim="time", zi=State(...))
     sosfilt(<ndarray>, ..., dim=time)  [stateful]
 
     """
@@ -396,7 +415,7 @@ def atomized(func):
     def wrapper(*args, **kwargs):
         if any(arg is ... for arg in args):
             if any(value is ... for value in kwargs.values()):
-                return StatePartial(func, *args, **kwargs)
+                return Partial(func, *args, **kwargs)
             else:
                 return Partial(func, *args, **kwargs)
         else:
