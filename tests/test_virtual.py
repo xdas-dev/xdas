@@ -154,7 +154,6 @@ class TestDataStack:
         stack = DataStack()
         stack.extend(sources)
         assert array_identical(stack, data)
-        print(type(sources[0]))
         with pytest.raises(TypeError, match="must be a list"):
             stack.extend(sources[0])
 

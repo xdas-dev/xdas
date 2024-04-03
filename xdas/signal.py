@@ -1,3 +1,5 @@
+from inspect import signature
+
 import numpy as np
 import scipy.signal as sp
 
@@ -35,7 +37,8 @@ def detrend(db, type="linear", dim="last", parallel=None):
 
     """
     axis = db.get_axis_num(dim)
-    func = parallelize({"across": axis}, parallel)(sp.detrend)
+    across = int(axis == 0)
+    func = parallelize(across, across, parallel)(sp.detrend)
     data = func(db.values, axis, type)
     return db.copy(data=data)
 
@@ -67,7 +70,8 @@ def taper(db, window="hann", fftbins=False, dim="last", parallel=None):
     w = sp.get_window(window, db.shape[axis], fftbins=fftbins)
     shape = [-1 if ax == axis else 1 for ax in range(db.ndim)]
     w = w.reshape(shape)
-    func = parallelize({"across": axis}, parallel)(np.multiply)
+    across = int(axis == 0)
+    func = parallelize(across, across, parallel)(np.multiply)
     data = func(db.values, w)
     return db.copy(data=data)
 
@@ -75,7 +79,9 @@ def taper(db, window="hann", fftbins=False, dim="last", parallel=None):
 @atomized
 @splits
 @collects
-def filter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=None):
+def filter(
+    db, freq, btype, corners=4, zerophase=False, dim="last", parallel=None
+):  # TODO
     """
     SOS IIR filtering along given dimension.
 
@@ -101,10 +107,10 @@ def filter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=Non
     sos = sp.iirfilter(corners, freq, btype=btype, ftype="butter", output="sos", fs=fs)
     if zerophase:
         func = lambda x, sos, axis: sp.sosfiltfilt(sos, x, axis)
-        func = parallelize({"across": axis}, parallel)(func)
+        func = parallelize(axis, parallel)(func)
     else:
         func = lambda x, sos, axis: sp.sosfilt(sos, x, axis)
-        func = parallelize({"across": axis}, parallel)(func)
+        func = parallelize(axis, parallel)(func)
     data = func(db.values, sos, axis=axis)
     return db.copy(data=data)
 
@@ -160,7 +166,8 @@ def hilbert(db, N=None, dim="last", parallel=None):
 
     """
     axis = db.get_axis_num(dim)
-    func = parallelize({"across": axis}, parallel)(sp.hilbert)
+    across = int(axis == 0)
+    func = parallelize(across, across, parallel)(sp.hilbert)
     data = func(db.values, N, axis)
     return db.copy(data=data)
 
@@ -168,7 +175,7 @@ def hilbert(db, N=None, dim="last", parallel=None):
 @atomized
 @splits
 @collects
-def resample(db, num, dim="last", window=None, domain="time"):  # TODO: parallelize
+def resample(db, num, dim="last", window=None, domain="time", parallel=None):
     """
     Resample db to num samples using Fourier method along the given dimension.
 
@@ -224,7 +231,9 @@ def resample(db, num, dim="last", window=None, domain="time"):  # TODO: parallel
     """
     axis = db.get_axis_num(dim)
     dim = db.dims[axis]
-    (data, t) = sp.resample(db.values, num, db[dim].values, axis, window, domain)
+    across = int(axis == 0)
+    func = parallelize(across, across, parallel)(sp.resample)
+    data, t = func(db.values, num, db[dim].values, axis, window, domain)
     new_coord = {"tie_indices": [0, num - 1], "tie_values": [t[0], t[-1]]}
     coords = {
         name: new_coord if name == dim else coord
@@ -316,7 +325,8 @@ def resample_poly(
     """
     axis = db.get_axis_num(dim)
     dim = db.dims[axis]
-    func = parallelize({"across": axis}, parallel)(sp.resample_poly)
+    across = int(axis == 0)
+    func = parallelize(across, across, parallel)(sp.resample_poly)
     data = func(db.values, up, down, axis, window, padtype, cval)
     start = db[dim][0].values
     d = db[dim][-1].values - db[dim][-2].values
@@ -400,6 +410,7 @@ def lfilter(b, a, db, dim="last", zi=None, parallel=None):
 
     """
     axis = db.get_axis_num(dim)
+    across = int(axis == 0)
     if zi is ...:
         n_sections = max(len(a), len(b)) - 1
         shape = tuple(
@@ -407,13 +418,15 @@ def lfilter(b, a, db, dim="last", zi=None, parallel=None):
             for _axis, _size in enumerate(db.shape)
         )
         zi = np.zeros(shape)
-    func = lambda x, zi: sp.lfilter(b, a, x, axis, zi)
     if zi is None:
-        func = parallelize({"across": axis}, parallel)(func)
-        data = func(db.values, zi)
+        func = parallelize((None, None, across), across, parallel)(sp.lfilter)
+        data = func(b, a, db.values, axis, zi)
         return db.copy(data=data)
-    else:  # TODO: parallelize should also split state
-        data, zf = func(db.values, zi)
+    else:
+        func = parallelize(
+            (None, None, across, None, across), (across, across), parallel
+        )(sp.lfilter)
+        data, zf = func(b, a, db.values, axis, zi)
         return db.copy(data=data), zf
 
 
@@ -510,7 +523,7 @@ def filtfilt(
     func = lambda x, b, a, axis, padtype, padlen, method, irlen: sp.filtfilt(
         b, a, x, axis, padtype, padlen, method, irlen
     )
-    func = parallelize({"across": axis}, parallel)(func)
+    func = parallelize(axis, parallel)(func)
     data = func(db.values, b, a, axis, padtype, padlen, method, irlen)
     return db.copy(data=data)
 
@@ -580,19 +593,22 @@ def sosfilt(sos, db, dim="last", zi=None, parallel=None):
 
     """
     axis = db.get_axis_num(dim)
+    across = int(axis == 0)
     if zi is ...:
         n_sections = sos.shape[0]
         shape = (n_sections,) + tuple(
             2 if index == axis else element for index, element in enumerate(db.shape)
         )
         zi = np.zeros(shape)
-    func = lambda x, zi: sp.sosfilt(sos, x, axis, zi)
     if zi is None:
-        func = parallelize({"across": axis}, parallel)(func)
-        data = func(db.values, zi)
+        func = parallelize((None, across), across, parallel)(sp.sosfilt)
+        data = func(sos, db.values, axis, zi)
         return db.copy(data=data)
-    else:  # TODO: parallelize should also split state
-        data, zf = func(db.values, zi)
+    else:
+        func = parallelize(
+            (None, across, None, across + 1), (across, across + 1), parallel
+        )(sp.sosfilt)
+        data, zf = func(sos, db.values, axis, zi)
         return db.copy(data=data), zf
 
 
@@ -667,11 +683,9 @@ def sosfiltfilt(sos, db, dim="last", padtype="odd", padlen=None, parallel=None):
 
     """
     axis = db.get_axis_num(dim)
-    func = lambda x, sos, axis, padtype, padlen: sp.sosfiltfilt(
-        sos, x, axis, padtype, padlen
-    )
-    func = parallelize({"across": axis}, parallel)(func)
-    data = func(db.values, sos, axis, padtype, padlen)
+    across = int(axis == 0)
+    func = parallelize((None, across), across, parallel)(sp.sosfiltfilt)
+    data = func(sos, db.values, axis, padtype, padlen)
     return db.copy(data=data)
 
 
@@ -718,7 +732,8 @@ def decimate(db, q, n=None, ftype="iir", zero_phase=None, dim="last", parallel=N
 
     """
     axis = db.get_axis_num(dim)
-    func = parallelize({"across": axis}, parallel)(sp.decimate)
+    across = int(axis == 0)
+    func = parallelize(across, across, parallel)(sp.decimate)
     data = func(db.values, q, n, ftype, axis, zero_phase)
     return db[{dim: slice(None, None, q)}].copy(data=data)
 
@@ -751,8 +766,10 @@ def integrate(db, midpoints=False, dim="last", parallel=None):
     """
     axis = db.get_axis_num(dim)
     d = get_sampling_interval(db, dim)
-    func = parallelize({"across": axis}, parallel)(np.cumsum)
-    data = func(db.values, axis=axis) * d
+    func = lambda x: np.cumsum(x, axis=axis) * d
+    across = int(axis == 0)
+    func = parallelize(across, across, parallel)(func)
+    data = func(db.values)
     out = db.copy(data=data)
     if midpoints:
         out[dim] = out[dim] + d / 2
@@ -788,7 +805,8 @@ def differentiate(db, midpoints=False, dim="last", parallel=None):
     axis = db.get_axis_num(dim)
     d = get_sampling_interval(db, dim)
     func = lambda x: np.diff(x, axis=axis) / d
-    func = parallelize({"across": axis}, parallel)(func)
+    across = int(axis == 0)
+    func = parallelize(across, across, parallel)(func)
     data = func(db.values)
     out = db.isel({dim: slice(None, -1)}).copy(data=data)
     if midpoints:
@@ -876,8 +894,10 @@ def sliding_mean_removal(
     func = lambda x: x - sp.fftconvolve(
         np.pad(x, pad_width, mode=pad_mode), win, mode="valid"
     )
-    func = parallelize({"across": axis}, parallel)(func)
-    return db.copy(data=func(db.data))
+    across = int(axis == 0)
+    func = parallelize(across, across, parallel)(func)
+    data = func(db.values)
+    return db.copy(data=data)
 
 
 @atomized
@@ -946,7 +966,8 @@ def fft(db, n=None, dim={"last": "frequency"}, norm=None, parallel=None):
     d = get_sampling_interval(db, olddim)
     f = np.fft.fftshift(np.fft.fftfreq(n, d))
     func = lambda x: np.fft.fftshift(np.fft.fft(x, n, axis, norm), axis)
-    func = parallelize({"across": axis}, parallel)(func)
+    across = int(axis == 0)
+    func = parallelize(across, across, parallel)(func)
     data = func(db.values)
     coords = {
         newdim if name == olddim else name: f if name == olddim else db.coords[name]
@@ -965,7 +986,8 @@ def rfft(db, n=None, dim={"last": "frequency"}, norm=None, parallel=None):
         n = db.sizes[olddim]
     axis = db.get_axis_num(olddim)
     d = get_sampling_interval(db, olddim)
-    func = parallelize({"across": axis}, parallel)(np.fft.rfft)
+    across = int(axis == 0)
+    func = parallelize(across, across, parallel)(np.fft.rfft)
     f = np.fft.rfftfreq(n, d)
     data = func(db.values, n, axis, norm)
     coords = {

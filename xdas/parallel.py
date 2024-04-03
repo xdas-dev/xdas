@@ -1,59 +1,86 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
+from functools import wraps
 
 import numpy as np
-from pytest import raises
 
 from . import config
 
 
-def parallelize(mode, parallel):
+def parallelize(split_axis=0, concat_axis=0, parallel=None):
     def decorator(func):
-        n_workers = get_workers_count(parallel)
-        if n_workers == 1:
-            return func
-        match mode:
-            case {"along": axis}:
-                return multithread_along_axis(func, axis, n_workers)
-            case {"across": axis}:
-                if axis < 0:
-                    raise ValueError("axis must be provided as positive")
-                return multithread_along_axis(func, int(axis == 0), n_workers)
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            split_axes = split_axis if isinstance(split_axis, tuple) else (split_axis,)
+            split_axes += (None,) * (len(args) - len(split_axes))
+            inputs = tuple(
+                value for value, axis in zip(args, split_axes) if axis is not None
+            )
+            input_axes = tuple(axis for axis in split_axes if axis is not None)
+            args = tuple(value for value, axis in zip(args, split_axes) if axis is None)
+
+            def fn(_inputs, tuplize=True):
+                _inputs = iter(_inputs)
+                _args = iter(args)
+                _args = tuple(
+                    next(_inputs) if axis is not None else next(_args)
+                    for axis in split_axes
+                )
+                _outputs = func(*_args, **kwargs)
+                if tuplize and not isinstance(_outputs, tuple):
+                    return (_outputs,)
+                else:
+                    return _outputs
+
+            if all(value.ndim <= axis for value, axis in zip(inputs, input_axes)):
+                return fn(inputs, tuplize=False)
+
+            n_jobs = inputs[0].shape[input_axes[0]]
+            n_cores = get_workers_count(parallel)
+            n_workers = min(n_jobs, n_cores)
+            if n_workers == 1:
+                return fn(inputs, tuplize=False)
+
+            if not all(
+                value.shape[axis] == inputs[0].shape[input_axes[0]]
+                for value, axis in zip(inputs, input_axes)
+            ):
+                raise ValueError(
+                    "mismatch in size along parallelization axis between inputs"
+                )
+            inputs = list(
+                zip(
+                    *tuple(
+                        np.array_split(value, n_workers, axis)
+                        for axis, value in zip(input_axes, inputs)
+                    )
+                )
+            )
+            with ThreadPoolExecutor(n_workers) as executor:
+                outputs = tuple(zip(*list(executor.map(fn, inputs))))
+            concat_axes = (
+                concat_axis if isinstance(concat_axis, tuple) else (concat_axis,)
+            )
+            concat_axes += (None,) * (len(outputs) - len(concat_axes))
+            output = tuple(
+                (
+                    concatenate(value, axis, n_workers=n_workers)
+                    if axis is not None
+                    else value[0]
+                )
+                for axis, value in zip(concat_axes, outputs)
+            )
+            if len(output) == 1:
+                return output[0]
+            else:
+                return output
+
+        return wrapper
 
     return decorator
 
 
-def get_workers_count(parallel):
-    if parallel is None:
-        return config.get("n_workers")
-    elif isinstance(parallel, bool):
-        if parallel:
-            return os.cpu_count()
-        else:
-            return 1
-    elif isinstance(parallel, int):
-        return parallel
-    else:
-        raise TypeError("`parallel` must be either None, bool or int.")
-
-
-def multithread_along_axis(func, axis, n_workers):
-    def wrapper(x, *args, **kwargs):
-        def fn(x):
-            return func(x, *args, **kwargs)
-
-        if x.ndim > axis:
-            xs = np.array_split(x, n_workers, axis)
-            with ThreadPoolExecutor(n_workers) as executor:
-                ys = list(executor.map(fn, xs))
-            return multithreaded_concatenate(ys, axis, n_workers=n_workers)
-        else:
-            return fn(x)
-
-    return wrapper
-
-
-def multithreaded_concatenate(arrays, axis=0, out=None, dtype=None, n_workers=None):
+def concatenate(arrays, axis=0, out=None, dtype=None, n_workers=None):
     arrays = [np.asarray(array, dtype) for array in arrays]
 
     ndim = set(array.ndim for array in arrays)
@@ -97,3 +124,17 @@ def multithreaded_concatenate(arrays, axis=0, out=None, dtype=None, n_workers=No
             executor.submit(out.__setitem__, slices, array)
 
     return out
+
+
+def get_workers_count(parallel):
+    if parallel is None:
+        return config.get("n_workers")
+    elif isinstance(parallel, bool):
+        if parallel:
+            return os.cpu_count()
+        else:
+            return 1
+    elif isinstance(parallel, int):
+        return parallel
+    else:
+        raise TypeError("`parallel` must be either None, bool or int.")
