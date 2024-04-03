@@ -8,7 +8,7 @@ import scipy.signal as sp
 import xdas
 import xdas.atoms as atoms
 import xdas.signal as xp
-from xdas.atoms import FIRFilter, IIRFilter, PartialAtom, PartialStateAtom, ResamplePoly
+from xdas.atoms import FIRFilter, IIRFilter, Partial, StatePartial, ResamplePoly
 from xdas.core import chunk, concatenate
 from xdas.signal import lfilter
 from xdas.synthetics import generate
@@ -19,10 +19,10 @@ class TestPartialAtom:
     def test_init(self):
         sequence = xdas.Sequential(
             [
-                xdas.PartialAtom(xp.taper, dim="time"),
-                xdas.PartialAtom(xp.taper, dim="distance"),
-                xdas.PartialAtom(np.abs),
-                xdas.PartialAtom(np.square),
+                xdas.Partial(xp.taper, dim="time"),
+                xdas.Partial(xp.taper, dim="distance"),
+                xdas.Partial(np.abs),
+                xdas.Partial(np.square),
             ]
         )
 
@@ -35,9 +35,9 @@ class TestProcessing:
         # Declare sequence to execute
         sequence = xdas.Sequential(
             [
-                xdas.PartialAtom(np.abs),
-                xdas.PartialAtom(np.square, name="some square"),
-                xdas.PartialAtom(mean, dim="time"),
+                xdas.Partial(np.abs),
+                xdas.Partial(np.square, name="some square"),
+                xdas.Partial(mean, dim="time"),
             ]
         )
 
@@ -56,8 +56,8 @@ class TestDecorator:
         b = [1, 1]
         atom = lfilter(b, a, ..., "time")
         statefull = lfilter(b, a, ..., "time", zi=...)
-        assert isinstance(atom, PartialAtom)
-        assert isinstance(statefull, PartialStateAtom)
+        assert isinstance(atom, Partial)
+        assert isinstance(statefull, StatePartial)
         assert statefull.state == {"zi": "init"}
 
 

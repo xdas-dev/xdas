@@ -88,8 +88,8 @@ class Sequential(list):
     def __init__(self, atoms: Any, name: str | None = None) -> None:
         super().__init__()
         for atom in atoms:
-            if not isinstance(atom, (PartialAtom, Sequential)):
-                atom = PartialAtom(atom)
+            if not isinstance(atom, (Partial, Sequential)):
+                atom = Partial(atom)
             self.append(atom)
         self.name = name
 
@@ -104,7 +104,7 @@ class Sequential(list):
         s = f"{name.capitalize()}:\n"
         for idx, value in enumerate(self):
             label = f"  {idx:{width}}: "
-            if isinstance(value, PartialAtom):
+            if isinstance(value, Partial):
                 s += label + repr(value) + "\n"
             else:
                 s += label + "\n"
@@ -114,7 +114,7 @@ class Sequential(list):
     def reset(self) -> None:
         """Resets the state of all StateAtom of the sequence."""
         for atom in self:
-            if isinstance(atom, PartialStateAtom):
+            if isinstance(atom, StatePartial):
                 atom.reset()
 
 
@@ -187,7 +187,7 @@ class Atom:
         self.set_state(state)
 
 
-class PartialAtom(Atom):
+class Partial(Atom):
     """
     Base class for an xdas operation, to be used in conjunction with Sequence. Each
     Atom should be seen as an elementary operation to apply to the data, such as
@@ -266,7 +266,7 @@ class PartialAtom(Atom):
         return f"{func}({params})"
 
 
-class PartialStateAtom(PartialAtom):
+class StatePartial(Partial):
     """
     A subclass of Atom that provides some logic for handling data states, which need to
     be updated throughout the execution chain. An example of a stateful operation is a
@@ -388,9 +388,9 @@ def atomized(func):
         if any(arg is ... for arg in args):
             state = {key: "init" for key, value in kwargs.items() if value is ...}
             if state:
-                return PartialStateAtom(func, *args, state=state, **kwargs)
+                return StatePartial(func, *args, state=state, **kwargs)
             else:
-                return PartialAtom(func, *args, **kwargs)
+                return Partial(func, *args, **kwargs)
         else:
             return func(*args, **kwargs)
 
