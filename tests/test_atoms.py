@@ -131,6 +131,7 @@ class TestFilters:
         atom = atoms.DownSample(3, "time")
         result = atom(db)
         assert result.equals(expected)
+        atom.reset()
         result = concatenate([atom(chunk, chunk="time") for chunk in chunks], "time")
         assert result.equals(expected)
 

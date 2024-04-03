@@ -157,6 +157,10 @@ class Atom:
             name: filter.state for name, filter in self._filters.items() if filter.state
         }
 
+    @property
+    def initialized(self):
+        return all(value is not ... for value in self._state.values())
+
     def initialize(self, x, **kwargs): ...
 
     def initialize_from_state(self): ...
@@ -164,9 +168,15 @@ class Atom:
     def call(self, x, **kwargs): ...
 
     def __call__(self, x, **kwargs):
-        if not self._state:
+        if not self.initialized:
             self.initialize(x, **kwargs)
         return self.call(x, **kwargs)
+
+    def reset(self):
+        for key in self._state:
+            setattr(self, key, State(...))
+        for filter in self._filters:
+            filter.reset()
 
     def save_state(self, path):
         DataCollection(self.state).to_netcdf(path)
@@ -243,7 +253,7 @@ class Partial(Atom):
         self.kwargs = kwargs
         self.name = name
 
-    def __call__(self, x: Any) -> Any:
+    def call(self, x: Any) -> Any:
         args = tuple(x if arg is ... else arg for arg in self.args)
         return self.func(*args, **self.kwargs)
 
@@ -349,17 +359,13 @@ class StatePartial(Partial):
     def __repr__(self) -> str:
         return super().__repr__() + "  [stateful]"
 
-    def __call__(self, x: Any) -> Any:
+    def call(self, x: Any) -> Any:
         args = tuple(x if arg is ... else arg for arg in self.args)
         kwargs = self.kwargs | self._state
         x, *state = self.func(*args, **kwargs)
         for key, value in zip(self._state, state):
             setattr(self, key, State(value))
         return x
-
-    def reset(self):
-        for key in self._state:
-            setattr(self, key, State(...))
 
 
 def atomized(func):
@@ -409,6 +415,7 @@ class ResamplePoly(Atom):
         self.upsampling = UpSample(..., dim=self.dim)
         self.firfilter = FIRFilter(..., ..., "lowpass", self.window, dim=self.dim)
         self.downsampling = DownSample(..., self.dim)
+        self.fs = State(...)
 
     def initialize(self, db, **kwargs):
         self.fs = State(1.0 / get_sampling_interval(db, self.dim))
@@ -462,6 +469,7 @@ class IIRFilter(Atom):
             self.iirfilter = SOSFilter(..., self.dim)
         else:
             raise ValueError()
+        self.fs = State(...)
 
     def initialize(self, db, **kwargs):
         self.fs = State(1.0 / get_sampling_interval(db, self.dim))
@@ -510,6 +518,7 @@ class FIRFilter(Atom):
         self.scale = scale
         self.dim = dim
         self.lfilter = LFilter(..., [1.0], self.dim)
+        self.fs = State(...)
 
     def initialize(self, db, **kwargs):
         self.fs = State(1.0 / get_sampling_interval(db, self.dim))
@@ -540,6 +549,8 @@ class LFilter(Atom):
         self.b = b
         self.a = a
         self.dim = dim
+        self.axis = State(...)
+        self.zi = State(...)
 
     def initialize(self, db, chunk=None, **kwargs):
         self.axis = State(db.get_axis_num(self.dim))
@@ -550,13 +561,15 @@ class LFilter(Atom):
                 for name, size in db.sizes.items()
             )
             self.zi = State(np.zeros(shape))
+        else:
+            self.zi = State(None)
 
     def call(self, db, **kwargs):
-        if hasattr(self, "zi"):
+        if self.zi is None:
+            data = sp.lfilter(self.b, self.a, db.values, self.axis)
+        else:
             data, zf = sp.lfilter(self.b, self.a, db.values, self.axis, self.zi)
             self.zi = State(zf)
-        else:
-            data = sp.lfilter(self.b, self.a, db.values, self.axis)
         return db.copy(data=data)
 
 
@@ -565,6 +578,8 @@ class SOSFilter(Atom):
         super().__init__()
         self.sos = sos
         self.dim = dim
+        self.axis = State(...)
+        self.zi = State(...)
 
     def initialize(self, db, chunk=None, **kwargs):
         self.axis = State(db.get_axis_num(self.dim))
@@ -575,13 +590,15 @@ class SOSFilter(Atom):
                 for index, element in enumerate(db.shape)
             )
             self.zi = State(np.zeros(shape))
+        else:
+            self.zi = State(None)
 
     def call(self, db, **kwargs):
-        if hasattr(self, "zi"):
+        if self.zi is None:
+            data = sp.sosfilt(self.sos, db.values, self.axis)
+        else:
             data, zf = sp.sosfilt(self.sos, db.values, self.axis, self.zi)
             self.zi = State(zf)
-        else:
-            data = sp.sosfilt(self.sos, db.values, self.axis)
         return db.copy(data=data)
 
 
@@ -590,13 +607,16 @@ class DownSample(Atom):
         super().__init__()
         self.factor = factor
         self.dim = dim
+        self.buffer = State(...)
 
     def initialize(self, db, chunk=None, **kwargs):
         if chunk == self.dim:
             self.buffer = State(db.isel({self.dim: slice(0, 0)}))
+        else:
+            self.buffer = State(None)
 
     def call(self, db, **kwargs):
-        if hasattr(self, "buffer"):
+        if self.buffer is not None:
             db = concatenate([self.buffer, db], self.dim)
             divpoint = db.sizes[self.dim] - db.sizes[self.dim] % self.factor
             db, buffer = split(db, [divpoint], self.dim)
@@ -610,7 +630,6 @@ class UpSample(Atom):
         self.factor = factor
         self.scale = scale
         self.dim = dim
-        # self.__dummy__ = State(...)
 
     def call(self, db, **kwargs):
         shape = tuple(
