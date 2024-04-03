@@ -295,7 +295,7 @@ class Partial(Atom):
         return f"{func}({params})" + ("  [stateful]" if self.stateful else "")
 
 
-class StatePartial(Partial):
+class StatePartial(Partial):  # TODO: Merge documentation
     """
     A subclass of Atom that provides some logic for handling data states, which need to
     be updated throughout the execution chain. An example of a stateful operation is a
@@ -361,30 +361,7 @@ class StatePartial(Partial):
 
     """
 
-    def __init__(self, func, *args, name=None, **kwargs):
-        super().__init__(func, *args, name=name, **kwargs)
-        for key, value in kwargs.items():
-            if value is ...:
-                setattr(self, key, State(...))
-            elif isinstance(value, State):
-                setattr(self, key, value)
-        self.kwargs = {
-            key: value for key, value in kwargs.items() if key not in self._state
-        }
-
-        if not self._state:
-            raise ValueError("no keyword argument specified as state")
-
-    def __repr__(self) -> str:
-        return super().__repr__() + "  [stateful]"
-
-    def call(self, x: Any) -> Any:
-        args = tuple(x if arg is ... else arg for arg in self.args)
-        kwargs = self.kwargs | self._state
-        x, *state = self.func(*args, **kwargs)
-        for key, value in zip(self._state, state):
-            setattr(self, key, State(value))
-        return x
+    ...
 
 
 def atomized(func):
