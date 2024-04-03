@@ -114,10 +114,10 @@ def filter(db, freq, btype, corners=4, zerophase=False, dim="last", parallel=Non
     sos = sp.iirfilter(corners, freq, btype=btype, ftype="butter", output="sos", fs=fs)
     if zerophase:
         func = lambda x, sos, axis: sp.sosfiltfilt(sos, x, axis)
-        func = parallelize(axis, parallel)(func)
+        func = parallelize({"across": axis}, parallel)(func)
     else:
         func = lambda x, sos, axis: sp.sosfilt(sos, x, axis)
-        func = parallelize(axis, parallel)(func)
+        func = parallelize({"across": axis}, parallel)(func)
     data = func(db.values, sos, axis=axis)
     return db.copy(data=data)
 
@@ -174,7 +174,7 @@ def hilbert(db, N=None, dim="last", parallel=None):
     """
     dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
-    func = parallelize(axis, parallel)(sp.hilbert)
+    func = parallelize({"across": axis}, parallel)(sp.hilbert)
     data = func(db.values, N, axis)
     return db.copy(data=data)
 
@@ -405,22 +405,21 @@ def lfilter(b, a, db, dim="last", zi=None, parallel=None):
       * distance (distance): 0.000 to 10000.000
 
     """
-    dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
-    func = lambda x, b, a, axis, zi: sp.lfilter(b, a, x, axis, zi)
-    if zi is None:  # TODO: parallelize should also split state
-        func = parallelize(axis, parallel)(func)
     if zi is ...:
         n_sections = max(len(a), len(b)) - 1
         shape = tuple(
-            n_sections if name == dim else size for name, size in db.sizes.items()
+            n_sections if _axis == axis else _size
+            for _axis, _size in enumerate(db.shape)
         )
         zi = np.zeros(shape)
+    func = lambda x, zi: sp.lfilter(b, a, x, axis, zi)
     if zi is None:
-        data = func(db.values, b, a, axis, zi)
+        func = parallelize({"across": axis}, parallel)(func)
+        data = func(db.values, zi)
         return db.copy(data=data)
-    else:
-        data, zf = func(db.values, b, a, axis, zi)
+    else:  # TODO: parallelize should also split state
+        data, zf = func(db.values, zi)
         return db.copy(data=data), zf
 
 
@@ -518,7 +517,7 @@ def filtfilt(
     func = lambda x, b, a, axis, padtype, padlen, method, irlen: sp.filtfilt(
         b, a, x, axis, padtype, padlen, method, irlen
     )
-    func = parallelize(axis, parallel)(func)
+    func = parallelize({"across": axis}, parallel)(func)
     data = func(db.values, b, a, axis, padtype, padlen, method, irlen)
     return db.copy(data=data)
 
@@ -587,22 +586,20 @@ def sosfilt(sos, db, dim="last", zi=None, parallel=None):
       * distance (distance): 0.000 to 10000.000
 
     """
-    dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
-    func = lambda x, sos, axis, state: sp.sosfilt(sos, x, axis, state)
-    if zi is None:  # TODO: parallelize should also split state
-        func = parallelize(axis, parallel)(func)
     if zi is ...:
         n_sections = sos.shape[0]
         shape = (n_sections,) + tuple(
             2 if index == axis else element for index, element in enumerate(db.shape)
         )
         zi = np.zeros(shape)
+    func = lambda x, zi: sp.sosfilt(sos, x, axis, zi)
     if zi is None:
-        data = func(db.values, sos, axis, zi)
+        func = parallelize({"across": axis}, parallel)(func)
+        data = func(db.values, zi)
         return db.copy(data=data)
-    else:
-        data, zf = func(db.values, sos, axis, zi)
+    else:  # TODO: parallelize should also split state
+        data, zf = func(db.values, zi)
         return db.copy(data=data), zf
 
 
@@ -681,7 +678,7 @@ def sosfiltfilt(sos, db, dim="last", padtype="odd", padlen=None, parallel=None):
     func = lambda x, sos, axis, padtype, padlen: sp.sosfiltfilt(
         sos, x, axis, padtype, padlen
     )
-    func = parallelize(axis, parallel)(func)
+    func = parallelize({"across": axis}, parallel)(func)
     data = func(db.values, sos, axis, padtype, padlen)
     return db.copy(data=data)
 
@@ -730,7 +727,7 @@ def decimate(db, q, n=None, ftype="iir", zero_phase=None, dim="last", parallel=N
     """
     dim = parse_dim(db, dim)
     axis = db.get_axis_num(dim)
-    func = parallelize(axis, parallel)(sp.decimate)
+    func = parallelize({"across": axis}, parallel)(sp.decimate)
     data = func(db.values, q, n, ftype, axis, zero_phase)
     return db[{dim: slice(None, None, q)}].copy(data=data)
 

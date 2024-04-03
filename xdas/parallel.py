@@ -3,16 +3,19 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
-from xdas import config
+from . import config
 
 
-def parallelize(axis, parallel, method="along"):
+def parallelize(mode, parallel):
     def decorator(func):
         n_workers = get_workers_count(parallel)
         if n_workers == 1:
             return func
-        elif method == "along":
-            return multithread_along_axis(func, int(axis == 0), n_workers)
+        match mode:
+            case {"along": axis}:
+                return multithread_along_axis(func, axis, n_workers)
+            case {"across": axis}:
+                return multithread_along_axis(func, int(axis == 0), n_workers)
 
     return decorator
 
