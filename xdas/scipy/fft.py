@@ -1,6 +1,6 @@
 import numpy as np
 
-from ..atoms import atomized
+from ..atoms.core import atomized
 from ..coordinates import get_sampling_interval
 from ..database import Database
 from ..parallel import parallelize

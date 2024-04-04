@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.signal as sp
 
-from ..atoms import atomized
+from ..atoms.core import atomized
 from ..coordinates import Coordinate, get_sampling_interval
 from ..database import Database
 from ..parallel import parallelize

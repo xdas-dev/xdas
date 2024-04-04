@@ -6,9 +6,8 @@ import numpy as np
 import scipy.signal as sp
 
 import xdas
-import xdas.atoms as atoms
 import xdas.scipy.signal as xp
-from xdas.atoms import FIRFilter, IIRFilter, Partial, ResamplePoly
+from xdas.atoms import DownSample, FIRFilter, IIRFilter, Partial, ResamplePoly, UpSample
 from xdas.core import chunk, concatenate
 from xdas.scipy.signal import lfilter
 from xdas.synthetics import generate
@@ -128,7 +127,7 @@ class TestFilters:
         db = generate()
         chunks = chunk(db, 6, "time")
         expected = db.isel(time=slice(None, None, 3))
-        atom = atoms.DownSample(3, "time")
+        atom = DownSample(3, "time")
         result = atom(db)
         assert result.equals(expected)
         atom.reset()
@@ -143,13 +142,13 @@ class TestFilters:
             [3, 0, 0, 3, 0, 0, 3, 0, 0],
             {"time": {"tie_indices": [0, 8], "tie_values": [0.0, 8.0]}},
         )
-        atom = atoms.UpSample(3, dim="time")
+        atom = UpSample(3, dim="time")
         result = atom(db)
         assert result.equals(expected)
 
         db = generate()
         chunks = chunk(db, 6, "time")
-        atom = atoms.UpSample(3, dim="time")
+        atom = UpSample(3, dim="time")
         expected = atom(db)
         result = concatenate([atom(chunk, chunk="time") for chunk in chunks], "time")
         assert result.equals(expected)

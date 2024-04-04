@@ -1,5 +1,5 @@
 from . import numpy, xarray
-from .atoms import Partial, Sequential
+from .atoms.core import Partial, Sequential
 from .coordinates import Coordinate, Coordinates, InterpCoordinate
 from .core import (
     asdatabase,
