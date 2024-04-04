@@ -6,7 +6,7 @@ import numpy as np
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from .core import concatenate, open_database
+from ..core import concatenate, open_database
 from .monitor import Monitor
 
 
