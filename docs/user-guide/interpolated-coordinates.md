@@ -23,9 +23,9 @@ The {py:class}`xdas.Coordinate` constructor takes `tie_indices` and `tie_values`
 Below the code corresponding to the example showed above. 
 
 ```{code-cell}
-import xdas
+import xdas as xd
 
-coord = xdas.Coordinate(
+coord = xd.Coordinate(
     {
         "tie_indices": [0, 9, 19, 20, 29],
         "tie_values": [0.0, 90.0, 190.0, 400.0, 490.0]
@@ -87,7 +87,7 @@ represent timestamps with better accuracies.
 ```{code-cell}
 import numpy as np
 
-coord = xdas.Coordinate(
+coord = xd.Coordinate(
     {
         "tie_indices": [0, 3600 * 100],
         "tie_values": [

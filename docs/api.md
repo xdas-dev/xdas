@@ -33,17 +33,15 @@
 .. autosummary::
    :toctree: _autosummary
 
-   xdas.processing.ProcessingChain
-   xdas.processing.LFilter
-   xdas.processing.SOSFilter
+   xdas.processing.DatabaseLoader
+   xdas.processing.DatabaseWriter
 ```
 
-## Compose
+## Atoms
 ```{eval-rst}
 .. autosummary::
    :toctree: _autosummary
 
-   xdas.atoms.PartialAtom
-   xdas.atoms.PartialStateAtom
-   xdas.atoms.Sequence
+   xdas.atoms.Partial
+   xdas.atoms.Sequential
 ```

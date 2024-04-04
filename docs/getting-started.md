@@ -46,13 +46,13 @@ pip install "git+https://github.com/xdas-dev/xdas.git@dev"
 *xdas* must first be imported:
 
 ```{code-cell}
-import xdas
+import xdas as xd
 ```
 
 Data can be fetched from a file:
 
 ```{code-cell} 
-db = xdas.open_database("sample.nc")
+db = xd.open_database("sample.nc")
 db
 ```
 
@@ -78,7 +78,7 @@ It can be converted to a [`DataArray`][DataArray] object to enables the full use
 
 ```{code-cell}
 da = db.to_xarray()  # Data will be loaded automatically if not already done.
-da.plot.imshow(yincrease=False, vmin=-0.5, vmax=0.5);
+db.plot(yincrease=False, vmin=-0.5, vmax=0.5);
 ```
 
 [xarray API]: <https://docs.xarray.dev/en/stable/user-guide/indexing.html>

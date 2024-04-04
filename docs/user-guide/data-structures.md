@@ -63,7 +63,7 @@ the related description of how to create coordinates
 
 ```{code-cell}
 import numpy as np
-import xdas
+import xdas as xd
 
 shape = (6000, 1000)
 resolution = (np.timedelta64(10, "ms"), 5.0)
@@ -82,7 +82,7 @@ coords={
     },
 }
 
-db = xdas.Database(data, coords)
+db = xd.Database(data, coords)
 db
 ```
 
@@ -112,8 +112,8 @@ share coordinates. {py:class}`xdas.DataCollection` can for example useful to sav
 list of zone of interest. 
 
 ```{code-cell}
-db = xdas.open_database("database.nc")  # reopen database as virtual source
-dc = xdas.DataCollection(
+db = xd.open_database("database.nc")  # reopen database as virtual source
+dc = xd.DataCollection(
     event_1=db.sel(time=slice("2023-01-01T00:00:10", "2023-01-01T00:00:20")), 
     event_2=db.sel(time=slice("2023-01-01T00:00:40", "2023-01-01T00:00:50")),
 )

@@ -8,7 +8,7 @@ kernelspec:
 :tags: [remove-cell]
 
 import os
-import xdas
+import xdas as xd
 os.chdir("../_data")
 ```
 
@@ -46,7 +46,7 @@ The files can all be opened with the {py:func}`xdas.open_mfdatabase`:
 ```{code-cell}
 :tags: [remove-stdout,remove-stderr]
 
-db = xdas.open_mfdatabase("00*.nc")
+db = xd.open_mfdatabase("00*.nc")
 db
 ```
 
@@ -60,7 +60,7 @@ db.to_netcdf("vds.nc", virtual=True)
 It can then be read again as a usual file:
 
 ```{code-cell}
-xdas.open_database("vds.nc")
+xd.open_database("vds.nc")
 ```
 
 ```{hint}

@@ -8,7 +8,7 @@ kernelspec:
 :tags: [remove-cell]
 
 import os
-import xdas
+import xdas as xd
 os.chdir("../_data")
 ```
 
@@ -35,13 +35,14 @@ Example usage:
 ```{code-cell} 
 import numpy as np
 import xdas.scipy.signal as xp
-op1 = xdas.Atom(xp.taper, dim="time")
+from xdas.atoms import Partial
+op1 = Partial(xp.taper, dim="time")
 
-state0 = np.zeros((2, 2, 100))
-op2 = xdas.StateAtom(xp.sosfilt, state=state0, state_arg="zi", dim="time")
+sos = np.zeros(6, 2)
+op2 = Partial(xp.sosfilt, sos, ..., zi=..., dim="time")
 
 my_func = lambda x: x
-op3 = xdas.Atom(my_func, name="my special function")
+op3 = Partial(my_func, name="my special function")
 ```
 
 ## Composing a sequence
