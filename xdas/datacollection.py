@@ -6,7 +6,62 @@ import h5py
 from .database import Database
 
 
-class AbstractDataCollection:
+class DataCollection:
+    """
+    Nested collection of database.
+
+    Parameters
+    ----------
+    data: list or dict of DataCollection or Database
+        The nested data. It can be composed either of sequences or mapping. The
+        leaves must be databases.
+    name: str
+        The name of the current level of nesting.
+
+    Returns:
+    -------
+    DataCollection:
+        The nested data as a DataSequence or DataMapping.
+
+    Examples
+    --------
+    >>> import xdas
+    >>> from xdas.synthetics import generate
+    >>> db = generate()
+    >>> dc = xdas.DataCollection(
+    ...     {
+    ...         "das1": ("acquisition", [db, db]),
+    ...         "das2": ("acquisition", [db, db, db]),
+    ...     },
+    ...     "instrument",
+    ... )
+    >>> dc
+    Instrument:
+        das1:
+        Acquisition:
+        0: <xdas.Database (time: 300, distance: 401)>
+        1: <xdas.Database (time: 300, distance: 401)>
+        das2:
+        Acquisition:
+        0: <xdas.Database (time: 300, distance: 401)>
+        1: <xdas.Database (time: 300, distance: 401)>
+        2: <xdas.Database (time: 300, distance: 401)>
+
+    """
+
+    def __new__(cls, data, name=None):
+        data, name = parse(data, name)
+        if isinstance(data, list):
+            return list.__new__(DataSequence)
+        elif isinstance(data, dict):
+            return dict.__new__(DataMapping)
+        elif isinstance(data, Database):
+            if name is not None:
+                data.rename(name)
+            return data
+        else:
+            return Database(data, name=name)
+
     @property
     def empty(self):
         return len(self) == 0
@@ -65,7 +120,7 @@ class AbstractDataCollection:
                 data = [
                     (
                         value.query(indexers)
-                        if isinstance(value, AbstractDataCollection)
+                        if isinstance(value, DataCollection)
                         else value
                     )
                     for value in data
@@ -82,7 +137,7 @@ class AbstractDataCollection:
                 data = {
                     name: (
                         value.query(indexers)
-                        if isinstance(value, AbstractDataCollection)
+                        if isinstance(value, DataCollection)
                         else value
                     )
                     for name, value in data.items()
@@ -99,62 +154,6 @@ class AbstractDataCollection:
     def ismapping(self):
         return isinstance(self, DataMapping)
 
-
-class DataCollection:
-    def __new__(cls, data, name=None):
-        """
-        Nested collection of database.
-
-        Parameters
-        ----------
-        data: list or dict of DataCollection or Database
-            The nested data. It can be composed either of sequences or mapping. The
-            leaves must be databases.
-        name: str
-            The name of the current level of nesting.
-
-        Returns:
-        -------
-        DataCollection:
-            The nested data as a DataSequence or DataMapping.
-
-        Examples
-        --------
-        >>> import xdas
-        >>> from xdas.synthetics import generate
-        >>> db = generate()
-        >>> dc = xdas.DataCollection(
-        ...     {
-        ...         "das1": ("acquisition", [db, db]),
-        ...         "das2": ("acquisition", [db, db, db]),
-        ...     },
-        ...     "instrument",
-        ... )
-        >>> dc
-        Instrument:
-          das1:
-            Acquisition:
-            0: <xdas.Database (time: 300, distance: 401)>
-            1: <xdas.Database (time: 300, distance: 401)>
-          das2:
-            Acquisition:
-            0: <xdas.Database (time: 300, distance: 401)>
-            1: <xdas.Database (time: 300, distance: 401)>
-            2: <xdas.Database (time: 300, distance: 401)>
-
-        """
-        if isinstance(data, tuple) and name is None:
-            name, data = data
-            return DataCollection(data, name)
-        if isinstance(data, list):
-            return DataSequence(data, name)
-        elif isinstance(data, dict):
-            return DataMapping(data, name)
-        elif isinstance(data, Database):
-            return data.rename(name)
-        else:
-            return Database(data, name)
-
     @classmethod
     def from_netcdf(cls, fname, group=None):
         self = DataMapping.from_netcdf(fname, group)
@@ -168,7 +167,7 @@ class DataCollection:
             return self
 
 
-class DataMapping(AbstractDataCollection, dict):
+class DataMapping(DataCollection, dict):
     """
     A Mapping of databases.
 
@@ -176,16 +175,16 @@ class DataMapping(AbstractDataCollection, dict):
     values are database objects.
     """
 
+    def __new__(cls, data, name=None):
+        return dict.__new__(cls)
+
     def __init__(self, data, name=None):
+        data, name = parse(data, name)
         data = {
-            key: (
-                value
-                if isinstance(value, (Database, AbstractDataCollection))
-                else DataCollection(value)
-            )
+            key: (value if isinstance(value, DataCollection) else DataCollection(value))
             for key, value in data.items()
         }
-        super().__init__(data)
+        dict.__init__(self, data)
         self.name = name
 
     def __repr__(self):
@@ -209,9 +208,7 @@ class DataMapping(AbstractDataCollection, dict):
     @property
     def fields(self):
         out = (self.name,) + tuple(
-            value.name
-            for value in self.values()
-            if isinstance(value, AbstractDataCollection)
+            value.name for value in self.values() if isinstance(value, DataCollection)
         )
         return uniquifiy(out)
 
@@ -263,7 +260,7 @@ class DataMapping(AbstractDataCollection, dict):
         data = {
             key: value
             for key, value in data.items()
-            if (isinstance(value, AbstractDataCollection) or not value.empty)
+            if (isinstance(value, DataCollection) or not value.empty)
         }
         return self.__class__(data, self.name)
 
@@ -272,23 +269,23 @@ class DataMapping(AbstractDataCollection, dict):
         return self.__class__(data, self.name)
 
 
-class DataSequence(AbstractDataCollection, list):
+class DataSequence(DataCollection, list):
     """
     A collection of databases.
 
     A data sequence is a list whose values are database objects.
     """
 
+    def __new__(cls, data, name=None):
+        return list.__new__(cls)
+
     def __init__(self, data, name=None):
+        data, name = parse(data, name)
         data = [
-            (
-                value
-                if isinstance(value, (Database, AbstractDataCollection))
-                else DataCollection(value)
-            )
+            (value if isinstance(value, DataCollection) else DataCollection(value))
             for value in data
         ]
-        super().__init__(data)
+        list.__init__(self, data)
         self.name = name
 
     def __repr__(self):
@@ -297,7 +294,7 @@ class DataSequence(AbstractDataCollection, list):
     @property
     def fields(self):
         out = (self.name,) + tuple(
-            value.name for value in self if isinstance(value, AbstractDataCollection)
+            value.name for value in self if isinstance(value, DataCollection)
         )
         return uniquifiy(out)
 
@@ -333,13 +330,24 @@ class DataSequence(AbstractDataCollection, list):
         data = [
             value
             for value in data
-            if (isinstance(value, AbstractDataCollection) or not value.empty)
+            if (isinstance(value, DataCollection) or not value.empty)
         ]
         return self.__class__(data, self.name)
 
     def load(self):
         data = [value.load() for value in self]
         return self.__class__(data, self.name)
+
+
+def parse(data, name=None):
+    if isinstance(data, tuple):
+        if name is None:
+            name, data = data
+        else:
+            _, data = data
+    if isinstance(data, DataCollection) and name is None:
+        name = data.name
+    return data, name
 
 
 def get_depth(group):
