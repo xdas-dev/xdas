@@ -1,16 +1,10 @@
 from collections.abc import Callable
-from fractions import Fraction
 from functools import wraps
 from typing import Any
 
-import numpy as np
-import scipy.signal as sp
-
-from ..core.coordinates import Coordinate, get_sampling_interval
 from ..core.database import Database
 from ..core.datacollection import DataCollection
-from ..core.routines import concatenate, open_datacollection, split
-from ..parallel import parallelize
+from ..core.routines import open_datacollection
 
 
 class Sequential(list):

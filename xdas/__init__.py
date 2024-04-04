@@ -1,11 +1,12 @@
 from . import atoms, config, io, parallel, processing, scipy, synthetics, virtual
-from .core import methods, numpy
+from .core import coordinates, database, datacollection, methods, numpy, routines
 from .core.coordinates import (
     Coordinate,
     Coordinates,
     DenseCoordinate,
     InterpCoordinate,
     ScalarCoordinate,
+    get_sampling_interval,
 )
 from .core.database import Database
 from .core.datacollection import DataCollection

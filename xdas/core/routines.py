@@ -2,18 +2,16 @@ import os
 import re
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from functools import wraps
 from glob import glob
-from inspect import signature
 
 import numpy as np
 import xarray as xr
 from tqdm import tqdm
 
-from ..virtual import DataLayout, DataSource, DataStack
+from ..virtual import DataSource, DataStack
 from .coordinates import InterpCoordinate, get_sampling_interval
 from .database import Database
-from .datacollection import DataCollection, DataMapping, DataSequence
+from .datacollection import DataCollection
 
 
 def open_mfdatacollection(paths):
@@ -364,7 +362,7 @@ def open_database(fname, group=None, engine=None, **kwargs):
     """
     if not os.path.exists(fname):
         raise FileNotFoundError("no file to open")
-    if engine == None:
+    if engine is None:
         return Database.from_netcdf(fname, group=group, **kwargs)
     elif callable(engine):
         return engine(fname)

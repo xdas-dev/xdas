@@ -135,9 +135,6 @@ def any(db, dim=None, **kwargs):
     return np.any(db, axis, **kwargs)
 
 
-import numpy as np
-
-
 @atomized
 @implements()
 def max(db, dim=None, *, skipna=True, **kwargs):
@@ -348,9 +345,6 @@ def ptp(db, dim=None, **kwargs):
     else:
         axis = None
     return np.ptp(db, axis, **kwargs)
-
-
-import numpy as np
 
 
 @atomized
@@ -714,6 +708,6 @@ def diff(db, dim, n=1, *, label="upper"):
             for name, coord in db.coords.items()
         }
     else:
-        raise ValueError(f"`label` must be either 'upper' or 'lower'")
+        raise ValueError("`label` must be either 'upper' or 'lower'")
     cls = db.__class__
     return cls(data, coords, db.dims, db.attrs, db.name)

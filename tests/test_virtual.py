@@ -4,7 +4,6 @@ import tempfile
 import h5py
 import numpy as np
 import pytest
-import xarray as xr
 
 import xdas
 from xdas.synthetics import generate
@@ -264,7 +263,7 @@ class TestSelection:
         for size, selector in zip(shape, sel._selectors):
             assert isinstance(selector, SliceSelector)
             assert selector._range == range(size)
-        assert sel._whole == True
+        assert sel._whole
 
     def test_usecases(self):
         arr = np.arange(2 * 3 * 5).reshape(2, 3, 5)
