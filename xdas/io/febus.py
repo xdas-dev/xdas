@@ -1,8 +1,8 @@
 import h5py
 import numpy as np
 
-from ..core import concatenate
-from ..database import Database
+from ..core.database import Database
+from ..core.routines import concatenate
 from ..virtual import DataSource
 
 

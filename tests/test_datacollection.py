@@ -5,7 +5,7 @@ import h5py
 import pytest
 
 import xdas
-from xdas.datacollection import get_depth
+from xdas.core.datacollection import get_depth
 from xdas.synthetics import generate
 
 

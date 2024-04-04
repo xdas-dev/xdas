@@ -3,8 +3,8 @@ import os
 import numpy as np
 import scipy.signal as sp
 
-from .core import chunk
-from .database import Database
+from .core.database import Database
+from .core.routines import chunk
 
 
 def generate(

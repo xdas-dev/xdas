@@ -10,10 +10,10 @@ import numpy as np
 import xarray as xr
 from tqdm import tqdm
 
+from ..virtual import DataLayout, DataSource, DataStack
 from .coordinates import InterpCoordinate, get_sampling_interval
 from .database import Database
 from .datacollection import DataCollection, DataMapping, DataSequence
-from .virtual import DataLayout, DataSource, DataStack
 
 
 def open_mfdatacollection(paths):
@@ -369,7 +369,7 @@ def open_database(fname, group=None, engine=None, **kwargs):
     elif callable(engine):
         return engine(fname)
     elif isinstance(engine, str):
-        from . import io
+        from .. import io
 
         module = getattr(io, engine)
         return module.read(fname)

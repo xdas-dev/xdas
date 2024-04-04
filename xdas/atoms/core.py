@@ -6,10 +6,10 @@ from typing import Any
 import numpy as np
 import scipy.signal as sp
 
-from ..coordinates import Coordinate, get_sampling_interval
-from ..core import concatenate, open_datacollection, split
-from ..database import Database
-from ..datacollection import DataCollection
+from ..core.coordinates import Coordinate, get_sampling_interval
+from ..core.database import Database
+from ..core.datacollection import DataCollection
+from ..core.routines import concatenate, open_datacollection, split
 from ..parallel import parallelize
 
 

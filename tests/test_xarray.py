@@ -1,7 +1,7 @@
 import numpy as np
 
-import xdas.xarray as xp
-from xdas.database import Database
+import xdas.core.methods as xp
+from xdas.core.database import Database
 from xdas.synthetics import generate
 
 

@@ -7,8 +7,8 @@ import h5py
 import numpy as np
 import xarray as xr
 
+from ..virtual import DataSource, VirtualData
 from .coordinates import Coordinate, Coordinates, get_sampling_interval
-from .virtual import DataSource, VirtualData
 
 NUMPY_HANDLED_FUNCTIONS = {}
 XARRAY_HANDLED_METHODS = {}

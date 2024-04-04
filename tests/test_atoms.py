@@ -8,10 +8,10 @@ import scipy.signal as sp
 import xdas
 import xdas.scipy.signal as xp
 from xdas.atoms import DownSample, FIRFilter, IIRFilter, Partial, ResamplePoly, UpSample
-from xdas.core import chunk, concatenate
+from xdas.core.methods import mean
+from xdas.core.routines import chunk, concatenate
 from xdas.scipy.signal import lfilter
 from xdas.synthetics import generate
-from xdas.xarray import mean
 
 
 class TestPartialAtom:

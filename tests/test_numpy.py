@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from xdas.database import NUMPY_HANDLED_FUNCTIONS, Database
+from xdas.core.database import NUMPY_HANDLED_FUNCTIONS, Database
 from xdas.synthetics import generate
 
 

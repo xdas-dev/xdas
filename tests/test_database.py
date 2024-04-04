@@ -5,8 +5,8 @@ import numpy as np
 import pytest
 
 import xdas
-from xdas.coordinates import Coordinates, DenseCoordinate, InterpCoordinate
-from xdas.database import Database
+from xdas.core.coordinates import Coordinates, DenseCoordinate, InterpCoordinate
+from xdas.core.database import Database
 from xdas.synthetics import generate
 
 

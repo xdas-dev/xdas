@@ -1,7 +1,9 @@
-from . import numpy, xarray
 from .atoms.core import Partial, Sequential
-from .coordinates import Coordinate, Coordinates, InterpCoordinate
-from .core import (
+from .core import methods, numpy
+from .core.coordinates import Coordinate, Coordinates, InterpCoordinate
+from .core.database import Database
+from .core.datacollection import DataCollection
+from .core.routines import (
     asdatabase,
     chunk,
     concatenate,
@@ -12,5 +14,3 @@ from .core import (
     open_treedatacollection,
     split,
 )
-from .database import Database
-from .datacollection import DataCollection

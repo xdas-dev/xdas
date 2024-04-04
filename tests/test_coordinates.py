@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 import xdas
-from xdas.coordinates import DenseCoordinate, InterpCoordinate, ScalarCoordinate
+from xdas.core.coordinates import DenseCoordinate, InterpCoordinate, ScalarCoordinate
 
 
 class TestScalarCoordinate:
