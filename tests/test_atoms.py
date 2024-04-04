@@ -7,10 +7,10 @@ import scipy.signal as sp
 
 import xdas
 import xdas.atoms as atoms
-import xdas.signal as xp
+import xdas.scipy.signal as xp
 from xdas.atoms import FIRFilter, IIRFilter, Partial, ResamplePoly
 from xdas.core import chunk, concatenate
-from xdas.signal import lfilter
+from xdas.scipy.signal import lfilter
 from xdas.synthetics import generate
 from xdas.xarray import mean
 

@@ -29,7 +29,7 @@ strain_rate.plot.imshow(yincrease=False, vmin=-0.5, vmax=0.5);
 Then convert strain rate to deformation and then to displacement.
 
 ```{code-cell} 
-import xdas.signal as xp
+import xdas.scipy.signal as xp
 
 strain = xp.integrate(strain_rate, dim="time")
 deformation = xp.integrate(strain, dim="distance")

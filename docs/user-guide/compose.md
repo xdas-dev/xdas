@@ -34,7 +34,7 @@ Example usage:
 
 ```{code-cell} 
 import numpy as np
-import xdas.signal as xp
+import xdas.scipy.signal as xp
 op1 = xdas.Atom(xp.taper, dim="time")
 
 state0 = np.zeros((2, 2, 100))

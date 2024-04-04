@@ -3,11 +3,11 @@ from inspect import signature
 import numpy as np
 import scipy.signal as sp
 
-from .atoms import atomized
-from .coordinates import Coordinate, get_sampling_interval
-from .core import collects, splits
-from .database import Database
-from .parallel import parallelize
+from ..atoms import atomized
+from ..coordinates import Coordinate, get_sampling_interval
+from ..core import collects, splits
+from ..database import Database
+from ..parallel import parallelize
 
 
 @atomized
@@ -149,7 +149,7 @@ def hilbert(db, N=None, dim="last", parallel=None):
     --------
     In this example we use the Hilbert transform to determine the analytic signal.
 
-    >>> import xdas.signal as xp
+    >>> import xdas.scipy.signal as xp
     >>> from xdas.synthetics import generate
 
     >>> db = generate()
@@ -212,7 +212,7 @@ def resample(db, num, dim="last", window=None, domain="time", parallel=None):
     A synthetic database is resample from 300 to 100 samples along the time dimension.
     The 'hamming' window is used.
 
-    >>> import xdas.signal as xp
+    >>> import xdas.scipy.signal as xp
     >>> from xdas.synthetics import generate
 
     >>> db = generate()
@@ -305,7 +305,7 @@ def resample_poly(
     with an original shape of 300 in time. The choosed window is a 'hamming' window.
     The database is synthetic data.
 
-    >>> import xdas.signal as xp
+    >>> import xdas.scipy.signal as xp
     >>> from xdas.synthetics import generate
 
     >>> db = generate()
@@ -390,7 +390,7 @@ def lfilter(b, a, db, dim="last", zi=None, parallel=None):
     Examples
     --------
     >>> import scipy.signal as sp
-    >>> import xdas.signal as xp
+    >>> import xdas.scipy.signal as xp
     >>> from xdas.synthetics import generate
 
     >>> db = generate()
@@ -500,7 +500,7 @@ def filtfilt(
     Examples
     --------
     >>> import scipy.signal as sp
-    >>> import xdas.signal as xp
+    >>> import xdas.scipy.signal as xp
     >>> from xdas.synthetics import generate
 
     >>> db = generate()
@@ -573,7 +573,7 @@ def sosfilt(sos, db, dim="last", zi=None, parallel=None):
     Examples
     --------
     >>> import scipy.signal as sp
-    >>> import xdas.signal as xp
+    >>> import xdas.scipy.signal as xp
     >>> from xdas.synthetics import generate
 
     >>> db = generate()
@@ -663,7 +663,7 @@ def sosfiltfilt(sos, db, dim="last", padtype="odd", padlen=None, parallel=None):
     Examples
     --------
     >>> import scipy.signal as sp
-    >>> import xdas.signal as xp
+    >>> import xdas.scipy.signal as xp
     >>> from xdas.synthetics import generate
 
     >>> db = generate()
@@ -930,7 +930,7 @@ def medfilt(db, kernel_dim):  # TODO: parallelize
     A median filter is applied to some synthetic database with a median window size
     of 7 along the time dimension and 5 along the space dimension.
 
-    >>> import xdas.signal as xp
+    >>> import xdas.scipy.signal as xp
     >>> from xdas.synthetics import generate
 
     >>> db = generate()
