@@ -2,13 +2,11 @@ import numpy as np
 
 from ..atoms import atomized
 from ..coordinates import get_sampling_interval
-from ..core import collects
 from ..database import Database
 from ..parallel import parallelize
 
 
 @atomized
-@collects
 def fft(db, n=None, dim={"last": "frequency"}, norm=None, parallel=None):
     ((olddim, newdim),) = dim.items()
     olddim = db.dims[db.get_axis_num(olddim)]
@@ -30,7 +28,6 @@ def fft(db, n=None, dim={"last": "frequency"}, norm=None, parallel=None):
 
 
 @atomized
-@collects
 def rfft(db, n=None, dim={"last": "frequency"}, norm=None, parallel=None):
     ((olddim, newdim),) = dim.items()
     olddim = db.dims[db.get_axis_num(olddim)]

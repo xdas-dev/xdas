@@ -3,14 +3,11 @@ import scipy.signal as sp
 
 from ..atoms import atomized
 from ..coordinates import Coordinate, get_sampling_interval
-from ..core import collects, splits
 from ..database import Database
 from ..parallel import parallelize
 
 
 @atomized
-@splits
-@collects
 def detrend(db, type="linear", dim="last", parallel=None):
     """
     Detrend data along given dimension
@@ -42,8 +39,6 @@ def detrend(db, type="linear", dim="last", parallel=None):
 
 
 @atomized
-@splits
-@collects
 def taper(db, window="hann", fftbins=False, dim="last", parallel=None):
     """
     Apply a tapering window along the given dimension
@@ -75,8 +70,6 @@ def taper(db, window="hann", fftbins=False, dim="last", parallel=None):
 
 
 @atomized
-@splits
-@collects
 def filter(
     db, freq, btype, corners=4, zerophase=False, dim="last", parallel=None
 ):  # TODO
@@ -114,8 +107,6 @@ def filter(
 
 
 @atomized
-@splits
-@collects
 def hilbert(db, N=None, dim="last", parallel=None):
     """
     Compute the analytic signal, using the Hilbert transform.
@@ -171,8 +162,6 @@ def hilbert(db, N=None, dim="last", parallel=None):
 
 
 @atomized
-@splits
-@collects
 def resample(db, num, dim="last", window=None, domain="time", parallel=None):
     """
     Resample db to num samples using Fourier method along the given dimension.
@@ -242,8 +231,6 @@ def resample(db, num, dim="last", window=None, domain="time", parallel=None):
 
 
 @atomized
-@splits
-@collects
 def resample_poly(
     db,
     up,
@@ -346,8 +333,6 @@ def resample_poly(
 
 
 @atomized
-# @splits
-@collects
 def lfilter(b, a, db, dim="last", zi=None, parallel=None):
     """
     Filter data along one-dimension with an IIR or FIR filter.
@@ -429,8 +414,6 @@ def lfilter(b, a, db, dim="last", zi=None, parallel=None):
 
 
 @atomized
-# @splits
-@collects
 def filtfilt(
     b,
     a,
@@ -527,8 +510,6 @@ def filtfilt(
 
 
 @atomized
-# @splits
-@collects
 def sosfilt(sos, db, dim="last", zi=None, parallel=None):
     """
     Filter data along one dimension using cascaded second-order sections.
@@ -611,8 +592,6 @@ def sosfilt(sos, db, dim="last", zi=None, parallel=None):
 
 
 @atomized
-@splits
-@collects
 def sosfiltfilt(sos, db, dim="last", padtype="odd", padlen=None, parallel=None):
     """
     A forward-backward digital filter using cascaded second-order sections.
@@ -688,8 +667,6 @@ def sosfiltfilt(sos, db, dim="last", padtype="odd", padlen=None, parallel=None):
 
 
 @atomized
-@splits
-@collects
 def decimate(db, q, n=None, ftype="iir", zero_phase=None, dim="last", parallel=None):
     """
     Downsample the signal after applying an anti-aliasing filter.
@@ -737,8 +714,6 @@ def decimate(db, q, n=None, ftype="iir", zero_phase=None, dim="last", parallel=N
 
 
 @atomized
-@splits
-@collects
 def integrate(db, midpoints=False, dim="last", parallel=None):
     """
     Integrate along a given dimension.
@@ -775,8 +750,6 @@ def integrate(db, midpoints=False, dim="last", parallel=None):
 
 
 @atomized
-@splits
-@collects
 def differentiate(db, midpoints=False, dim="last", parallel=None):
     """
     Differentiate along a given dimension.
@@ -813,7 +786,6 @@ def differentiate(db, midpoints=False, dim="last", parallel=None):
 
 
 @atomized
-@collects
 def segment_mean_removal(db, limits, window="hann", dim="last"):  # TODO: parallelize
     """
     Piecewise mean removal.
@@ -848,8 +820,6 @@ def segment_mean_removal(db, limits, window="hann", dim="last"):  # TODO: parall
 
 
 @atomized
-@splits
-@collects
 def sliding_mean_removal(
     db, wlen, window="hann", pad_mode="reflect", dim="last", parallel=None
 ):
@@ -899,7 +869,6 @@ def sliding_mean_removal(
 
 
 @atomized
-@collects
 def medfilt(db, kernel_dim):  # TODO: parallelize
     """
     Perform a median filter along given dimensions
