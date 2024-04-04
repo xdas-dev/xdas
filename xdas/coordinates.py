@@ -61,7 +61,7 @@ class Coordinates(dict):
         if coords is None:
             coords = {}
         for name in coords:
-            if isinstance(coords[name], AbstractCoordinate):
+            if isinstance(coords[name], Coordinate):
                 self[name] = coords[name]
             elif isinstance(coords[name], tuple):
                 dim, data = coords[name]
@@ -78,7 +78,7 @@ class Coordinates(dict):
 
     @wraps_first_last
     def __setitem__(self, key, value):
-        if isinstance(value, AbstractCoordinate):
+        if isinstance(value, Coordinate):
             pass
         elif isinstance(value, tuple):
             dim, data = value
@@ -196,24 +196,15 @@ class Coordinates(dict):
 
 class Coordinate:
     def __new__(cls, data, dim=None):
-        if isinstance(data, AbstractCoordinate):
-            if dim is None:
-                return data
-            else:
-                return Coordinate(data.data, dim)
-        elif ScalarCoordinate.isvalid(data):
-            return ScalarCoordinate(data, dim)
+        data, dim = parse(data, dim)
+        if ScalarCoordinate.isvalid(data):
+            return object.__new__(ScalarCoordinate)
         elif DenseCoordinate.isvalid(data):
-            return DenseCoordinate(data, dim)
+            return object.__new__(DenseCoordinate)
         elif InterpCoordinate.isvalid(data):
-            return InterpCoordinate(data, dim)
+            return object.__new__(InterpCoordinate)
         else:
             raise TypeError("could not parse `data`")
-
-
-class AbstractCoordinate:
-    def __new__(cls, *args, **kwargs):
-        return object.__new__(cls)
 
     def __getitem__(self, item):
         data = self.data.__getitem__(item)
@@ -284,8 +275,12 @@ class AbstractCoordinate:
         return isinstance(self, InterpCoordinate)
 
 
-class ScalarCoordinate(AbstractCoordinate):
+class ScalarCoordinate(Coordinate):
+    def __new__(cls, *args, **kwargs):
+        return object.__new__(cls)
+
     def __init__(self, data, dim=None):
+        data, dim = parse(data, dim)
         if dim is not None:
             raise ValueError("a scalar coordinate cannot be a dim")
         if not self.__class__.isvalid(data):
@@ -323,8 +318,12 @@ class ScalarCoordinate(AbstractCoordinate):
         return {"dim": self.dim, "data": data}
 
 
-class DenseCoordinate(AbstractCoordinate):
+class DenseCoordinate(Coordinate):
+    def __new__(cls, *args, **kwargs):
+        return object.__new__(cls)
+
     def __init__(self, data, dim=None):
+        data, dim = parse(data, dim)
         if not self.isvalid(data):
             raise TypeError("`data` must be array-like")
         self.data = np.asarray(data)
@@ -372,7 +371,7 @@ class DenseCoordinate(AbstractCoordinate):
         return {"dim": self.dim, "data": data}
 
 
-class InterpCoordinate(AbstractCoordinate):
+class InterpCoordinate(Coordinate):
     """
     Array-like object used to represent piecewise evenly spaced coordinates using the
     CF convention.
@@ -390,7 +389,11 @@ class InterpCoordinate(AbstractCoordinate):
         selection. The len of `tie_indices` and `tie_values` sizes must match.
     """
 
+    def __new__(cls, *args, **kwargs):
+        return object.__new__(cls)
+
     def __init__(self, data, dim=None):
+        data, dim = parse(data, dim)
         if not self.__class__.isvalid(data):
             raise TypeError("`data` must be dict-like")
         if not set(data) == {"tie_indices", "tie_values"}:
@@ -668,6 +671,19 @@ class InterpCoordinate(AbstractCoordinate):
             tie_values = tie_values.astype(str)
         data = {"tie_indices": list(tie_indices), "tie_values": list(tie_values)}
         return {"dim": self.dim, "data": data}
+
+
+def parse(data, dim=None):
+    if isinstance(data, tuple):
+        if dim is None:
+            dim, data = data
+        else:
+            _, data = data
+    if isinstance(data, Coordinate):
+        if dim is None:
+            dim = data.dim
+        data = data.data
+    return data, dim
 
 
 def get_sampling_interval(db, dim, cast=True):
