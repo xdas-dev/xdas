@@ -1,5 +1,4 @@
 import os
-import tempfile
 from tempfile import TemporaryDirectory
 
 import numpy as np
@@ -7,21 +6,27 @@ import scipy.signal as sp
 
 import xdas
 import xdas.scipy.signal as xp
-from xdas.atoms import DownSample, FIRFilter, IIRFilter, Partial, ResamplePoly, UpSample
-from xdas.core.methods import mean
-from xdas.core.routines import chunk, concatenate
+from xdas.atoms import (
+    DownSample,
+    FIRFilter,
+    IIRFilter,
+    Partial,
+    ResamplePoly,
+    Sequential,
+    UpSample,
+)
 from xdas.scipy.signal import lfilter
 from xdas.synthetics import generate
 
 
 class TestPartialAtom:
     def test_init(self):
-        sequence = xdas.Sequential(
+        sequence = Sequential(
             [
-                xdas.Partial(xp.taper, dim="time"),
-                xdas.Partial(xp.taper, dim="distance"),
-                xdas.Partial(np.abs),
-                xdas.Partial(np.square),
+                Partial(xp.taper, dim="time"),
+                Partial(xp.taper, dim="distance"),
+                Partial(np.abs),
+                Partial(np.square),
             ]
         )
 
@@ -32,18 +37,18 @@ class TestProcessing:
         db = generate()
 
         # Declare sequence to execute
-        sequence = xdas.Sequential(
+        sequence = Sequential(
             [
-                xdas.Partial(np.abs),
-                xdas.Partial(np.square, name="some square"),
-                xdas.Partial(mean, dim="time"),
+                Partial(np.abs),
+                Partial(np.square, name="some square"),
+                Partial(xdas.mean, dim="time"),
             ]
         )
 
         # Sequence processing
         result1 = sequence(db)
         # Manual processing
-        result2 = mean(np.abs(db) ** 2, dim="time")
+        result2 = xdas.mean(np.abs(db) ** 2, dim="time")
 
         # Test
         assert np.allclose(result1.values, result2.values)
@@ -63,7 +68,7 @@ class TestDecorator:
 class TestFilters:
     def test_lfilter(self):
         db = generate()
-        chunks = chunk(db, 6, "time")
+        chunks = xdas.chunk(db, 6, "time")
 
         b, a = sp.iirfilter(4, 10.0, btype="lowpass", fs=50.0)
         data = sp.lfilter(b, a, db.values, axis=0)
@@ -73,7 +78,9 @@ class TestFilters:
         monolithic = atom(db)
 
         atom = IIRFilter(4, 10.0, "lowpass", dim="time", stype="ba")
-        chunked = concatenate([atom(chunk, chunk="time") for chunk in chunks], "time")
+        chunked = xdas.concatenate(
+            [atom(chunk, chunk="time") for chunk in chunks], "time"
+        )
 
         assert monolithic.equals(expected)
         assert chunked.equals(expected)
@@ -89,12 +96,12 @@ class TestFilters:
             atom_b.load_state(path)
             chunks_b = [atom_b(chunk, chunk="time") for chunk in chunks[3:]]
 
-            result = concatenate(chunks_a + chunks_b, "time")
+            result = xdas.concatenate(chunks_a + chunks_b, "time")
             assert result.equals(expected)
 
     def test_sosfilter(self):
         db = generate()
-        chunks = chunk(db, 6, "time")
+        chunks = xdas.chunk(db, 6, "time")
 
         sos = sp.iirfilter(4, 10.0, btype="lowpass", fs=50.0, output="sos")
         data = sp.sosfilt(sos, db.values, axis=0)
@@ -104,7 +111,9 @@ class TestFilters:
         monolithic = atom(db)
 
         atom = IIRFilter(4, 10.0, "lowpass", dim="time")
-        chunked = concatenate([atom(chunk, chunk="time") for chunk in chunks], "time")
+        chunked = xdas.concatenate(
+            [atom(chunk, chunk="time") for chunk in chunks], "time"
+        )
 
         assert monolithic.equals(expected)
         assert chunked.equals(expected)
@@ -120,18 +129,20 @@ class TestFilters:
             atom_b.load_state(path)
             chunks_b = [atom_b(chunk, chunk="time") for chunk in chunks[3:]]
 
-            result = concatenate(chunks_a + chunks_b, "time")
+            result = xdas.concatenate(chunks_a + chunks_b, "time")
             assert result.equals(expected)
 
     def test_downsample(self):
         db = generate()
-        chunks = chunk(db, 6, "time")
+        chunks = xdas.chunk(db, 6, "time")
         expected = db.isel(time=slice(None, None, 3))
         atom = DownSample(3, "time")
         result = atom(db)
         assert result.equals(expected)
         atom.reset()
-        result = concatenate([atom(chunk, chunk="time") for chunk in chunks], "time")
+        result = xdas.concatenate(
+            [atom(chunk, chunk="time") for chunk in chunks], "time"
+        )
         assert result.equals(expected)
 
     def test_upsample(self):
@@ -147,15 +158,17 @@ class TestFilters:
         assert result.equals(expected)
 
         db = generate()
-        chunks = chunk(db, 6, "time")
+        chunks = xdas.chunk(db, 6, "time")
         atom = UpSample(3, dim="time")
         expected = atom(db)
-        result = concatenate([atom(chunk, chunk="time") for chunk in chunks], "time")
+        result = xdas.concatenate(
+            [atom(chunk, chunk="time") for chunk in chunks], "time"
+        )
         assert result.equals(expected)
 
     def test_firfilter(self):
         db = generate()
-        chunks = chunk(db, 6, "time")
+        chunks = xdas.chunk(db, 6, "time")
         taps = sp.firwin(11, 0.4, pass_zero="lowpass")
         expected = xp.lfilter(taps, 1.0, db, "time")
         expected["time"] -= np.timedelta64(20, "ms") * 5
@@ -164,7 +177,9 @@ class TestFilters:
         assert result.equals(expected)
 
         atom = FIRFilter(11, 10.0, "lowpass", dim="time")
-        result = concatenate([atom(chunk, chunk="time") for chunk in chunks], "time")
+        result = xdas.concatenate(
+            [atom(chunk, chunk="time") for chunk in chunks], "time"
+        )
         assert np.allclose(result.values, expected.values, atol=1e-16, rtol=1e-11)
         assert result.coords.equals(expected.coords)
         assert result.attrs == expected.attrs
@@ -172,13 +187,13 @@ class TestFilters:
 
     def test_resample_poly(self):
         db = generate()
-        chunks = chunk(db, 6, "time")
+        chunks = xdas.chunk(db, 6, "time")
 
         expected = xp.resample_poly(db, 5, 2, "time")
         atom = ResamplePoly(125, maxfactor=10, dim="time")
         result = atom(db)
         atom = ResamplePoly(125, maxfactor=10, dim="time")
-        result_chunked = concatenate(
+        result_chunked = xdas.concatenate(
             [atom(chunk, chunk="time") for chunk in chunks], "time"
         )
 

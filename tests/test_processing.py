@@ -4,6 +4,7 @@ import tempfile
 import scipy.signal as sp
 
 import xdas
+from xdas.atoms import Partial, Sequential
 from xdas.processing.core import DatabaseLoader, DatabaseWriter, process
 from xdas.scipy.signal import sosfilt
 from xdas.synthetics import generate
@@ -18,9 +19,7 @@ class TestProcessing:
 
             # declare processing sequence
             sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
-            sequence = xdas.Sequential(
-                [xdas.Partial(sosfilt, sos, ..., dim="time", zi=...)]
-            )
+            sequence = Sequential([Partial(sosfilt, sos, ..., dim="time", zi=...)])
 
             # monolithic processing
             result1 = sequence(db)
