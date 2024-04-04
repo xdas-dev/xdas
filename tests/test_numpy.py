@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from xdas.core.database import NUMPY_HANDLED_FUNCTIONS, Database
+from xdas.core.database import HANDLED_NUMPY_FUNCTIONS, Database
 from xdas.synthetics import generate
 
 
@@ -47,7 +47,7 @@ class TestUfuncs:
 class TestFunc:
     def test_returns_database(self):
         db = generate()
-        for numpy_function in NUMPY_HANDLED_FUNCTIONS:
+        for numpy_function in HANDLED_NUMPY_FUNCTIONS:
             if numpy_function == np.clip:
                 result = numpy_function(db, -1, 1)
                 assert isinstance(result, Database)

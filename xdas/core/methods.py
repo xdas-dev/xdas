@@ -1,13 +1,13 @@
 import numpy as np
 
 from ..atoms.core import atomized
-from .database import XARRAY_HANDLED_METHODS
+from .database import HANDLED_METHODS
 
 
 def implements(name=None):
     def decorator(func):
         key = name if name is not None else func.__name__
-        XARRAY_HANDLED_METHODS[key] = func
+        HANDLED_METHODS[key] = func
         return func
 
     return decorator

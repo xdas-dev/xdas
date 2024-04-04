@@ -2,12 +2,12 @@ from inspect import signature
 
 import numpy as np
 
-from .database import NUMPY_HANDLED_FUNCTIONS, Database
+from .database import HANDLED_NUMPY_FUNCTIONS, Database
 
 
 def implements(numpy_function):
     def decorator(func):
-        NUMPY_HANDLED_FUNCTIONS[numpy_function] = func
+        HANDLED_NUMPY_FUNCTIONS[numpy_function] = func
         return func
 
     return decorator

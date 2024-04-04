@@ -8,7 +8,7 @@ from xdas.synthetics import generate
 class TestXarray:
     def test_returns_database(self):
         db = generate()
-        for name, func in xp.XARRAY_HANDLED_METHODS.items():
+        for name, func in xp.HANDLED_METHODS.items():
             if callable(func):
                 if name in [
                     "percentile",

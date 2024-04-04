@@ -10,8 +10,8 @@ import xarray as xr
 from ..virtual import DataSource, VirtualData
 from .coordinates import Coordinate, Coordinates, get_sampling_interval
 
-NUMPY_HANDLED_FUNCTIONS = {}
-XARRAY_HANDLED_METHODS = {}
+HANDLED_NUMPY_FUNCTIONS = {}
+HANDLED_METHODS = {}
 
 
 class Database:
@@ -132,17 +132,17 @@ class Database:
             return self.copy(data=data)
 
     def __array_function__(self, func, types, args, kwargs):
-        if func not in NUMPY_HANDLED_FUNCTIONS:
+        if func not in HANDLED_NUMPY_FUNCTIONS:
             return NotImplemented
         # Note: this allows subclasses that don't override
         # __array_function__ to handle MyArray objects
         if not all(issubclass(t, self.__class__) for t in types):
             return NotImplemented
-        return NUMPY_HANDLED_FUNCTIONS[func](*args, **kwargs)
+        return HANDLED_NUMPY_FUNCTIONS[func](*args, **kwargs)
 
     def __getattr__(self, name):
-        if name in XARRAY_HANDLED_METHODS:
-            func = XARRAY_HANDLED_METHODS[name]
+        if name in HANDLED_METHODS:
+            func = HANDLED_METHODS[name]
             method = partial(func, self)
             method.__name__ = name
             method.__doc__ = (
