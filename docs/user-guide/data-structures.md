@@ -55,7 +55,7 @@ use those metadata. It tries to keep as much as possible the information stored 
 as the `DataArray` is manipulated but it is up to the user to update information there 
 if needed.
 
-### Creating a DataBase
+### Creating a DataArray
 
 The user must at least provide a n-dimensional array with its related coordinates. See 
 the related description of how to create coordinates 
@@ -92,7 +92,7 @@ da
 netCDF4 format with CF conventions. ASN and Febus file can also be read. In that 
 case the `engine` argument must be passed. 
 
-### Writing a DataBase to disk
+### Writing a DataArray to disk
 
 *xdas* uses the CF conventions to write {py:class}`xdas.DataArray` to disk as netCDF4 
 files. If the dataarray was generated from a netCDF4/HDF5 file and only slicing was 
@@ -114,8 +114,10 @@ list of zone of interest.
 ```{code-cell}
 da = xd.open_dataarray("dataarray.nc")  # reopen dataarray as virtual source
 dc = xd.DataCollection(
-    event_1=da.sel(time=slice("2023-01-01T00:00:10", "2023-01-01T00:00:20")), 
-    event_2=da.sel(time=slice("2023-01-01T00:00:40", "2023-01-01T00:00:50")),
+    {
+        "event_1": da.sel(time=slice("2023-01-01T00:00:10", "2023-01-01T00:00:20")), 
+        "event_2":da.sel(time=slice("2023-01-01T00:00:40", "2023-01-01T00:00:50")),
+    }
 )
 dc
 ```
