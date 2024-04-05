@@ -30,6 +30,21 @@ The reference describes how the methods work and which parameters can
 be used. It assumes that you have an understanding of the key concepts.
 ```
 
+```{card} Contributing to xdas
+:link: contribute
+:link-type: doc
+
+Found a bug, or you want to propose new features?
+Follow these instructions to merge your contributions with the xdas code base.
+```
+
+```{card} Citing xdas
+:link: cite
+:link-type: doc
+
+If you use xdas for your DAS data processing, please consider citing the project.
+```
+
 ```{toctree}
   :maxdepth: 2
   :hidden:
@@ -37,4 +52,6 @@ be used. It assumes that you have an understanding of the key concepts.
 getting-started
 user-guide/index
 api
+contribute
+cite
 ```
