@@ -7,7 +7,7 @@ import h5py
 import numpy as np
 import xarray as xr
 
-from ..virtual import DataSource, VirtualData
+from ..virtual import VirtualArray, VirtualSource
 from .coordinates import Coordinate, Coordinates, get_sampling_interval
 
 HANDLED_NUMPY_FUNCTIONS = {}
@@ -25,7 +25,7 @@ class Database:
     Parameters
     ----------
     data : array_like
-        Values of the array. Can be a DataSource or a DataLayout for lazy loading of
+        Values of the array. Can be a VirtualSource or a VirtualLayout for lazy loading of
         netCDF4/HSF5 files.
     coords : dict of Coordinate
         Coordinates to use for indexing along each dimension.
@@ -471,8 +471,8 @@ class Database:
         group : str, optional
             Path to the netCDF4 group in the given file to open.
         virtual : bool, optional
-            Weather to write a virtual dataset. The Database data must be a DataSource
-            or a DataLayout. Default (None) is to try to write a virtual dataset if
+            Weather to write a virtual dataset. The Database data must be a VirtualSource
+            or a VirtualLayout. Default (None) is to try to write a virtual dataset if
             possible.
 
         Raises
@@ -481,7 +481,7 @@ class Database:
             _description_
         """
         if virtual is None:
-            virtual = isinstance(self.data, VirtualData)
+            virtual = isinstance(self.data, VirtualArray)
         data_vars = []
         mapping = ""
         for dim in self.coords:
@@ -531,7 +531,7 @@ class Database:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 ds.to_netcdf(fname, group=group, **kwargs)
-        elif virtual and isinstance(self.data, VirtualData):
+        elif virtual and isinstance(self.data, VirtualArray):
             ds = xr.Dataset(
                 coords=coords,
             )
@@ -550,7 +550,7 @@ class Database:
                     file[name].attrs[key] = attrs[key]
         else:
             raise ValueError(
-                "can only use `virtual=True` with a DataSource or a DataLayout"
+                "can only use `virtual=True` with a VirtualSource or a VirtualLayout"
             )
 
     @classmethod
@@ -605,7 +605,7 @@ class Database:
             if group:
                 file = file[group]
             name = "__values__" if da.name is None else da.name
-            data = DataSource(file[name])
+            data = VirtualSource(file[name])
         return cls(data, coords, da.dims, da.name, None if da.attrs == {} else da.attrs)
 
     def plot(self, *args, **kwargs):

@@ -121,7 +121,7 @@ dc
 ```
 
 If the databases are opened from files (having as data a 
-{py:class}`xdas.virtual.DataSource`) then the data collection can be saved virtually 
+{py:class}`xdas.virtual.VirtualSource`) then the data collection can be saved virtually 
 to minimize redundant data writing. 
 
 ```{code-cell}

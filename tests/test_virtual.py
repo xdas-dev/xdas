@@ -67,7 +67,7 @@ def sources_from_data(shared_path):
     for index, chunk in enumerate(chunks, start=1):
         with h5py.File(shared_path / f"{index}.h5", "w") as file:
             file.create_dataset("data", chunk.shape, chunk.dtype, chunk)
-            source = DataSource(file["data"])
+            source = VirtualSource(file["data"])
         sources.append(source)
     yield sources, data
 
@@ -75,7 +75,7 @@ def sources_from_data(shared_path):
 @pytest.fixture(scope="module")
 def layout_from_data(sources_from_data):
     sources, data = sources_from_data
-    layout = DataLayout(data.shape, data.dtype)
+    layout = VirtualLayout(data.shape, data.dtype)
     index = 0
     for source in sources:
         layout[index : index + source.shape[0]] = source
@@ -83,10 +83,10 @@ def layout_from_data(sources_from_data):
     yield layout, data
 
 
-class TestDataStack:
+class TestVirtualStack:
     def test_init(self, sources_from_data):
         # empty
-        stack = DataStack()
+        stack = VirtualStack()
         assert stack.sources == []
         assert stack.empty
         assert stack.shape == ()
@@ -97,7 +97,7 @@ class TestDataStack:
         assert stack.nbytes == 0
         # axis=0
         sources, data = sources_from_data
-        stack = DataStack(sources, axis=0)
+        stack = VirtualStack(sources, axis=0)
         assert stack.sources == sources
         assert not stack.empty
         assert stack.shape == data.shape
@@ -105,34 +105,34 @@ class TestDataStack:
         assert stack.ndim == data.ndim
         assert stack.size == data.size
         assert stack.nbytes == data.nbytes
-        stack = DataStack([sources[0][1:-1], *sources[1:]], axis=0)
+        stack = VirtualStack([sources[0][1:-1], *sources[1:]], axis=0)
         assert stack.shape[0] == data.shape[0] - 2
         with pytest.raises(ValueError, match="must share the same shape"):
-            stack = DataStack([sources[0][:, 1:-1], *sources[1:]], axis=0)
-        with pytest.raises(TypeError, match="only `DataSource`"):
-            stack = DataStack([np.asarray(sources[0]), *sources[1:]], axis=0)
+            stack = VirtualStack([sources[0][:, 1:-1], *sources[1:]], axis=0)
+        with pytest.raises(TypeError, match="only `VirtualSource`"):
+            stack = VirtualStack([np.asarray(sources[0]), *sources[1:]], axis=0)
         # axis=1
-        stack = DataStack(sources, axis=1)
+        stack = VirtualStack(sources, axis=1)
         assert stack.shape == data.reshape(sources[0].shape[0], -1).shape
-        stack = DataStack([sources[0][:, 1:-1], *sources[1:]], axis=1)
+        stack = VirtualStack([sources[0][:, 1:-1], *sources[1:]], axis=1)
         assert stack.shape[1] == data.reshape(sources[0].shape[0], -1).shape[1] - 2
         with pytest.raises(ValueError, match="must share the same shape"):
-            stack = DataStack([sources[0][1:-1], *sources[1:]], axis=1)
+            stack = VirtualStack([sources[0][1:-1], *sources[1:]], axis=1)
 
     def test_array(self, sources_from_data):
         sources, data = sources_from_data
-        stack = DataStack(sources)
+        stack = VirtualStack(sources)
         assert array_identical(stack, data)
-        stack = DataStack(sources, axis=1)
+        stack = VirtualStack(sources, axis=1)
         transposed = np.concatenate(np.split(data, 5), axis=1)
         assert array_identical(stack, transposed)
-        stack = DataStack()
+        stack = VirtualStack()
         with pytest.raises(ValueError, match="no sources"):
             np.asarray(stack)
 
     def test_append(self, sources_from_data):
         sources, data = sources_from_data
-        stack = DataStack()
+        stack = VirtualStack()
         for source in sources:
             stack.append(source)
         assert array_identical(stack, data)
@@ -140,7 +140,7 @@ class TestDataStack:
             stack.append(np.array(0))
         with pytest.raises(ValueError):
             stack.append(source[:, 1:-1])
-        stack = DataStack(axis=1)
+        stack = VirtualStack(axis=1)
         for source in sources:
             stack.append(source)
         transposed = np.concatenate(np.split(data, 5), axis=1)
@@ -150,7 +150,7 @@ class TestDataStack:
 
     def test_extend(self, sources_from_data):
         sources, data = sources_from_data
-        stack = DataStack()
+        stack = VirtualStack()
         stack.extend(sources)
         assert array_identical(stack, data)
         with pytest.raises(TypeError, match="must be a list"):
@@ -158,7 +158,7 @@ class TestDataStack:
 
     def test_getitem(self, sources_from_data):
         sources, data = sources_from_data
-        stack = DataStack(sources)
+        stack = VirtualStack(sources)
         assert array_identical(stack[:, 1:-1], data[:, 1:-1])
         assert array_identical(stack[1:-1, 1:-1], data[1:-1, 1:-1])
         assert array_identical(stack[:1, 1:-1], data[:1, 1:-1])
@@ -178,18 +178,18 @@ class TestDataStack:
 
     def test_to_dataset(self, sources_from_data, shared_path):
         sources, data = sources_from_data
-        stack = DataStack(sources)
+        stack = VirtualStack(sources)
         with h5py.File(shared_path / "vds.h5", "w") as file:
             stack.to_dataset(file, "data")
-            source = DataSource(file["data"])
+            source = VirtualSource(file["data"])
         assert array_identical(source, data)
         with h5py.File(shared_path / "vds.h5", "w") as file:
             stack[1:-1, 1:-1].to_dataset(file, "data")
-            source = DataSource(file["data"])
+            source = VirtualSource(file["data"])
         assert array_identical(source, data[1:-1, 1:-1])
 
 
-class TestDataLayout:
+class TestVirtualLayout:
     def test_init(self, layout_from_data):
         layout, data = layout_from_data
         assert layout.shape == data.shape
@@ -197,14 +197,14 @@ class TestDataLayout:
         assert layout.ndim == data.ndim
         assert layout.size == data.size
         assert layout.nbytes == data.nbytes
-        layout = DataLayout((0,), np.float64)
+        layout = VirtualLayout((0,), np.float64)
         assert layout.empty
 
     def test_to_dataset(self, layout_from_data, shared_path):
         layout, data = layout_from_data
         with h5py.File(shared_path / "vds.h5", "w") as file:
             layout.to_dataset(file, "data")
-            source = DataSource(file["data"])
+            source = VirtualSource(file["data"])
         assert array_identical(source, data)
 
     def test_array(self, layout_from_data):
@@ -214,41 +214,41 @@ class TestDataLayout:
     def test_sel(self, layout_from_data):
         layout, data = layout_from_data
         assert array_identical(layout[0][1:-1][::2], data[0][1:-1][::2])
-        with pytest.raises(NotImplementedError, match="cannot link DataSources"):
+        with pytest.raises(NotImplementedError, match="cannot link VirtualSources"):
             layout[0][1:-1][::2] = ...
 
 
-class TestDataSource:
+class TestVirtualSource:
     def test_init(self, shared_path):
         shape = (2, 3, 5)
         data = np.arange(np.prod(shape)).reshape(*shape)
         with h5py.File(shared_path / "source.h5", "w") as file:
             file.create_dataset("data", data.shape, data.dtype, data)
         with h5py.File(shared_path / "source.h5") as file:
-            source = DataSource(file["data"])
+            source = VirtualSource(file["data"])
         assert source.shape == data.shape
         assert source.dtype == data.dtype
         assert source.ndim == data.ndim
         assert source.size == data.size
         assert source.nbytes == data.nbytes
-        source = DataSource("path.h5", "name", (0,), np.float64)
+        source = VirtualSource("path.h5", "name", (0,), np.float64)
         assert source.empty
 
     def test_to_dataset(self, shared_path):
         with h5py.File(shared_path / "source.h5") as file:
-            source = DataSource(file["data"])
+            source = VirtualSource(file["data"])
             data = file["data"][...]
         assert array_identical(source, data)
 
     def test_array(self, shared_path):
         with h5py.File(shared_path / "source.h5") as file:
-            source = DataSource(file["data"])
+            source = VirtualSource(file["data"])
             data = file["data"][...]
         assert array_identical(source, data)
 
     def test_sel(self, shared_path):
         with h5py.File(shared_path / "source.h5") as file:
-            source = DataSource(file["data"])
+            source = VirtualSource(file["data"])
             data = file["data"][...]
         source = source[0][1:-1, ::2][:, :-1]
         data = data[0][1:-1, ::2][:, :-1]

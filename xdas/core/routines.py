@@ -8,7 +8,7 @@ import numpy as np
 import xarray as xr
 from tqdm import tqdm
 
-from ..virtual import DataSource, DataStack
+from ..virtual import VirtualSource, VirtualStack
 from .coordinates import InterpCoordinate, get_sampling_interval
 from .database import Database
 from .datacollection import DataCollection
@@ -300,7 +300,7 @@ def concatenate(dbs, dim="first", tolerance=None, virtual=None, verbose=None):
     """
     dbs = [db for db in dbs if not db.empty]
     if virtual is None:
-        virtual = all(isinstance(db.data, (DataSource, DataStack)) for db in dbs)
+        virtual = all(isinstance(db.data, (VirtualSource, VirtualStack)) for db in dbs)
     if not all(isinstance(db[dim], InterpCoordinate) for db in dbs):
         raise NotImplementedError("can only concatenate along interpolated coordinate")
     axis = dbs[0].get_axis_num(dim)
@@ -313,7 +313,7 @@ def concatenate(dbs, dim="first", tolerance=None, virtual=None, verbose=None):
     tie_values = []
     idx = 0
     for db in iterator:
-        if isinstance(db.data, DataStack):
+        if isinstance(db.data, VirtualStack):
             for source in db.data.sources:
                 data.append(source)
         else:
@@ -322,7 +322,7 @@ def concatenate(dbs, dim="first", tolerance=None, virtual=None, verbose=None):
         tie_values.extend(db[dim].tie_values)
         idx += db.shape[axis]
     if virtual:
-        data = DataStack(data, axis)
+        data = VirtualStack(data, axis)
     else:
         data = np.concatenate(data, axis)
     coords[dim] = InterpCoordinate(

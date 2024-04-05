@@ -6,7 +6,7 @@ import pytest
 
 import xdas
 from xdas.synthetics import generate
-from xdas.virtual import DataStack
+from xdas.virtual import VirtualStack
 
 
 class TestCore:
@@ -121,12 +121,12 @@ class TestCore:
             db1 = xdas.open_database(os.path.join(tmp_path, "db1.nc"))
             db2 = xdas.open_database(os.path.join(tmp_path, "db2.nc"))
             result = xdas.concatenate([db1, db2])
-            assert isinstance(result.data, DataStack)
+            assert isinstance(result.data, VirtualStack)
             assert result.equals(expected)
-            db1.data = DataStack([db1.data])
-            db2.data = DataStack([db2.data])
+            db1.data = VirtualStack([db1.data])
+            db2.data = VirtualStack([db2.data])
             result = xdas.concatenate([db1, db2])
-            assert isinstance(result.data, DataStack)
+            assert isinstance(result.data, VirtualStack)
             assert result.equals(expected)
 
     def test_open_database(self):

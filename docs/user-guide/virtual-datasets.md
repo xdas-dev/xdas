@@ -25,8 +25,8 @@ Because netCDF4 are valid HDF5 files, the virtual dataset feature of HDF5 can be
 with netCDF4 files.
 ```
 
-In *xdas*, a {py:class}`DataSource` is a pointer toward a file while a 
-{py:class}`DataLayout` is linking table of multiple {py:class}`DataLayout`. Below an
+In *xdas*, a {py:class}`VirtualSource` is a pointer toward a file while a 
+{py:class}`VirtualLayout` is linking table of multiple {py:class}`VirtualLayout`. Below an
 example of virtual dataset linking three files:
 
 ![](/_static/virtual-datasets.svg)
@@ -35,7 +35,7 @@ The user normally do not need to deal directly with this objects. Below an examp
 to link a multi-file dataset.
 
 ```{note}
-When opening a virtual dataset, this later will appear as a {py:class}`DataSource`. 
+When opening a virtual dataset, this later will appear as a {py:class}`VirtualSource`. 
 This is because HDF5 treats virtual dataset as regular files.
 ```
 

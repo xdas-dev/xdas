@@ -3,7 +3,7 @@ import numpy as np
 
 from ..core.database import Database
 from ..core.routines import concatenate
-from ..virtual import DataSource
+from ..virtual import VirtualSource
 
 
 def read(fname):
@@ -14,7 +14,7 @@ def read(fname):
         times = np.asarray(source["time"])
         zone = source["Zone1"]
         (name,) = list(zone.keys())
-        chunks = DataSource(zone[name])
+        chunks = VirtualSource(zone[name])
         delta = [zone.attrs["Spacing"][1] / 1000.0, zone.attrs["Spacing"][0]]
     name = "".join(["_" + c.lower() if c.isupper() else c for c in name]).lstrip("_")
     noverlap = chunks.shape[1] // 4

@@ -6,7 +6,7 @@ import h5py
 import numpy as np
 
 
-class VirtualData:
+class VirtualArray:
     def __repr__(self):
         return f"{self.__class__.__name__}: {_to_human(self.nbytes)} ({self.dtype})"
 
@@ -50,7 +50,7 @@ class VirtualData:
             return 0
 
 
-class DataStack(VirtualData):
+class VirtualStack(VirtualArray):
     def __init__(self, sources=[], axis=0):
         self._sources = list()
         self._axis = axis
@@ -111,7 +111,7 @@ class DataStack(VirtualData):
                     sources.append(self._sources[isrc_stop][tuple(indexers)])
         else:
             sources = [source[tuple(indexers)] for source in self._sources]
-        return DataStack(sources, self._axis)
+        return VirtualStack(sources, self._axis)
 
     def __array__(self, dtype=None):
         if not self._sources:
@@ -166,8 +166,8 @@ class DataStack(VirtualData):
         self._dtype = source.dtype
 
     def _check(self, source):
-        if not isinstance(source, DataSource):
-            raise TypeError("only `DataSource` object can be provided")
+        if not isinstance(source, VirtualSource):
+            raise TypeError("only `VirtualSource` object can be provided")
         if not (source.dtype == self.dtype):
             raise ValueError("all sources must share the same dtype")
         if not all(
@@ -180,7 +180,7 @@ class DataStack(VirtualData):
             )
 
     def _to_layout(self):
-        layout = DataLayout(self.shape, self.dtype)
+        layout = VirtualLayout(self.shape, self.dtype)
         index = 0
         for source in self._sources:
             slc = tuple(
@@ -195,19 +195,19 @@ class DataStack(VirtualData):
         return layout
 
 
-class DataLayout(VirtualData):
+class VirtualLayout(VirtualArray):
     """
     A lazy array layout pointing toward multiple netCDF4/HDF5 files.
 
     Instantiate this class with the final shape of the virtual array. Then Fill it up
-    by assigning to slices of it DataSource objects.
+    by assigning to slices of it VirtualSource objects.
 
     Once the data assignement is completed, the layout can be virually written into a
     `h5py.File` or `h5py.Group` object using the `to_dataset` method.
 
-    The DataLayout can be sliced and the selected data accessed without writting the
+    The VirtualLayout can be sliced and the selected data accessed without writting the
     layout to disk. To that end, use `numpy.asarray` or the `__array__` special method.
-    Note that for now, sliced DataLayout cannot be written to disk.
+    Note that for now, sliced VirtualLayout cannot be written to disk.
 
     Parameters
     ----------
@@ -267,8 +267,10 @@ class DataLayout(VirtualData):
 
     def __setitem__(self, key, value):
         if not self._sel._whole:
-            raise NotImplementedError("cannot link DataSources to a sliced DataLayout")
-        if isinstance(value, DataSource):
+            raise NotImplementedError(
+                "cannot link VirtualSources to a sliced VirtualLayout"
+            )
+        if isinstance(value, VirtualSource):
             value = value.vsource
         self._layout.__setitem__(key, value)
 
@@ -286,13 +288,13 @@ class DataLayout(VirtualData):
         )
 
 
-class DataSource(VirtualData):
+class VirtualSource(VirtualArray):
     """
     A lazy array object pointing toward a netCDF4/HDF5 file.
 
     At creation the array corresponds to an entire file dataset. It can then be
-    sliced to indicate which regions should be used. Sliced DataSource eventually can
-    be assigned to a DataLayout to
+    sliced to indicate which regions should be used. Sliced VirtualSource eventually can
+    be assigned to a VirtualLayout to
 
     Best practive is to pass it a `h5py.Dataset` obtain destructuring a `h5py.File`.
     Otherwise the exact filename, dataset name, shape and dtype must be passed.
@@ -342,14 +344,14 @@ class DataSource(VirtualData):
     >>> import h5py
     >>> import numpy as np
 
-    >>> from xdas.virtual import DataSource
+    >>> from xdas.virtual import VirtualSource
 
     >>> with TemporaryDirectory() as tmpdir: # doctest:+ELLIPSIS
     ...     shape = (2, 3, 5)
     ...     data = np.arange(np.prod(shape)).reshape(*shape)
     ...     with h5py.File(os.path.join(tmpdir, "source.h5"), "w") as file:
     ...         file.create_dataset("data", data.shape, data.dtype, data)
-    ...         source = DataSource(file["data"])  # we both write and get source here
+    ...         source = VirtualSource(file["data"])  # we both write and get source here
     ...     source = source[1:-1]  # the source can be sliced
     ...     result = np.asarray(source)
     ...     assert np.array_equal(result, data[1:-1])
@@ -388,7 +390,7 @@ class DataSource(VirtualData):
         self._to_layout().to_dataset(file_or_group, name)
 
     def _to_layout(self):
-        layout = DataLayout(self.shape, self.dtype)
+        layout = VirtualLayout(self.shape, self.dtype)
         layout[...] = self
         return layout
 
