@@ -20,7 +20,7 @@ class TestCore:
         else:
             t = {"tie_indices": [0, shape[0] - 1], "tie_values": [0, 3.0 - 1 / 100]}
         s = {"tie_indices": [0, shape[1] - 1], "tie_values": [0, 990.0]}
-        return xdas.Database(
+        return xdas.DataArray(
             data=np.random.randn(*shape),
             coords={
                 "time": t,
@@ -108,7 +108,7 @@ class TestCore:
             },
             "distance": db1["distance"],
         }
-        expected = xdas.Database(data, coords)
+        expected = xdas.DataArray(data, coords)
         result = xdas.concatenate([db1, db2])
         assert result.equals(expected)
         # concatenate an empty databse
@@ -145,7 +145,7 @@ class TestCore:
             assert np.array_equal(out[dim].values, db[dim].values)
 
     def test_split(self):
-        db = xdas.Database(
+        db = xdas.DataArray(
             np.ones(30),
             {
                 "time": {

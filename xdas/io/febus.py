@@ -1,7 +1,7 @@
 import h5py
 import numpy as np
 
-from ..core.database import Database
+from ..core.database import DataArray
 from ..core.routines import concatenate
 from ..virtual import VirtualSource
 
@@ -31,6 +31,6 @@ def read(fname):
             ),
         }
         distance = {"tie_indices": [0, nx - 1], "tie_values": [0.0, (nx - 1) * dx]}
-        db = Database(chunk, {"time": time, "distance": distance}, name=name)
+        db = DataArray(chunk, {"time": time, "distance": distance}, name=name)
         dc.append(db)
     return concatenate(dc, "time")

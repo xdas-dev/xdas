@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.signal as sp
 
-from .core.database import Database
+from .core.database import DataArray
 from .core.routines import chunk
 
 
@@ -76,7 +76,7 @@ def generate(
     data = np.diff(data, prepend=0, axis=0)
 
     # pack data and coordinates as Database or DataCollection if chunking.
-    db = Database(
+    db = DataArray(
         data=data,
         coords={
             "time": {

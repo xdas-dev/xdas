@@ -4,7 +4,7 @@ import numpy as np
 import scipy.signal as sp
 
 from ..core.coordinates import Coordinate, get_sampling_interval
-from ..core.database import Database
+from ..core.database import DataArray
 from ..core.routines import concatenate, split
 from ..parallel import parallelize
 from .core import Atom, State
@@ -275,4 +275,4 @@ class UpSample(Atom):
             },
             self.dim,
         )
-        return Database(data, coords, name=db.name, attrs=db.attrs)
+        return DataArray(data, coords, name=db.name, attrs=db.attrs)

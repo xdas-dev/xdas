@@ -3,7 +3,7 @@ import scipy.signal as sp
 
 from .atoms.core import atomized
 from .core.coordinates import Coordinate, get_sampling_interval
-from .core.database import Database
+from .core.database import DataArray
 from .parallel import parallelize
 
 
@@ -227,7 +227,7 @@ def resample(db, num, dim="last", window=None, domain="time", parallel=None):
         for name, coord in db.coords.items()
         if not (coord.dim == dim and not name == dim)  # don't handle non-dimensional
     }
-    return Database(data, coords, db.dims, db.name, db.attrs)
+    return DataArray(data, coords, db.dims, db.name, db.attrs)
 
 
 @atomized
@@ -329,7 +329,7 @@ def resample_poly(
         for name, coord in db.coords.items()
         if not (coord.dim == dim and not name == dim)  # don't handle non-dimensional
     }
-    return Database(data, coords, db.dims, db.name, db.attrs)
+    return DataArray(data, coords, db.dims, db.name, db.attrs)
 
 
 @atomized

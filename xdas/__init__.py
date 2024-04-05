@@ -8,7 +8,7 @@ from .core.coordinates import (
     ScalarCoordinate,
     get_sampling_interval,
 )
-from .core.database import Database
+from .core.database import DataArray
 from .core.datacollection import DataCollection
 from .core.methods import *
 from .core.routines import (

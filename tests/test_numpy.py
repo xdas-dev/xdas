@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from xdas.core.database import HANDLED_NUMPY_FUNCTIONS, Database
+from xdas.core.database import HANDLED_NUMPY_FUNCTIONS, DataArray
 from xdas.synthetics import generate
 
 
@@ -50,7 +50,7 @@ class TestFunc:
         for numpy_function in HANDLED_NUMPY_FUNCTIONS:
             if numpy_function == np.clip:
                 result = numpy_function(db, -1, 1)
-                assert isinstance(result, Database)
+                assert isinstance(result, DataArray)
             elif numpy_function in [np.diff, np.ediff1d, np.trapz]:
                 result = numpy_function(db)
                 assert isinstance(result, np.ndarray)
@@ -61,10 +61,10 @@ class TestFunc:
                 np.nanquantile,
             ]:
                 result = numpy_function(db, 0.5)
-                assert isinstance(result, Database)
+                assert isinstance(result, DataArray)
             else:
                 result = numpy_function(db)
-                assert isinstance(result, Database)
+                assert isinstance(result, DataArray)
 
     def test_reduce(self):
         db = generate()

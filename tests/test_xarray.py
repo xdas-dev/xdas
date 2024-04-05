@@ -1,7 +1,7 @@
 import numpy as np
 
 import xdas.core.methods as xp
-from xdas.core.database import Database
+from xdas.core.database import DataArray
 from xdas.synthetics import generate
 
 
@@ -15,19 +15,19 @@ class TestXarray:
                     "quantile",
                 ]:
                     result = func(db, 0.5)
-                    assert isinstance(result, Database)
+                    assert isinstance(result, DataArray)
                     result = getattr(db, name)(0.5)
-                    assert isinstance(result, Database)
+                    assert isinstance(result, DataArray)
                 elif name == "diff":
                     result = func(db, "time")
-                    assert isinstance(result, Database)
+                    assert isinstance(result, DataArray)
                     result = getattr(db, name)("time")
-                    assert isinstance(result, Database)
+                    assert isinstance(result, DataArray)
                 else:
                     result = func(db)
-                    assert isinstance(result, Database)
+                    assert isinstance(result, DataArray)
                     result = getattr(db, name)()
-                    assert isinstance(result, Database)
+                    assert isinstance(result, DataArray)
 
     def test_mean(self):
         db = generate()

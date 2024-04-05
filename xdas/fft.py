@@ -2,7 +2,7 @@ import numpy as np
 
 from .atoms.core import atomized
 from .core.coordinates import get_sampling_interval
-from .core.database import Database
+from .core.database import DataArray
 from .parallel import parallelize
 
 
@@ -24,7 +24,7 @@ def fft(db, n=None, dim={"last": "frequency"}, norm=None, parallel=None):
         for name in db.coords
     }
     dims = tuple(newdim if dim == olddim else dim for dim in db.dims)
-    return Database(data, coords, dims, db.name, db.attrs)
+    return DataArray(data, coords, dims, db.name, db.attrs)
 
 
 @atomized
@@ -44,4 +44,4 @@ def rfft(db, n=None, dim={"last": "frequency"}, norm=None, parallel=None):
         for name in db.coords
     }
     dims = tuple(newdim if dim == olddim else dim for dim in db.dims)
-    return Database(data, coords, dims, db.name, db.attrs)
+    return DataArray(data, coords, dims, db.name, db.attrs)

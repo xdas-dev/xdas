@@ -14,7 +14,7 @@ HANDLED_NUMPY_FUNCTIONS = {}
 HANDLED_METHODS = {}
 
 
-class Database:
+class DataArray:
     """
     N-dimensional array with labeled coordinates and dimensions.
 

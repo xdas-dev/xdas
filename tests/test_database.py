@@ -6,7 +6,7 @@ import pytest
 
 import xdas
 from xdas.core.coordinates import Coordinates, DenseCoordinate, InterpCoordinate
-from xdas.core.database import Database
+from xdas.core.database import DataArray
 from xdas.synthetics import generate
 
 
@@ -17,7 +17,7 @@ class TestDatabase:
         else:
             coords = {"dim": {"tie_indices": [0, 8], "tie_values": [100.0, 900.0]}}
         data = 0.1 * np.arange(9)
-        db = xdas.Database(data, coords)
+        db = xdas.DataArray(data, coords)
         return db
 
     def test_init_and_properties(self):
@@ -35,14 +35,14 @@ class TestDatabase:
         assert db.dtype == np.float64
         db = self.generate(dense=True)
         assert isinstance(db["dim"], DenseCoordinate)
-        db = Database()
+        db = DataArray()
         assert np.array_equal(db.values, np.array(np.nan), equal_nan=True)
         assert db.coords == {}
         assert db.dims == tuple()
-        db = Database([[]])
+        db = DataArray([[]])
         assert db.dims == ("dim_0", "dim_1")
         assert db.ndim == 2
-        db = Database(1)
+        db = DataArray(1)
         assert db.dims == tuple()
         assert db.ndim == 0
 
@@ -109,7 +109,7 @@ class TestDatabase:
     def test_from_xarray(self):
         db = self.generate()
         da = db.to_xarray()
-        out = Database.from_xarray(da)
+        out = DataArray.from_xarray(da)
         assert np.array_equal(db.values, out.values)
         assert np.array_equal(db["dim"].values, out["dim"].values)
 
@@ -121,7 +121,7 @@ class TestDatabase:
         assert st[0].stats.npts == db.sizes["time"]
         assert np.datetime64(st[0].stats.starttime.datetime) == db["time"][0].values
         assert np.datetime64(st[0].stats.endtime.datetime) == db["time"][-1].values
-        result = Database.from_stream(st)
+        result = DataArray.from_stream(st)
         assert np.array_equal(result.values.T, db.values)
         assert result.sizes == {
             "channel": db.sizes["distance"],
@@ -133,10 +133,10 @@ class TestDatabase:
         coord = [f"D{k}" for k in range(9)]
         coords = Coordinates({"dim": coord})
         data = 0.1 * np.arange(9)
-        db = Database(data, coords)
+        db = DataArray(data, coords)
 
     def test_single_index_selection(self):
-        db = Database(
+        db = DataArray(
             np.arange(12).reshape(3, 4),
             {
                 "time": {"tie_values": [0.0, 1.0], "tie_indices": [0, 2]},
@@ -146,7 +146,7 @@ class TestDatabase:
         db_getitem = db[1]
         db_isel = db.isel(time=1)
         db_sel = db.sel(time=0.5)
-        db_expected = Database(
+        db_expected = DataArray(
             np.array([4, 5, 6, 7]),
             {"time": (None, 0.5), "distance": [0.0, 10.0, 20.0, 30.0]},
         )
@@ -156,7 +156,7 @@ class TestDatabase:
         db_getitem = db[:, 1]
         db_isel = db.isel(distance=1)
         db_sel = db.sel(distance=10.0)
-        db_expected = Database(
+        db_expected = DataArray(
             np.array([1, 5, 9]),
             {
                 "time": {"tie_values": [0.0, 1.0], "tie_indices": [0, 2]},
@@ -173,7 +173,7 @@ class TestDatabase:
         with TemporaryDirectory() as dirpath:
             path = os.path.join(dirpath, "tmp.nc")
             db.to_netcdf(path)
-            db_recovered = Database.from_netcdf(path)
+            db_recovered = DataArray.from_netcdf(path)
             assert db.equals(db_recovered)
 
         # mixed interpolated and dense
@@ -181,7 +181,7 @@ class TestDatabase:
         with TemporaryDirectory() as dirpath:
             path = os.path.join(dirpath, "tmp.nc")
             db.to_netcdf(path)
-            db_recovered = Database.from_netcdf(path)
+            db_recovered = DataArray.from_netcdf(path)
             assert db.equals(db_recovered)
 
         # only dense coords
@@ -189,5 +189,5 @@ class TestDatabase:
         with TemporaryDirectory() as dirpath:
             path = os.path.join(dirpath, "tmp.nc")
             db.to_netcdf(path)
-            db_recovered = Database.from_netcdf(path)
+            db_recovered = DataArray.from_netcdf(path)
             assert db.equals(db_recovered)

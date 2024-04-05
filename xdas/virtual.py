@@ -267,7 +267,9 @@ class VirtualLayout(VirtualArray):
 
     def __setitem__(self, key, value):
         if not self._sel._whole:
-            raise NotImplementedError("cannot link VirtualSources to a sliced VirtualLayout")
+            raise NotImplementedError(
+                "cannot link VirtualSources to a sliced VirtualLayout"
+            )
         if isinstance(value, VirtualSource):
             value = value.vsource
         self._layout.__setitem__(key, value)

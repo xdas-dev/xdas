@@ -2,7 +2,7 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
-from ..core.database import Database
+from ..core.database import DataArray
 from ..core.datacollection import DataCollection
 from ..core.routines import open_datacollection
 
@@ -178,7 +178,7 @@ class Atom:
 
     def set_state(self, state):
         for key, value in state.items():
-            if isinstance(value, Database):
+            if isinstance(value, DataArray):
                 setattr(
                     self, key, State(value.__array__())
                 )  # TODO: shouldn't need __array__

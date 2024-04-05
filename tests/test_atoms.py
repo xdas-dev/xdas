@@ -146,10 +146,10 @@ class TestFilters:
         assert result.equals(expected)
 
     def test_upsample(self):
-        db = xdas.Database(
+        db = xdas.DataArray(
             [1, 1, 1], {"time": {"tie_indices": [0, 2], "tie_values": [0.0, 6.0]}}
         )
-        expected = xdas.Database(
+        expected = xdas.DataArray(
             [3, 0, 0, 3, 0, 0, 3, 0, 0],
             {"time": {"tie_indices": [0, 8], "tie_values": [0.0, 8.0]}},
         )

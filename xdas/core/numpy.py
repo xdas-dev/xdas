@@ -2,7 +2,7 @@ from inspect import signature
 
 import numpy as np
 
-from .database import HANDLED_NUMPY_FUNCTIONS, Database
+from .database import HANDLED_NUMPY_FUNCTIONS, DataArray
 
 
 def implements(numpy_function):
@@ -26,9 +26,9 @@ def handled(reduce=False, drop_coords=False, **defaults):
             db = ba.arguments.get(key)
             axis = ba.arguments.get("axis")
             out = ba.arguments.get("out")
-            if isinstance(db, Database):
+            if isinstance(db, DataArray):
                 ba.arguments[key] = db.data
-            if isinstance(out, Database):
+            if isinstance(out, DataArray):
                 ba.arguments["out"] = out.data
             data = func(*ba.args, **ba.kwargs)
             if reduce:
@@ -52,7 +52,7 @@ def handled(reduce=False, drop_coords=False, **defaults):
             if drop_coords:
                 return data
             else:
-                return Database(data, coords, dims, db.name, db.attrs)
+                return DataArray(data, coords, dims, db.name, db.attrs)
 
         return wrapper
 

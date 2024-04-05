@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from ..virtual import VirtualSource, VirtualStack
 from .coordinates import InterpCoordinate, get_sampling_interval
-from .database import Database
+from .database import DataArray
 from .datacollection import DataCollection
 
 
@@ -328,7 +328,7 @@ def concatenate(dbs, dim="first", tolerance=None, virtual=None, verbose=None):
     coords[dim] = InterpCoordinate(
         {"tie_indices": tie_indices, "tie_values": tie_values}, dim
     ).simplify(tolerance)
-    return Database(data, coords)
+    return DataArray(data, coords)
 
 
 def open_database(fname, group=None, engine=None, **kwargs):
@@ -363,7 +363,7 @@ def open_database(fname, group=None, engine=None, **kwargs):
     if not os.path.exists(fname):
         raise FileNotFoundError("no file to open")
     if engine is None:
-        return Database.from_netcdf(fname, group=group, **kwargs)
+        return DataArray.from_netcdf(fname, group=group, **kwargs)
     elif callable(engine):
         return engine(fname)
     elif isinstance(engine, str):
@@ -423,10 +423,10 @@ def asdatabase(obj, tolerance=None):
     ValueError
         _description_
     """
-    if isinstance(obj, Database):
+    if isinstance(obj, DataArray):
         return obj
     elif isinstance(obj, xr.DataArray):
-        return Database.from_xarray(obj)
+        return DataArray.from_xarray(obj)
     else:
         raise ValueError("Cannot convert to database.")
 

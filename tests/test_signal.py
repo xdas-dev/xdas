@@ -15,7 +15,7 @@ class TestSignal:
         shape = (6000, 1000)
         resolution = (np.timedelta64(8, "ms"), 5.0)
         starttime = np.datetime64("2023-01-01T00:00:00")
-        db = xdas.Database(
+        db = xdas.DataArray(
             data=np.random.randn(*shape).astype("float32"),
             coords={
                 "time": {
@@ -39,7 +39,7 @@ class TestSignal:
         d = 5.0
         s = d * np.arange(n)
         da = xr.DataArray(np.arange(n), {"time": s})
-        db = xdas.Database.from_xarray(da)
+        db = xdas.DataArray.from_xarray(da)
         db = xp.detrend(db)
         assert np.allclose(db.values, np.zeros(n))
 
@@ -48,7 +48,7 @@ class TestSignal:
         d = 5.0
         s = (d / 2) + d * np.arange(n)
         da = xr.DataArray(np.ones(n), {"distance": s})
-        db = xdas.Database.from_xarray(da)
+        db = xdas.DataArray.from_xarray(da)
         db = xp.differentiate(db, midpoints=True)
         assert np.allclose(db.values, np.zeros(n - 1))
 
@@ -57,7 +57,7 @@ class TestSignal:
         d = 5.0
         s = (d / 2) + d * np.arange(n)
         da = xr.DataArray(np.ones(n), {"distance": s})
-        db = xdas.Database.from_xarray(da)
+        db = xdas.DataArray.from_xarray(da)
         db = xp.integrate(db, midpoints=True)
         assert np.allclose(db.values, db["distance"].values)
 
@@ -71,7 +71,7 @@ class TestSignal:
         da = xr.DataArray(data, {"distance": s})
         da.loc[{"distance": slice(limits[0], limits[1])}] = 1.0
         da.loc[{"distance": slice(limits[1], limits[2])}] = 2.0
-        db = xdas.Database.from_xarray(da)
+        db = xdas.DataArray.from_xarray(da)
         db = xp.segment_mean_removal(db, limits)
         assert np.allclose(db.values, 0)
 
@@ -82,7 +82,7 @@ class TestSignal:
         s = np.linspace(0, 1000, n)
         data = np.ones(n)
         da = xr.DataArray(data, {"distance": s})
-        db = xdas.Database.from_xarray(da)
+        db = xdas.DataArray.from_xarray(da)
         db = xp.sliding_mean_removal(db, 0.1 * n * d)
         assert np.allclose(db.values, 0)
 

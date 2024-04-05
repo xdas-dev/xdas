@@ -3,7 +3,7 @@ from fnmatch import fnmatch
 
 import h5py
 
-from .database import Database
+from .database import DataArray
 
 
 class DataCollection:
@@ -55,12 +55,12 @@ class DataCollection:
             return list.__new__(DataSequence)
         elif isinstance(data, dict):
             return dict.__new__(DataMapping)
-        elif isinstance(data, Database):
+        elif isinstance(data, DataArray):
             if name is not None:
                 data.rename(name)
             return data
         else:
-            return Database(data, name=name)
+            return DataArray(data, name=name)
 
     @property
     def empty(self):
@@ -198,7 +198,7 @@ class DataMapping(DataCollection, dict):
                 label = f"  {key:{width}}: "
             else:
                 label = f"  {key + ':':{width + 1}} "
-            if isinstance(value, Database):
+            if isinstance(value, DataArray):
                 s += label + repr(value).split("\n")[0] + "\n"
             else:
                 s += label + "\n"
@@ -235,7 +235,7 @@ class DataMapping(DataCollection, dict):
             for key in keys:
                 subgroup = group[key]
                 if get_depth(subgroup) == 0:
-                    self[key] = Database.from_netcdf(fname, subgroup.name)
+                    self[key] = DataArray.from_netcdf(fname, subgroup.name)
                 else:
                     subgroup = subgroup[list(subgroup.keys())[0]]
                     self[key] = DataCollection.from_netcdf(fname, subgroup.name)

@@ -1,7 +1,7 @@
 import h5py
 import numpy as np
 
-from ..core.database import Database
+from ..core.database import DataArray
 from ..virtual import VirtualSource
 
 
@@ -16,4 +16,4 @@ def read(fname):
     nt, nd = data.shape
     time = {"tie_indices": [0, nt - 1], "tie_values": [tstart, tend]}
     distance = {"tie_indices": [0, nd - 1], "tie_values": [0.0, (nd - 1) * dx]}
-    return Database(data, {"time": time, "distance": distance})
+    return DataArray(data, {"time": time, "distance": distance})
