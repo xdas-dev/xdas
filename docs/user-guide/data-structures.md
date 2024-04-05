@@ -55,6 +55,8 @@ use those metadata. It tries to keep as much as possible the information stored 
 as the `DataArray` is manipulated but it is up to the user to update information there 
 if needed.
 
+
+
 ### Creating a DataArray
 
 The user must at least provide a n-dimensional array with its related coordinates. See 
@@ -90,7 +92,9 @@ da
 
 *xdas* can read some DAS file format with {py:func}`xdas.open_dataarray`. *xdas* use 
 netCDF4 format with CF conventions. ASN and Febus file can also be read. In that 
-case the `engine` argument must be passed. 
+case the `engine` argument must be passed.
+
+To know how to read your DAS data format with *xdas*, please see the part on [](data-formats.md).
 
 ### Writing a DataArray to disk
 

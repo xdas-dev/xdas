@@ -37,15 +37,15 @@ class DataCollection:
     ... )
     >>> dc
     Instrument:
-        das1:
+      das1:
         Acquisition:
-        0: <xdas.DataArray (time: 300, distance: 401)>
-        1: <xdas.DataArray (time: 300, distance: 401)>
-        das2:
+          0: <xdas.DataArray (time: 300, distance: 401)>
+          1: <xdas.DataArray (time: 300, distance: 401)>
+      das2:
         Acquisition:
-        0: <xdas.DataArray (time: 300, distance: 401)>
-        1: <xdas.DataArray (time: 300, distance: 401)>
-        2: <xdas.DataArray (time: 300, distance: 401)>
+          0: <xdas.DataArray (time: 300, distance: 401)>
+          1: <xdas.DataArray (time: 300, distance: 401)>
+          2: <xdas.DataArray (time: 300, distance: 401)>
 
     """
 
