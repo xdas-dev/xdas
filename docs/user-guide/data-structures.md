@@ -109,14 +109,31 @@ da.to_netcdf("dataarray.nc", virtual=False)
 
 ## DataCollection
 
+Use {py:class}`xdas.DataCollection` when your experiment is composed of different acquisitions on a single or several cables/fibers. In this section, you will see how to use this functionality.
+
 {py:class}`xdas.DataCollection` is a dict-like container of {py:class}`xdas.DataArray`. 
 It is mainly used to save several {py:class}`xdas.DataArray` in a unique file. Unlike 
 {py:class}`xarray.Dataset`, the different {py:class}`xdas.DataArray` do not need to 
 share coordinates. {py:class}`xdas.DataCollection` can for example useful to save a 
 list of zone of interest. 
 
+A {py:class}`xdas.DataCollection` can be view as a flexible way of oragnizing data. It has different levels corresponding to your file tree. In this example below, we can see different levels for one global experiment that have several cables, with several acquisitions:
+- 1rst (mapping) level: can be the "Newtork" code, relative to the experience name.
+- 2nd (mapping) level: contains the "Node" codes relative to the places where the fibers/cables are.
+- 3rd (mapping) level: concerns the fibers/cables names.
+- 4th (sequence) level: is related to the number of acquisitions with changing parameters.
+
+![](/_static/datacollection.svg)
+
+### Case A: DataCollection as a set of DataArray
+
+In the example below, our DataCollection will be a sequence of 2 {py:class}`xdas.DataArray`.
+
 ```{code-cell}
-da = xd.open_dataarray("dataarray.nc")  # reopen dataarray as virtual source
+# Reopen dataarray as virtual source
+da = xd.open_dataarray("dataarray.nc") 
+
+# Create a DataCollection
 dc = xd.DataCollection(
     {
         "event_1": da.sel(time=slice("2023-01-01T00:00:10", "2023-01-01T00:00:20")), 
@@ -131,5 +148,30 @@ If the dataarrays are opened from files (having as data a
 to minimize redundant data writing. 
 
 ```{code-cell}
+# Write the DataCollection
 dc.to_netcdf("datacollection.nc", virtual=True)
+```
+
+```{code-cell}
+# Read a DataCollection
+dc = xd.open_datacollection("datacollection.nc")
+dc
+```
+
+### Case B: DataCollection as handelling a complex network of acquisitions
+
+In the next example, we have several acquisitions for the same fiber so we will use {py:fn}`xdas.open_treedatacollection` to create our DataCollection.
+
+```{code-cell}
+# Open your DataArrays with open_treedatacollection as virtual source
+# Write them as a DataCollection
+# Read the DataCollection
+```
+
+If you have several {py:class}`xdas.DataCollection`, you can gather them in one file following this example:
+
+```{code-cell}
+# Open all your DataCollections with open_mfdatacollection
+# Write it as your global DataCollection in .nc
+# Read your global DataCollection with open_datacollection
 ```
