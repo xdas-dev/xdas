@@ -6,7 +6,7 @@ import scipy.signal as sp
 import xdas
 from xdas.atoms import Partial, Sequential
 from xdas.processing.core import DatabaseLoader, DatabaseWriter, process
-from xdas.scipy.signal import sosfilt
+from xdas.signal import sosfilt
 from xdas.synthetics import generate
 
 

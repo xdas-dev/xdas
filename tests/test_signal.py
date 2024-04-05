@@ -3,7 +3,7 @@ import scipy.signal as sp
 import xarray as xr
 
 import xdas
-import xdas.scipy.signal as xp
+import xdas.signal as xp
 from xdas.synthetics import generate
 
 

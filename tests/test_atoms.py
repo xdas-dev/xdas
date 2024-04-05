@@ -5,7 +5,7 @@ import numpy as np
 import scipy.signal as sp
 
 import xdas
-import xdas.scipy.signal as xp
+import xdas.signal as xp
 from xdas.atoms import (
     DownSample,
     FIRFilter,
@@ -15,7 +15,7 @@ from xdas.atoms import (
     Sequential,
     UpSample,
 )
-from xdas.scipy.signal import lfilter
+from xdas.signal import lfilter
 from xdas.synthetics import generate
 
 

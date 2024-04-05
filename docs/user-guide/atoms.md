@@ -34,7 +34,7 @@ Example usage:
 
 ```{code-cell} 
 import numpy as np
-import xdas.scipy.signal as xp
+import xdas.signal as xp
 from xdas.atoms import Partial
 op1 = Partial(xp.taper, dim="time")
 

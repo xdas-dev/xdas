@@ -25,7 +25,7 @@ class Sequential(list):
     Examples
     --------
     >>> from xdas.atoms import Partial, Partial, Sequential
-    >>> import xdas.scipy.signal as xp
+    >>> import xdas.signal as xp
     >>> import numpy as np
 
     >>> sequence = Sequential(
@@ -223,7 +223,7 @@ class Partial(Atom):
     Examples
     --------
     >>> from xdas.atoms import Partial
-    >>> import xdas.scipy.signal as xp
+    >>> import xdas.signal as xp
     >>> Partial(xp.decimate, 2, dim="time", name="downsampling")
     decimate(..., 2, dim=time)
 
@@ -337,7 +337,7 @@ class StatePartial(Partial):  # TODO: Merge documentation
     Examples
     --------
     >>> from xdas.atoms import Partial, State
-    >>> import xdas.scipy.signal as xp
+    >>> import xdas.signal as xp
     >>> import scipy.signal as sp
 
     >>> sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")

@@ -1,9 +1,9 @@
 import numpy as np
 
-from ..atoms.core import atomized
-from ..core.coordinates import get_sampling_interval
-from ..core.database import Database
-from ..parallel import parallelize
+from .atoms.core import atomized
+from .core.coordinates import get_sampling_interval
+from .core.database import Database
+from .parallel import parallelize
 
 
 @atomized

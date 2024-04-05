@@ -1,4 +1,4 @@
-from . import atoms, config, io, parallel, processing, scipy, synthetics, virtual
+from . import atoms, config, fft, io, parallel, processing, signal, synthetics, virtual
 from .core import coordinates, database, datacollection, methods, numpy, routines
 from .core.coordinates import (
     Coordinate,
