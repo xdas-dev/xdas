@@ -24,7 +24,7 @@ class Sequential(list):
 
     Examples
     --------
-    >>> from xdas.atoms import Partial, Partial, Sequential
+    >>> from xdas.atoms import Partial, Sequential
     >>> import xdas.signal as xp
     >>> import numpy as np
 
