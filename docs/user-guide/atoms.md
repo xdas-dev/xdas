@@ -38,7 +38,7 @@ import xdas.signal as xp
 from xdas.atoms import Partial
 op1 = Partial(xp.taper, dim="time")
 
-sos = np.zeros(6, 2)
+sos = np.zeros((6, 2))
 op2 = Partial(xp.sosfilt, sos, ..., zi=..., dim="time")
 
 my_func = lambda x: x

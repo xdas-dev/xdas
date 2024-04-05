@@ -146,7 +146,7 @@ class IIRFilter(Atom):
         The dimension along which the downsampling is applied.
         This is either an index, ``time`` or ``distance``, or ``last``.
         Default: ``last``
-    
+
     Examples
     --------
     >>> from xdas.synthetics import generate
@@ -277,7 +277,7 @@ class FIRFilter(Atom):
         The dimension along which the downsampling is applied.
         This is either an index, ``time`` or ``distance``, or ``last``.
         Default: ``last``
-    
+
     Examples
     --------
     >>> from xdas.synthetics import generate
@@ -328,6 +328,7 @@ class FIRFilter(Atom):
     * distance (distance): 0.000 to 10000.000
 
     """
+
     def __init__(
         self,
         numtaps,
