@@ -78,6 +78,8 @@ intersphinx_mapping = {
 # -- Generate dummy data -----------------------------------------------------
 import os
 
+import h5py
+import numpy as np
 import xdas as xd
 from xdas.synthetics import generate
 
@@ -91,3 +93,11 @@ dirname = os.path.split(__file__)[0]
 da.to_netcdf(os.path.join(dirname, "_data/sample.nc"))
 for index, chunk in enumerate(chunks, start=1):
     chunk.to_netcdf(os.path.join(dirname, f"_data/00{index}.nc"))
+
+
+data = np.random.rand(20, 10)
+with h5py.File(os.path.join(dirname, "_data/other_format.hdf5"), "w") as f:
+    dset = f.create_dataset("dataset", data.shape, data=data, dtype='float32')
+    f['dataset'].attrs['t0'] = "2024-01-01T14:00:00.000"
+    f['dataset'].attrs['dt'] = 1/100
+    f['dataset'].attrs['dx'] = 10
