@@ -41,26 +41,26 @@ This is because HDF5 treats virtual dataset as regular files.
 
 ## Linking multi-file datasets
 
-The files can all be opened with the {py:func}`xdas.open_mfdatabase`:
+The files can all be opened with the {py:func}`xdas.open_mfdataarray`:
 
 ```{code-cell}
 :tags: [remove-stdout,remove-stderr]
 
-db = xd.open_mfdatabase("00*.nc")
-db
+da = xd.open_mfdataarray("00*.nc")
+da
 ```
 
-Then the database can be written as a virtual dataset using the `virtual` argument
+Then the dataarray can be written as a virtual dataset using the `virtual` argument
 (otherwise the whole data will be written to disk):
 
 ```{code-cell}
-db.to_netcdf("vds.nc", virtual=True)
+da.to_netcdf("vds.nc", virtual=True)
 ```
 
 It can then be read again as a usual file:
 
 ```{code-cell}
-xd.open_database("vds.nc")
+xd.open_dataarray("vds.nc")
 ```
 
 ```{hint}

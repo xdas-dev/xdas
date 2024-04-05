@@ -12,7 +12,7 @@ import xdas as xd
 os.chdir("../_data")
 ```
 
-# Process big databases
+# Process big dataarrays
 
 ```{warning}
 The API of this part of xdas is still experimental.
@@ -31,6 +31,6 @@ parallelization in most cases (the processing speed reaching the i/o speed).
 ![](/_static/processing.svg)
 
 ```{code-cell} 
-db = xd.open_database("sample.nc")
-db.plot(yincrease=False, vmin=-0.5, vmax=0.5);
+da = xd.open_dataarray("sample.nc")
+da.plot(yincrease=False, vmin=-0.5, vmax=0.5);
 ```

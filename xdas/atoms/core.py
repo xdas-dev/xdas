@@ -2,7 +2,7 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
-from ..core.database import DataArray
+from ..core.dataarray import DataArray
 from ..core.datacollection import DataCollection
 from ..core.routines import open_datacollection
 
@@ -58,9 +58,9 @@ class Sequential(list):
           2: square(...)
 
     >>> from xdas.synthetics import generate
-    >>> db = generate()
-    >>> sequence(db)
-    <xdas.Database (time: 300, distance: 26)>
+    >>> da = generate()
+    >>> sequence(da)
+    <xdas.DataArray (time: 300, distance: 26)>
     [[0.000000e+00 0.000000e+00 0.000000e+00 ... 0.000000e+00 0.000000e+00
       0.000000e+00]
      [4.828612e-30 9.894384e-17 3.227090e-14 ... 1.774912e-13 2.119855e-13

@@ -21,7 +21,7 @@ more details.
 First open some data and convert it to xarray format.
 
 ```{code-cell} 
-strain_rate = xd.open_database("sample.nc")
+strain_rate = xd.open_dataarray("sample.nc")
 strain_rate.plot(yincrease=False, vmin=-0.5, vmax=0.5);
 ```
 

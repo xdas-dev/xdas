@@ -1,58 +1,58 @@
 import numpy as np
 import pytest
 
-from xdas.core.database import HANDLED_NUMPY_FUNCTIONS, DataArray
+from xdas.core.dataarray import HANDLED_NUMPY_FUNCTIONS, DataArray
 from xdas.synthetics import generate
 
 
 class TestUfuncs:
     def test_unitary_operators(self):
-        db = generate()
-        result = np.abs(db)
-        expected = db.copy(data=np.abs(db.data))
-        db_out = db.copy()
-        np.abs(db, out=db_out)
-        db_where = db.copy()
-        np.abs(db, out=db_where, where=db.copy(data=db.data > 0))
+        da = generate()
+        result = np.abs(da)
+        expected = da.copy(data=np.abs(da.data))
+        da_out = da.copy()
+        np.abs(da, out=da_out)
+        da_where = da.copy()
+        np.abs(da, out=da_where, where=da.copy(data=da.data > 0))
         assert result.equals(expected)
-        assert db_out.equals(expected)
-        assert db_where.equals(db)
+        assert da_out.equals(expected)
+        assert da_where.equals(da)
 
     def test_binary_operators(self):
-        db1 = generate()
-        db2 = generate()
-        result = np.add(db1, db2)
-        expected = db1.copy(data=db1.data + db2.data)
-        db_out = db1.copy()
-        np.add(db1, db2, out=db_out)
-        db_where = db1.copy()
-        np.abs(db1, out=db_where, where=db1.copy(data=np.zeros(db1.shape, "bool")))
+        da1 = generate()
+        da2 = generate()
+        result = np.add(da1, da2)
+        expected = da1.copy(data=da1.data + da2.data)
+        da_out = da1.copy()
+        np.add(da1, da2, out=da_out)
+        da_where = da1.copy()
+        np.abs(da1, out=da_where, where=da1.copy(data=np.zeros(da1.shape, "bool")))
         assert result.equals(expected)
-        assert db_out.equals(expected)
-        assert db_where.equals(db1)
+        assert da_out.equals(expected)
+        assert da_where.equals(da1)
         with pytest.raises(ValueError):
-            np.add(db1, db2[1:])
+            np.add(da1, da2[1:])
 
     def test_multiple_outputs(self):
-        db = generate()
-        result1, result2 = np.divmod(db, db)
-        expected1 = db.copy(data=np.ones(db.shape))
-        expected2 = db.copy(data=np.zeros(db.shape))
+        da = generate()
+        result1, result2 = np.divmod(da, da)
+        expected1 = da.copy(data=np.ones(da.shape))
+        expected2 = da.copy(data=np.zeros(da.shape))
         assert result1.equals(expected1)
         assert result2.equals(expected2)
         with pytest.raises(ValueError):
-            np.add(db, db[1:])
+            np.add(da, da[1:])
 
 
 class TestFunc:
-    def test_returns_database(self):
-        db = generate()
+    def test_returns_dataarray(self):
+        da = generate()
         for numpy_function in HANDLED_NUMPY_FUNCTIONS:
             if numpy_function == np.clip:
-                result = numpy_function(db, -1, 1)
+                result = numpy_function(da, -1, 1)
                 assert isinstance(result, DataArray)
             elif numpy_function in [np.diff, np.ediff1d, np.trapz]:
-                result = numpy_function(db)
+                result = numpy_function(da)
                 assert isinstance(result, np.ndarray)
             elif numpy_function in [
                 np.percentile,
@@ -60,27 +60,27 @@ class TestFunc:
                 np.quantile,
                 np.nanquantile,
             ]:
-                result = numpy_function(db, 0.5)
+                result = numpy_function(da, 0.5)
                 assert isinstance(result, DataArray)
             else:
-                result = numpy_function(db)
+                result = numpy_function(da)
                 assert isinstance(result, DataArray)
 
     def test_reduce(self):
-        db = generate()
-        result = np.sum(db)
+        da = generate()
+        result = np.sum(da)
         assert result.shape == ()
-        result = np.sum(db, axis=0)
+        result = np.sum(da, axis=0)
         assert result.dims == ("distance",)
-        assert result.coords["distance"].equals(db.coords["distance"])
-        result = np.sum(db, axis=1)
+        assert result.coords["distance"].equals(da.coords["distance"])
+        result = np.sum(da, axis=1)
         assert result.dims == ("time",)
-        assert result.coords["time"].equals(db.coords["time"])
+        assert result.coords["time"].equals(da.coords["time"])
         with pytest.raises(np.AxisError):
-            np.sum(db, axis=2)
+            np.sum(da, axis=2)
 
     def test_out(self):
-        db = generate()
-        out = db.copy()
-        np.cumsum(db, axis=-1, out=out)
-        assert not out.equals(db)
+        da = generate()
+        out = da.copy()
+        np.cumsum(da, axis=-1, out=out)
+        assert not out.equals(da)

@@ -2,7 +2,7 @@ from inspect import signature
 
 import numpy as np
 
-from .database import HANDLED_NUMPY_FUNCTIONS, DataArray
+from .dataarray import HANDLED_NUMPY_FUNCTIONS, DataArray
 
 
 def implements(numpy_function):
@@ -23,11 +23,11 @@ def handled(reduce=False, drop_coords=False, **defaults):
             ba.apply_defaults()
             ba.arguments.update(defaults)
             key = next(iter(ba.arguments))
-            db = ba.arguments.get(key)
+            da = ba.arguments.get(key)
             axis = ba.arguments.get("axis")
             out = ba.arguments.get("out")
-            if isinstance(db, DataArray):
-                ba.arguments[key] = db.data
+            if isinstance(da, DataArray):
+                ba.arguments[key] = da.data
             if isinstance(out, DataArray):
                 ba.arguments["out"] = out.data
             data = func(*ba.args, **ba.kwargs)
@@ -35,24 +35,24 @@ def handled(reduce=False, drop_coords=False, **defaults):
                 if axis is None:
                     coords = {
                         name: coord
-                        for name, coord in db.coords.items()
+                        for name, coord in da.coords.items()
                         if coord.dim is None
                     }
                     dims = ()
                 else:
                     coords = {
                         name: coord
-                        for name, coord in db.coords.items()
-                        if not coord.dim == db.dims[axis]
+                        for name, coord in da.coords.items()
+                        if not coord.dim == da.dims[axis]
                     }
-                    dims = tuple(dim for dim in db.dims if not dim == db.dims[axis])
+                    dims = tuple(dim for dim in da.dims if not dim == da.dims[axis])
             else:
-                coords = db.coords
-                dims = db.dims
+                coords = da.coords
+                dims = da.dims
             if drop_coords:
                 return data
             else:
-                return DataArray(data, coords, dims, db.name, db.attrs)
+                return DataArray(data, coords, dims, da.name, da.attrs)
 
         return wrapper
 

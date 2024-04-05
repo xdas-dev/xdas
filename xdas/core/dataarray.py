@@ -19,7 +19,7 @@ class DataArray:
     N-dimensional array with labeled coordinates and dimensions.
 
     It is the equivalent of and xarray.DataArray but with custom coordinate objects.
-    Most of the Database API follows the DataArray one. Database objects also provide
+    Most of the DataArray API follows the DataArray one. DataArray objects also provide
     virtual dataset capabilities to manipulate huge multi-file NETCDF4 or HDF5 datasets.
 
     Parameters
@@ -96,7 +96,7 @@ class DataArray:
             )
         else:
             data_repr = repr(self.data)
-        string = "<xdas.Database ("
+        string = "<xdas.DataArray ("
         string += ", ".join([f"{dim}: {size}" for dim, size in self.sizes.items()])
         string += ")>\n"
         string += data_repr + "\n" + repr(self.coords)
@@ -152,7 +152,7 @@ class DataArray:
             )
             return method
         else:
-            raise AttributeError(f"'Database' object has no attribute '{name}'")
+            raise AttributeError(f"'DataArray' object has no attribute '{name}'")
 
     def __add__(self, other):
         return self.copy(data=self.data.__add__(other))
@@ -261,7 +261,7 @@ class DataArray:
 
     def isel(self, indexers=None, **indexers_kwargs):
         """
-        Return a new Database whose data is given by selecting indexes along the
+        Return a new DataArray whose data is given by selecting indexes along the
         specified dimension(s).
 
         Parameters
@@ -281,8 +281,8 @@ class DataArray:
 
         Returns
         -------
-        Database
-            The selected subset of the Database.
+        DataArray
+            The selected subset of the DataArray.
         """
         if indexers is None:
             indexers = {}
@@ -291,10 +291,10 @@ class DataArray:
 
     def sel(self, indexers=None, method=None, endpoint=True, **indexers_kwargs):
         """
-        Return a new Database whose data is given by selecting index labels along the
+        Return a new DataArray whose data is given by selecting index labels along the
         specified dimension(s).
 
-        In contrast to Database.isel, indexers for this method should use labels
+        In contrast to DataArray.isel, indexers for this method should use labels
         instead of integers.
 
         Parameters
@@ -308,7 +308,7 @@ class DataArray:
 
         Returns
         -------
-        Database
+        DataArray
             The selected part of the original database.
         """
         if indexers is None:
@@ -358,16 +358,16 @@ class DataArray:
         )
 
     def rename(self, name):
-        db = self.copy(deep=False)
-        db.name = name
-        return db
+        da = self.copy(deep=False)
+        da.name = name
+        return da
 
     def load(self):
         return self.copy(data=self.data.__array__())
 
     def to_xarray(self):
         """
-        Convert the Database to a DataArray object.
+        Convert the DataArray to a DataArray object.
 
         Coordinates are converted to dense arrays and lazy values are loaded in memory.
 
@@ -462,7 +462,7 @@ class DataArray:
 
     def to_netcdf(self, fname, group=None, virtual=None, **kwargs):
         """
-        Write Database contents to a netCDF file.
+        Write DataArray contents to a netCDF file.
 
         Parameters
         ----------
@@ -471,7 +471,7 @@ class DataArray:
         group : str, optional
             Path to the netCDF4 group in the given file to open.
         virtual : bool, optional
-            Weather to write a virtual dataset. The Database data must be a VirtualSource
+            Weather to write a virtual dataset. The DataArray data must be a VirtualSource
             or a VirtualLayout. Default (None) is to try to write a virtual dataset if
             possible.
 

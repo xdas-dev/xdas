@@ -1,7 +1,7 @@
 import h5py
 import numpy as np
 
-from ..core.database import DataArray
+from ..core.dataarray import DataArray
 from ..virtual import VirtualSource
 
 

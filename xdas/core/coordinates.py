@@ -686,13 +686,13 @@ def parse(data, dim=None):
     return data, dim
 
 
-def get_sampling_interval(db, dim, cast=True):
+def get_sampling_interval(da, dim, cast=True):
     """
     Returns the sample spacing along a given dimension.
 
     Parameters
     ----------
-    db : Database or DataArray or Database
+    da : DataArray or DataArray or DataArray
         The data from which extract the sample spacing.
     dim : str
         The dimension along which get the sample spacing.
@@ -702,7 +702,7 @@ def get_sampling_interval(db, dim, cast=True):
     float
         The sample spacing.
     """
-    coord = db[dim]
+    coord = da[dim]
     if isinstance(coord, InterpCoordinate):
         num = np.diff(coord.tie_values)
         den = np.diff(coord.tie_indices)

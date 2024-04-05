@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.signal as sp
 
-from .core.database import DataArray
+from .core.dataarray import DataArray
 from .core.routines import chunk
 
 
@@ -37,11 +37,11 @@ def generate(
     >>> with TemporaryDirectory() as dirpath:
     ...     os.chdir(dirpath)
     ...     generate().to_netcdf("sample.nc")
-    ...     for idx, db in enumerate(generate(nchunk=3), start=1):
-    ...         db.to_netcdf(f"{idx:03}.nc")
-    ...     db_monolithic = xdas.open_database("sample.nc")
-    ...     db_chunked = xdas.open_mfdatabase("00*.nc")
-    ...     db_monolithic.equals(db_chunked)
+    ...     for idx, da in enumerate(generate(nchunk=3), start=1):
+    ...         da.to_netcdf(f"{idx:03}.nc")
+    ...     da_monolithic = xdas.open_dataarray("sample.nc")
+    ...     da_chunked = xdas.open_mfdataarray("00*.nc")
+    ...     da_monolithic.equals(da_chunked)
     True
 
     """
@@ -75,8 +75,8 @@ def generate(
     data = np.diff(data, prepend=0, axis=-1)
     data = np.diff(data, prepend=0, axis=0)
 
-    # pack data and coordinates as Database or DataCollection if chunking.
-    db = DataArray(
+    # pack data and coordinates as DataArray or DataCollection if chunking.
+    da = DataArray(
         data=data,
         coords={
             "time": {
@@ -90,6 +90,6 @@ def generate(
         },
     )
     if nchunk is not None:
-        return chunk(db, nchunk)
+        return chunk(da, nchunk)
     else:
-        return db
+        return da

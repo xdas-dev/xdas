@@ -10,8 +10,8 @@
 .. autosummary::
    :toctree: _autosummary
 
-   open_database
-   open_mfdatabase
+   open_dataarray
+   open_mfdataarray
    open_datacollection
    concatenate
 ```
@@ -24,7 +24,7 @@
 
    Coordinate
    Coordinates
-   Database
+   DataArray
    DataCollection
 ```
 
@@ -33,8 +33,8 @@
 .. autosummary::
    :toctree: _autosummary
 
-   xdas.processing.DatabaseLoader
-   xdas.processing.DatabaseWriter
+   xdas.processing.DataArrayLoader
+   xdas.processing.DataArrayWriter
 ```
 
 ## Atoms

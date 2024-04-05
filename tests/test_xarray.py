@@ -1,38 +1,38 @@
 import numpy as np
 
 import xdas.core.methods as xp
-from xdas.core.database import DataArray
+from xdas.core.dataarray import DataArray
 from xdas.synthetics import generate
 
 
 class TestXarray:
-    def test_returns_database(self):
-        db = generate()
+    def test_returns_dataarray(self):
+        da = generate()
         for name, func in xp.HANDLED_METHODS.items():
             if callable(func):
                 if name in [
                     "percentile",
                     "quantile",
                 ]:
-                    result = func(db, 0.5)
+                    result = func(da, 0.5)
                     assert isinstance(result, DataArray)
-                    result = getattr(db, name)(0.5)
+                    result = getattr(da, name)(0.5)
                     assert isinstance(result, DataArray)
                 elif name == "diff":
-                    result = func(db, "time")
+                    result = func(da, "time")
                     assert isinstance(result, DataArray)
-                    result = getattr(db, name)("time")
+                    result = getattr(da, name)("time")
                     assert isinstance(result, DataArray)
                 else:
-                    result = func(db)
+                    result = func(da)
                     assert isinstance(result, DataArray)
-                    result = getattr(db, name)()
+                    result = getattr(da, name)()
                     assert isinstance(result, DataArray)
 
     def test_mean(self):
-        db = generate()
-        result = xp.mean(db, "time")
-        result_method = db.mean("time")
-        expected = np.mean(db, 0)
+        da = generate()
+        result = xp.mean(da, "time")
+        result_method = da.mean("time")
+        expected = np.mean(da, 0)
         assert result.equals(expected)
         assert result_method.equals(expected)

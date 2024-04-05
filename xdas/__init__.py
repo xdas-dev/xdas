@@ -1,5 +1,5 @@
 from . import atoms, config, fft, io, parallel, processing, signal, synthetics, virtual
-from .core import coordinates, database, datacollection, methods, numpy, routines
+from .core import coordinates, dataarray, datacollection, methods, numpy, routines
 from .core.coordinates import (
     Coordinate,
     Coordinates,
@@ -8,16 +8,16 @@ from .core.coordinates import (
     ScalarCoordinate,
     get_sampling_interval,
 )
-from .core.database import DataArray
+from .core.dataarray import DataArray
 from .core.datacollection import DataCollection
 from .core.methods import *
 from .core.routines import (
-    asdatabase,
+    asdataarray,
     chunk,
     concatenate,
-    open_database,
+    open_dataarray,
     open_datacollection,
-    open_mfdatabase,
+    open_mfdataarray,
     open_mfdatacollection,
     open_treedatacollection,
     split,

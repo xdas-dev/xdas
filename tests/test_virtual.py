@@ -18,30 +18,30 @@ class TestFunctional:  # TODO: move elsewhere
             for index, chunk in enumerate(chunks, start=1):
                 chunk.to_netcdf(os.path.join(dirpath, f"{index:03d}.nc"))
 
-            db = xdas.open_database(os.path.join(dirpath, "002.nc"))
-            datasource = db.data
-            assert np.allclose(np.asarray(datasource[0]), db.load().values[0])
-            assert np.allclose(np.asarray(datasource[0][1]), db.load().values[0][1])
+            da = xdas.open_dataarray(os.path.join(dirpath, "002.nc"))
+            datasource = da.data
+            assert np.allclose(np.asarray(datasource[0]), da.load().values[0])
+            assert np.allclose(np.asarray(datasource[0][1]), da.load().values[0][1])
             assert np.allclose(
-                np.asarray(datasource[:, 0][1]), db.load().values[:, 0][1]
+                np.asarray(datasource[:, 0][1]), da.load().values[:, 0][1]
             )
             assert np.allclose(
-                np.asarray(datasource[:, 0][1]), db.load().values[:, 0][1]
+                np.asarray(datasource[:, 0][1]), da.load().values[:, 0][1]
             )
-            assert np.allclose(np.asarray(datasource[10:][1]), db.load().values[10:][1])
+            assert np.allclose(np.asarray(datasource[10:][1]), da.load().values[10:][1])
             with pytest.raises(IndexError):
                 datasource[1, 2, 3]
-            assert np.allclose(np.asarray(datasource[10:][1]), db.load().values[10:][1])
-            assert array_identical(db.load().data, db.load().data)
-            db1 = db.sel(
+            assert np.allclose(np.asarray(datasource[10:][1]), da.load().values[10:][1])
+            assert array_identical(da.load().data, da.load().data)
+            da1 = da.sel(
                 time=slice("2023-01-01T00:00:03", None),
                 distance=slice(1000, None),
             ).load()
-            db2 = db.load().sel(
+            da2 = da.load().sel(
                 time=slice("2023-01-01T00:00:03", None),
                 distance=slice(1000, None),
             )
-            assert db1.equals(db2)
+            assert da1.equals(da2)
 
 
 def array_identical(x, y):

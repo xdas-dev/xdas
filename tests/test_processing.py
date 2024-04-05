@@ -5,7 +5,7 @@ import scipy.signal as sp
 
 import xdas
 from xdas.atoms import Partial, Sequential
-from xdas.processing.core import DatabaseLoader, DatabaseWriter, process
+from xdas.processing.core import DataArrayLoader, DataArrayWriter, process
 from xdas.signal import sosfilt
 from xdas.synthetics import generate
 
@@ -13,20 +13,20 @@ from xdas.synthetics import generate
 class TestProcessing:
     def test_stateful(self):
         with tempfile.TemporaryDirectory() as tempdir:
-            # generate test database
+            # generate test dataarray
             generate().to_netcdf(os.path.join(tempdir, "sample.nc"))
-            db = xdas.open_database(os.path.join(tempdir, "sample.nc"))
+            da = xdas.open_dataarray(os.path.join(tempdir, "sample.nc"))
 
             # declare processing sequence
             sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
             sequence = Sequential([Partial(sosfilt, sos, ..., dim="time", zi=...)])
 
             # monolithic processing
-            result1 = sequence(db)
+            result1 = sequence(da)
 
             # chunked processing
-            data_loader = DatabaseLoader(db, chunks={"time": 100})
-            data_writer = DatabaseWriter(tempdir)
+            data_loader = DataArrayLoader(da, chunks={"time": 100})
+            data_writer = DataArrayWriter(tempdir)
             result2 = process(
                 sequence, data_loader, data_writer
             )  # resets the sequence by default

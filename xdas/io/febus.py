@@ -1,13 +1,13 @@
 import h5py
 import numpy as np
 
-from ..core.database import DataArray
+from ..core.dataarray import DataArray
 from ..core.routines import concatenate
 from ..virtual import VirtualSource
 
 
 def read(fname):
-    """Open a febus file into a xdas Database"""
+    """Open a febus file into a xdas DataArray"""
     with h5py.File(fname, "r") as file:
         (device_name,) = list(file.keys())
         source = file[device_name]["Source1"]
@@ -31,6 +31,6 @@ def read(fname):
             ),
         }
         distance = {"tie_indices": [0, nx - 1], "tie_values": [0.0, (nx - 1) * dx]}
-        db = DataArray(chunk, {"time": time, "distance": distance}, name=name)
-        dc.append(db)
+        da = DataArray(chunk, {"time": time, "distance": distance}, name=name)
+        dc.append(da)
     return concatenate(dc, "time")

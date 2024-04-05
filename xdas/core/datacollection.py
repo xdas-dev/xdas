@@ -3,18 +3,18 @@ from fnmatch import fnmatch
 
 import h5py
 
-from .database import DataArray
+from .dataarray import DataArray
 
 
 class DataCollection:
     """
-    Nested collection of database.
+    Nested collection of dataarray.
 
     Parameters
     ----------
-    data: list or dict of DataCollection or Database
+    data: list or dict of DataCollection or DataArray
         The nested data. It can be composed either of sequences or mapping. The
-        leaves must be databases.
+        leaves must be dataarrays.
     name: str
         The name of the current level of nesting.
 
@@ -27,11 +27,11 @@ class DataCollection:
     --------
     >>> import xdas
     >>> from xdas.synthetics import generate
-    >>> db = generate()
+    >>> da = generate()
     >>> dc = xdas.DataCollection(
     ...     {
-    ...         "das1": ("acquisition", [db, db]),
-    ...         "das2": ("acquisition", [db, db, db]),
+    ...         "das1": ("acquisition", [da, da]),
+    ...         "das2": ("acquisition", [da, da, da]),
     ...     },
     ...     "instrument",
     ... )
@@ -39,13 +39,13 @@ class DataCollection:
     Instrument:
         das1:
         Acquisition:
-        0: <xdas.Database (time: 300, distance: 401)>
-        1: <xdas.Database (time: 300, distance: 401)>
+        0: <xdas.DataArray (time: 300, distance: 401)>
+        1: <xdas.DataArray (time: 300, distance: 401)>
         das2:
         Acquisition:
-        0: <xdas.Database (time: 300, distance: 401)>
-        1: <xdas.Database (time: 300, distance: 401)>
-        2: <xdas.Database (time: 300, distance: 401)>
+        0: <xdas.DataArray (time: 300, distance: 401)>
+        1: <xdas.DataArray (time: 300, distance: 401)>
+        2: <xdas.DataArray (time: 300, distance: 401)>
 
     """
 
@@ -90,11 +90,11 @@ class DataCollection:
         --------
         >>> import xdas
         >>> from xdas.synthetics import generate
-        >>> db = generate()
+        >>> da = generate()
         >>> dc = xdas.DataCollection(
         ...     {
-        ...         "das1": ("acquisition", [db, db]),
-        ...         "das2": ("acquisition", [db, db, db]),
+        ...         "das1": ("acquisition", [da, da]),
+        ...         "das2": ("acquisition", [da, da, da]),
         ...     },
         ...     "instrument",
         ... )
@@ -102,7 +102,7 @@ class DataCollection:
         Instrument:
           das1:
             Acquisition:
-            0: <xdas.Database (time: 300, distance: 401)>
+            0: <xdas.DataArray (time: 300, distance: 401)>
 
         """
         if indexers is None:
@@ -169,10 +169,10 @@ class DataCollection:
 
 class DataMapping(DataCollection, dict):
     """
-    A Mapping of databases.
+    A Mapping of dataarrays.
 
     A data mapping is a dictionary whose keys are any user defined identifiers and
-    values are database objects.
+    values are dataarray objects.
     """
 
     def __new__(cls, data, name=None):
@@ -271,9 +271,9 @@ class DataMapping(DataCollection, dict):
 
 class DataSequence(DataCollection, list):
     """
-    A collection of databases.
+    A collection of dataarrays.
 
-    A data sequence is a list whose values are database objects.
+    A data sequence is a list whose values are dataarray objects.
     """
 
     def __new__(cls, data, name=None):

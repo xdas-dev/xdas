@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from ..virtual import VirtualSource, VirtualStack
 from .coordinates import InterpCoordinate, get_sampling_interval
-from .database import DataArray
+from .dataarray import DataArray
 from .datacollection import DataCollection
 
 
@@ -50,7 +50,7 @@ def open_treedatacollection(paths, engine=None):
     Open directory tree structures as data collections.
 
     The resulting data collection will be a nesting of dicts down to the lower level
-    which will be a list of databases.
+    which will be a list of dataarrays.
 
     Parameters
     ----------
@@ -62,7 +62,7 @@ def open_treedatacollection(paths, engine=None):
         directory/file names as keys.
         - `[field]`: this level of the tree will behave as a list. The directory/file
         names are not considered (as if the placeholder was replaced by a `*`) and
-        files are gathered and combined as if using `open_mfdatabase`.
+        files are gathered and combined as if using `open_mfdataarray`.
 
         Several dict placeholders with different names can be provided. They must be
         followed by one or more list placeholders that must share a unique name.
@@ -85,18 +85,18 @@ def open_treedatacollection(paths, engine=None):
         Cable:
           N:
             Acquisition:
-              0: <xdas.Database (time: ..., distance: ...)>
-              1: <xdas.Database (time: ..., distance: ...)>
+              0: <xdas.DataArray (time: ..., distance: ...)>
+              1: <xdas.DataArray (time: ..., distance: ...)>
       SER:
         Cable:
           N:
             Acquisition:
-              0: <xdas.Database (time: ..., distance: ...)>
+              0: <xdas.DataArray (time: ..., distance: ...)>
           S:
             Acquisition:
-              0: <xdas.Database (time: ..., distance: ...)>
-              1: <xdas.Database (time: ..., distance: ...)>
-              2: <xdas.Database (time: ..., distance: ...)>
+              0: <xdas.DataArray (time: ..., distance: ...)>
+              1: <xdas.DataArray (time: ..., distance: ...)>
+              2: <xdas.DataArray (time: ..., distance: ...)>
 
 
     """
@@ -157,7 +157,7 @@ def collect(tree, fields, engine=None):
     collection = DataCollection({}, name=name)
     for key, value in tree.items():
         if isinstance(value, list):
-            dc = open_mfdatabase(value, engine, squeeze=False)
+            dc = open_mfdataarray(value, engine, squeeze=False)
             dc.name = fields[0]
             collection[key] = dc
         else:
@@ -173,9 +173,9 @@ def defaulttree(depth):
         return defaultdict(lambda: defaulttree(depth - 1))
 
 
-def open_mfdatabase(paths, engine=None, tolerance=None, squeeze=True, verbose=False):
+def open_mfdataarray(paths, engine=None, tolerance=None, squeeze=True, verbose=False):
     """
-    Open a multiple file database.
+    Open a multiple file dataarray.
 
     Parameters
     ----------
@@ -189,8 +189,8 @@ def open_mfdatabase(paths, engine=None, tolerance=None, squeeze=True, verbose=Fa
 
     Returns
     -------
-    Database
-        The database containing all files data.
+    DataArray
+        The dataarray containing all files data.
 
     Raises
     ------
@@ -216,9 +216,9 @@ def open_mfdatabase(paths, engine=None, tolerance=None, squeeze=True, verbose=Fa
         )
     with ProcessPoolExecutor() as executor:
         futures = [
-            executor.submit(open_database, path, engine=engine) for path in paths
+            executor.submit(open_dataarray, path, engine=engine) for path in paths
         ]
-        dbs = [
+        das = [
             future.result()
             for future in tqdm(
                 as_completed(futures),
@@ -226,7 +226,7 @@ def open_mfdatabase(paths, engine=None, tolerance=None, squeeze=True, verbose=Fa
                 desc="Fetching metadata from files",
             )
         ]
-    return aggregate(dbs, "time", tolerance, squeeze, None, verbose)
+    return aggregate(das, "time", tolerance, squeeze, None, verbose)
 
 
 def combine(
@@ -235,8 +235,8 @@ def combine(
     leaves = [dc for dc in dcs if isinstance(dc, list)]
     nodes = [dc for dc in dcs if isinstance(dc, dict)]
     if leaves and not nodes:
-        dbs = [db for dc in leaves for db in dc]
-        dc = aggregate(dbs, dim, tolerance, squeeze, virtual, verbose)
+        das = [da for dc in leaves for da in dc]
+        dc = aggregate(das, dim, tolerance, squeeze, virtual, verbose)
         dc.name = leaves[0].name
         return dc
     elif nodes and not leaves:
@@ -251,21 +251,21 @@ def combine(
 
 
 def aggregate(
-    dbs, dim="first", tolerance=None, squeeze=False, virtual=None, verbose=False
+    das, dim="first", tolerance=None, squeeze=False, virtual=None, verbose=False
 ):
-    dbs = sorted(dbs, key=lambda db: db[dim][0].values)
+    das = sorted(das, key=lambda da: da[dim][0].values)
     out = []
     bag = []
-    for db in dbs:
+    for da in das:
         if not bag:
-            bag = [db]
-        elif db.coords.drop(dim).equals(bag[-1].coords.drop(dim)) and (
-            get_sampling_interval(db, dim) == get_sampling_interval(bag[-1], dim)
+            bag = [da]
+        elif da.coords.drop(dim).equals(bag[-1].coords.drop(dim)) and (
+            get_sampling_interval(da, dim) == get_sampling_interval(bag[-1], dim)
         ):
-            bag.append(db)
+            bag.append(da)
         else:
             out.append(bag)
-            bag = [db]
+            bag = [da]
     out.append(bag)
     collection = DataCollection(
         [concatenate(bag, dim, tolerance, virtual, verbose) for bag in out]
@@ -276,14 +276,14 @@ def aggregate(
         return collection
 
 
-def concatenate(dbs, dim="first", tolerance=None, virtual=None, verbose=None):
+def concatenate(das, dim="first", tolerance=None, virtual=None, verbose=None):
     """
-    Concatenate several databases along a given dimension.
+    Concatenate several dataarrays along a given dimension.
 
     Parameters
     ----------
-    dbs : list
-        List of databases to concatenate.
+    das : list
+        List of dataarrays to concatenate.
     dim : str
         The dimension along which concatenate.
     tolerance : float of timedelta64, optional
@@ -291,36 +291,36 @@ def concatenate(dbs, dim="first", tolerance=None, virtual=None, verbose=None):
         the following, zero by default.
     virtual : bool, optional
         Whether to create a virtual dataset. It requires that all concatenated
-        databases are virtual. By default tries to create a virtual dataset if possible.
+        dataarrays are virtual. By default tries to create a virtual dataset if possible.
 
     Returns
     -------
-    Database
-        The concatenated database.
+    DataArray
+        The concatenated dataarray.
     """
-    dbs = [db for db in dbs if not db.empty]
+    das = [da for da in das if not da.empty]
     if virtual is None:
-        virtual = all(isinstance(db.data, (VirtualSource, VirtualStack)) for db in dbs)
-    if not all(isinstance(db[dim], InterpCoordinate) for db in dbs):
+        virtual = all(isinstance(da.data, (VirtualSource, VirtualStack)) for da in das)
+    if not all(isinstance(da[dim], InterpCoordinate) for da in das):
         raise NotImplementedError("can only concatenate along interpolated coordinate")
-    axis = dbs[0].get_axis_num(dim)
-    dim = dbs[0].dims[axis]
-    coords = dbs[0].coords.copy()
-    dbs = sorted(dbs, key=lambda db: db[dim][0].values)
-    iterator = tqdm(dbs, desc="Linking database") if verbose else dbs
+    axis = das[0].get_axis_num(dim)
+    dim = das[0].dims[axis]
+    coords = das[0].coords.copy()
+    das = sorted(das, key=lambda da: da[dim][0].values)
+    iterator = tqdm(das, desc="Linking dataarray") if verbose else das
     data = []
     tie_indices = []
     tie_values = []
     idx = 0
-    for db in iterator:
-        if isinstance(db.data, VirtualStack):
-            for source in db.data.sources:
+    for da in iterator:
+        if isinstance(da.data, VirtualStack):
+            for source in da.data.sources:
                 data.append(source)
         else:
-            data.append(db.data)
-        tie_indices.extend(idx + db[dim].tie_indices)
-        tie_values.extend(db[dim].tie_values)
-        idx += db.shape[axis]
+            data.append(da.data)
+        tie_indices.extend(idx + da[dim].tie_indices)
+        tie_values.extend(da[dim].tie_values)
+        idx += da.shape[axis]
     if virtual:
         data = VirtualStack(data, axis)
     else:
@@ -331,24 +331,24 @@ def concatenate(dbs, dim="first", tolerance=None, virtual=None, verbose=None):
     return DataArray(data, coords)
 
 
-def open_database(fname, group=None, engine=None, **kwargs):
+def open_dataarray(fname, group=None, engine=None, **kwargs):
     """
-    Open a database.
+    Open a dataarray.
 
     Parameters
     ----------
     fname : str
-        The path of the database.
+        The path of the dataarray.
     group : str, optional
-        The file group where the database is located, by default None which corresponds
+        The file group where the dataarray is located, by default None which corresponds
         to the root of the file.
     engine : str, optional
         The file format, by default None.
 
     Returns
     -------
-    Database
-        The opened database.
+    DataArray
+        The opened dataarray.
 
     Raises
     ------
@@ -399,11 +399,11 @@ def open_datacollection(fname, **kwargs):
     return DataCollection.from_netcdf(fname, **kwargs)
 
 
-def asdatabase(obj, tolerance=None):
+def asdataarray(obj, tolerance=None):
     """
-    Try to convert given object to a database.
+    Try to convert given object to a dataarray.
 
-    Only support Database or DataArray as input.
+    Only support DataArray or DataArray as input.
 
     Parameters
     ----------
@@ -415,8 +415,8 @@ def asdatabase(obj, tolerance=None):
 
     Returns
     -------
-    Database
-        The object converted to a Database. Data is not copied.
+    DataArray
+        The object converted to a DataArray. Data is not copied.
 
     Raises
     ------
@@ -428,13 +428,13 @@ def asdatabase(obj, tolerance=None):
     elif isinstance(obj, xr.DataArray):
         return DataArray.from_xarray(obj)
     else:
-        raise ValueError("Cannot convert to database.")
+        raise ValueError("Cannot convert to dataarray.")
 
 
-def split(db, divpoints="discontinuities", dim="first", tolerance=None):
+def split(da, divpoints="discontinuities", dim="first", tolerance=None):
     if divpoints == "discontinuities":
-        if isinstance(db[dim], InterpCoordinate):
-            coord = db[dim].simplify(tolerance)
+        if isinstance(da[dim], InterpCoordinate):
+            coord = da[dim].simplify(tolerance)
             (points,) = np.nonzero(np.diff(coord.tie_indices, prepend=[0]) == 1)
             divpoints = [coord.tie_indices[point] for point in points]
         else:
@@ -442,17 +442,17 @@ def split(db, divpoints="discontinuities", dim="first", tolerance=None):
                 "discontinuities can only be found on dimension that have as type "
                 "`InterpCoordinate`."
             )
-    divpoints = [0] + divpoints + [db.sizes[dim]]
+    divpoints = [0] + divpoints + [da.sizes[dim]]
     return DataCollection(
         [
-            db.isel({dim: slice(divpoints[idx], divpoints[idx + 1])})
+            da.isel({dim: slice(divpoints[idx], divpoints[idx + 1])})
             for idx in range(len(divpoints) - 1)
         ]
     )
 
 
-def chunk(db, nchunk, dim="first"):
-    nsamples = db.sizes[dim]
+def chunk(da, nchunk, dim="first"):
+    nsamples = da.sizes[dim]
     if not isinstance(nchunk, int):
         raise TypeError("`n` must be an integer")
     if nchunk <= 0:
@@ -464,7 +464,7 @@ def chunk(db, nchunk, dim="first"):
     div_points = np.cumsum(chunks, dtype=np.int64)
     return DataCollection(
         [
-            db.isel({dim: slice(div_points[idx], div_points[idx + 1])})
+            da.isel({dim: slice(div_points[idx], div_points[idx + 1])})
             for idx in range(nchunk)
         ]
     )

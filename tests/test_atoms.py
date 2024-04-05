@@ -34,7 +34,7 @@ class TestPartialAtom:
 class TestProcessing:
     def test_sequence(self):
         # Generate a temporary dataset
-        db = generate()
+        da = generate()
 
         # Declare sequence to execute
         sequence = Sequential(
@@ -46,9 +46,9 @@ class TestProcessing:
         )
 
         # Sequence processing
-        result1 = sequence(db)
+        result1 = sequence(da)
         # Manual processing
-        result2 = xdas.mean(np.abs(db) ** 2, dim="time")
+        result2 = xdas.mean(np.abs(da) ** 2, dim="time")
 
         # Test
         assert np.allclose(result1.values, result2.values)
@@ -67,15 +67,15 @@ class TestDecorator:
 
 class TestFilters:
     def test_lfilter(self):
-        db = generate()
-        chunks = xdas.chunk(db, 6, "time")
+        da = generate()
+        chunks = xdas.chunk(da, 6, "time")
 
         b, a = sp.iirfilter(4, 10.0, btype="lowpass", fs=50.0)
-        data = sp.lfilter(b, a, db.values, axis=0)
-        expected = db.copy(data=data)
+        data = sp.lfilter(b, a, da.values, axis=0)
+        expected = da.copy(data=data)
 
         atom = IIRFilter(4, 10.0, "lowpass", dim="time", stype="ba")
-        monolithic = atom(db)
+        monolithic = atom(da)
 
         atom = IIRFilter(4, 10.0, "lowpass", dim="time", stype="ba")
         chunked = xdas.concatenate(
@@ -100,15 +100,15 @@ class TestFilters:
             assert result.equals(expected)
 
     def test_sosfilter(self):
-        db = generate()
-        chunks = xdas.chunk(db, 6, "time")
+        da = generate()
+        chunks = xdas.chunk(da, 6, "time")
 
         sos = sp.iirfilter(4, 10.0, btype="lowpass", fs=50.0, output="sos")
-        data = sp.sosfilt(sos, db.values, axis=0)
-        expected = db.copy(data=data)
+        data = sp.sosfilt(sos, da.values, axis=0)
+        expected = da.copy(data=data)
 
         atom = IIRFilter(4, 10.0, "lowpass", dim="time")
-        monolithic = atom(db)
+        monolithic = atom(da)
 
         atom = IIRFilter(4, 10.0, "lowpass", dim="time")
         chunked = xdas.concatenate(
@@ -133,11 +133,11 @@ class TestFilters:
             assert result.equals(expected)
 
     def test_downsample(self):
-        db = generate()
-        chunks = xdas.chunk(db, 6, "time")
-        expected = db.isel(time=slice(None, None, 3))
+        da = generate()
+        chunks = xdas.chunk(da, 6, "time")
+        expected = da.isel(time=slice(None, None, 3))
         atom = DownSample(3, "time")
-        result = atom(db)
+        result = atom(da)
         assert result.equals(expected)
         atom.reset()
         result = xdas.concatenate(
@@ -146,7 +146,7 @@ class TestFilters:
         assert result.equals(expected)
 
     def test_upsample(self):
-        db = xdas.DataArray(
+        da = xdas.DataArray(
             [1, 1, 1], {"time": {"tie_indices": [0, 2], "tie_values": [0.0, 6.0]}}
         )
         expected = xdas.DataArray(
@@ -154,26 +154,26 @@ class TestFilters:
             {"time": {"tie_indices": [0, 8], "tie_values": [0.0, 8.0]}},
         )
         atom = UpSample(3, dim="time")
-        result = atom(db)
+        result = atom(da)
         assert result.equals(expected)
 
-        db = generate()
-        chunks = xdas.chunk(db, 6, "time")
+        da = generate()
+        chunks = xdas.chunk(da, 6, "time")
         atom = UpSample(3, dim="time")
-        expected = atom(db)
+        expected = atom(da)
         result = xdas.concatenate(
             [atom(chunk, chunk="time") for chunk in chunks], "time"
         )
         assert result.equals(expected)
 
     def test_firfilter(self):
-        db = generate()
-        chunks = xdas.chunk(db, 6, "time")
+        da = generate()
+        chunks = xdas.chunk(da, 6, "time")
         taps = sp.firwin(11, 0.4, pass_zero="lowpass")
-        expected = xp.lfilter(taps, 1.0, db, "time")
+        expected = xp.lfilter(taps, 1.0, da, "time")
         expected["time"] -= np.timedelta64(20, "ms") * 5
         atom = FIRFilter(11, 10.0, "lowpass", dim="time")
-        result = atom(db)
+        result = atom(da)
         assert result.equals(expected)
 
         atom = FIRFilter(11, 10.0, "lowpass", dim="time")
@@ -186,12 +186,12 @@ class TestFilters:
         assert result.name == expected.name
 
     def test_resample_poly(self):
-        db = generate()
-        chunks = xdas.chunk(db, 6, "time")
+        da = generate()
+        chunks = xdas.chunk(da, 6, "time")
 
-        expected = xp.resample_poly(db, 5, 2, "time")
+        expected = xp.resample_poly(da, 5, 2, "time")
         atom = ResamplePoly(125, maxfactor=10, dim="time")
-        result = atom(db)
+        result = atom(da)
         atom = ResamplePoly(125, maxfactor=10, dim="time")
         result_chunked = xdas.concatenate(
             [atom(chunk, chunk="time") for chunk in chunks], "time"

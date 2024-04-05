@@ -52,33 +52,33 @@ import xdas as xd
 Data can be fetched from a file:
 
 ```{code-cell} 
-db = xd.open_database("sample.nc")
-db
+da = xd.open_dataarray("sample.nc")
+da
 ```
 
 Label-based selection can be done using the [*xarray* API][xarray API].
 
 ```{code-cell}
-db = db.sel(
+da = da.sel(
     time=slice("2023-01-01T00:00:01", "2023-01-01T00:00:05"),
     distance=slice(1000, 9000),
 )
-db
+da
 ```
 
 Once the selection is small enough data can be loaded into memory:
 
 ```{code-cell}
-db = db.load()
-db
+da = da.load()
+da
 ```
 
 It can be converted to a [`DataArray`][DataArray] object to enables the full use of the 
 *xarray* API (e.g., for plotting):
 
 ```{code-cell}
-da = db.to_xarray()  # Data will be loaded automatically if not already done.
-db.plot(yincrease=False, vmin=-0.5, vmax=0.5);
+da = da.to_xarray()  # Data will be loaded automatically if not already done.
+da.plot(yincrease=False, vmin=-0.5, vmax=0.5);
 ```
 
 [xarray API]: <https://docs.xarray.dev/en/stable/user-guide/indexing.html>

@@ -6,7 +6,7 @@ import numpy as np
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from ..core.routines import concatenate, open_database
+from ..core.routines import concatenate, open_dataarray
 from .monitor import Monitor
 
 
@@ -29,16 +29,16 @@ def process(seq, data_loader, data_writer):
     return data_writer.result()
 
 
-class DatabaseLoader:
-    def __init__(self, db, chunks):
-        self.db = db
+class DataArrayLoader:
+    def __init__(self, da, chunks):
+        self.da = da
         ((self.chunk_dim, self.chunk_size),) = chunks.items()
         self.queue = Queue(maxsize=1)
         self.executor = ThreadPoolExecutor(1)
         self.future = self.executor.submit(self.task)
 
     def __len__(self):
-        div, mod = divmod(self.db.sizes[self.chunk_dim], self.chunk_size)
+        div, mod = divmod(self.da.sizes[self.chunk_dim], self.chunk_size)
         return div if mod == 0 else div + 1
 
     def __getitem__(self, idx):
@@ -46,9 +46,9 @@ class DatabaseLoader:
         end = (idx + 1) * self.chunk_size
         query = {
             dim: slice(start, end) if dim == self.chunk_dim else slice(None)
-            for dim in self.db.dims
+            for dim in self.da.dims
         }
-        return self.db[query].load()
+        return self.da[query].load()
 
     def __iter__(self):
         return self
@@ -62,7 +62,7 @@ class DatabaseLoader:
 
     @property
     def nbytes(self):
-        return self.db.nbytes
+        return self.da.nbytes
 
     def task(self):
         for idx in range(len(self)):
@@ -97,11 +97,11 @@ class Handler(FileSystemEventHandler):
         self.queue = queue
 
     def on_closed(self, event):
-        db = open_database(event.src_path, engine=self.engine)
-        self.queue.put(db.load())
+        da = open_dataarray(event.src_path, engine=self.engine)
+        self.queue.put(da.load())
 
 
-class DatabaseWriter:
+class DataArrayWriter:
     def __init__(self, dirpath):
         self.dirpath = dirpath
         self.queue = Queue(maxsize=1)
@@ -109,23 +109,23 @@ class DatabaseWriter:
         self.executor = ThreadPoolExecutor(1)
         self.future = self.executor.submit(self.task)
 
-    def to_netcdf(self, db):
-        self.queue.put(db)
+    def to_netcdf(self, da):
+        self.queue.put(da)
 
     def task(self):
         while True:
-            db = self.queue.get()
-            if db is None:
+            da = self.queue.get()
+            if da is None:
                 break
-            path = self.get_path(db)
+            path = self.get_path(da)
             if os.path.exists(path):
                 raise OSError(f"the file '{path}' already exists.")
             else:
-                db.to_netcdf(path)
-            self.results.append(open_database(path))
+                da.to_netcdf(path)
+            self.results.append(open_dataarray(path))
 
-    def get_path(self, db):
-        datetime = np.datetime_as_string(db["time"][0].values, unit="s").replace(
+    def get_path(self, da):
+        datetime = np.datetime_as_string(da["time"][0].values, unit="s").replace(
             ":", "-"
         )
         fname = f"{datetime}.nc"

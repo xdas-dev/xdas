@@ -4,7 +4,7 @@ import numpy as np
 import scipy.signal as sp
 
 from ..core.coordinates import Coordinate, get_sampling_interval
-from ..core.database import DataArray
+from ..core.dataarray import DataArray
 from ..core.routines import concatenate, split
 from ..parallel import parallelize
 from .core import Atom, State
@@ -22,8 +22,8 @@ class ResamplePoly(Atom):
         self.downsampling = DownSample(..., self.dim)
         self.fs = State(...)
 
-    def initialize(self, db, **kwargs):
-        self.fs = State(1.0 / get_sampling_interval(db, self.dim))
+    def initialize(self, da, **kwargs):
+        self.fs = State(1.0 / get_sampling_interval(da, self.dim))
         self.initialize_from_state()
 
     def initialize_from_state(self):
@@ -40,11 +40,11 @@ class ResamplePoly(Atom):
         self.firfilter.cutoff = cutoff
         self.downsampling.factor = down
 
-    def call(self, db, **kwargs):
-        db = self.upsampling(db, **kwargs)
-        db = self.firfilter(db, **kwargs)
-        db = self.downsampling(db, **kwargs)
-        return db
+    def call(self, da, **kwargs):
+        da = self.upsampling(da, **kwargs)
+        da = self.firfilter(da, **kwargs)
+        da = self.downsampling(da, **kwargs)
+        return da
 
 
 class IIRFilter(Atom):
@@ -76,8 +76,8 @@ class IIRFilter(Atom):
             raise ValueError()
         self.fs = State(...)
 
-    def initialize(self, db, **kwargs):
-        self.fs = State(1.0 / get_sampling_interval(db, self.dim))
+    def initialize(self, da, **kwargs):
+        self.fs = State(1.0 / get_sampling_interval(da, self.dim))
         self.initialize_from_state()
 
     def initialize_from_state(self):
@@ -99,8 +99,8 @@ class IIRFilter(Atom):
         else:
             raise ValueError()
 
-    def call(self, db, **kwargs):
-        return self.iirfilter(db, **kwargs)
+    def call(self, da, **kwargs):
+        return self.iirfilter(da, **kwargs)
 
 
 class FIRFilter(Atom):
@@ -125,8 +125,8 @@ class FIRFilter(Atom):
         self.lfilter = LFilter(..., [1.0], self.dim)
         self.fs = State(...)
 
-    def initialize(self, db, **kwargs):
-        self.fs = State(1.0 / get_sampling_interval(db, self.dim))
+    def initialize(self, da, **kwargs):
+        self.fs = State(1.0 / get_sampling_interval(da, self.dim))
         self.initialize_from_state()
 
     def initialize_from_state(self):
@@ -142,10 +142,10 @@ class FIRFilter(Atom):
         self.lag = (len(taps) - 1) // 2
         self.lfilter.b = taps
 
-    def call(self, db, **kwargs):
-        db = self.lfilter(db, **kwargs)
-        db[self.dim] -= get_sampling_interval(db, self.dim, cast=False) * self.lag
-        return db
+    def call(self, da, **kwargs):
+        da = self.lfilter(da, **kwargs)
+        da[self.dim] -= get_sampling_interval(da, self.dim, cast=False) * self.lag
+        return da
 
 
 class LFilter(Atom):
@@ -158,30 +158,30 @@ class LFilter(Atom):
         self.axis = State(...)
         self.zi = State(...)
 
-    def initialize(self, db, chunk=None, **kwargs):
-        self.axis = State(db.get_axis_num(self.dim))
+    def initialize(self, da, chunk=None, **kwargs):
+        self.axis = State(da.get_axis_num(self.dim))
         if self.dim == chunk:
             n_sections = max(len(self.a), len(self.b)) - 1
             shape = tuple(
                 n_sections if name == self.dim else size
-                for name, size in db.sizes.items()
+                for name, size in da.sizes.items()
             )
             self.zi = State(np.zeros(shape))
         else:
             self.zi = State(None)
 
-    def call(self, db, **kwargs):
+    def call(self, da, **kwargs):
         across = int(self.axis == 0)
         if self.zi is None:
             func = parallelize((None, None, across), across, self.parallel)(sp.lfilter)
-            data = func(self.b, self.a, db.values, self.axis)
+            data = func(self.b, self.a, da.values, self.axis)
         else:
             func = parallelize(
                 (None, None, across, None, across), (across, across), self.parallel
             )(sp.lfilter)
-            data, zf = func(self.b, self.a, db.values, self.axis, self.zi)
+            data, zf = func(self.b, self.a, da.values, self.axis, self.zi)
             self.zi = State(zf)
-        return db.copy(data=data)
+        return da.copy(data=data)
 
 
 class SOSFilter(Atom):
@@ -193,30 +193,30 @@ class SOSFilter(Atom):
         self.axis = State(...)
         self.zi = State(...)
 
-    def initialize(self, db, chunk=None, **kwargs):
-        self.axis = State(db.get_axis_num(self.dim))
+    def initialize(self, da, chunk=None, **kwargs):
+        self.axis = State(da.get_axis_num(self.dim))
         if self.dim == chunk:
             n_sections = self.sos.shape[0]
             shape = (n_sections,) + tuple(
                 2 if index == self.axis else element
-                for index, element in enumerate(db.shape)
+                for index, element in enumerate(da.shape)
             )
             self.zi = State(np.zeros(shape))
         else:
             self.zi = State(None)
 
-    def call(self, db, **kwargs):
+    def call(self, da, **kwargs):
         across = int(self.axis == 0)
         if self.zi is None:
             func = parallelize((None, across), across, self.parallel)(sp.sosfilt)
-            data = func(self.sos, db.values, self.axis)
+            data = func(self.sos, da.values, self.axis)
         else:
             func = parallelize(
                 (None, across, None, across + 1), (across, across + 1), self.parallel
             )(sp.sosfilt)
-            data, zf = func(self.sos, db.values, self.axis, self.zi)
+            data, zf = func(self.sos, da.values, self.axis, self.zi)
             self.zi = State(zf)
-        return db.copy(data=data)
+        return da.copy(data=data)
 
 
 class DownSample(Atom):
@@ -226,19 +226,19 @@ class DownSample(Atom):
         self.dim = dim
         self.buffer = State(...)
 
-    def initialize(self, db, chunk=None, **kwargs):
+    def initialize(self, da, chunk=None, **kwargs):
         if chunk == self.dim:
-            self.buffer = State(db.isel({self.dim: slice(0, 0)}))
+            self.buffer = State(da.isel({self.dim: slice(0, 0)}))
         else:
             self.buffer = State(None)
 
-    def call(self, db, **kwargs):
+    def call(self, da, **kwargs):
         if self.buffer is not None:
-            db = concatenate([self.buffer, db], self.dim)
-            divpoint = db.sizes[self.dim] - db.sizes[self.dim] % self.factor
-            db, buffer = split(db, [divpoint], self.dim)
+            da = concatenate([self.buffer, da], self.dim)
+            divpoint = da.sizes[self.dim] - da.sizes[self.dim] % self.factor
+            da, buffer = split(da, [divpoint], self.dim)
             self.buffer = State(buffer)
-        return db.isel({self.dim: slice(None, None, self.factor)})
+        return da.isel({self.dim: slice(None, None, self.factor)})
 
 
 class UpSample(Atom):
@@ -248,22 +248,22 @@ class UpSample(Atom):
         self.scale = scale
         self.dim = dim
 
-    def call(self, db, **kwargs):
+    def call(self, da, **kwargs):
         shape = tuple(
             self.factor * size if dim == self.dim else size
-            for dim, size in db.sizes.items()
+            for dim, size in da.sizes.items()
         )
         slc = tuple(
             slice(None, None, self.factor) if dim == self.dim else slice(None)
-            for dim in db.dims
+            for dim in da.dims
         )
-        data = np.zeros(shape, dtype=db.dtype)
+        data = np.zeros(shape, dtype=da.dtype)
         if self.scale:
-            data[slc] = db.values * self.factor
+            data[slc] = da.values * self.factor
         else:
-            data[slc] = db.values
-        coords = db.coords.copy()
-        delta = get_sampling_interval(db, self.dim, cast=False)
+            data[slc] = da.values
+        coords = da.coords.copy()
+        delta = get_sampling_interval(da, self.dim, cast=False)
         tie_indices = coords[self.dim].tie_indices * self.factor
         tie_values = coords[self.dim].tie_values
         tie_indices[-1] += self.factor - 1
@@ -275,4 +275,4 @@ class UpSample(Atom):
             },
             self.dim,
         )
-        return DataArray(data, coords, name=db.name, attrs=db.attrs)
+        return DataArray(data, coords, name=da.name, attrs=da.attrs)

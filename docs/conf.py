@@ -85,9 +85,9 @@ dirpath = "_data"
 if not os.path.exists(dirpath):
     os.makedirs(dirpath)
 
-db = generate()
-chunks = xd.chunk(db, 3)
+da = generate()
+chunks = xd.chunk(da, 3)
 dirname = os.path.split(__file__)[0]
-db.to_netcdf(os.path.join(dirname, "_data/sample.nc"))
+da.to_netcdf(os.path.join(dirname, "_data/sample.nc"))
 for index, chunk in enumerate(chunks, start=1):
     chunk.to_netcdf(os.path.join(dirname, f"_data/00{index}.nc"))
