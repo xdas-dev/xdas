@@ -532,9 +532,13 @@ class DataArray:
                 warnings.simplefilter("ignore")
                 ds.to_netcdf(fname, group=group, **kwargs)
         elif virtual and isinstance(self.data, VirtualArray):
-            ds = xr.Dataset(
+            da = xr.DataArray(  # TODO: this is dirty
+                data=np.empty((0, 0)),
                 coords=coords,
+                dims=self.dims,
+                name="__tmp__",
             )
+            ds[da.name] = da
             ds.to_netcdf(fname, group=group, **kwargs)
             with h5py.File(fname, "r+") as file:
                 if self.name is None:
