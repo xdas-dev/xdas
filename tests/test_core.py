@@ -159,4 +159,4 @@ class TestCore:
 
     def test_chunk(self):
         da = generate()
-        assert xdas.concatenate(xdas.chunk(da, 3)).equals(da)
+        assert xdas.concatenate(xdas.split(da, 3)).equals(da)

@@ -89,7 +89,7 @@ if not os.path.exists(dirpath):
     os.makedirs(dirpath)
 
 da = generate()
-chunks = xd.chunk(da, 3)
+chunks = xd.split(da, 3)
 dirname = os.path.split(__file__)[0]
 da.to_netcdf(os.path.join(dirname, "_data/sample.h5"))
 for index, chunk in enumerate(chunks, start=1):

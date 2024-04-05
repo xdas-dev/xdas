@@ -14,7 +14,7 @@ class TestFunctional:  # TODO: move elsewhere
     def test_all(self):
         with tempfile.TemporaryDirectory() as dirpath:
             expected = generate()
-            chunks = xdas.chunk(expected, 3)
+            chunks = xdas.split(expected, 3)
             for index, chunk in enumerate(chunks, start=1):
                 chunk.to_netcdf(os.path.join(dirpath, f"{index:03d}.nc"))
 

@@ -13,7 +13,6 @@ from .core.datacollection import DataCollection
 from .core.methods import *
 from .core.routines import (
     asdataarray,
-    chunk,
     concatenate,
     open_dataarray,
     open_datacollection,
