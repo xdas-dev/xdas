@@ -15,7 +15,7 @@ class ResamplePoly(Atom):
     Pipeline implementation of polyphase-filter resampling from the
     original sampling rate to the ``target`` sampling rate.
 
-    This is achieved by an upsampling of the data,
+    This is achieved by an upsampling of the data, 
     followed by the application of a low-pass FIR filter,
     and finally by downsampling of the data. The ratio of the
     up and downsampling factors equals the target sampling rate over
@@ -37,7 +37,7 @@ class ResamplePoly(Atom):
         The dimension along which the downsampling is applied.
         This is either an index, ``time`` or ``distance``, or ``last``.
         Default: ``last``
-
+    
     Examples
     --------
     >>> from xdas.synthetics import generate
@@ -76,10 +76,9 @@ class ResamplePoly(Atom):
             7800.,  7900.,  8000.,  8100.,  8200.,  8300.,  8400.,  8500.,
             8600.,  8700.,  8800.,  8900.,  9000.])
 
-    .. warning::
+    .. warning:: 
         The default ``dim`` value ``last`` does not work...
     """
-
     def __init__(self, target, maxfactor=100, window=("kaiser", 5.0), dim="last"):
         super().__init__()
         self.target = target
@@ -144,12 +143,11 @@ class IIRFilter(Atom):
         ???. Default: ``None``
 
     """
-
     def __init__(
         self,
         order,
         cutoff,
-        btype="band",
+        btype="bandpass",
         ftype="butter",
         stype="sos",
         rp=None,

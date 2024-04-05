@@ -4,6 +4,7 @@
 :maxdepth: 1
 
 data-structures
+data-formats
 virtual-datasets
 interpolated-coordinates
 convert-displacement
