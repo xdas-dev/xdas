@@ -142,6 +142,53 @@ class IIRFilter(Atom):
         ???. Default: ``None``
     rs : ?
         ???. Default: ``None``
+    dim : str or int
+        The dimension along which the downsampling is applied.
+        This is either an index, ``time`` or ``distance``, or ``last``.
+        Default: ``last``
+
+    Examples
+    --------
+    >>> from xdas.synthetics import generate
+    >>> from xdas.atoms import Sequential, IIRFilter
+    >>> da = generate()
+
+    Using ``IIRFilter`` directly:
+
+    >>> # Highpass > 1.5 Hz
+    >>> da2 = IIRFilter(order=4, cutoff=1.5, btype="highpass", dim="time")(da)
+    >>> da2
+    <xdas.DataArray (time: 300, distance: 401)>
+    [[ 0.038812 -0.049615  0.061412 ... -0.114737  0.105669 -0.221302]
+    [-0.104748  0.121279 -0.088378 ...  0.171324 -0.086691  0.216594]
+    [ 0.082237 -0.120316  0.004964 ... -0.111284 -0.136088  0.185075]
+    ...
+    [ 0.178379  0.011591 -0.31838  ... -0.228471 -0.314301  0.436016]
+    [-0.194726 -0.004863  0.116678 ... -0.156696  0.397589 -0.130106]
+    [ 0.140117  0.197221 -0.268858 ...  0.322317 -0.414973 -0.055147]]
+    Coordinates:
+    * time (time): 2023-01-01T00:00:00.000 to 2023-01-01T00:00:05.980
+    * distance (distance): 0.000 to 10000.000
+
+    Using ``IIRFilter`` as an atom in ``Sequential``:
+
+    >>> # Bandpass between 1 and 10 Hz
+    >>> sequence = Sequential([
+    ...    IIRFilter(order=6, cutoff=(1.0, 10.0), btype="bandpass", dim="time")
+    ... ])
+    >>> result = sequence(da)
+    >>> result["distance"].values
+    <xdas.DataArray (time: 300, distance: 401)>
+    [[ 0.00031  -0.000396  0.00049  ... -0.000916  0.000844 -0.001767]
+    [ 0.001484 -0.001998  0.002966 ... -0.005491  0.005625 -0.011501]
+    [ 0.001948 -0.003366  0.006708 ... -0.012976  0.014296 -0.028643]
+    ...
+    [ 0.016432 -0.012658 -0.089414 ... -0.021061  0.168231 -0.118295]
+    [ 0.004816 -0.044008  0.035511 ... -0.040328  0.144616 -0.064695]
+    [-0.014048 -0.079786  0.180202 ...  0.013841 -0.048853  0.062074]]
+    Coordinates:
+    * time (time): 2023-01-01T00:00:00.000 to 2023-01-01T00:00:05.980
+    * distance (distance): 0.000 to 10000.000
 
     """
 
@@ -201,6 +248,87 @@ class IIRFilter(Atom):
 
 
 class FIRFilter(Atom):
+    """
+    Pipeline implementation of an FIR filter.
+
+    Parameters
+    ----------
+    numtaps : int
+        The order (number of taps) of the FIR filter
+    cutoff : float or tuple
+        The frequency cut-off of the filter. In the case
+        of a low/high-pass filter, ``cutoff`` is a single number.
+        In the case of a bandpass filter, ``cutoff`` is a tuple of
+        two number (the upper and lower cut-off frequency, resp.).
+    btype : str
+        The type of the filter band. Valid options are:
+            - ``lowpass``: removing frequencies above ``cutoff``
+            - ``highpass``: removing frequencies below ``cutoff``
+            - ``bandpass`` (default): removing frequencies below ``cutoff[0]`` and above ``cutoff[1]``
+    window : str or tuple of string and parameter values
+        The window function to apply befor FIR filtering. If a
+        tuple is given, it needs to be compatible with ``scipy.signal.get_window``.
+        Default: ``hamming``
+    width : ?
+        Default: ``None``
+    scale : bool
+        Default: ``True``
+    dim : str or int
+        The dimension along which the downsampling is applied.
+        This is either an index, ``time`` or ``distance``, or ``last``.
+        Default: ``last``
+
+    Examples
+    --------
+    >>> from xdas.synthetics import generate
+    >>> from xdas.atoms import Sequential, FIRFilter
+    >>> da = generate()
+
+    Using ``FIRFilter`` directly:
+
+    >>> # Highpass > 1.5 Hz
+    >>> da2 = da2 = FIRFilter(numtaps=5, cutoff=1.5, btype="highpass", dim="time")(da)
+    >>> da2
+    <xdas.DataArray (time: 300, distance: 401)>
+    [[-2.339751e-04  2.991040e-04 -3.702198e-04 ...  6.916895e-04
+    -6.370217e-04  1.334117e-03]
+    [-1.091503e-03  1.471451e-03 -2.193486e-03 ...  4.060728e-03
+    -4.168370e-03  8.518611e-03]
+    [ 5.014406e-02 -6.344995e-02  7.666315e-02 ... -1.428919e-01
+    1.298806e-01 -2.729624e-01]
+    ...
+    [ 9.129921e-02 -1.841086e-01  2.547145e-03 ... -4.218528e-01
+    3.117905e-01 -2.467233e-01]
+    [-1.979881e-01 -8.168980e-03  5.458106e-01 ...  4.309588e-01
+    -1.352775e-01 -3.427569e-02]
+    [ 1.808382e-01 -2.270671e-02 -2.354151e-01 ... -1.836509e-01
+    -3.396010e-01  4.366619e-01]]
+    Coordinates:
+    * time (time): 2022-12-31T23:59:59.960 to 2023-01-01T00:00:05.940
+    * distance (distance): 0.000 to 10000.000
+
+    Using ``FIRFilter`` as an atom in ``Sequential``:
+
+    >>> # Bandpass between 1 and 10 Hz
+    >>> sequence = Sequential([
+    ...    FIRFilter(numtaps=6, cutoff=(1.0, 10.0), btype="bandpass", dim="time")
+    ... ])
+    >>> result = sequence(da)
+    >>> result["distance"].values
+    <xdas.DataArray (time: 300, distance: 401)>
+    [[-0.000244  0.000312 -0.000386 ...  0.000722 -0.000665  0.001392]
+    [ 0.00554  -0.007003  0.00828  ... -0.015509  0.013836 -0.029197]
+    [ 0.012271 -0.017179  0.029934 ... -0.054504  0.060639 -0.12196 ]
+    ...
+    [ 0.056955 -0.078299 -0.089504 ... -0.020045  0.120977 -0.096129]
+    [-0.027768 -0.105027  0.228342 ...  0.025277  0.035432 -0.081469]
+    [-0.021963 -0.046354  0.186166 ...  0.051622 -0.163209  0.177261]]
+    Coordinates:
+    * time (time): 2022-12-31T23:59:59.960 to 2023-01-01T00:00:05.940
+    * distance (distance): 0.000 to 10000.000
+
+    """
+
     def __init__(
         self,
         numtaps,
