@@ -78,6 +78,8 @@ intersphinx_mapping = {
 # -- Generate dummy data -----------------------------------------------------
 import os
 
+import numpy as np
+
 import xdas as xd
 from xdas.synthetics import generate
 
@@ -90,4 +92,6 @@ chunks = xd.chunk(da, 3)
 dirname = os.path.split(__file__)[0]
 da.to_netcdf(os.path.join(dirname, "_data/sample.nc"))
 for index, chunk in enumerate(chunks, start=1):
-    chunk.to_netcdf(os.path.join(dirname, f"_data/00{index}.nc"))
+    if index == 2:
+        chunk["time"] += np.timedelta64(3, "ms")
+    chunk.to_netcdf(os.path.join(dirname, f"_data/00{index}.h5"))
