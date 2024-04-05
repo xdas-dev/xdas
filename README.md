@@ -12,6 +12,24 @@ xdas is a python library using the xarray API that allows to work with DAS data
 
     pip install xdas
 
+To install from a local repository:
+
+    pip install -e .
+
+To install from a local repository, including optional dependencies:
+
+    pip install -e .[dev,docs,test]
+
 ## Documentation
 
-[https://xdas.readthedocs.io](https://xdas.readthedocs.io)
+The documentation for the stable and latest branches are available at: [https://xdas.readthedocs.io](https://xdas.readthedocs.io)
+
+To compile the documentation locally:
+
+    cd docs/ && make html
+
+The compiled HTML documentation is then found in `docs/_build/html`
+
+## Testing xdas
+
+    cd tests/ && pytest
