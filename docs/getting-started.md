@@ -35,28 +35,48 @@ pip install xdas
 ````
 ````{tab-item} Latest
 ```bash
-pip install "git+https://github.com/xdas-dev/xdas.git@dev"
+pip install "git+https://github.com/xdas-dev xs.git@dev"
 ```
 
 ````
 `````
 
-## How to use xdas
-
 *xdas* must first be imported:
 
 ```{code-cell}
-import xdas as xd
+import xdas 
 ```
+
+### Create a DataArray 
+Link your DAS data to a DataArray:
+
+```{code-cell} 
+da = xdas.open_mfdataarray("00*.h5", engine=None)
+````
+
+If you do not have GPS synchronization during your DAS acquisition, you may have gaps or overlaps between files. With Xdas, you can define a tolerance to what extent you accept to reinterpolate the time to avoid overlaps in the time axis. In the case you have overlaps in time you may have errors when slicing the DataArray. 
+
+```{code-cell} 
+import numpy as np
+da["time"]=da["time"].simplify(np.timedelta64(30,"ms"))
+da.to_netcdf("da.nc", virtual = True)
+
+```
+
+Reading ASN, Febus, Optasense and Sintela data is already implemented and must be specified in engine. You also have the option to develop your own customized [engine](user-guide/engine.md). 
+If you want to create a single DataArray for multiple acquisitions (i.e. different fibers, changing acquisition parameters), you can use the [DataCollection](user-guide/DataCollection.md) object.  
+
+
+### Load DataArray
 
 Data can be fetched from a file:
 
 ```{code-cell} 
-da = xd.open_dataarray("sample.nc")
+da = xdas.open_dataarray("da.nc")
 da
 ```
 
-Label-based selection can be done using the [*xarray* API][xarray API].
+DataArray can be sliced using a Label-based selection:
 
 ```{code-cell}
 da = da.sel(
@@ -66,20 +86,50 @@ da = da.sel(
 da
 ```
 
-Once the selection is small enough data can be loaded into memory:
+Once the selection is small enough data can be loaded into memory or directly used for further processing:
 
 ```{code-cell}
 da = da.load()
 da
 ```
 
-It can be converted to a [`DataArray`][DataArray] object to enables the full use of the 
-*xarray* API (e.g., for plotting):
+### Processing
+
+DataArray can be processed without need to convert it to numpyarray. The methods of DataArray are listed **here Need Link** . Xdas uses the following conventions : (i) instead of providing the axis number, the dimension label must be provided, (ii) a parallel keyword argument may be passed to require multithreading processing. For instance, decimating the DataArray in space and time can we done as : 
+
 
 ```{code-cell}
-da = da.to_xarray()  # Data will be loaded automatically if not already done.
-da.plot(yincrease=False, vmin=-0.5, vmax=0.5);
+import xdas.signal as xs
+da = xs.decimate(da,2,ftype="fir", dim="distance")
+da = xs.decimate(da,2,ftype="iir", dim="time")
 ```
+
+### Plotting
+
+Visualizing your DataArray is convenient:
+
+```{code-cell}
+da.plot(yincrease=False, vmin=-1, vmax=1)
+```
+
+Xdas makes it easy to display data in the spectral domain by renaming the axis as shown in the FK plot: 
+
+```{code-cell}
+import xdas.fft as xfft
+fk = xs.taper(da, dim="distance")
+fk = xs.taper(fk, dim="time")
+fk = xfft.rfft(fk, dim={"time": "frequency"})
+fk = xfft.fft(fk, dim={"distance": "wavenumber"})
+np.abs(fk).plot(robust=True, interpolation="antialiased")
+```
+
+### Saving
+Processed data can be saved as DataArray:
+```{code-cell}
+np.abs(fk).to_netcdf("fk.nc")
+```
+
+
 
 [xarray API]: <https://docs.xarray.dev/en/stable/user-guide/indexing.html>
 [DataArray]: <https://docs.xarray.dev/en/stable/generated/xarray.DataArray.html#xarray.DataArray>

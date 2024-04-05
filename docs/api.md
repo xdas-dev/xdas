@@ -44,4 +44,6 @@
 
    xdas.atoms.Partial
    xdas.atoms.Sequential
+   xdas.atoms.IIRFilter
+   xdas.atoms.ResamplePoly
 ```

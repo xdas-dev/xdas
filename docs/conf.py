@@ -81,6 +81,7 @@ import os
 import h5py
 import numpy as np
 import xdas as xd
+import numpy as np
 from xdas.synthetics import generate
 
 dirpath = "_data"
@@ -90,9 +91,11 @@ if not os.path.exists(dirpath):
 da = generate()
 chunks = xd.chunk(da, 3)
 dirname = os.path.split(__file__)[0]
-da.to_netcdf(os.path.join(dirname, "_data/sample.nc"))
+da.to_netcdf(os.path.join(dirname, "_data/sample.h5"))
 for index, chunk in enumerate(chunks, start=1):
-    chunk.to_netcdf(os.path.join(dirname, f"_data/00{index}.nc"))
+    if index==2:
+        chunk["time"]+= np.timedelta64(3,"ms")
+    chunk.to_netcdf(os.path.join(dirname, f"_data/00{index}.h5"))
 
 
 data = np.random.rand(20, 10)

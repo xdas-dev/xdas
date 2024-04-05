@@ -11,6 +11,74 @@ from .core import Atom, State
 
 
 class ResamplePoly(Atom):
+    """
+    Pipeline implementation of polyphase-filter resampling from the
+    original sampling rate to the ``target`` sampling rate.
+
+    This is achieved by an upsampling of the data, 
+    followed by the application of a low-pass FIR filter,
+    and finally by downsampling of the data. The ratio of the
+    up and downsampling factors equals the target sampling rate over
+    the original sampling rate.
+
+    Parameters
+    ----------
+
+    target : float
+        The target sampling rate of the new data
+    maxfactor : int
+        Limit the initial upsampling by this factor, to avoid
+        accidental memory overflow. Default: 100
+    window : str or tuple of string and parameter values
+        The window function to apply befor FIR filtering. If a
+        tuple is given, it needs to be compatible with ``scipy.signal.get_window``.
+        Default: ``("kaiser", 5.0)``
+    dim : str or int
+        The dimension along which the downsampling is applied.
+        This is either an index, ``time`` or ``distance``, or ``last``.
+        Default: ``last``
+    
+    Examples
+    --------
+    >>> from xdas.synthetics import generate
+    >>> from xdas.atoms import Sequential, ResamplePoly
+    >>> da = generate()
+
+    Using ``ResamplePoly`` directly:
+
+    >>> # Downsample time to 1 Hz
+    >>> da2 = ResamplePoly(target=1., dim="time")(da)
+    >>> da2["time"].values
+    array(['2022-12-31T23:59:50.000000000', '2022-12-31T23:59:51.000000000',
+        '2022-12-31T23:59:52.000000000', '2022-12-31T23:59:53.000000000',
+        '2022-12-31T23:59:54.000000000', '2022-12-31T23:59:55.000000000'],
+        dtype='datetime64[ns]')
+
+    Using ``ResamplePoly`` as an atom in ``Sequential``:
+
+    >>> # Downsample distance to 100m spacing
+    >>> sequence = Sequential([
+    ...    ResamplePoly(target=1/100., window=("tukey", 0.1), dim="distance")
+    ... ])
+    >>> result = sequence(da)
+    >>> result["distance"].values
+    array([-1000.,  -900.,  -800.,  -700.,  -600.,  -500.,  -400.,  -300.,
+            -200.,  -100.,     0.,   100.,   200.,   300.,   400.,   500.,
+            600.,   700.,   800.,   900.,  1000.,  1100.,  1200.,  1300.,
+            1400.,  1500.,  1600.,  1700.,  1800.,  1900.,  2000.,  2100.,
+            2200.,  2300.,  2400.,  2500.,  2600.,  2700.,  2800.,  2900.,
+            3000.,  3100.,  3200.,  3300.,  3400.,  3500.,  3600.,  3700.,
+            3800.,  3900.,  4000.,  4100.,  4200.,  4300.,  4400.,  4500.,
+            4600.,  4700.,  4800.,  4900.,  5000.,  5100.,  5200.,  5300.,
+            5400.,  5500.,  5600.,  5700.,  5800.,  5900.,  6000.,  6100.,
+            6200.,  6300.,  6400.,  6500.,  6600.,  6700.,  6800.,  6900.,
+            7000.,  7100.,  7200.,  7300.,  7400.,  7500.,  7600.,  7700.,
+            7800.,  7900.,  8000.,  8100.,  8200.,  8300.,  8400.,  8500.,
+            8600.,  8700.,  8800.,  8900.,  9000.])
+
+    .. warning:: 
+        The default ``dim`` value ``last`` does not work...
+    """
     def __init__(self, target, maxfactor=100, window=("kaiser", 5.0), dim="last"):
         super().__init__()
         self.target = target
@@ -48,11 +116,38 @@ class ResamplePoly(Atom):
 
 
 class IIRFilter(Atom):
+    """
+    Pipeline implementation of an IIR filter.
+
+    Parameters
+    ----------
+    order : int
+        The order (number of corners) of the IIR filter
+    cutoff : float or tuple
+        The frequency cut-off of the filter. In the case
+        of a low/high-pass filter, ``cutoff`` is a single number.
+        In the case of a bandpass filter, ``cutoff`` is a tuple of
+        two number (the upper and lower cut-off frequency, resp.).
+    btype : str
+        The type of the filter band. Valid options are:
+            - ``lowpass``: removing frequencies above ``cutoff``
+            - ``highpass``: removing frequencies below ``cutoff``
+            - ``bandpass`` (default): removing frequencies below ``cutoff[0]`` and above ``cutoff[1]``
+    ftype : str
+        The IIR filter type. Default: ``butter``
+    stype : str
+        Form of the output of the filter design. Default: ``sos``
+    rp : ?
+        ???. Default: ``None``
+    rs : ?
+        ???. Default: ``None``
+
+    """
     def __init__(
         self,
         order,
         cutoff,
-        btype="band",
+        btype="bandpass",
         ftype="butter",
         stype="sos",
         rp=None,
