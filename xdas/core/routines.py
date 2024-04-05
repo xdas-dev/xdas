@@ -14,7 +14,41 @@ from .dataarray import DataArray
 from .datacollection import DataCollection
 
 
-def open_mfdatacollection(paths):
+def open_mfdatacollection(
+    paths, dim="first", tolerance=None, squeeze=False, verbose=False
+):
+    """
+    Open a multiple file DataCollection.
+
+    Files matching the wildcarded `paths` string will be opened and combined into one
+    data collection. Each opened file must be a DataCollection. The data arrays nested
+    inside the data collections are concatenated by their position within the data
+    collection hierarchy using `combine_by_field`.
+
+    For exemple, it can be used to combine daily data collections into one master
+    data collection.
+
+    Parameters
+    ----------
+    paths : str or list
+        The path names given as a shell-style wildcards string or a list of paths.
+    dim : str, optional
+        The dimension along which the data arrays are concatenated. Default to "first".
+    tolerance : float of timedelta64, optional
+        During concatenation, the tolerance to consider that the end of a file is
+        continuous with beginning of the following one. Default to zero tolerance.
+    squeeze : bool, optional
+        Whether to return a DataArray instead of a DataCollection if the combination
+        results in a data collection containing a unique data array.
+    verbose: bool
+        Whether to display a progress bar. Default to False.
+
+    Returns
+    -------
+    DataCollection
+        The combined data collection
+
+    """
     if isinstance(paths, str):
         paths = sorted(glob(paths))
     elif isinstance(paths, list):
@@ -34,7 +68,7 @@ def open_mfdatacollection(paths):
         )
     with ProcessPoolExecutor() as executor:
         futures = [executor.submit(open_datacollection, path) for path in paths]
-        dcs = [
+        objs = [
             future.result()
             for future in tqdm(
                 as_completed(futures),
@@ -42,33 +76,45 @@ def open_mfdatacollection(paths):
                 desc="Fetching metadata from files",
             )
         ]
-    return combine(dcs)
+    return combine_by_field(objs, dim, tolerance, squeeze, True, verbose)
 
 
-def open_treedatacollection(paths, engine=None):
+def open_treedatacollection(
+    paths, dim="first", tolerance=None, squeeze=False, engine=None, verbose=False
+):
     """
-    Open directory tree structures as data collections.
+    Open a directory tree structure as a data collection.
 
-    The resulting data collection will be a nesting of dicts down to the lower level
+    The tree structure is descirebed by a path descriptor provided as a string
+    containings placeholders. Two flavours of placeholder can be provided:
+
+    - `{field}`: this level of the tree will behave as a dict. It will use the
+    directory/file names as keys.
+    - `[field]`: this level of the tree will behave as a list. The directory/file
+    names are not considered (as if the placeholder was replaced by a `*`) and
+    files are gathered and combined as if using `open_mfdataarray`.
+
+    Several dict placeholders with different names can be provided. They must be
+    followed by one or more list placeholders that must share a unique name. The
+    resulting data collection will be a nesting of dicts down to the lower level
     which will be a list of dataarrays.
 
     Parameters
     ----------
     paths : str
-        A path descriptor provided as a string containings placeholders that describes
-        the tree structure.
-        Two flavours of placeholder can be provided:
-        - `{field}`: this level of the tree will behave as a dict. It will use the
-        directory/file names as keys.
-        - `[field]`: this level of the tree will behave as a list. The directory/file
-        names are not considered (as if the placeholder was replaced by a `*`) and
-        files are gathered and combined as if using `open_mfdataarray`.
-
-        Several dict placeholders with different names can be provided. They must be
-        followed by one or more list placeholders that must share a unique name.
-
-    engine: str
-        The type of file to open.
+        The path descriptor.
+    dim : str, optional
+        The dimension along which the data arrays are concatenated. Default to "first".
+    tolerance : float of timedelta64, optional
+        During concatenation, the tolerance to consider that the end of a file is
+        continuous with beginning of the following one. Default to zero tolerance.
+    squeeze : bool, optional
+        Whether to return a DataArray instead of a DataCollection if the combination
+        results in a data collection containing a unique data array.
+    engine: str of callable, optional
+        The type of file to open or a read function. Default to xdas netcdf format.
+    verbose: bool
+        Whether to display a progress bar. Default to False.
 
     Returns
     -------
@@ -131,10 +177,12 @@ def open_treedatacollection(paths, engine=None):
             bag = bag[match.group(field)]
         bag.append(fname)
 
-    return collect(tree, fields, engine)
+    return collect(tree, fields, dim, tolerance, squeeze, engine, verbose)
 
 
-def collect(tree, fields, engine=None):
+def collect(
+    tree, fields, dim="first", tolerance=None, squeeze=False, engine=None, verbose=False
+):
     """
     Collects the data from a tree of paths using `fields` as level names.
 
@@ -144,8 +192,19 @@ def collect(tree, fields, engine=None):
         The paths grouped in a tree hierarchy.
     fields : tuple of str
         The names of the levels of the tree hierarchy.
-    engine : str
-        The engine used to open files.
+    dim : str, optional
+        The dimension along which the data arrays are concatenated. Default to "first".
+    tolerance : float of timedelta64, optional
+        During concatenation, the tolerance to consider that the end of a file is
+        continuous with beginning of the following one. Default to zero tolerance.
+    squeeze : bool, optional
+        Whether to return a DataArray instead of a DataCollection if the combination
+        results in a data collection containing a unique data array.
+    engine: str of callable, optional
+        The type of file to open or a read function. Default to xdas netcdf format.
+    verbose: bool
+        Whether to display a progress bar. Default to False.
+
 
     Returns
     -------
@@ -157,11 +216,13 @@ def collect(tree, fields, engine=None):
     collection = DataCollection({}, name=name)
     for key, value in tree.items():
         if isinstance(value, list):
-            dc = open_mfdataarray(value, engine, squeeze=False)
+            dc = open_mfdataarray(value, dim, tolerance, squeeze, engine, verbose)
             dc.name = fields[0]
             collection[key] = dc
         else:
-            collection[key] = collect(value, fields, engine)
+            collection[key] = collect(
+                value, fields, dim, tolerance, squeeze, engine, verbose
+            )
     return collection
 
 
@@ -173,7 +234,9 @@ def defaulttree(depth):
         return defaultdict(lambda: defaulttree(depth - 1))
 
 
-def open_mfdataarray(paths, engine=None, tolerance=None, squeeze=True, verbose=False):
+def open_mfdataarray(
+    paths, dim="first", tolerance=None, squeeze=True, engine=None, verbose=False
+):
     """
     Open a multiple file dataarray.
 
@@ -181,11 +244,18 @@ def open_mfdataarray(paths, engine=None, tolerance=None, squeeze=True, verbose=F
     ----------
     paths : str or list
         The path names given as a shell-style wildcards string or a list of paths.
-    engine : str
-        The engine to use to read the file.
-    tolerance : float or timedelta64, optional
-        The tolerance to consider that the end of a file is continuous with the begging
-        of the following
+    dim : str, optional
+        The dimension along which the data arrays are concatenated. Default to "first".
+    tolerance : float of timedelta64, optional
+        During concatenation, the tolerance to consider that the end of a file is
+        continuous with beginning of the following one. Default to zero tolerance.
+    squeeze : bool, optional
+        Whether to return a DataArray instead of a DataCollection if the combination
+        results in a data collection containing a unique data array.
+    engine: str of callable, optional
+        The type of file to open or a read function. Default to xdas netcdf format.
+    verbose: bool
+        Whether to display a progress bar. Default to False.
 
     Returns
     -------
@@ -218,7 +288,7 @@ def open_mfdataarray(paths, engine=None, tolerance=None, squeeze=True, verbose=F
         futures = [
             executor.submit(open_dataarray, path, engine=engine) for path in paths
         ]
-        das = [
+        objs = [
             future.result()
             for future in tqdm(
                 as_completed(futures),
@@ -226,109 +296,7 @@ def open_mfdataarray(paths, engine=None, tolerance=None, squeeze=True, verbose=F
                 desc="Fetching metadata from files",
             )
         ]
-    return aggregate(das, "time", tolerance, squeeze, None, verbose)
-
-
-def combine(
-    dcs, dim="first", tolerance=None, squeeze=False, virtual=None, verbose=False
-):
-    leaves = [dc for dc in dcs if isinstance(dc, list)]
-    nodes = [dc for dc in dcs if isinstance(dc, dict)]
-    if leaves and not nodes:
-        das = [da for dc in leaves for da in dc]
-        dc = aggregate(das, dim, tolerance, squeeze, virtual, verbose)
-        dc.name = leaves[0].name
-        return dc
-    elif nodes and not leaves:
-        (name,) = set(dc.name for dc in nodes)
-        keys = sorted(set.union(*[set(dc.keys()) for dc in nodes]))
-        return DataCollection(
-            {key: combine([dc[key] for dc in dcs if key in dc]) for key in keys},
-            name,
-        )
-    else:
-        raise NotImplementedError("cannot combine mixed node/leave levels for now")
-
-
-def aggregate(
-    das, dim="first", tolerance=None, squeeze=False, virtual=None, verbose=False
-):
-    das = sorted(das, key=lambda da: da[dim][0].values)
-    out = []
-    bag = []
-    for da in das:
-        if not bag:
-            bag = [da]
-        elif da.coords.drop(dim).equals(bag[-1].coords.drop(dim)) and (
-            get_sampling_interval(da, dim) == get_sampling_interval(bag[-1], dim)
-        ):
-            bag.append(da)
-        else:
-            out.append(bag)
-            bag = [da]
-    out.append(bag)
-    collection = DataCollection(
-        [concatenate(bag, dim, tolerance, virtual, verbose) for bag in out]
-    )
-    if squeeze and len(collection) == 1:
-        return collection[0]
-    else:
-        return collection
-
-
-def concatenate(das, dim="first", tolerance=None, virtual=None, verbose=None):
-    """
-    Concatenate several dataarrays along a given dimension.
-
-    Parameters
-    ----------
-    das : list
-        List of dataarrays to concatenate.
-    dim : str
-        The dimension along which concatenate.
-    tolerance : float of timedelta64, optional
-        The tolerance to consider that the end of a file is continuous with beginning of
-        the following, zero by default.
-    virtual : bool, optional
-        Whether to create a virtual dataset. It requires that all concatenated
-        dataarrays are virtual. By default tries to create a virtual dataset if possible.
-
-    Returns
-    -------
-    DataArray
-        The concatenated dataarray.
-    """
-    das = [da for da in das if not da.empty]
-    if virtual is None:
-        virtual = all(isinstance(da.data, (VirtualSource, VirtualStack)) for da in das)
-    if not all(isinstance(da[dim], InterpCoordinate) for da in das):
-        raise NotImplementedError("can only concatenate along interpolated coordinate")
-    axis = das[0].get_axis_num(dim)
-    dim = das[0].dims[axis]
-    coords = das[0].coords.copy()
-    das = sorted(das, key=lambda da: da[dim][0].values)
-    iterator = tqdm(das, desc="Linking dataarray") if verbose else das
-    data = []
-    tie_indices = []
-    tie_values = []
-    idx = 0
-    for da in iterator:
-        if isinstance(da.data, VirtualStack):
-            for source in da.data.sources:
-                data.append(source)
-        else:
-            data.append(da.data)
-        tie_indices.extend(idx + da[dim].tie_indices)
-        tie_values.extend(da[dim].tie_values)
-        idx += da.shape[axis]
-    if virtual:
-        data = VirtualStack(data, axis)
-    else:
-        data = np.concatenate(data, axis)
-    coords[dim] = InterpCoordinate(
-        {"tie_indices": tie_indices, "tie_values": tie_values}, dim
-    ).simplify(tolerance)
-    return DataArray(data, coords)
+    return combine_by_coords(objs, dim, tolerance, squeeze, True, verbose)
 
 
 def open_dataarray(fname, group=None, engine=None, **kwargs):
@@ -342,8 +310,8 @@ def open_dataarray(fname, group=None, engine=None, **kwargs):
     group : str, optional
         The file group where the dataarray is located, by default None which corresponds
         to the root of the file.
-    engine : str, optional
-        The file format, by default None.
+    engine: str of callable, optional
+        The type of file to open or a read function. Default to xdas netcdf format.
 
     Returns
     -------
@@ -375,7 +343,7 @@ def open_dataarray(fname, group=None, engine=None, **kwargs):
         raise ValueError("engine not recognized")
 
 
-def open_datacollection(fname, **kwargs):
+def open_datacollection(fname, group=None):
     """
     Open a DataCollection from a file.
 
@@ -396,7 +364,7 @@ def open_datacollection(fname, **kwargs):
     """
     if not os.path.exists(fname):
         raise FileNotFoundError("no file to open")
-    return DataCollection.from_netcdf(fname, **kwargs)
+    return DataCollection.from_netcdf(fname, group)
 
 
 def asdataarray(obj, tolerance=None):
@@ -429,6 +397,178 @@ def asdataarray(obj, tolerance=None):
         return DataArray.from_xarray(obj)
     else:
         raise ValueError("Cannot convert to dataarray.")
+
+
+def combine_by_field(
+    objs, dim="first", tolerance=None, squeeze=False, virtual=None, verbose=False
+):
+    """
+    Combine data collections by field along a dimension.
+
+    The data arrays nested into each data collections are first grouped by their
+    hierachical position. Data sequences are appended to each other such as each group
+    consist of a list of data arrays which order is first given by the order of the
+    `objs` data collections, and second by the order of the data array within its data
+    sequence (if part of any sequence). Each group is eventually combined using
+    `combined_by_coords`.
+
+    Parameters
+    ----------
+    objs : list of DataCollection
+        The data collections to combine.
+    dim : str, optional
+        The dimension along which concatenate. Default to "first".
+    tolerance : float of timedelta64, optional
+        The tolerance to consider that the end of a file is continuous with beginning of
+        the following, zero by default.
+    squeeze : bool, optional
+        Whether to return a Database instead of a DataCollection if the combinatison
+        results in a data collection containing a unique Database.
+    virtual : bool, optional
+        Whether to create a virtual dataset. It requires that all concatenated
+        dataarrays are virtual. By default tries to create a virtual dataset if possible.
+    verbose: bool
+        Whether to display a progress bar. Default to False.
+
+    Returns
+    -------
+    DataCollection
+        The combined data collection.
+
+    """
+    leaves = [dc for dc in objs if isinstance(dc, list)]
+    nodes = [dc for dc in objs if isinstance(dc, dict)]
+    if leaves and not nodes:
+        objs = [da for dc in leaves for da in dc]
+        dc = combine_by_coords(objs, dim, tolerance, squeeze, virtual, verbose)
+        dc.name = leaves[0].name
+        return dc
+    elif nodes and not leaves:
+        (name,) = set(dc.name for dc in nodes)
+        keys = sorted(set.union(*[set(dc.keys()) for dc in nodes]))
+        return DataCollection(
+            {
+                key: combine_by_field([dc[key] for dc in objs if key in dc])
+                for key in keys
+            },
+            name,
+        )
+    else:
+        raise NotImplementedError("cannot combine mixed node/leave levels for now")
+
+
+def combine_by_coords(
+    objs, dim="first", tolerance=None, squeeze=False, virtual=None, verbose=False
+):
+    """
+    Combine several data arrays by coordinates.
+
+    The list `objs` if traversed and data arrays are grouped together as long as they
+    share compatible coordinates. If a change is detected a new group is created. Shape
+    compatibiliy implies same sampling interval along the combination dimension and
+    exact equality along other dimensions. Each group is then concatenated.
+
+    Parameters
+    ----------
+    objs : list of DataArray
+        The data arrays to combine.
+    dim : str, optional
+        The dimension along which concatenate. Default to "first".
+    tolerance : float of timedelta64, optional
+        The tolerance to consider that the end of a file is continuous with beginning of
+        the following, zero by default.
+    squeeze : bool, optional
+        Whether to return a Database instead of a DataCollection if the combinatison
+        results in a data collection containing a unique Database.
+    virtual : bool, optional
+        Whether to create a virtual dataset. It requires that all concatenated
+        dataarrays are virtual. By default tries to create a virtual dataset if possible.
+    verbose: bool
+        Whether to display a progress bar. Default to False.
+
+    Returns
+    -------
+    DataSequence or DataArray
+        The combined data arrays.
+    """
+    objs = sorted(objs, key=lambda da: da[dim][0].values)
+    out = []
+    bag = []
+    for da in objs:
+        if not bag:
+            bag = [da]
+        elif da.coords.drop(dim).equals(bag[-1].coords.drop(dim)) and (
+            get_sampling_interval(da, dim) == get_sampling_interval(bag[-1], dim)
+        ):
+            bag.append(da)
+        else:
+            out.append(bag)
+            bag = [da]
+    out.append(bag)
+    collection = DataCollection(
+        [concatenate(bag, dim, tolerance, virtual, verbose) for bag in out]
+    )
+    if squeeze and len(collection) == 1:
+        return collection[0]
+    else:
+        return collection
+
+
+def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
+    """
+    Concatenate dataarrays along a given dimension.
+
+    Parameters
+    ----------
+    objs : list of DataArray
+        List of dataarrays to concatenate.
+    dim : str
+        The dimension along which concatenate.
+    tolerance : float of timedelta64, optional
+        The tolerance to consider that the end of a file is continuous with beginning of
+        the following, zero by default.
+    virtual : bool, optional
+        Whether to create a virtual dataset. It requires that all concatenated
+        dataarrays are virtual. By default tries to create a virtual dataset if possible.
+    verbose: bool
+        Whether to display a progress bar.
+
+    Returns
+    -------
+    DataArray
+        The concatenated dataarray.
+    """
+    objs = [da for da in objs if not da.empty]
+    if virtual is None:
+        virtual = all(isinstance(da.data, (VirtualSource, VirtualStack)) for da in objs)
+    if not all(isinstance(da[dim], InterpCoordinate) for da in objs):
+        raise NotImplementedError("can only concatenate along interpolated coordinate")
+    axis = objs[0].get_axis_num(dim)
+    dim = objs[0].dims[axis]
+    coords = objs[0].coords.copy()
+    objs = sorted(objs, key=lambda da: da[dim][0].values)
+    iterator = tqdm(objs, desc="Linking dataarray") if verbose else objs
+    data = []
+    tie_indices = []
+    tie_values = []
+    idx = 0
+    for da in iterator:
+        if isinstance(da.data, VirtualStack):
+            for source in da.data.sources:
+                data.append(source)
+        else:
+            data.append(da.data)
+        tie_indices.extend(idx + da[dim].tie_indices)
+        tie_values.extend(da[dim].tie_values)
+        idx += da.shape[axis]
+    if virtual:
+        data = VirtualStack(data, axis)
+    else:
+        data = np.concatenate(data, axis)
+    coords[dim] = InterpCoordinate(
+        {"tie_indices": tie_indices, "tie_values": tie_values}, dim
+    ).simplify(tolerance)
+    return DataArray(data, coords)
 
 
 def split(da, divpoints="discontinuities", dim="first", tolerance=None):

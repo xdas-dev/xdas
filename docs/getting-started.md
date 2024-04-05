@@ -13,10 +13,9 @@ os.chdir("_data")
 
 # Getting Started   
 
-## Welcome to xdas!
+## Welcome to Xdas!
 
-*xdas* is an open source Python library that's used to work with huge labeled
-N-dimensional arrays as it is the case in Distributed Acoustic Sensing (DAS). *xdas* API
+ *Xdas* is an open source Python library that's used to work with huge labeled N-dimensional arrays as it is the case in Distributed Acoustic Sensing (DAS). *Xdas* API
 is highly inspired by the *xarray* project. It provides *xarray* like objects with custom
 functionalities that enable to deal with big multi-file netCDF4/HDF5 dataset with
 generally one very long dimension (usually time). It provides the classical signal
