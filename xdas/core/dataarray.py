@@ -309,7 +309,7 @@ class DataArray:
         Returns
         -------
         DataArray
-            The selected part of the original database.
+            The selected part of the original data array.
         """
         if indexers is None:
             indexers = {}
@@ -413,7 +413,7 @@ class DataArray:
         Returns
         -------
         Stream
-            the obspy stream version of the database.
+            the obspy stream version of the data array.
 
         """
         dimdist, dimtime = dim.copy().popitem()
@@ -424,7 +424,7 @@ class DataArray:
         except ImportError:
             raise ImportError("obspy is not installed. Please install it.")
         if not self.ndim == 2:
-            raise ValueError("the database must be 2D")
+            raise ValueError("the data array must be 2D")
         starttime = UTCDateTime(str(self[dimtime][0].values))
         delta = get_sampling_interval(self, dimtime)
         band_code = get_band_code(1.0 / delta)

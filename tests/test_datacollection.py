@@ -5,6 +5,7 @@ import h5py
 import pytest
 
 import xdas
+import xdas.signal as xs
 from xdas.core.datacollection import get_depth
 from xdas.synthetics import generate
 
@@ -109,7 +110,15 @@ class TestDataCollection:
         result = dc.query(acquisition=slice(0, 2))
         assert result.equals(dc)
 
-    def test_fiels(self):
+    def test_fields(self):
         da = generate()
         dc = self.nest(da)
         assert dc.fields == ("instrument", "acquisition")
+
+    def test_map(self):
+        da = generate()
+        dc = self.nest(da)
+        atom = xs.decimate(..., 2, ftype="fir")
+        result = dc.map(atom)
+        expected = self.nest(atom(da))
+        assert result.equals(expected)

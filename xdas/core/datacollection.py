@@ -269,6 +269,27 @@ class DataMapping(DataCollection, dict):
         return True
 
     def sel(self, indexers=None, method=None, endpoint=True, **indexers_kwargs):
+        """
+        Perform labeled selection to each data array of the data collection.
+
+        If a selection results in a empty data array, the data array is discarted.
+
+        See DataArray.sel for more details.
+
+        Parameters
+        ----------
+        indexers : dict, optional
+            A dict with keys matching dimensions and values given by scalars, slices or
+            arrays of tick labels.
+        **indexers_kwargs : dict, optional
+            The keyword arguments form of integers. Overwrite indexers input if both
+            are provided.
+
+        Returns
+        -------
+        The selected data collection.
+
+        """
         data = {
             key: value.sel(indexers, method, endpoint, **indexers_kwargs)
             for key, value in self.items()
@@ -281,7 +302,43 @@ class DataMapping(DataCollection, dict):
         return self.__class__(data, self.name)
 
     def load(self):
+        """
+        Load in memory each data array of the data collection.
+
+        See `DataArray.load` for more details
+
+        Returns
+        -------
+        The loaded data collection.
+
+        """
         data = {key: value.load() for key, value in self.items()}
+        return self.__class__(data, self.name)
+
+    def map(self, atom):
+        """
+        Apply an atom to each data array of the data collection
+
+        Parameters
+        ----------
+        atom: Atom or callable
+            The atom to apply, i.e, a function that takes a unique data array argument
+            and returns a unique data array output.
+
+        Returns
+        -------
+        DataCollection
+            Resulting processed data collection.
+
+        """
+        data = {}
+        for key, obj in self.items():
+            if isinstance(obj, DataArray):
+                data[key] = atom(obj)
+            elif isinstance(obj, DataCollection):
+                data[key] = obj.map(atom)
+            else:
+                raise TypeError(f"{type(obj)} encountered in the collection")
         return self.__class__(data, self.name)
 
 
@@ -340,6 +397,27 @@ class DataSequence(DataCollection, list):
         return True
 
     def sel(self, indexers=None, method=None, endpoint=True, **indexers_kwargs):
+        """
+        Perform labeled selection to each data array of the data collection.
+
+        If a selection results in a empty data array, the data array is discarted.
+
+        See DataArray.sel for more details.
+
+        Parameters
+        ----------
+        indexers : dict, optional
+            A dict with keys matching dimensions and values given by scalars, slices or
+            arrays of tick labels.
+        **indexers_kwargs : dict, optional
+            The keyword arguments form of integers. Overwrite indexers input if both
+            are provided.
+
+        Returns
+        -------
+        The selected data collection.
+
+        """
         data = [
             value.sel(indexers, method, endpoint, **indexers_kwargs) for value in self
         ]
@@ -351,7 +429,43 @@ class DataSequence(DataCollection, list):
         return self.__class__(data, self.name)
 
     def load(self):
+        """
+        Load in memory each data array of the data collection.
+
+        See `DataArray.load` for more details
+
+        Returns
+        -------
+        The loaded data collection.
+
+        """
         data = [value.load() for value in self]
+        return self.__class__(data, self.name)
+
+    def map(self, atom):
+        """
+        Apply an atom to each data array of the data collection
+
+        Parameters
+        ----------
+        atom: Atom or callable
+            The atom to apply, i.e, a function that takes a unique data array argument
+            and returns a unique data array output.
+
+        Returns
+        -------
+        DataCollection
+            Resulting processed data collection.
+
+        """
+        data = []
+        for obj in self:
+            if isinstance(obj, DataArray):
+                data.append(atom(obj))
+            elif isinstance(obj, DataCollection):
+                data.append(obj.map(atom))
+            else:
+                raise TypeError(f"{type(obj)} encountered in the collection")
         return self.__class__(data, self.name)
 
 
