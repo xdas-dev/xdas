@@ -7,7 +7,41 @@ from .parallel import parallelize
 
 
 @atomized
-def fft(da, n=None, dim={"last": "frequency"}, norm=None, parallel=None):
+def fft(da, n=None, dim={"last": "spectrum"}, norm=None, parallel=None):
+    """
+    Compute the discrete Fourier Transform along a given dimension.
+
+    This function computes the one-dimensional n-point discrete Fourier Transform (DFT)
+    with the efficient Fast Fourier Transform (FFT) algorithm.
+
+    Parameters
+    ----------
+    da: DataArray
+        The data array to process, can be complex.
+    n: int, optional
+        Length of transformed dimension of the output. If n is smaller than the length
+        of the input, the input is cropped. If it is larger, the input is padded with
+        zeros. If n is not given, the length of the input along the dimension specified
+        by `dim` is used.
+    dim: {str: str}, optional
+        A mapping indicating as a key the dimension along which to compute the FFT, and
+        as value the new name of the dimension. Default to {"last": "spectrum"}.
+    norm: {“backward”, “ortho”, “forward”}, optional
+        Normalization mode (see `numpy.fft`). Default is "backward". Indicates which
+        direction of the forward/backward pair of transforms is scaled and with what
+        normalization factor.
+
+    Returns
+    -------
+    DataArray:
+        The transformed input with an updated dimension name and values.
+
+    Notes
+    -----
+    To perform a multidimensional fourrier transform, repeat this function on the
+    desired dimensions.
+
+    """
     ((olddim, newdim),) = dim.items()
     olddim = da.dims[da.get_axis_num(olddim)]
     if n is None:
@@ -29,6 +63,41 @@ def fft(da, n=None, dim={"last": "frequency"}, norm=None, parallel=None):
 
 @atomized
 def rfft(da, n=None, dim={"last": "frequency"}, norm=None, parallel=None):
+    """
+    Compute the discrete Fourier Transform  for real inputs along a given dimension.
+
+    This function computes the one-dimensional n-point discrete Fourier Transform (DFT)
+    or real-valued inputs with the efficient Fast Fourier Transform (FFT) algorithm.
+
+    Parameters
+    ----------
+    da: DataArray
+        The data array to process, can be complex.
+    n: int, optional
+        Length of transformed dimension of the output. If n is smaller than the length
+        of the input, the input is cropped. If it is larger, the input is padded with
+        zeros. If n is not given, the length of the input along the dimension specified
+        by `dim` is used.
+    dim: {str: str}, optional
+        A mapping indicating as a key the dimension along which to compute the FFT, and
+        as value the new name of the dimension. Default to {"last": "spectrum"}.
+    norm: {“backward”, “ortho”, “forward”}, optional
+        Normalization mode (see `numpy.fft`). Default is "backward". Indicates which
+        direction of the forward/backward pair of transforms is scaled and with what
+        normalization factor.
+
+    Returns
+    -------
+    DataArray:
+        The transformed input with an updated dimension name and values. The length of
+        the transformed dimension is (n/2)+1 if n is even or (n+1)/2 if n is odd.
+
+    Notes
+    -----
+    To perform a multidimensional fourrier transform, repeat this function on the
+    desired dimensions.
+
+    """
     ((olddim, newdim),) = dim.items()
     olddim = da.dims[da.get_axis_num(olddim)]
     if n is None:

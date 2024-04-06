@@ -156,6 +156,22 @@ class DataCollection:
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
+        """
+        Lazily read a data collection from a NetCDF file.
+
+        Parameters
+        ----------
+        fname: str
+            The path of the file to open.
+        group: str, optional
+            The location of the data collection within the file. Root by default.
+
+        Returns
+        -------
+        DataCollection:
+            The opened data collection.
+
+        """
         self = DataMapping.from_netcdf(fname, group)
         try:
             keys = [int(key) for key in self.keys()]

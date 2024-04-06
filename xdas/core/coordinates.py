@@ -698,6 +698,8 @@ def get_sampling_interval(da, dim, cast=True):
         The data from which extract the sample spacing.
     dim : str
         The dimension along which get the sample spacing.
+    cast: bool, optional
+        Wether to cast datetime64 to seconds, by default True.
 
     Returns
     -------
