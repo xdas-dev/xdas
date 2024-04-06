@@ -269,12 +269,6 @@ class DataArray:
         indexers : dict, optional
             A dict with keys matching dimensions and values given by integers, slice
             objects or arrays.
-        method : {None, "nearest", "ffill", "bfill"}, optional
-            Method to use for inexact matches:
-            - None (default): only exact matches
-            - nearest: use nearest valid index value
-            - ffill: propagate last valid index value forward
-            - bfill: propagate next valid index value backward
         **indexers_kwargs : dict, optional
             The keyword arguments form of integers. Overwrite indexers input if both
             are provided.

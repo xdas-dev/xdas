@@ -84,12 +84,22 @@ class TestDataCollection:
                 with pytest.raises(ValueError):
                     get_depth(file["instrument/das1/acquisition/0/da"]) == 0
 
+    def test_isel(self):
+        da = generate()
+        dc = self.nest(da)
+        da_isel = da.isel(distance=slice(100, 200))
+        dc_isel = dc.isel(distance=slice(100, 200))
+        assert self.nest(da_isel).equals(dc_isel)
+        dc_isel = dc.isel(distance=slice(2000, 3000))
+        assert dc_isel["das1"].empty
+        assert dc_isel["das2"].empty
+
     def test_sel(self):
         da = generate()
         dc = self.nest(da)
         da_sel = da.sel(distance=slice(1000, 2000))
         dc_sel = dc.sel(distance=slice(1000, 2000))
-        assert dc_sel["das1"][0].equals(da_sel)
+        assert self.nest(da_sel).equals(dc_sel)
         dc_sel = dc.sel(distance=slice(20000, 30000))
         assert dc_sel["das1"].empty
         assert dc_sel["das2"].empty

@@ -268,6 +268,38 @@ class DataMapping(DataCollection, dict):
             return False
         return True
 
+    def isel(self, indexers=None, **indexers_kwargs):
+        """
+        Perform index selection to each data array of the data collection.
+
+        If a selection results in a empty data array, the data array is discarted.
+
+        See `DataArray.isel` for more details.
+
+        Parameters
+        ----------
+        indexers : dict, optional
+            A dict with keys matching dimensions and values given by integers, slice
+            objects or arrays.
+        **indexers_kwargs : dict, optional
+            The keyword arguments form of integers. Overwrite indexers input if both
+            are provided.
+
+        Returns
+        -------
+        DataCollection
+            The selected data collection.
+        """
+        data = {
+            key: value.isel(indexers, **indexers_kwargs) for key, value in self.items()
+        }
+        data = {
+            key: value
+            for key, value in data.items()
+            if (isinstance(value, DataCollection) or not value.empty)
+        }
+        return self.__class__(data, self.name)
+
     def sel(self, indexers=None, method=None, endpoint=True, **indexers_kwargs):
         """
         Perform labeled selection to each data array of the data collection.
@@ -395,6 +427,36 @@ class DataSequence(DataCollection, list):
         if not all(a.equals(b) for a, b in zip(self, other)):
             return False
         return True
+
+    def isel(self, indexers=None, **indexers_kwargs):
+        """
+        Perform index selection to each data array of the data collection.
+
+        If a selection results in a empty data array, the data array is discarted.
+
+        See `DataArray.isel` for more details.
+
+        Parameters
+        ----------
+        indexers : dict, optional
+            A dict with keys matching dimensions and values given by integers, slice
+            objects or arrays.
+        **indexers_kwargs : dict, optional
+            The keyword arguments form of integers. Overwrite indexers input if both
+            are provided.
+
+        Returns
+        -------
+        DataCollection
+            The selected data collection.
+        """
+        data = [value.isel(indexers, **indexers_kwargs) for value in self]
+        data = [
+            value
+            for value in data
+            if (isinstance(value, DataCollection) or not value.empty)
+        ]
+        return self.__class__(data, self.name)
 
     def sel(self, indexers=None, method=None, endpoint=True, **indexers_kwargs):
         """
