@@ -64,7 +64,7 @@ da.to_netcdf("da.nc", virtual = True)
 ```
 
 Reading ASN, Febus, Optasense and Sintela data is already implemented and must be specified in engine. You also have the option to develop your own customized [engine](user-guide/engine.md). 
-If you want to create a single DataArray for multiple acquisitions (i.e. different fibers, changing acquisition parameters), you can use the [DataCollection](user-guide/DataCollection.md) object.  
+If you want to create a single DataArray for multiple acquisitions (i.e. different fibers, changing acquisition parameters), you can use the [DataCollection](user-guide/data-structures.md#datacollection) object.  
 
 
 ### Load DataArray

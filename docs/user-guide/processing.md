@@ -12,8 +12,7 @@ import xdas as xd
 os.chdir("../_data")
 ```
 
-# Process big dataarrays
-
+# Processing larger-than-memory data
 ```{warning}
 The API of this part of xdas is still experimental.
 ```

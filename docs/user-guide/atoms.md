@@ -60,8 +60,32 @@ result.plot(yincrease=False)
 
 The same sequence can be re-used, so it only needs to be defined once.
 
-For executing a sequence on chunked data (e.g., larger-than-memory data sets), see the next section: [*Process big dataarrays*](processing.md).
+For executing a sequence on chunked data (e.g., larger-than-memory data sets), see the next section: [*Processing larger-than-RAM data*](processing.md).
 
 ## Defining custom atoms
 
-**TODO**
+The `Partial` method is a convenient wrapper for simple functions that take an xdas DataArray as the first argument, which covers a lot of cases. However, more complex routines, particularly those that rely on a state, will require a more explicit treatment. Such operations can be subclassed from the `Atom` base class, and adhere to the following structure:
+
+```{code-cell} 
+from xdas.atoms import Atom, State
+
+class MyStatefulRoutine(Atom):
+
+  def __init__(self, a, b, c=10):
+    super().__init__()
+    # Set class-specific parameters
+    self.a = a
+    self.b = b
+    self.c = c
+    # Define the state variable (if needed)
+    self.state = State(...)
+
+  def initialize(self, da, **kwargs):
+    # Initialize state based on DataArray ``da``
+    ...
+  
+  def call(self, da, **kwargs):
+    # Apply routine to DataArray ``da``
+    ...
+```
+
