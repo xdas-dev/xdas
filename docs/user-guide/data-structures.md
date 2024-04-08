@@ -55,7 +55,7 @@ use those metadata. It tries to keep as much as possible the information stored 
 as the `DataArray` is manipulated but it is up to the user to update information there 
 if needed.
 
-
+In the following examples, we use only one `DataArray`, if you have several `DataArray`, please use the multi-file version of the opening function: {py:func}`xdas.open_mfdataarray`. You will just have to adapt the paths argument.
 
 ### Creating a DataArray
 
@@ -65,7 +65,7 @@ the related description of how to create coordinates
 
 ```{code-cell}
 import numpy as np
-import xdas as xd
+import xdas
 
 shape = (6000, 1000)
 resolution = (np.timedelta64(10, "ms"), 5.0)
@@ -84,7 +84,7 @@ coords={
     },
 }
 
-da = xd.DataArray(data, coords)
+da = xdas.DataArray(data, coords)
 da
 ```
 
@@ -127,17 +127,17 @@ A {py:class}`xdas.DataCollection` can be view as a flexible way of oragnizing da
 
 ### Case A: DataCollection as a set of DataArray
 
-In the example below, our DataCollection will be a sequence of 2 {py:class}`xdas.DataArray`.
+In the example, our DataCollection will be a sequence of {py:class}`xdas.DataArray`.
 
 ```{code-cell}
 # Reopen dataarray as virtual source
-da = xd.open_dataarray("dataarray.nc") 
+da = xdas.open_dataarray("dataarray.nc") 
 
 # Create a DataCollection
-dc = xd.DataCollection(
+dc = xdas.DataCollection(
     {
         "event_1": da.sel(time=slice("2023-01-01T00:00:10", "2023-01-01T00:00:20")), 
-        "event_2":da.sel(time=slice("2023-01-01T00:00:40", "2023-01-01T00:00:50")),
+        "event_2": da.sel(time=slice("2023-01-01T00:00:40", "2023-01-01T00:00:50")),
     }
 )
 dc
@@ -154,24 +154,70 @@ dc.to_netcdf("datacollection.nc", virtual=True)
 
 ```{code-cell}
 # Read a DataCollection
-dc = xd.open_datacollection("datacollection.nc")
+dc = xdas.open_datacollection("datacollection.nc")
 dc
 ```
 
 ### Case B: DataCollection as handelling a complex network of acquisitions
 
-In the next example, we have several acquisitions for the same fiber so we will use {py:fn}`xdas.open_treedatacollection` to create our DataCollection.
+You can aslo create a DataCollection to gather different acquisitions on a same fiber with {py:fn}`xdas.open_mfdatatree`. This function opens a directory tree structure as a data collection.
 
-```{code-cell}
-# Open your DataArrays with open_treedatacollection as virtual source
-# Write them as a DataCollection
-# Read the DataCollection
+The tree structure is descirebed by a path descriptor provided as a string
+containings placeholders. Two flavours of placeholder can be provided:
+
+- `{field}`: this level of the tree will behave as a dict. It will use the
+directory/file names as keys.
+- `[field]`: this level of the tree will behave as a list. The directory/file
+names are not considered (as if the placeholder was replaced by a `*`) and
+files are gathered and combined as if using `open_mfdataarray`.
+
+Several dict placeholders with different names can be provided. They must be
+followed by one or more list placeholders that must share a unique name. The
+resulting data collection will be a nesting of dicts down to the lower level
+which will be a list of dataarrays.
+
+In this example, for the 19th of November 2023, our network REKA has 2 cables (RK1 and RK2), RK1 cable has 3 different acquisitions and RK2 has one acquisition. 
+
+```python
+# Open all your DataCollections with open_mfdatatree
+paths = "/data/{network}/{cable}/20231119/proc/[acquisition].hdf5"
+dc = xdas.open_mfdatatree(paths, engine='asn')
+dc
 ```
-
-If you have several {py:class}`xdas.DataCollection`, you can gather them in one file following this example:
-
-```{code-cell}
-# Open all your DataCollections with open_mfdatacollection
-# Write it as your global DataCollection in .nc
+```text
+Network:
+  REKA:
+    Cable:
+        RK1: 
+        Acquisition:
+            0: <xdas.DataArray (time: 54000, distance: 10000)>
+            1: <xdas.DataArray (time: 10000, distance: 5000)>
+            2: <xdas.DataArray (time: 9000, distance: 10000)>
+        RK2: 
+        Acquisition:
+            0: <xdas.DataArray (time: 54000, distance: 10000)>
+```
+```python
+# Write it as your global DataCollection in .nc with the virtual argument True
+dc.to_netcdf("datacollection.nc", virtual=True)
+```
+```python
 # Read your global DataCollection with open_datacollection
+dc = open_datacollection("datacollection.nc")
+dc
 ```
+```text
+Network:
+  REKA:
+    Cable:
+        RK1: 
+        Acquisition:
+            0: <xdas.DataArray (time: 54000, distance: 10000)>
+            1: <xdas.DataArray (time: 10000, distance: 5000)>
+            2: <xdas.DataArray (time: 9000, distance: 10000)>
+        RK2: 
+        Acquisition:
+            0: <xdas.DataArray (time: 54000, distance: 10000)>
+```
+
+If you have several {py:class}`xdas.DataCollection`, you can gather them in one file using `xdas.open_mfdatacollection` and write it to one single DataCollection.
