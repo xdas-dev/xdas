@@ -24,3 +24,18 @@
    Partial
    StatePartial
 ```
+
+## Signal processing
+
+```{eval-rst}
+.. autosummary::
+   :toctree: _autosummary
+
+   signal.ResamplePoly
+   signal.IIRFilter
+   signal.FIRFilter
+   signal.LFilter
+   signal.SOSFilter
+   signal.DownSample
+   signal.UpSample
+```
