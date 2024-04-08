@@ -9,7 +9,7 @@ from .core.coordinates import (
     get_sampling_interval,
 )
 from .core.dataarray import DataArray
-from .core.datacollection import DataCollection
+from .core.datacollection import DataCollection, DataMapping, DataSequence
 from .core.methods import *
 from .core.routines import (
     asdataarray,
