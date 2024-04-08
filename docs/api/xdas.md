@@ -50,7 +50,7 @@
    diff
 ```
 
-## Classes
+## Data Structures
 
 ### DataArray
 
