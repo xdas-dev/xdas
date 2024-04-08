@@ -10,18 +10,6 @@
    concatenate
 ```
 
-## Data structures
-
-```{eval-rst}
-.. autosummary::
-   :toctree: _autosummary
-
-   Coordinate
-   Coordinates
-   DataArray
-   DataCollection
-```
-
 ## Processing
 ```{eval-rst}
 .. autosummary::
