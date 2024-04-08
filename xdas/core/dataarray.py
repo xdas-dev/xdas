@@ -77,7 +77,7 @@ class DataArray:
                 )
                 for name, coord in self.coords.items()
             }
-            dims = tuple(dim for dim in self.dims if not coords[dim].isscalar())
+            dims = tuple(dim for dim in self.dims if not np.isscalar(query[dim]))
             return self.__class__(data, coords, dims, self.name, self.attrs)
 
     def __setitem__(self, key, value):
@@ -665,7 +665,7 @@ class LocIndexer:
 
 class DimSizer(dict):
     def __init__(self, obj):
-        super().__init__({dim: len(obj.coords[dim]) for dim in obj.dims})
+        super().__init__({dim: size for dim, size in zip(obj.dims, obj.shape)})
 
     def __getitem__(self, key):
         if key == "first":

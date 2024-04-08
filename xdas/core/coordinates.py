@@ -76,6 +76,8 @@ class Coordinates(dict):
 
     @wraps_first_last
     def __getitem__(self, key):
+        if key in self.dims and key not in self:
+            raise KeyError(f"dimension {key} has no coordinate")
         return super().__getitem__(key)
 
     @wraps_first_last
@@ -318,6 +320,71 @@ class ScalarCoordinate(Coordinate):
         else:
             data = self.data.item()
         return {"dim": self.dim, "data": data}
+
+
+class DefaultCoordinate(Coordinate):
+    def __new__(cls, *args, **kwargs):
+        return object.__new__(cls)
+
+    def __init__(self, data, dim=None):
+        data, dim = parse(data, dim)
+        if not self.isvalid(data):
+            raise TypeError("`data` must be a mapping {'size': <int>}")
+        self.data = data
+        self.dim = dim
+
+    def __len__(self):
+        if self.data["size"] is None:
+            return 0
+        else:
+            return self.data["size"]
+
+    def __getitem__(self, item):
+        data = self.__array__()[item]
+        if ScalarCoordinate.isvalid(data):
+            return ScalarCoordinate(data)
+        else:
+            return Coordinate(data, self.dim)
+
+    def __array__(self, dtype=None):
+        return np.arange(self.data["size"], dtype=dtype)
+
+    @staticmethod
+    def isvalid(data):
+        match data:
+            case {"size": None | int(_)}:
+                return True
+            case _:
+                return False
+
+    @property
+    def empty(self):
+        return bool(self.data["size"])
+
+    @property
+    def dtype(self):
+        return np.int64
+
+    @property
+    def ndim(self):
+        return 1
+
+    @property
+    def shape(self):
+        return (len(self),)
+
+    def equals(self, other):
+        if isinstance(other, self.__class__):
+            return self.data["size"] == other.data["size"]
+
+    def get_indexer(self, value, method=None):
+        return value
+
+    def slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
+        return slice(start, stop, step)
+
+    def to_dict(self):
+        return {"dim": self.dim, "data": self.data}
 
 
 class DenseCoordinate(Coordinate):

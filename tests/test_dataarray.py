@@ -20,6 +20,21 @@ class TestDataArray:
         da = xdas.DataArray(data, coords)
         return da
 
+    def test_init_without_coords(self):
+        data = np.arange(2 * 3 * 5).reshape(2, 3, 5)
+        da = xdas.DataArray(data)
+        assert np.array_equal(da.data, data)
+        assert da.dims == ("dim_0", "dim_1", "dim_2")
+        assert da.coords == {}
+        assert da.isel(dim_0=0).equals(da[0])
+        assert da.isel(dim_1=slice(1)).equals(da[:, :1])
+        assert da.isel(dim_2=[1, 2, 3]).equals(da[:, :, [1, 2, 3]])
+        assert da.sizes == {"dim_0": 2, "dim_1": 3, "dim_2": 5}
+        with pytest.raises(KeyError, match="no coordinate"):
+            da["dim_0"]
+        with pytest.raises(KeyError, match="no coordinate"):
+            da.sel(dim_0=0)
+
     def test_init_and_properties(self):
         da = self.generate()
         assert isinstance(da["dim"], InterpCoordinate)
