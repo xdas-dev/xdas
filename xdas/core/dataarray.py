@@ -58,6 +58,13 @@ class DataArray:
                 "infered dimension number from `coords` does not match "
                 "`data` dimensionality`"
             )
+        for dim, size in zip(coords.dims, data.shape):
+            if not len(coords[dim]) == size:
+                raise ValueError(
+                    f"conflicting sizes for dimension {dim}: size {len(coords[dim])} "
+                    f"in `coords` and size {size} in `data`"
+                )
+        coords._data = data
         self.data = data
         self.coords = coords
         self.name = name
