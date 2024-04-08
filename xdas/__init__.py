@@ -20,4 +20,6 @@ from .core.routines import (
     open_mfdatacollection,
     open_mfdatatree,
     split,
+    combine_by_field,
+    combine_by_coords
 )
