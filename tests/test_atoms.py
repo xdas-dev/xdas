@@ -68,7 +68,7 @@ class TestDecorator:
 class TestFilters:
     def test_lfilter(self):
         da = generate()
-        chunks = xdas.chunk(da, 6, "time")
+        chunks = xdas.split(da, 6, "time")
 
         b, a = sp.iirfilter(4, 10.0, btype="lowpass", fs=50.0)
         data = sp.lfilter(b, a, da.values, axis=0)
@@ -101,7 +101,7 @@ class TestFilters:
 
     def test_sosfilter(self):
         da = generate()
-        chunks = xdas.chunk(da, 6, "time")
+        chunks = xdas.split(da, 6, "time")
 
         sos = sp.iirfilter(4, 10.0, btype="lowpass", fs=50.0, output="sos")
         data = sp.sosfilt(sos, da.values, axis=0)
@@ -134,7 +134,7 @@ class TestFilters:
 
     def test_downsample(self):
         da = generate()
-        chunks = xdas.chunk(da, 6, "time")
+        chunks = xdas.split(da, 6, "time")
         expected = da.isel(time=slice(None, None, 3))
         atom = DownSample(3, "time")
         result = atom(da)
@@ -158,7 +158,7 @@ class TestFilters:
         assert result.equals(expected)
 
         da = generate()
-        chunks = xdas.chunk(da, 6, "time")
+        chunks = xdas.split(da, 6, "time")
         atom = UpSample(3, dim="time")
         expected = atom(da)
         result = xdas.concatenate(
@@ -168,7 +168,7 @@ class TestFilters:
 
     def test_firfilter(self):
         da = generate()
-        chunks = xdas.chunk(da, 6, "time")
+        chunks = xdas.split(da, 6, "time")
         taps = sp.firwin(11, 0.4, pass_zero="lowpass")
         expected = xp.lfilter(taps, 1.0, da, "time")
         expected["time"] -= np.timedelta64(20, "ms") * 5
@@ -187,7 +187,7 @@ class TestFilters:
 
     def test_resample_poly(self):
         da = generate()
-        chunks = xdas.chunk(da, 6, "time")
+        chunks = xdas.split(da, 6, "time")
 
         expected = xp.resample_poly(da, 5, 2, "time")
         atom = ResamplePoly(125, maxfactor=10, dim="time")

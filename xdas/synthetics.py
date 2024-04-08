@@ -2,7 +2,7 @@ import numpy as np
 import scipy.signal as sp
 
 from .core.dataarray import DataArray
-from .core.routines import chunk
+from .core.routines import split
 
 
 def generate(
@@ -90,6 +90,6 @@ def generate(
         },
     )
     if nchunk is not None:
-        return chunk(da, nchunk)
+        return split(da, nchunk)
     else:
         return da

@@ -571,40 +571,67 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
     return DataArray(data, coords)
 
 
-def split(da, divpoints="discontinuities", dim="first", tolerance=None):
-    if divpoints == "discontinuities":
+def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None):
+    """
+    Split a data array along a dimension.
+
+    Splitting can either be performed at each discontinuity (along interpolated
+    coordinates), at a given set of indices (give as a list of int) or in order to get
+    a given number of equal sized chunks (if a single int is provided).
+
+    Parameters
+    ----------
+    da : DataArray
+        The data array to split
+    indices_or_sections : str, int or list of int, optional
+        If `indices_or_section` is an interger N, the array will be diveided into N
+        almost equal (can differ by one element if the `dim` size is not a multiple of
+        N). If `indices_or_section` is a 1-D array of sorted integers, the entries
+        indicate where the array is split along `dim`. For example, `[2, 3]` would, for
+        `dim="first"`, result in [da[:2], da[2:3], da[3:]]. If `indices_or_section` is
+        "discontinuites", the `dim` must be an interpolated coordinate and splitting
+        will occurs at locations where they are two consecutive tie_indices with only
+        one index of difference and where the tie_values differance is greater than
+        `tolerance`. Default to "discontinuities".
+    dim : str, optional
+        The dimension along which to split, by default "first"
+    tolerance : float or timedelta64, optional
+        If `indices_or_sections="discontinuities"` split will only occur on gaps and
+        overlaps that are bigger thatn `tolerance`. Zero tolerance by default.
+
+    Returns
+    -------
+    list of DataArray
+        The splitted data array.
+    """
+    if isinstance(indices_or_sections, str) and (
+        indices_or_sections == "discontinuities"
+    ):
         if isinstance(da[dim], InterpCoordinate):
             coord = da[dim].simplify(tolerance)
             (points,) = np.nonzero(np.diff(coord.tie_indices, prepend=[0]) == 1)
-            divpoints = [coord.tie_indices[point] for point in points]
+            div_points = [coord.tie_indices[point] for point in points]
+            div_points = [0] + div_points + [da.sizes[dim]]
         else:
             raise TypeError(
                 "discontinuities can only be found on dimension that have as type "
                 "`InterpCoordinate`."
             )
-    divpoints = [0] + divpoints + [da.sizes[dim]]
-    return DataCollection(
-        [
-            da.isel({dim: slice(divpoints[idx], divpoints[idx + 1])})
-            for idx in range(len(divpoints) - 1)
-        ]
-    )
-
-
-def chunk(da, nchunk, dim="first"):
-    nsamples = da.sizes[dim]
-    if not isinstance(nchunk, int):
-        raise TypeError("`n` must be an integer")
-    if nchunk <= 0:
-        raise ValueError("`n` must be larger than 0")
-    if nchunk >= nsamples:
-        raise ValueError("`n` must be smaller than the number of samples")
-    chunk_size, extras = divmod(nsamples, nchunk)
-    chunks = [0] + extras * [chunk_size + 1] + (nchunk - extras) * [chunk_size]
-    div_points = np.cumsum(chunks, dtype=np.int64)
+    elif isinstance(indices_or_sections, int):
+        nsamples = da.sizes[dim]
+        nchunk = indices_or_sections
+        if nchunk <= 0:
+            raise ValueError("`n` must be larger than 0")
+        if nchunk >= nsamples:
+            raise ValueError("`n` must be smaller than the number of samples")
+        chunk_size, extras = divmod(nsamples, nchunk)
+        chunks = extras * [chunk_size + 1] + (nchunk - extras) * [chunk_size]
+        div_points = np.cumsum([0] + chunks, dtype=np.int64)
+    else:
+        div_points = [0] + indices_or_sections + [da.sizes[dim]]
     return DataCollection(
         [
             da.isel({dim: slice(div_points[idx], div_points[idx + 1])})
-            for idx in range(nchunk)
+            for idx in range(len(div_points) - 1)
         ]
     )

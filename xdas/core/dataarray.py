@@ -25,13 +25,13 @@ class DataArray:
     Parameters
     ----------
     data : array_like
-        Values of the array. Can be a VirtualSource or a VirtualLayout for lazy loading of
-        netCDF4/HSF5 files.
+        Values of the array. Can be a VirtualSource or a VirtualLayout for lazy loading
+        of netCDF4/HDF5 files.
     coords : dict of Coordinate
         Coordinates to use for indexing along each dimension.
     dims : sequence of string, optional
         Name(s) of the data dimension(s). If provided, must be equal to the keys of
-        `coords`. Used for API compatibility with xarray.
+        `coords`.
     name : str, optional
         Name of this array.
     attrs : dict_like, optional
@@ -269,12 +269,6 @@ class DataArray:
         indexers : dict, optional
             A dict with keys matching dimensions and values given by integers, slice
             objects or arrays.
-        method : {None, "nearest", "ffill", "bfill"}, optional
-            Method to use for inexact matches:
-            - None (default): only exact matches
-            - nearest: use nearest valid index value
-            - ffill: propagate last valid index value forward
-            - bfill: propagate next valid index value backward
         **indexers_kwargs : dict, optional
             The keyword arguments form of integers. Overwrite indexers input if both
             are provided.
@@ -309,7 +303,7 @@ class DataArray:
         Returns
         -------
         DataArray
-            The selected part of the original database.
+            The selected part of the original data array.
         """
         if indexers is None:
             indexers = {}
@@ -367,7 +361,7 @@ class DataArray:
 
     def to_xarray(self):
         """
-        Convert the DataArray to a DataArray object.
+        Convert to the xarray implementation of the DataArray structure.
 
         Coordinates are converted to dense arrays and lazy values are loaded in memory.
 
@@ -392,7 +386,7 @@ class DataArray:
         dim={"last": "first"},
     ):
         """
-        Convert a database into a stream.
+        Convert a data array into an obspy stream.
 
         Parameters
         ----------
@@ -413,7 +407,7 @@ class DataArray:
         Returns
         -------
         Stream
-            the obspy stream version of the database.
+            the obspy stream version of the data array.
 
         """
         dimdist, dimtime = dim.copy().popitem()
@@ -424,7 +418,7 @@ class DataArray:
         except ImportError:
             raise ImportError("obspy is not installed. Please install it.")
         if not self.ndim == 2:
-            raise ValueError("the database must be 2D")
+            raise ValueError("the data array must be 2D")
         starttime = UTCDateTime(str(self[dimtime][0].values))
         delta = get_sampling_interval(self, dimtime)
         band_code = get_band_code(1.0 / delta)
@@ -449,6 +443,26 @@ class DataArray:
 
     @classmethod
     def from_stream(cls, st, dims=("channel", "time")):
+        """
+        Convert an obspy stream into a data array.
+
+        Traces in the stream must have the same length an must be syncronized. Traces
+        are stacked along the first axis. The trace ids are used as labels along the
+        first dimension.
+
+        Parameters
+        ----------
+        st: Stream
+            The stream to convert.
+        dims: (str, str)
+            The name of the dimension respectively given to the trace and time
+            dimensions.
+
+        Returns
+        -------
+        DataArray:
+            The consolidated data array.
+        """
         data = np.stack([tr.data for tr in st])
         channel = [tr.id for tr in st]
         time = {
@@ -558,8 +572,23 @@ class DataArray:
             )
 
     @classmethod
-    def from_netcdf(cls, fname, group=None, **kwargs):
-        with xr.open_dataset(fname, group=group, **kwargs) as ds:
+    def from_netcdf(cls, fname, group=None):
+        """
+        Lazily read a data array from a NetCDF file.
+
+        Parameters
+        ----------
+        fname: str
+            The path of the file to open.
+        group: str, optional
+            The location of the data array within the file. Root by default
+
+        Returns
+        -------
+        DataArray
+            The openend data array.
+        """
+        with xr.open_dataset(fname, group=group) as ds:
             if not ("Conventions" in ds.attrs and "CF" in ds.attrs["Conventions"]):
                 raise TypeError(
                     "file format not recognized. please provide the file format "

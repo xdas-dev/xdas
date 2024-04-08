@@ -156,6 +156,22 @@ class DataCollection:
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
+        """
+        Lazily read a data collection from a NetCDF file.
+
+        Parameters
+        ----------
+        fname: str
+            The path of the file to open.
+        group: str, optional
+            The location of the data collection within the file. Root by default.
+
+        Returns
+        -------
+        DataCollection:
+            The opened data collection.
+
+        """
         self = DataMapping.from_netcdf(fname, group)
         try:
             keys = [int(key) for key in self.keys()]
@@ -252,7 +268,60 @@ class DataMapping(DataCollection, dict):
             return False
         return True
 
+    def isel(self, indexers=None, **indexers_kwargs):
+        """
+        Perform index selection to each data array of the data collection.
+
+        If a selection results in a empty data array, the data array is discarted.
+
+        See `DataArray.isel` for more details.
+
+        Parameters
+        ----------
+        indexers : dict, optional
+            A dict with keys matching dimensions and values given by integers, slice
+            objects or arrays.
+        **indexers_kwargs : dict, optional
+            The keyword arguments form of integers. Overwrite indexers input if both
+            are provided.
+
+        Returns
+        -------
+        DataCollection
+            The selected data collection.
+        """
+        data = {
+            key: value.isel(indexers, **indexers_kwargs) for key, value in self.items()
+        }
+        data = {
+            key: value
+            for key, value in data.items()
+            if (isinstance(value, DataCollection) or not value.empty)
+        }
+        return self.__class__(data, self.name)
+
     def sel(self, indexers=None, method=None, endpoint=True, **indexers_kwargs):
+        """
+        Perform labeled selection to each data array of the data collection.
+
+        If a selection results in a empty data array, the data array is discarted.
+
+        See DataArray.sel for more details.
+
+        Parameters
+        ----------
+        indexers : dict, optional
+            A dict with keys matching dimensions and values given by scalars, slices or
+            arrays of tick labels.
+        **indexers_kwargs : dict, optional
+            The keyword arguments form of integers. Overwrite indexers input if both
+            are provided.
+
+        Returns
+        -------
+        The selected data collection.
+
+        """
         data = {
             key: value.sel(indexers, method, endpoint, **indexers_kwargs)
             for key, value in self.items()
@@ -265,7 +334,43 @@ class DataMapping(DataCollection, dict):
         return self.__class__(data, self.name)
 
     def load(self):
+        """
+        Load in memory each data array of the data collection.
+
+        See `DataArray.load` for more details
+
+        Returns
+        -------
+        The loaded data collection.
+
+        """
         data = {key: value.load() for key, value in self.items()}
+        return self.__class__(data, self.name)
+
+    def map(self, atom):
+        """
+        Apply an atom to each data array of the data collection
+
+        Parameters
+        ----------
+        atom: Atom or callable
+            The atom to apply, i.e, a function that takes a unique data array argument
+            and returns a unique data array output.
+
+        Returns
+        -------
+        DataCollection
+            Resulting processed data collection.
+
+        """
+        data = {}
+        for key, obj in self.items():
+            if isinstance(obj, DataArray):
+                data[key] = atom(obj)
+            elif isinstance(obj, DataCollection):
+                data[key] = obj.map(atom)
+            else:
+                raise TypeError(f"{type(obj)} encountered in the collection")
         return self.__class__(data, self.name)
 
 
@@ -323,7 +428,58 @@ class DataSequence(DataCollection, list):
             return False
         return True
 
+    def isel(self, indexers=None, **indexers_kwargs):
+        """
+        Perform index selection to each data array of the data collection.
+
+        If a selection results in a empty data array, the data array is discarted.
+
+        See `DataArray.isel` for more details.
+
+        Parameters
+        ----------
+        indexers : dict, optional
+            A dict with keys matching dimensions and values given by integers, slice
+            objects or arrays.
+        **indexers_kwargs : dict, optional
+            The keyword arguments form of integers. Overwrite indexers input if both
+            are provided.
+
+        Returns
+        -------
+        DataCollection
+            The selected data collection.
+        """
+        data = [value.isel(indexers, **indexers_kwargs) for value in self]
+        data = [
+            value
+            for value in data
+            if (isinstance(value, DataCollection) or not value.empty)
+        ]
+        return self.__class__(data, self.name)
+
     def sel(self, indexers=None, method=None, endpoint=True, **indexers_kwargs):
+        """
+        Perform labeled selection to each data array of the data collection.
+
+        If a selection results in a empty data array, the data array is discarted.
+
+        See DataArray.sel for more details.
+
+        Parameters
+        ----------
+        indexers : dict, optional
+            A dict with keys matching dimensions and values given by scalars, slices or
+            arrays of tick labels.
+        **indexers_kwargs : dict, optional
+            The keyword arguments form of integers. Overwrite indexers input if both
+            are provided.
+
+        Returns
+        -------
+        The selected data collection.
+
+        """
         data = [
             value.sel(indexers, method, endpoint, **indexers_kwargs) for value in self
         ]
@@ -335,7 +491,43 @@ class DataSequence(DataCollection, list):
         return self.__class__(data, self.name)
 
     def load(self):
+        """
+        Load in memory each data array of the data collection.
+
+        See `DataArray.load` for more details
+
+        Returns
+        -------
+        The loaded data collection.
+
+        """
         data = [value.load() for value in self]
+        return self.__class__(data, self.name)
+
+    def map(self, atom):
+        """
+        Apply an atom to each data array of the data collection
+
+        Parameters
+        ----------
+        atom: Atom or callable
+            The atom to apply, i.e, a function that takes a unique data array argument
+            and returns a unique data array output.
+
+        Returns
+        -------
+        DataCollection
+            Resulting processed data collection.
+
+        """
+        data = []
+        for obj in self:
+            if isinstance(obj, DataArray):
+                data.append(atom(obj))
+            elif isinstance(obj, DataCollection):
+                data.append(obj.map(atom))
+            else:
+                raise TypeError(f"{type(obj)} encountered in the collection")
         return self.__class__(data, self.name)
 
 

@@ -81,6 +81,32 @@ def parallelize(split_axis=0, concat_axis=0, parallel=None):
 
 
 def concatenate(arrays, axis=0, out=None, dtype=None, n_workers=None):
+    """
+    Multithreaded version of numpy.concatenate.
+
+    Join a sequence of arrays along an existing axis.
+
+    Parameters
+    ----------
+    arrays: sequence of array_like
+        The arrays must have the same shape, except in the dimension corresponding to
+        `axis` (the first, by default).
+    axis: int, optional
+        The axis along which the arrays will be joined. Default is 0.
+    out: ndarray, optional
+        If provided, the destination to place the result. The shape must be correct,
+        matching that of what concatenate would have returned if no out argument were
+        specified.
+    dtype: str or dtype
+        If provided, the destination array will have this dtype. Cannot be provided
+        together with out.
+
+    Returns
+    -------
+    ndarray:
+        The concatenated array.
+
+    """
     arrays = [np.asarray(array, dtype) for array in arrays]
 
     ndim = set(array.ndim for array in arrays)
@@ -127,6 +153,24 @@ def concatenate(arrays, axis=0, out=None, dtype=None, n_workers=None):
 
 
 def get_workers_count(parallel):
+    """
+    Get the number of cores to use for multithreaded operations.
+
+    Parameters
+    ----------
+    parallel: int or bool, optional
+        if `parallel` is an integer, that number of cores will be used. if `parallel`
+        is a bool either single threading (False) will be used or all cores (True). If
+        `parallel` is not given (None) the default value taken from the global xdas
+        configuration will be used. You can see and update this value with
+        `xdas.config.get("n_workers")` and `xdas.config.set("n_workers", <your_value>)`
+
+    Returns
+    -------
+    n_workers: int
+        The number of cores to use.
+
+    """
     if parallel is None:
         return config.get("n_workers")
     elif isinstance(parallel, bool):
