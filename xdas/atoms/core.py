@@ -28,6 +28,8 @@ class Sequential(list):
     >>> import xdas.signal as xp
     >>> import numpy as np
 
+    Basic usage:
+
     >>> sequence = Sequential(
     ...     [
     ...         Partial(xp.taper, dim="time"),
@@ -41,6 +43,8 @@ class Sequential(list):
       0: taper(..., dim=time)
       1: lfilter([1.0], [0.5], ..., dim=time)  [stateful]
       2: square(...)
+
+    Nested sequences:
 
     >>> sequence = Sequential(
     ...     [
@@ -56,6 +60,8 @@ class Sequential(list):
           0: taper(..., dim=time)
           1: lfilter([1.0], [0.5], ..., dim=time)  [stateful]
           2: square(...)
+
+    Applying the sequence to data:
 
     >>> from xdas.synthetics import generate
     >>> da = generate()

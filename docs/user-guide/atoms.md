@@ -18,40 +18,50 @@ os.chdir("../_data")
 The API of this part of xdas is still experimental.
 ```
 
-The xdas library provides various routines from NumPy, SciPy, and ObsPy that have been optimized for DAS DataArray objects, and which can be incorporated in a processing pipeline. See [Process big dataarrays](processing) for an explanation of the xdas processing workflows, e.g. for bigger-than-RAM datasets. Higher-level operations (FK-filters, STA/LTA detector, etc.) can be constructed from a sequence of the elementary operations implemented in xdas. To facilitate this and other user-defined operations, xdas offers a convenient framework to create, manage, and execute a sequence of atomic operations, which we refer to as compositions.
+The xdas library provides various routines from NumPy, SciPy, and ObsPy that have been optimized for DAS DataArray objects, and which can be incorporated in a processing pipeline. See [Process big dataarrays](processing) for an explanation of the xdas processing workflows, e.g. for bigger-than-RAM datasets. Higher-level operations (FK-filters, STA/LTA detector, etc.) can be constructed from a sequence of the elementary operations implemented in xdas. To facilitate this and other user-defined operations, xdas offers a convenient framework to create and execute a (nested) sequences of atomic operations. By using sequences, built-in and user-defined processing tasks mesh seamlessly with the optimization and IO-infrastructure that xdas offers, improving the robustness and reproducibility of complex processing pipelines.
 
-By using compositions, built-in and user-defined processing tasks mesh seamlessly with the optimization and IO-infrastructure that xdas offers, improving the robustness and reproducibility of complex processing pipelines.
+## Chaining elementary operations (atoms)
 
-## Elementary operations: Atoms and StateAtoms
-
-The building blocks of a processing sequence are atomic operations: small routines that feature a single operation, which can be reused in a range of scenarios. For example, `abs`, `square`, `fft`, `sum`, etc. Each atomic operation is wrapped by an `Atom` class that handles things like passing arguments, bookkeeping, and integration. For operations that rely on a state that is updated over time (i.e., they are *stateful*), a special class exists called `StateAtom`, which inherits from the `Atom` class and adds state-specific manipulations.
-
-An `Atom` is initiated with a function `func` as its first argument, and additional keyword arguments that are passed to `func`. The `StateAtom` class requires the initial state and name of the keyword that hold the state (e.g., for `scipy.signal.sosfilt`, this argument is called `zi`). Finally, user-defined functions can be passed in the same way (assuming that the function is compatible with the xdas framework; see **page describing extension**).
-
-To keep track of the various operations in a sequence, each atom can be assigned a name with the `name` argument. If no name is provided, it is derived from the function name that the `Atom` class wraps.
-
-Example usage:
+There are three "flavours" declaring the atoms that can be used to compose a sequence, illustrated by the following example:
 
 ```{code-cell} 
 import numpy as np
+import xdas
 import xdas.signal as xp
-from xdas.atoms import Partial
-op1 = Partial(xp.taper, dim="time")
+from xdas.atoms import Partial, Sequential, IIRFilter
 
-sos = np.zeros((6, 2))
-op2 = Partial(xp.sosfilt, sos, ..., zi=..., dim="time")
-
-my_func = lambda x: x
-op3 = Partial(my_func, name="my special function")
+sequence = Sequential(
+    [
+      xp.taper(..., dim="time"),
+      Partial(np.square),
+      IIRFilter(order=4, cutoff=1.5, btype="highpass", dim="time"),
+    ]
+)
+sequence
 ```
 
-## Composing a sequence
+In the snippet above, we define our `sequence` as an instance of the `Sequential` class, which contains three operations. The first operation applies a Tukey taper along the time dimension, encoded by the xdas implementation of the SciPy library routines (`xdas.signal`). Since this functions takes a data array as the first argument, we use `...` as a placeholder. 
 
-- Basic construction of `Sequence`
-- Ordering operations
-- Loading pre-defined sequences and manipulating
+The second operation in this sequence is defined by the `square` operation built into NumPy. Since this function is not imported directly from xdas, using `...` as a placeholder won't work. This is where `Partial` comes in: wrapping `Partial` around `np.square` would be equivalent to `np.square(...)`, effectively converting an arbitrary routine into an xdas routine and inserting a placeholder as the first argument (to be substituted with a data array later).
+
+The last operation, `IIRFilter`, instantiates a specific class dedicated to chunked execution. It inherits from the `Atom` class, which handles the logic of initialising and passing around state objects (like the filter state). This allows us to process our data one chunk at a time, without explicitly having to handle state updates and transfer.
 
 ## Executing a sequence
 
-- Data in memory
-- Data in chunks
+Once the processing sequence has been defined, it can operate on data in memory by simply calling the sequence with the data array as the argument:
+
+```{code-cell} 
+from xdas.synthetics import generate
+
+da = generate()
+result = sequence(da)
+result.plot(yincrease=False)
+```
+
+The same sequence can be re-used, so it only needs to be defined once.
+
+For executing a sequence on chunked data (e.g., larger-than-memory data sets), see the next section: [*Process big dataarrays*](processing.md).
+
+## Defining custom atoms
+
+**TODO**
