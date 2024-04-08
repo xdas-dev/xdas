@@ -59,7 +59,7 @@ class DataArray:
                 "`data` dimensionality`"
             )
         for dim, size in zip(coords.dims, data.shape):
-            if not len(coords[dim]) == size:
+            if (dim in coords) and (not len(coords[dim]) == size):
                 raise ValueError(
                     f"conflicting sizes for dimension {dim}: size {len(coords[dim])} "
                     f"in `coords` and size {size} in `data`"
