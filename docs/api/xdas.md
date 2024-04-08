@@ -4,6 +4,19 @@
 
 # *xdas*
 
+## Top-level functions
+
+```{eval-rst}
+.. autosummary::
+   :toctree: _autosummary
+
+   open_dataarray
+   open_mfdataarray
+   open_datacollection
+   open_mfdatacollection
+   concatenate
+```
+
 ## Manipulation routines
 
 ```{eval-rst}

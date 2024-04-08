@@ -6,6 +6,7 @@
 xdas
 fft
 signal
+processing
 parallel
 synthetics
 virtual
