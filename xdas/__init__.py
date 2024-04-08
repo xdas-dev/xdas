@@ -19,6 +19,6 @@ from .core.routines import (
     open_datacollection,
     open_mfdataarray,
     open_mfdatacollection,
-    open_treedatacollection,
+    open_mfdatatree,
     split,
 )
