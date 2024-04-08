@@ -176,7 +176,7 @@ class Atom:
     def reset(self):
         for key in self._state:
             setattr(self, key, State(...))
-        for filter in self._filters:
+        for _, filter in self._filters.items():
             filter.reset()
 
     def save_state(self, path):
