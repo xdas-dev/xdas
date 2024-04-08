@@ -1,9 +1,3 @@
-```{eval-rst}
-.. currentmodule:: xdas
-```
-
-# API reference
-
 ## Top-level functions
 
 ```{eval-rst}
@@ -14,18 +8,6 @@
    open_mfdataarray
    open_datacollection
    concatenate
-```
-
-## Data structures
-
-```{eval-rst}
-.. autosummary::
-   :toctree: _autosummary
-
-   Coordinate
-   Coordinates
-   DataArray
-   DataCollection
 ```
 
 ## Processing
@@ -46,5 +28,3 @@
    xdas.atoms.Sequential
    xdas.atoms.FIRFilter
    xdas.atoms.IIRFilter
-   xdas.atoms.ResamplePoly
-```
