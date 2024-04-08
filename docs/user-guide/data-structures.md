@@ -137,7 +137,7 @@ da = xd.open_dataarray("dataarray.nc")
 dc = xd.DataCollection(
     {
         "event_1": da.sel(time=slice("2023-01-01T00:00:10", "2023-01-01T00:00:20")), 
-        "event_2":da.sel(time=slice("2023-01-01T00:00:40", "2023-01-01T00:00:50")),
+        "event_2": da.sel(time=slice("2023-01-01T00:00:40", "2023-01-01T00:00:50")),
     }
 )
 dc
@@ -160,10 +160,10 @@ dc
 
 ### Case B: DataCollection as handelling a complex network of acquisitions
 
-In the next example, we have several acquisitions for the same fiber so we will use {py:fn}`xdas.open_treedatacollection` to create our DataCollection.
+In the next example, we have several acquisitions for the same fiber so we will use {py:fn}`xdas.open_mfdatatree` to create our DataCollection.
 
 ```{code-cell}
-# Open your DataArrays with open_treedatacollection as virtual source
+# Open your DataArrays with open_mfdatatree as virtual source
 # Write them as a DataCollection
 # Read the DataCollection
 ```
@@ -171,6 +171,19 @@ In the next example, we have several acquisitions for the same fiber so we will 
 If you have several {py:class}`xdas.DataCollection`, you can gather them in one file following this example:
 
 ```{code-cell}
+# Open all your DataCollections with open_mfdatacollection
+# Write it as your global DataCollection in .nc
+# Read your global DataCollection with open_datacollection
+```
+
+```python
+import xdas
+# Open all your DataCollections with open_mfdatacollection
+# Write it as your global DataCollection in .nc
+# Read your global DataCollection with open_datacollection
+```
+```text
+import xdas
 # Open all your DataCollections with open_mfdatacollection
 # Write it as your global DataCollection in .nc
 # Read your global DataCollection with open_datacollection
