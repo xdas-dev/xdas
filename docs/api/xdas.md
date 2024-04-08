@@ -22,6 +22,34 @@
    split
 ```
 
+## Mathematical and statistical functions
+
+```{eval-rst}
+.. autosummary::
+   :toctree: _autosummary
+
+   cumprod
+   cumsum
+   all
+   any
+   max
+   min
+   argmax
+   argmin
+   median
+   ptp
+   mean
+   prod
+   std
+   sum
+   var
+   percentile
+   quantile
+   average
+   count_nonzero
+   diff
+```
+
 ## Classes
 
 ### DataArray
