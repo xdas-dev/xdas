@@ -61,6 +61,7 @@ class Coordinates(dict):
     def __init__(self, coords=None, dims=None):
         super().__init__()
         self._dims = () if dims is None else dims
+        self._parent = None
         if coords is not None:
             for name in coords:
                 self[name] = coords[name]
@@ -78,14 +79,27 @@ class Coordinates(dict):
         coord = Coordinate(value)
         if coord.dim is None and not coord.isscalar():
             coord.dim = key
-        if coord.dim is not None and coord.dim not in self.dims:
-            if coord.dim == key:
-                self._dims = self.dims + (coord.dim,)
-            else:
-                raise KeyError(
-                    f"cannot add non-dimensional coordinate {key} to "
-                    f"non-indexed dimension {coord.dim}"
-                )
+        if self._parent is None:
+            if coord.dim is not None and coord.dim not in self.dims:
+                if coord.dim == key:
+                    self._dims = self.dims + (coord.dim,)
+                else:
+                    raise KeyError(
+                        f"cannot add non-dimensional coordinate {key} to "
+                        f"non-indexed dimension {coord.dim}"
+                    )
+        else:
+            if coord.dim is not None:
+                if coord.dim not in self.dims:
+                    raise KeyError(
+                        f"cannot add new dimension {coord.dim} to an existing DataArray"
+                    )
+                size = self._parent.sizes[coord.dim]
+                if not len(coord) == size:
+                    raise ValueError(
+                        f"conflicting sizes for dimension {coord.dim}: size {len(coord)} "
+                        f"in `coords` and size {size} in `data`"
+                    )
         return super().__setitem__(key, coord)
 
     def __repr__(self):
@@ -101,7 +115,7 @@ class Coordinates(dict):
         return "\n".join(lines)
 
     def __reduce__(self):
-        return self.__class__, (dict(self), self.dims)
+        return self.__class__, (dict(self), self.dims), {"_parent": self._parent}
 
     @property
     def dims(self):

@@ -64,6 +64,7 @@ class DataArray:
                     f"conflicting sizes for dimension {dim}: size {len(coords[dim])} "
                     f"in `coords` and size {size} in `data`"
                 )
+        coords._parent = self
         self.data = data
         self.coords = coords
         self.name = name

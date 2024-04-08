@@ -69,6 +69,22 @@ class TestDataArray:
         with pytest.raises(ValueError, match="conflicting sizes for dimension"):
             DataArray(np.zeros((2, 3)), coords={"time": [1, 2], "distance": [1, 2]})
 
+    def test_coords_setter(self):
+        da = xdas.DataArray(np.arange(3 * 11).reshape(3, 11))
+        da["dim_0"] = [1, 2, 4]
+        da["dim_1"] = {"tie_indices": [0, 10], "tie_values": [0.0, 100.0]}
+        da["dim_0"] = [1, 2, 3]
+        da["metadata"] = 0
+        da["non-dimensional"] = ("dim_0", [-1, -1, -1])
+        assert da.dims == ("dim_0", "dim_1")
+        assert list(da.coords) == ["dim_0", "dim_1", "metadata", "non-dimensional"]
+        with pytest.raises(KeyError, match="cannot add new dimension"):
+            da["dim_2"] = [1, 2, 3]
+        with pytest.raises(ValueError, match="conflicting sizes"):
+            da["dim_0"] = [1, 2, 3, 4]
+        with pytest.raises(ValueError, match="conflicting sizes"):
+            da["dim_1"] = [1]
+
     def test_cannot_set_dims(self):
         da = self.generate()
         with pytest.raises(AttributeError):
