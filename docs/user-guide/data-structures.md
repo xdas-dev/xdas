@@ -13,22 +13,22 @@ os.chdir("../_data")
 
 # Data Structures
 
-*xdas* mainly uses two kind of data structures. The base kind of structure are the 
-{py:class}`xarray.DataArray` and {py:class}`xdas.DataArray` object. Those are 
-N-dimensional labeled array object. The second kind of structure are the 
+*xdas* leverages two kinds of data structures. The workhorse data structures are the 
+{py:class}`xarray.DataArray` and {py:class}`xdas.DataArray` objects, which are 
+N-dimensional labeled array object. The second, more abstract data structures are the 
 {py:class}`xarray.Dataset` and {py:class}`xdas.DataCollection` objects that are 
 mappings of DataArray and DataArray objects respectively. The *xdas* objects extend 
-their equivalent *xarray* counterpart in term of huge multi-file datasets handling but 
-at the price of a limited subset of the *xarray* API. When manipulating data that are 
-small enough to be stored in-memory, the full capabilities of *xarray* objects are 
+their equivalent *xarray* counterpart in term of huge multi-file datasets handling, but 
+at the cost of a limited subset of the *xarray* API. When manipulating data that are 
+small enough to be stored in-memory, the full capabilities of *xarray* objects are available, and is 
 generally preferred. In a near future, we hope that the extra functionalities provided 
 by the *xdas* objects will be part of the *xarray* library to enjoy the best of both 
 words.
 
 The *xarray* objects structure description can be found in the 
 [xarray documentation](https://docs.xarray.dev/en/stable/user-guide/data-structures.html). 
-Here a focus on the *xdas* objects are presented. They follow the same philosophy than
-*xarray* objects so reading the *xarray* documentation is a good start to use *xdas*.
+Here, we focus on the *xdas* objects. They follow the same philosophy as
+*xarray* objects, so reading the *xarray* documentation is a good start to use *xdas*.
 
 ## DataArray
 

@@ -13,6 +13,8 @@ from .core.datacollection import DataCollection, DataMapping, DataSequence
 from .core.methods import *
 from .core.routines import (
     asdataarray,
+    combine_by_coords,
+    combine_by_field,
     concatenate,
     open_dataarray,
     open_datacollection,
@@ -20,6 +22,4 @@ from .core.routines import (
     open_mfdatacollection,
     open_mfdatatree,
     split,
-    combine_by_field,
-    combine_by_coords
 )
