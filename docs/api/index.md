@@ -6,4 +6,5 @@
 xdas
 fft
 signal
+parallel
 ```
