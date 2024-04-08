@@ -61,6 +61,12 @@ class TestDataArray:
         assert da.dims == tuple()
         assert da.ndim == 0
 
+
+    def test_cannot_set_dims(self):
+        da = self.generate()
+        with pytest.raises(AttributeError):
+            da.dims = ("other_dim",)
+
     def test_getitem(self):
         da = self.generate()
         # assert da[0].data == 0.0

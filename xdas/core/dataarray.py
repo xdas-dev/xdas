@@ -188,6 +188,13 @@ class DataArray:
     def dims(self):
         return self.coords.dims
 
+    @dims.setter
+    def dims(self, value):
+        raise AttributeError(
+            "you cannot assign dims on a DataArray, "
+            "use .rename(), .transpose() or .swap_dims() instead"
+        )
+
     @property
     def shape(self):
         return self.data.shape

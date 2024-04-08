@@ -10,9 +10,9 @@ def wraps_first_last(func):
     @wraps(func)
     def wrapper(self, dim, *args, **kwargs):
         if dim == "first":
-            dim = self.dims[0]
+            dim = self._dims[0]
         if dim == "last":
-            dim = self.dims[-1]
+            dim = self._dims[-1]
         return func(self, dim, *args, **kwargs)
 
     return wrapper
@@ -72,11 +72,12 @@ class Coordinates(dict):
                 self[name] = Coordinate(coords[name], name)
         if dims is None:
             dims = tuple(name for name, value in self.items() if value.dim == name)
-        self.dims = dims
+        self._dims = dims
+        self._data = None
 
     @wraps_first_last
     def __getitem__(self, key):
-        if key in self.dims and key not in self:
+        if key in self._dims and key not in self:
             raise KeyError(f"dimension {key} has no coordinate")
         return super().__getitem__(key)
 
@@ -90,7 +91,7 @@ class Coordinates(dict):
         elif key in self:
             dim = self[key].dim
             value = Coordinate(value, dim)
-        elif key in self.dims:
+        elif key in self._dims:
             value = Coordinate(value, key)
         else:
             raise KeyError("cannot assign unknown coordinate")
@@ -107,6 +108,10 @@ class Coordinates(dict):
                 else:
                     lines.append(f"    {name} ({coord.dim}): {coord}")
         return "\n".join(lines)
+
+    @property
+    def dims(self):
+        return self._dims
 
     def isdim(self, name):
         return self[name].dim == name
@@ -128,18 +133,18 @@ class Coordinates(dict):
             A mapping between each dim and a given indexer. If No indexer was found for
             a given dim, slice(None) will be used.
         """
-        query = {dim: slice(None) for dim in self.dims}
+        query = {dim: slice(None) for dim in self._dims}
         if isinstance(item, dict):
             if "first" in item:
-                item[self.dims[0]] = item.pop("first")
+                item[self._dims[0]] = item.pop("first")
             if "last" in item:
-                item[self.dims[-1]] = item.pop("last")
+                item[self._dims[-1]] = item.pop("last")
             query.update(item)
         elif isinstance(item, tuple):
             for k in range(len(item)):
-                query[self.dims[k]] = item[k]
+                query[self._dims[k]] = item[k]
         else:
-            query[self.dims[0]] = item
+            query[self._dims[0]] = item
         for dim, item in query.items():
             if isinstance(item, tuple):
                 msg = f"cannot use tuple {item} to index dim '{dim}'"
