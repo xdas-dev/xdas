@@ -2,7 +2,7 @@
 .. currentmodule:: xdas
 ```
 
-# API reference
+# xdas
 
 ## Top-level functions
 
