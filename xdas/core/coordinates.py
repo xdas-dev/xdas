@@ -60,42 +60,33 @@ class Coordinates(dict):
 
     def __init__(self, coords=None, dims=None):
         super().__init__()
-        if coords is None:
-            coords = {}
-        for name in coords:
-            if isinstance(coords[name], Coordinate):
+        self._dims = () if dims is None else dims
+        if coords is not None:
+            for name in coords:
                 self[name] = coords[name]
-            elif isinstance(coords[name], tuple):
-                dim, data = coords[name]
-                self[name] = Coordinate(data, dim)
-            else:
-                self[name] = Coordinate(coords[name], name)
-        if dims is None:
-            dims = tuple(name for name, value in self.items() if value.dim == name)
-        self._dims = dims
-        self._data = None
 
     @wraps_first_last
     def __getitem__(self, key):
-        if key in self._dims and key not in self:
+        if key in self.dims and key not in self:
             raise KeyError(f"dimension {key} has no coordinate")
         return super().__getitem__(key)
 
     @wraps_first_last
     def __setitem__(self, key, value):
-        if isinstance(value, Coordinate):
-            pass
-        elif isinstance(value, tuple):
-            dim, data = value
-            value = Coordinate(data, dim)
-        elif key in self:
-            dim = self[key].dim
-            value = Coordinate(value, dim)
-        elif key in self._dims:
-            value = Coordinate(value, key)
-        else:
-            raise KeyError("cannot assign unknown coordinate")
-        return super().__setitem__(key, value)
+        if not isinstance(key, str):
+            raise TypeError("dimension names must be of type str")
+        coord = Coordinate(value)
+        if coord.dim is None and not coord.isscalar():
+            coord.dim = key
+        if coord.dim is not None and coord.dim not in self.dims:
+            if coord.dim == key:
+                self._dims = self.dims + (coord.dim,)
+            else:
+                raise KeyError(
+                    f"cannot add non-dimensional coordinate {key} to "
+                    f"non-indexed dimension {coord.dim}"
+                )
+        return super().__setitem__(key, coord)
 
     def __repr__(self):
         lines = ["Coordinates:"]
@@ -108,6 +99,9 @@ class Coordinates(dict):
                 else:
                     lines.append(f"    {name} ({coord.dim}): {coord}")
         return "\n".join(lines)
+
+    def __reduce__(self):
+        return self.__class__, (dict(self), self.dims)
 
     @property
     def dims(self):
@@ -133,18 +127,18 @@ class Coordinates(dict):
             A mapping between each dim and a given indexer. If No indexer was found for
             a given dim, slice(None) will be used.
         """
-        query = {dim: slice(None) for dim in self._dims}
+        query = {dim: slice(None) for dim in self.dims}
         if isinstance(item, dict):
             if "first" in item:
-                item[self._dims[0]] = item.pop("first")
+                item[self.dims[0]] = item.pop("first")
             if "last" in item:
-                item[self._dims[-1]] = item.pop("last")
+                item[self.dims[-1]] = item.pop("last")
             query.update(item)
         elif isinstance(item, tuple):
             for k in range(len(item)):
-                query[self._dims[k]] = item[k]
+                query[self.dims[k]] = item[k]
         else:
-            query[self._dims[0]] = item
+            query[self.dims[0]] = item
         for dim, item in query.items():
             if isinstance(item, tuple):
                 msg = f"cannot use tuple {item} to index dim '{dim}'"
