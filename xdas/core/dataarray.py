@@ -476,6 +476,75 @@ class DataArray:
             da.coords[name] = coord
         return da
 
+    def swap_dims(self, dims_dict=None, **dims_kwargs):
+        """
+        Returns a new DataArray with swapped dimensions.
+
+        Parameters
+        ----------
+        dims_dict : dict-like
+            Dictionary whose keys are current dimension names and whose values
+            are new names.
+        **dims_kwargs : {existing_dim: new_dim, ...}, optional
+            The keyword arguments form of ``dims_dict``.
+            One of dims_dict or dims_kwargs must be provided.
+
+        Returns
+        -------
+        swapped : DataArray
+            DataArray with swapped dimensions.
+
+        Examples
+        --------
+        >>> import xdas as xd
+
+        >>> da = xd.DataArray(
+        ...     data=[0, 1],
+        ...     coords={"x": ["a", "b"], "y": ("x", [0, 1])},
+        ... )
+        >>> da
+        <xdas.DataArray (x: 2)>
+        [0 1]
+        Coordinates:
+          * x (x): ['a' 'b']
+            y (x): [0 1]
+
+        Make y the dimensional coordinate:
+
+        >>> da.swap_dims({"x": "y"})
+        <xdas.DataArray (y: 2)>
+        [0 1]
+        Coordinates:
+            x (y): ['a' 'b']
+          * y (y): [0 1]
+
+        Assign a new empy coordinate z as dimensional coordinate.
+        Use the **kwargs syntax this time:
+
+        >>> da.swap_dims(x="z")
+        <xdas.DataArray (z: 2)>
+        [0 1]
+        Coordinates:
+            x (z): ['a' 'b']
+            y (z): [0 1]
+
+        """
+        if dims_dict is None:
+            dims_dict = {}
+        dims_dict.update(dims_kwargs)
+        for dim in dims_dict:
+            if not dim in self.dims:
+                raise KeyError(
+                    f"dimension {dim} not found in current object with dims {self.dims}"
+                )
+        dims = tuple(dims_dict[dim] if dim in dims_dict else dim for dim in self.dims)
+        coords = {}
+        for name, coord in self.coords.copy(deep=False).items():
+            if coord.dim in dims_dict:
+                coord.dim = dims_dict[coord.dim]
+            coords[name] = coord
+        return self.__class__(self.data, coords, dims, self.name, self.attrs)
+
     def to_xarray(self):
         """
         Convert to the xarray implementation of the DataArray structure.

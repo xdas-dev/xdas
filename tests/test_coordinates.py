@@ -533,7 +533,7 @@ class TestCoordinates:
         assert coords.dims == ("dim_0", "dim_1")
         coords["non-dimensional"] = ("dim_0", [-1, -1, -1])
         assert coords.dims == ("dim_0", "dim_1")
+        coords["other_dim"] = ("dim_2", [0])
+        assert coords.dims == ("dim_0", "dim_1", "dim_2")
         with pytest.raises(TypeError, match="must be of type str"):
             coords[0] = ...
-        with pytest.raises(KeyError, match="cannot add non-dimensional"):
-            coords["dim_2"] = ("other_dim", [0])

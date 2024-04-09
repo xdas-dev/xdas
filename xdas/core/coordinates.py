@@ -85,13 +85,7 @@ class Coordinates(dict):
             coord.dim = key
         if self._parent is None:
             if coord.dim is not None and coord.dim not in self.dims:
-                if coord.dim == key:
-                    self._dims = self.dims + (coord.dim,)
-                else:
-                    raise KeyError(
-                        f"cannot add non-dimensional coordinate {key} to "
-                        f"non-indexed dimension {coord.dim}"
-                    )
+                self._dims = self.dims + (coord.dim,)
         else:
             if coord.dim is not None:
                 if coord.dim not in self.dims:

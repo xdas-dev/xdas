@@ -1,5 +1,6 @@
 import os
 from tempfile import TemporaryDirectory
+from weakref import KeyedRef
 
 import numpy as np
 import pytest
@@ -231,6 +232,34 @@ class TestDataArray:
         assert da_getitem.equals(da_expected)
         assert da_isel.equals(da_expected)
         assert da_sel.equals(da_expected)
+
+    def test_assign_coords(self):
+        da = DataArray(
+            data=np.zeros(3),
+            coords={"time": np.array([3, 4, 5])},
+        )
+        result = da.assign_coords(time=[0, 1, 2])
+        assert np.array_equal(result["time"].values, [0, 1, 2])
+        assert result.equals(da.assign_coords({"time": [0, 1, 2]}))
+        result = da.assign_coords(relative_time=("time", [0, 1, 2]))
+        assert np.array_equal(result["relative_time"].values, [0, 1, 2])
+
+    def test_swap_dims(self):
+        da = DataArray(
+            data=[0, 1],
+            coords={"x": ["a", "b"], "y": ("x", [0, 1])},
+        )
+        result = da.swap_dims({"x": "y"})
+        assert result.dims == ("y",)
+        assert result["x"].dim == "y"
+        assert result["y"].dim == "y"
+        assert da.swap_dims({"x": "y"}).equals(result)
+        result = da.swap_dims(x="z")
+        assert result.dims == ("z",)
+        assert result["x"].dim == "z"
+        assert result["y"].dim == "z"
+        with pytest.raises(KeyError, match="not found in current object with dims"):
+            da.swap_dims({"z": "x"})
 
     def test_io(self):
         # both coords interpolated
