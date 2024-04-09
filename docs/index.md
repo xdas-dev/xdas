@@ -29,7 +29,7 @@ The User Guide provides information on all the features of *Xdas* with explanati
 ```
 
 ```{card} API Reference
-:link: api
+:link: api/index
 :link-type: doc
 
 The reference guide contains a detailed description of the *Xdas* API.
@@ -62,7 +62,7 @@ If you use *Xdas* for your DAS data processing, please consider citing the proje
 
 getting-started
 user-guide/index
-api
+api/index
 contribute
 cite
 ```

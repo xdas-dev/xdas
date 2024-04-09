@@ -219,9 +219,9 @@ class TestInterpCoordinate:
         ["a", "b", "c"],
         np.array(["a", "b", "c"]),
         np.array([1, 2, 3], dtype="datetime64[s]"),
+        {"key": "value"},
     ]
     error = [
-        {"key": "value"},
         {"tie_indices": 0, "tie_values": [100.0]},
         {"tie_indices": [0], "tie_values": 100.0},
         {"tie_indices": [0, 7, 8], "tie_values": [100.0, 900.0]},

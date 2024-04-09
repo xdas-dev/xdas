@@ -79,7 +79,7 @@ def open_mfdatacollection(
     return combine_by_field(objs, dim, tolerance, squeeze, True, verbose)
 
 
-def open_treedatacollection(
+def open_mfdatatree(
     paths, dim="first", tolerance=None, squeeze=False, engine=None, verbose=False
 ):
     """
@@ -125,7 +125,7 @@ def open_treedatacollection(
     --------
     >>> import xdas
     >>> paths = "/data/{node}/{cable}/[acquisition]/proc/[acquisition].h5"
-    >>> xdas.open_mfdatacollection(paths, engine="asn") # doctest: +SKIP
+    >>> xdas.open_mfdatatree(paths, engine="asn") # doctest: +SKIP
     Node:
       CCN:
         Cable:

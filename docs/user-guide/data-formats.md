@@ -55,6 +55,7 @@ def read(fname):
   d = {"tie_indices": [0, nd - 1], "tie_values": [0.0, (nd - 1) * dx]}
   return DataArray(data, {"time": t, "distance": d})
 
+# Replace "other_format.hdf5" by the path of your file
 da = xdas.open_dataarray("other_format.hdf5", engine=read)
 da
 ```

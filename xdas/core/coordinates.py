@@ -526,11 +526,11 @@ class InterpCoordinate(Coordinate):
 
     @staticmethod
     def isvalid(data):
-        try:
-            data = dict(data)
-            return True
-        except (TypeError, ValueError):
-            return False
+        match data:
+            case {"tie_indices": _, "tie_values": _}:
+                return True
+            case _:
+                return False
 
     def __len__(self):
         if self.empty:
@@ -578,10 +578,10 @@ class InterpCoordinate(Coordinate):
         return out
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        raise NotImplementedError()
+        raise NotImplemented
 
     def __array_function__(self, func, types, args, kwargs):
-        raise NotImplementedError()
+        raise NotImplemented
 
     @property
     def tie_indices(self):

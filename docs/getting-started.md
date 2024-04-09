@@ -49,9 +49,10 @@ import xdas
 ### Create a DataArray 
 Link your DAS data to a DataArray:
 
-```{code-cell} 
+```{code-cell}
+:tags: [remove-output]
 da = xdas.open_mfdataarray("00*.h5", engine=None)
-````
+```
 
 If you do not have GPS synchronization during your DAS acquisition, you may have gaps or overlaps between files. With Xdas, you can define a tolerance to what extent you accept to reinterpolate the time to avoid overlaps in the time axis. In the case you have overlaps in time you may have errors when slicing the DataArray. 
 
@@ -63,7 +64,7 @@ da.to_netcdf("da.nc", virtual = True)
 ```
 
 Reading ASN, Febus, Optasense and Sintela data is already implemented and must be specified in engine. You also have the option to develop your own customized [engine](user-guide/engine.md). 
-If you want to create a single DataArray for multiple acquisitions (i.e. different fibers, changing acquisition parameters), you can use the [DataCollection](user-guide/DataCollection.md) object.  
+If you want to create a single DataArray for multiple acquisitions (i.e. different fibers, changing acquisition parameters), you can use the [DataCollection](user-guide/data-structures.md#datacollection) object.  
 
 
 ### Load DataArray

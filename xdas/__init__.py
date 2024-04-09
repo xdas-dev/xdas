@@ -9,7 +9,7 @@ from .core.coordinates import (
     get_sampling_interval,
 )
 from .core.dataarray import DataArray
-from .core.datacollection import DataCollection
+from .core.datacollection import DataCollection, DataMapping, DataSequence
 from .core.methods import *
 from .core.routines import (
     asdataarray,
@@ -18,6 +18,8 @@ from .core.routines import (
     open_datacollection,
     open_mfdataarray,
     open_mfdatacollection,
-    open_treedatacollection,
+    open_mfdatatree,
     split,
+    combine_by_field,
+    combine_by_coords
 )

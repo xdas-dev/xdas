@@ -12,25 +12,23 @@ import xdas as xd
 os.chdir("../_data")
 ```
 
-# Process big dataarrays
-
+# Processing larger-than-memory data
 ```{warning}
 The API of this part of xdas is still experimental.
 ```
 
-## Sequential processing
+## Chunked processing: basic concepts
 
-In most cases, computation must be computed chunk by chunk, the result of a previous 
-chunk being required to start the computation of the following one. This prevent full
-parallelization of the processing. Yet, some degree of parallelization can be achieved 
-when several filters are applied. As soon that a chunk is processed by a filter, the 
-next chunks can be processed by the same filter but also the next filter can be applied 
-to the same chunk. In addition the reading and writing operation this allows sufficient 
-parallelization in most cases (the processing speed reaching the i/o speed).
+Given the sheer size of DAS data, it is often impossible to process an entire data set directly in memory. Hence, chunked-based processing is a necessity that requires an additional layer of computational logistics. A naive approach to chunked processing would be to load a chunk of data, apply a `Sequential` pipeline to it (see [*Composing a processing sequence*](atoms.md)), and write the resulting data to disk. Assuming that disk I/O is the limiting factor, this scenario would leave the CPU mostly idle as it has to wait for new data to be read and processed data to be written to disk.
+
+To maximise the pipeline throughput, xdas applies a staggered protocol of reading, processing, and writing data in parallel, as illustrated in the figure below:
 
 ![](/_static/processing.svg)
 
-```{code-cell} 
-da = xd.open_dataarray("sample.nc")
-da.plot(yincrease=False, vmin=-0.5, vmax=0.5);
-```
+With this approach, execution time is determined by the slowest of the three steps (reading, processing, writing) rather than by the sum of the three, a concept known as *latency hiding*. If, for example, reading and writing a chunk of data takes 2 seconds, and processing takes 1 second, then the total execution time per chunk is 2 seconds instead of 5.
+
+A second feature of xdas, is that it automatically handles state updates and transfer. Many types of filters (e.g. recursive filters and STA/LTA algorithms) rely on some kind of memory of previously seen data, known as the *state* of the filter. The state of each filter needs to be preserved and transferred from one chunk to the next. Moreover, if the computation pipeline gets interrupted and needs to be restarted, the states need to be properly initialised for a seamless continuation. xdas offers optimised filters that handle state updates internally.
+
+## Example
+
+**TODO**
