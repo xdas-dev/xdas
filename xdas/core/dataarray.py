@@ -168,34 +168,67 @@ class DataArray:
             raise AttributeError(f"'DataArray' object has no attribute '{name}'")
 
     def __add__(self, other):
-        return self.copy(data=self.data.__add__(other))
+        return np.add(self, other)
 
     def __radd__(self, other):
-        return self.copy(data=self.data.__radd__(other))
+        return np.add(self, other)
 
     def __sub__(self, other):
-        return self.copy(data=self.data.__sub__(other))
+        return np.subtract(self, other)
 
     def __rsub__(self, other):
-        return self.copy(data=self.data.__rsub__(other))
+        return np.subtract(self, other)
 
     def __mul__(self, other):
-        return self.copy(data=self.data.__mul__(other))
+        return np.multiply(self, other)
 
     def __rmul__(self, other):
-        return self.copy(data=self.data.__rmul__(other))
+        return np.multiply(self, other)
 
     def __truediv__(self, other):
-        return self.copy(data=self.data.__truediv__(other))
+        return np.true_divide(self, other)
 
     def __rtruediv__(self, other):
-        return self.copy(data=self.data.__rtruediv__(other))
+        return np.true_divide(self, other)
+
+    def __floordiv__(self, other):
+        return np.floor_divide(self, other)
+
+    def __rfloordiv__(self, other):
+        return np.floor_divide(self, other)
+
+    def __divmod__(self, other):
+        return np.divmod(self, other)
+
+    def __rdivmod__(self, other):
+        return np.divmod(self, other)
 
     def __pow__(self, other):
-        return self.copy(data=self.data.__pow__(other))
+        return np.power(self, other)
 
     def __rpow__(self, other):
-        return self.copy(data=self.data.__rpow__(other))
+        return np.power(self, other)
+
+    def __mod__(self, other):
+        return np.mod(self, other)
+
+    def __rmod__(self, other):
+        return np.mod(self, other)
+
+    def __neg__(self):
+        return np.negative(self)
+
+    def __pos__(self):
+        return np.positive(self)
+
+    def __abs__(self):
+        return np.absolute(self)
+
+    def conj(self):
+        return np.conj(self)
+
+    def conjugate(self):
+        return np.conjugate(self)
 
     @property
     def data(self):

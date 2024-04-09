@@ -320,3 +320,14 @@ class TestDataArray:
         assert np.array_equal(result.data, da.data + da.data)
         result = np.add(da, da.isel(time=0, drop=True))
         assert np.array_equal(result.data, da.data + da.data[0])
+
+    def test_arithmetics(self):
+        da = generate()
+        result = da + 1
+        assert np.array_equal(result.data, da.data + 1)
+        result = da + np.ones(da.shape[-1])
+        assert np.array_equal(result.data, da.data + 1)
+        result = da + da
+        assert np.array_equal(result.data, da.data + da.data)
+        result = da + da.isel(time=0, drop=True)
+        assert np.array_equal(result.data, da.data + da.data[0])
