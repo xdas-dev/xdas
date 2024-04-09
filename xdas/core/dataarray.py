@@ -577,15 +577,87 @@ class DataArray:
         See Also
         --------
         numpy.transpose
-        Dataset.transpose
+
+        Examples
+        --------
+        >>> import xdas as xd
+        >>> import numpy as np
+
+        >>> da = xd.DataArray(
+        ...     np.arange(2 * 3).reshape(2, 3), {"x": [0, 1], "y": [2, 3, 4]}
+        ... )
+        >>> da
+        <xdas.DataArray (x: 2, y: 3)>
+        [[0 1 2]
+         [3 4 5]]
+        Coordinates:
+          * x (x): [0 1]
+          * y (y): [2 ... 4]
+
+        >>> da.transpose("y", "x")  # equivalent to not providing any arguments here
+        <xdas.DataArray (y: 3, x: 2)>
+        [[0 3]
+         [1 4]
+         [2 5]]
+        Coordinates:
+          * x (x): [0 1]
+          * y (y): [2 ... 4]
         """
         if not dims:
             dims = tuple(reversed(self.dims))
-
         if not (len(dims) == len(self.dims) and set(dims) == set(self.dims)):
             raise ValueError(f"{dims} must be a permutation of {self.dims}")
         axes = tuple(self.get_axis_num(dim) for dim in dims)
         data = np.transpose(self.data, axes)
+        return self.__class__(data, self.coords, dims, self.name, self.attrs)
+
+    def expand_dims(self, dim, axis):
+        """
+        Add an additional dimension at a given axis position.
+
+        Parameters
+        ----------
+        dim : str
+            Dimensions to include on the new variable.
+        axis : int
+            Axis position where new axis is to be inserted (position(s) on
+            the result array).
+
+        Returns
+        -------
+        expanded : DataArray
+            A copy of this object, but with additional dimension.
+
+        Notes
+        -----
+        This operation returns a view of this array's data if this later is a
+        numpy.ndarray object. Otherwise the data is loaded into memory.
+
+        See Also
+        --------
+        numpy.expand_dims
+
+        Examples
+        --------
+        >>> import xdas as xd
+
+        >>> da = xd.DataArray([1., 2., 3.], {"x": [0, 1, 2]})
+        >>> da
+        <xdas.DataArray (x: 3)>
+        [1. 2. 3.]
+        Coordinates:
+          * x (x): [0 ... 2]
+
+        >>> da.expand_dims("y", 0)
+        <xdas.DataArray (y: 1, x: 3)>
+        [[1. 2. 3.]]
+        Coordinates:
+          * x (x): [0 ... 2]
+        Dimensions without coordinates: y
+
+        """
+        data = np.expand_dims(self.data, axis)
+        dims = self.dims[:axis] + (dim,) + self.dims[axis:]
         return self.__class__(data, self.coords, dims, self.name, self.attrs)
 
     def to_xarray(self):

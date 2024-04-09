@@ -271,6 +271,12 @@ class TestDataArray:
         with pytest.raises(ValueError, match="must be a permutation of"):
             da.transpose("space", "frequency")
 
+    def test_expand_dims(self):
+        da = DataArray([1.0, 2.0, 3.0], {"x": [0, 1, 2]})
+        result = da.expand_dims("y", 0)
+        assert result.dims == ("y", "x")
+        assert result.shape == (1, 3)
+
     def test_io(self):
         # both coords interpolated
         da = generate()
