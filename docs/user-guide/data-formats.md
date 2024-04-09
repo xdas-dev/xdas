@@ -13,14 +13,19 @@ os.chdir("../_data")
 
 # Data Formats
 
-*xdas* already work with the more commonly used DAS data formats but can be extended to work with other specific formats. In this part you will see:
+*xdas* implements some of the more commonly used DAS data formats, but it can be extended to work with other specific formats. In this part we will cover:
 
 - How to use *xdas* with an already implemented file format.
 - How to use *xdas* with your specific data format.
 
 ## Implemented file formats
 
-The formats that can already be read by *xdas* are: ASN, FEBUS, OPTASENSE and SINTELA. To read them you have to specifiy which one you want in the `engine` argument in {py:func}`xdas.open_dataarray` for a single file or {py:func}`xdas.open_mfdataarray` for multiple files:
+```{warning}
+Why the capital letters? Why FEBUS instead of Febus? What's the point of the table below?
+Maybe it makes more sense to indicate the interrogator model (ASN: OptoDAS; OptaSense: QuantX, ...)
+```
+
+The formats that are currently implemented are: ASN, FEBUS, OPTASENSE and SINTELA. To read them you have to specifiy which one you want in the `engine` argument in {py:func}`xdas.open_dataarray` for a single file or {py:func}`xdas.open_mfdataarray` for multiple files:
 
 | DAS constructor   | `engine` argument |
 |:-----------------:|:-----------------:|

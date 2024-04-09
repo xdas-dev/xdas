@@ -1,15 +1,17 @@
 # Xdas documentation
 
-
 *Xdas* is an open source Python library for managing, processing and visualizing **Distributed Acoustic Sensing (DAS)** data. It transforms any DAS format into a self-contained data that encapsulates both the data and coordinate metadata.
-Its functionnality can be extended for other dense and heavy N-dimenional arrays such as large-N seismic arrays. It provides parsers for common 
-file format (NetCDF4,HDF5), multithreaded signal processing routines and tools to manage complex datasets. *Xdas* makes a point of offering the user extensibility, allowing users to take advantage of the basic functions optimized for DAS to build their own parallelized pipelines. 
-  
+
+**Main features**:
+
+- Composability of operations: build your own data processing pipeline with a mix of xdas, NumPy/SciPy, and custom routines.
+- Numerous multi-threaded signal processing routines and tools to manage complex datasets, including I/O latency hiding.
+- Convenient data selection across multiple files, with automatic interpolation of small data gaps
+- Parsers for common file formats (NetCDF4,HDF5) and DAS manufacturers (ASN, Febus, OptaSense, Sintela).
+- Extendability to other dense and heavy N-dimenional arrays such as large-N seismic arrays.
 
 It uses the
 [xarray](https://xarray.dev) API to work with labelled multi-dimensional arrays. 
-
-
 
 
 ````{grid} 1 1 2 3
