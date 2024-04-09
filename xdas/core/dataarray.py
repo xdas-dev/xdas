@@ -398,6 +398,84 @@ class DataArray:
     def load(self):
         return self.copy(data=self.data.__array__())
 
+    def assign_coords(self, coords=None, **coords_kwargs):
+        """Assign new coordinates to this object.
+
+        Returns a new object with all the original data in addition to the new
+        coordinates.
+
+        Parameters
+        ----------
+        coords : mapping of dim to coord, optional
+            A mapping whose keys are the names of the coordinates and values are the
+            coordinates to assign. The mapping will generally be a dict or
+            :class:`Coordinates`.
+
+            - If a value is a standard data value that can be parsed by Coordinate —
+              the data is simply assigned as a coordinate.
+            - A coordinate can also be defined and attached to an existing dimension
+              using a tuple with the first element the dimension name and the second
+              element the values for this new coordinate.
+
+        **coords_kwargs : optional
+            The keyword arguments form of ``coords``.
+            One of ``coords`` or ``coords_kwargs`` must be provided.
+
+        Returns
+        -------
+        assigned : same type as caller
+            A new object with the new coordinates in addition to the existing
+            data.
+
+        Examples
+        --------
+        Reset `DataArray` time to start at zero:
+
+        >>> import xdas as xd
+        >>> import numpy as np
+
+        >>> da = xd.DataArray(
+        ...     data=np.zeros(3),
+        ...     coords={"time": np.array([3, 4, 5])},
+        ... )
+        >>> da
+        <xdas.DataArray (time: 3)>
+        [0. 0. 0.]
+        Coordinates:
+          * time (time): [3 ... 5]
+
+        >>> da.assign_coords(time=[0, 1, 2])
+        <xdas.DataArray (time: 3)>
+        [0. 0. 0.]
+        Coordinates:
+          * time (time): [0 ... 2]
+
+        The function also accepts dictionary arguments:
+
+        >>> da.assign_coords({"time": [0, 1, 2]})
+        <xdas.DataArray (time: 3)>
+        [0. 0. 0.]
+        Coordinates:
+          * time (time): [0 ... 2]
+
+        New coordinate can also be attached to an existing dimension:
+
+        >>> da.assign_coords(relative_time=("time", [0, 1, 2]))
+        <xdas.DataArray (time: 3)>
+        [0. 0. 0.]
+        Coordinates:
+          * time (time): [3 ... 5]
+            relative_time (time): [0 ... 2]
+
+        """
+        da = self.copy(deep=False)
+        if coords is None:
+            coords = {}
+        coords.update(coords_kwargs)
+        for name, coord in coords.items():
+            da.coords[name] = coord
+        return da
+
     def to_xarray(self):
         """
         Convert to the xarray implementation of the DataArray structure.
