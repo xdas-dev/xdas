@@ -8,7 +8,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    open_dataarray
    open_mfdataarray
@@ -21,7 +21,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    open_dataarray
    open_mfdataarray
@@ -39,7 +39,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    cumprod
    cumsum
@@ -69,7 +69,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    DataArray.equals
    DataArray.get_axis_num
@@ -91,7 +91,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    DataCollection.query
    DataCollection.issequence
@@ -103,7 +103,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    DataMapping.to_netcdf
    DataMapping.from_netcdf
@@ -118,7 +118,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    DataSequence.to_mapping
    DataSequence.from_mapping
@@ -135,7 +135,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    Coordinate.dtype
    Coordinate.ndim
@@ -152,7 +152,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    Coordinates.isdim
    Coordinates.get_query
@@ -166,7 +166,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    ScalarCoordinate.isvlid
    ScalarCoordinate.equals
@@ -178,7 +178,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    DenseCoordinate.isvlid
    DenseCoordinate.index
@@ -191,7 +191,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    InterpCoordinate.isvlid
    InterpCoordinate.tie_indices
