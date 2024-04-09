@@ -44,22 +44,24 @@ class DataArray:
     """
 
     def __init__(self, data=None, coords=None, dims=None, name=None, attrs=None):
+
+        # data
         if data is None:
             data = np.array(np.nan)
         if not hasattr(data, "__array__"):
             data = np.asarray(data)
+        self._data = data
+
+        # coords & dims
         if coords is None and dims is None:
             dims = tuple(f"dim_{index}" for index in range(data.ndim))
         if dims is not None and len(dims) != data.ndim:
             raise ValueError("different number of dimensions on `data` and `dims`")
         coords = Coordinates(coords, dims)
-        if not len(coords.dims) == data.ndim:
-            raise ValueError(
-                "infered dimension number from `coords` does not match "
-                "`data` dimensionality`"
-            )
-        self.data = data
-        self.coords = coords
+        coords._assign_parent(self)
+        self._coords = coords
+
+        # metadata
         self.name = name
         self.attrs = attrs
 
@@ -77,7 +79,7 @@ class DataArray:
                 )
                 for name, coord in self.coords.items()
             }
-            dims = tuple(dim for dim in self.dims if not coords[dim].isscalar())
+            dims = tuple(dim for dim in self.dims if not np.isscalar(query[dim]))
             return self.__class__(data, coords, dims, self.name, self.attrs)
 
     def __setitem__(self, key, value):
@@ -185,8 +187,45 @@ class DataArray:
         return self.copy(data=self.data.__rpow__(other))
 
     @property
+    def data(self):
+        return self._data
+
+    @data.setter
+    def data(self, value):
+        if not hasattr(value, "__array__"):
+            value = np.asarray(value)
+        if not value.shape == self.shape:
+            raise ValueError(
+                f"replacement data must match the same shape. Replacement data "
+                f"has shape {value.shape}; original data has shape {self.shape}"
+            )
+        self._data = value
+
+    @property
+    def coords(self):
+        return self._coords
+
+    @coords.setter
+    def coords(self, value):
+        value = Coordinates(value)
+        if not value.dims == self.coords.dims:
+            raise ValueError(
+                f"replacement coords must have the same dimensions. Replacement coords "
+                f"has dims {value.dims}; original coords has dims {self.dims}"
+            )
+        value._assign_parent(self)
+        self._coords = value
+
+    @property
     def dims(self):
         return self.coords.dims
+
+    @dims.setter
+    def dims(self, value):
+        raise AttributeError(
+            "you cannot assign dims on a DataArray, "
+            "use .rename(), .transpose() or .swap_dims() instead"
+        )
 
     @property
     def shape(self):
@@ -198,7 +237,7 @@ class DataArray:
 
     @property
     def ndim(self):
-        return len(self.dims)
+        return self.data.ndim
 
     @property
     def sizes(self):
@@ -214,7 +253,7 @@ class DataArray:
 
     @property
     def empty(self):
-        return np.prod(self.shape) == 0
+        return np.prod(self.data.shape) == 0
 
     @property
     def loc(self):
@@ -358,6 +397,84 @@ class DataArray:
 
     def load(self):
         return self.copy(data=self.data.__array__())
+
+    def assign_coords(self, coords=None, **coords_kwargs):
+        """Assign new coordinates to this object.
+
+        Returns a new object with all the original data in addition to the new
+        coordinates.
+
+        Parameters
+        ----------
+        coords : mapping of dim to coord, optional
+            A mapping whose keys are the names of the coordinates and values are the
+            coordinates to assign. The mapping will generally be a dict or
+            :class:`Coordinates`.
+
+            - If a value is a standard data value that can be parsed by Coordinate —
+              the data is simply assigned as a coordinate.
+            - A coordinate can also be defined and attached to an existing dimension
+              using a tuple with the first element the dimension name and the second
+              element the values for this new coordinate.
+
+        **coords_kwargs : optional
+            The keyword arguments form of ``coords``.
+            One of ``coords`` or ``coords_kwargs`` must be provided.
+
+        Returns
+        -------
+        assigned : same type as caller
+            A new object with the new coordinates in addition to the existing
+            data.
+
+        Examples
+        --------
+        Reset `DataArray` time to start at zero:
+
+        >>> import xdas as xd
+        >>> import numpy as np
+
+        >>> da = xd.DataArray(
+        ...     data=np.zeros(3),
+        ...     coords={"time": np.array([3, 4, 5])},
+        ... )
+        >>> da
+        <xdas.DataArray (time: 3)>
+        [0. 0. 0.]
+        Coordinates:
+          * time (time): [3 ... 5]
+
+        >>> da.assign_coords(time=[0, 1, 2])
+        <xdas.DataArray (time: 3)>
+        [0. 0. 0.]
+        Coordinates:
+          * time (time): [0 ... 2]
+
+        The function also accepts dictionary arguments:
+
+        >>> da.assign_coords({"time": [0, 1, 2]})
+        <xdas.DataArray (time: 3)>
+        [0. 0. 0.]
+        Coordinates:
+          * time (time): [0 ... 2]
+
+        New coordinate can also be attached to an existing dimension:
+
+        >>> da.assign_coords(relative_time=("time", [0, 1, 2]))
+        <xdas.DataArray (time: 3)>
+        [0. 0. 0.]
+        Coordinates:
+          * time (time): [3 ... 5]
+            relative_time (time): [0 ... 2]
+
+        """
+        da = self.copy(deep=False)
+        if coords is None:
+            coords = {}
+        coords.update(coords_kwargs)
+        for name, coord in coords.items():
+            da.coords[name] = coord
+        return da
 
     def to_xarray(self):
         """
@@ -665,7 +782,7 @@ class LocIndexer:
 
 class DimSizer(dict):
     def __init__(self, obj):
-        super().__init__({dim: len(obj.coords[dim]) for dim in obj.dims})
+        super().__init__({dim: size for dim, size in zip(obj.dims, obj.shape)})
 
     def __getitem__(self, key):
         if key == "first":

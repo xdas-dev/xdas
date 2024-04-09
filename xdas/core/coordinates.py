@@ -10,9 +10,9 @@ def wraps_first_last(func):
     @wraps(func)
     def wrapper(self, dim, *args, **kwargs):
         if dim == "first":
-            dim = self.dims[0]
+            dim = self._dims[0]
         if dim == "last":
-            dim = self.dims[-1]
+            dim = self._dims[-1]
         return func(self, dim, *args, **kwargs)
 
     return wrapper
@@ -60,39 +60,51 @@ class Coordinates(dict):
 
     def __init__(self, coords=None, dims=None):
         super().__init__()
-        if coords is None:
-            coords = {}
-        for name in coords:
-            if isinstance(coords[name], Coordinate):
+        if isinstance(coords, Coordinates):
+            if dims is None:
+                dims = coords.dims
+            coords = dict(coords)
+        self._dims = () if dims is None else dims
+        self._parent = None
+        if coords is not None:
+            for name in coords:
                 self[name] = coords[name]
-            elif isinstance(coords[name], tuple):
-                dim, data = coords[name]
-                self[name] = Coordinate(data, dim)
-            else:
-                self[name] = Coordinate(coords[name], name)
-        if dims is None:
-            dims = tuple(name for name, value in self.items() if value.dim == name)
-        self.dims = dims
 
     @wraps_first_last
     def __getitem__(self, key):
+        if key in self.dims and key not in self:
+            raise KeyError(f"dimension {key} has no coordinate")
         return super().__getitem__(key)
 
     @wraps_first_last
     def __setitem__(self, key, value):
-        if isinstance(value, Coordinate):
-            pass
-        elif isinstance(value, tuple):
-            dim, data = value
-            value = Coordinate(data, dim)
-        elif key in self:
-            dim = self[key].dim
-            value = Coordinate(value, dim)
-        elif key in self.dims:
-            value = Coordinate(value, key)
+        if not isinstance(key, str):
+            raise TypeError("dimension names must be of type str")
+        coord = Coordinate(value)
+        if coord.dim is None and not coord.isscalar():
+            coord.dim = key
+        if self._parent is None:
+            if coord.dim is not None and coord.dim not in self.dims:
+                if coord.dim == key:
+                    self._dims = self.dims + (coord.dim,)
+                else:
+                    raise KeyError(
+                        f"cannot add non-dimensional coordinate {key} to "
+                        f"non-indexed dimension {coord.dim}"
+                    )
         else:
-            raise KeyError("cannot assign unknown coordinate")
-        return super().__setitem__(key, value)
+            if coord.dim is not None:
+                if coord.dim not in self.dims:
+                    raise KeyError(
+                        f"cannot add new dimension {coord.dim} to an existing DataArray"
+                    )
+                size = self._parent.sizes[coord.dim]
+                if not len(coord) == size:
+                    raise ValueError(
+                        f"conflicting sizes for dimension {coord.dim}: size {len(coord)} "
+                        f"in `coords` and size {size} in `data`"
+                    )
+        return super().__setitem__(key, coord)
 
     def __repr__(self):
         lines = ["Coordinates:"]
@@ -105,6 +117,13 @@ class Coordinates(dict):
                 else:
                     lines.append(f"    {name} ({coord.dim}): {coord}")
         return "\n".join(lines)
+
+    def __reduce__(self):
+        return self.__class__, (dict(self), self.dims), {"_parent": self._parent}
+
+    @property
+    def dims(self):
+        return self._dims
 
     def isdim(self, name):
         return self[name].dim == name
@@ -191,9 +210,23 @@ class Coordinates(dict):
 
     @wraps_first_last
     def drop(self, dim):
-        return self.__class__(
-            {key: value for key, value in self.items() if not value.dim == dim}
-        )
+        coords = {key: value for key, value in self.items() if not value.dim == dim}
+        dims = tuple(value for value in self.dims if not value == dim)
+        return self.__class__(coords, dims)
+
+    def _assign_parent(self, parent):
+        if not len(self.dims) == parent.ndim:
+            raise ValueError(
+                "infered dimension number from `coords` does not match "
+                "`data` dimensionality`"
+            )
+        for dim, size in zip(self.dims, parent.shape):
+            if (dim in self) and (not len(self[dim]) == size):
+                raise ValueError(
+                    f"conflicting sizes for dimension {dim}: size {len(self[dim])} "
+                    f"in `coords` and size {size} in `data`"
+                )
+        self._parent = parent
 
 
 class Coordinate:
@@ -318,6 +351,71 @@ class ScalarCoordinate(Coordinate):
         else:
             data = self.data.item()
         return {"dim": self.dim, "data": data}
+
+
+class DefaultCoordinate(Coordinate):
+    def __new__(cls, *args, **kwargs):
+        return object.__new__(cls)
+
+    def __init__(self, data, dim=None):
+        data, dim = parse(data, dim)
+        if not self.isvalid(data):
+            raise TypeError("`data` must be a mapping {'size': <int>}")
+        self.data = data
+        self.dim = dim
+
+    def __len__(self):
+        if self.data["size"] is None:
+            return 0
+        else:
+            return self.data["size"]
+
+    def __getitem__(self, item):
+        data = self.__array__()[item]
+        if ScalarCoordinate.isvalid(data):
+            return ScalarCoordinate(data)
+        else:
+            return Coordinate(data, self.dim)
+
+    def __array__(self, dtype=None):
+        return np.arange(self.data["size"], dtype=dtype)
+
+    @staticmethod
+    def isvalid(data):
+        match data:
+            case {"size": None | int(_)}:
+                return True
+            case _:
+                return False
+
+    @property
+    def empty(self):
+        return bool(self.data["size"])
+
+    @property
+    def dtype(self):
+        return np.int64
+
+    @property
+    def ndim(self):
+        return 1
+
+    @property
+    def shape(self):
+        return (len(self),)
+
+    def equals(self, other):
+        if isinstance(other, self.__class__):
+            return self.data["size"] == other.data["size"]
+
+    def get_indexer(self, value, method=None):
+        return value
+
+    def slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
+        return slice(start, stop, step)
+
+    def to_dict(self):
+        return {"dim": self.dim, "data": self.data}
 
 
 class DenseCoordinate(Coordinate):

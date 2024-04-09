@@ -501,11 +501,9 @@ def filtfilt(
 
     """
     axis = da.get_axis_num(dim)
-    func = lambda x, b, a, axis, padtype, padlen, method, irlen: sp.filtfilt(
-        b, a, x, axis, padtype, padlen, method, irlen
-    )
-    func = parallelize(axis, parallel)(func)
-    data = func(da.values, b, a, axis, padtype, padlen, method, irlen)
+    across = int(axis == 0)
+    func = parallelize((None, None, across), across, parallel)(sp.filtfilt)
+    data = func(b, a, da.values, axis, padtype, padlen, method, irlen)
     return da.copy(data=data)
 
 

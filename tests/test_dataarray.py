@@ -20,6 +20,21 @@ class TestDataArray:
         da = xdas.DataArray(data, coords)
         return da
 
+    def test_init_without_coords(self):
+        data = np.arange(2 * 3 * 5).reshape(2, 3, 5)
+        da = xdas.DataArray(data)
+        assert np.array_equal(da.data, data)
+        assert da.dims == ("dim_0", "dim_1", "dim_2")
+        assert da.coords == {}
+        assert da.isel(dim_0=0).equals(da[0])
+        assert da.isel(dim_1=slice(1)).equals(da[:, :1])
+        assert da.isel(dim_2=[1, 2, 3]).equals(da[:, :, [1, 2, 3]])
+        assert da.sizes == {"dim_0": 2, "dim_1": 3, "dim_2": 5}
+        with pytest.raises(KeyError, match="no coordinate"):
+            da["dim_0"]
+        with pytest.raises(KeyError, match="no coordinate"):
+            da.sel(dim_0=0)
+
     def test_init_and_properties(self):
         da = self.generate()
         assert isinstance(da["dim"], InterpCoordinate)
@@ -46,6 +61,48 @@ class TestDataArray:
         assert da.dims == tuple()
         assert da.ndim == 0
 
+    def test_raises_on_data_and_coords_mismatch(self):
+        with pytest.raises(ValueError, match="different number of dimensions"):
+            DataArray(np.zeros(3), dims=("time", "distance"))
+        with pytest.raises(ValueError, match="infered dimension number from `coords`"):
+            DataArray(np.zeros(3), coords={"time": [1], "distance": [1]})
+        with pytest.raises(ValueError, match="conflicting sizes for dimension"):
+            DataArray(np.zeros((2, 3)), coords={"time": [1, 2], "distance": [1, 2]})
+
+    def test_coords_setter(self):
+        da = xdas.DataArray(np.arange(3 * 11).reshape(3, 11))
+        da["dim_0"] = [1, 2, 4]
+        da["dim_1"] = {"tie_indices": [0, 10], "tie_values": [0.0, 100.0]}
+        da["dim_0"] = [1, 2, 3]
+        da["metadata"] = 0
+        da["non-dimensional"] = ("dim_0", [-1, -1, -1])
+        assert da.dims == ("dim_0", "dim_1")
+        assert list(da.coords) == ["dim_0", "dim_1", "metadata", "non-dimensional"]
+        with pytest.raises(KeyError, match="cannot add new dimension"):
+            da["dim_2"] = [1, 2, 3]
+        with pytest.raises(ValueError, match="conflicting sizes"):
+            da["dim_0"] = [1, 2, 3, 4]
+        with pytest.raises(ValueError, match="conflicting sizes"):
+            da["dim_1"] = [1]
+        coords = da.coords.copy()
+        assert coords._parent is None
+        da.coords = coords
+        assert da.coords._parent is da
+        coords = da.coords.copy()
+        del coords["dim_1"]
+        da.coords = coords
+        assert list(da.coords.keys()) == ["dim_0", "metadata", "non-dimensional"]
+        assert da.dims == ("dim_0", "dim_1")
+        coords = da.coords.copy()
+        coords = coords.drop("dim_0")
+        with pytest.raises(ValueError, match="replacement coords must have the same"):
+            da.coords = coords
+
+    def test_cannot_set_dims(self):
+        da = self.generate()
+        with pytest.raises(AttributeError):
+            da.dims = ("other_dim",)
+
     def test_getitem(self):
         da = self.generate()
         # assert da[0].data == 0.0
@@ -63,6 +120,14 @@ class TestDataArray:
         da = self.generate()
         # da[0] = -100.0
         # assert da[0].data == -100.0
+
+    def test_data_setter(self):
+        da = generate()
+        data = np.arange(np.prod(da.shape)).reshape(da.shape)
+        da.data = data
+        assert np.array_equal(da.data, data)
+        with pytest.raises(ValueError, match="replacement data must match"):
+            da.data = [1, 2, 3]
 
     def test_sel(self):
         # interp
