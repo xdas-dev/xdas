@@ -497,7 +497,7 @@ def combine_by_coords(
     for da in objs:
         if not bag:
             bag = [da]
-        elif da.coords.drop(dim).equals(bag[-1].coords.drop(dim)) and (
+        elif da.coords.drop_dims(dim).equals(bag[-1].coords.drop_dims(dim)) and (
             get_sampling_interval(da, dim) == get_sampling_interval(bag[-1], dim)
         ):
             bag.append(da)
@@ -698,6 +698,8 @@ def align(*objs):
             else:
                 sizes[dim] = size
         for name, coord in obj.coords.items():
+            if coord.isscalar():
+                continue
             if name in coords:
                 if not coord.equals(coords[name]):
                     raise ValueError(

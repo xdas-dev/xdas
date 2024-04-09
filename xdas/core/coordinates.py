@@ -203,10 +203,15 @@ class Coordinates(dict):
         return self.__class__({key: func(value) for key, value in self.items()})
 
     @wraps_first_last
-    def drop(self, dim):
-        coords = {key: value for key, value in self.items() if not value.dim == dim}
-        dims = tuple(value for value in self.dims if not value == dim)
+    def drop_dims(self, *dims):
+        coords = {key: value for key, value in self.items() if not value.dim in dims}
+        dims = tuple(value for value in self.dims if not value in dims)
         return self.__class__(coords, dims)
+
+    @wraps_first_last
+    def drop_coords(self, *names):
+        coords = {key: value for key, value in self.items() if not key in names}
+        return self.__class__(coords, self.dims)
 
     def _assign_parent(self, parent):
         if not len(self.dims) == parent.ndim:

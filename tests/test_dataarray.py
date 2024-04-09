@@ -94,7 +94,7 @@ class TestDataArray:
         assert list(da.coords.keys()) == ["dim_0", "metadata", "non-dimensional"]
         assert da.dims == ("dim_0", "dim_1")
         coords = da.coords.copy()
-        coords = coords.drop("dim_0")
+        coords = coords.drop_dims("dim_0")
         with pytest.raises(ValueError, match="replacement coords must have the same"):
             da.coords = coords
 
@@ -150,6 +150,10 @@ class TestDataArray:
             da.sel(dim=225, method=None)
         assert da.sel(dim=slice(100.0, 300.0)).equals(da[0:3])
         assert da.sel(dim=slice(100.0, 300.0), endpoint=False).equals(da[0:2])
+        # drop
+        da = generate()
+        result = da.sel(distance=0, method="nearest", drop=True)
+        assert not "distance" in result.coords
 
     def test_isel(self):
         da = generate()
@@ -159,6 +163,10 @@ class TestDataArray:
         result = da.isel(last=0)
         excepted = da.isel(distance=0)
         assert result.equals(excepted)
+        # drop
+        da = generate()
+        result = da.sel(distance=0, drop=True)
+        assert not "distance" in result.coords
 
     def test_to_xarray(self):
         for dense in [True, False]:

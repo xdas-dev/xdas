@@ -305,7 +305,7 @@ class DataArray:
         else:
             raise ValueError("dim not found")
 
-    def isel(self, indexers=None, **indexers_kwargs):
+    def isel(self, indexers=None, drop=False, **indexers_kwargs):
         """
         Return a new DataArray whose data is given by selecting indexes along the
         specified dimension(s).
@@ -315,6 +315,9 @@ class DataArray:
         indexers : dict, optional
             A dict with keys matching dimensions and values given by integers, slice
             objects or arrays.
+        drop : bool, optional
+            If ``drop=True``, drop coordinates variables in `indexers` instead
+            of making them scalar.
         **indexers_kwargs : dict, optional
             The keyword arguments form of integers. Overwrite indexers input if both
             are provided.
@@ -327,9 +330,16 @@ class DataArray:
         if indexers is None:
             indexers = {}
         indexers.update(indexers_kwargs)
-        return self[indexers]
+        da = self[indexers]
+        if drop:
+            for dim in indexers:
+                if da[dim].isscalar():
+                    da = da.drop_coords(dim)
+        return da
 
-    def sel(self, indexers=None, method=None, endpoint=True, **indexers_kwargs):
+    def sel(
+        self, indexers=None, method=None, endpoint=True, drop=False, **indexers_kwargs
+    ):
         """
         Return a new DataArray whose data is given by selecting index labels along the
         specified dimension(s).
@@ -342,6 +352,9 @@ class DataArray:
         indexers : dict, optional
             A dict with keys matching dimensions and values given by scalars, slices or
             arrays of tick labels.
+        drop : bool, optional
+            If ``drop=True``, drop coordinates variables in `indexers` instead
+            of making them scalar.
         **indexers_kwargs : dict, optional
             The keyword arguments form of integers. Overwrite indexers input if both
             are provided.
@@ -355,7 +368,20 @@ class DataArray:
             indexers = {}
         indexers.update(indexers_kwargs)
         key = self.coords.to_index(indexers, method, endpoint)
-        return self[key]
+        da = self[key]
+        if drop:
+            for dim in indexers:
+                if da[dim].isscalar():
+                    da = da.drop_coords(dim)
+        return da
+
+    def drop_dims(self, *dims):
+        coords = self.coords.drop_dims(*dims)
+        return self.__class__(self.data, coords, coords.dims, self.name, self.attrs)
+
+    def drop_coords(self, *names):
+        coords = self.coords.drop_coords(*names)
+        return self.__class__(self.data, coords, coords.dims, self.name, self.attrs)
 
     def copy(self, deep=True, data=None):
         """
