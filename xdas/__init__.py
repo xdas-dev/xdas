@@ -12,6 +12,7 @@ from .core.dataarray import DataArray
 from .core.datacollection import DataCollection, DataMapping, DataSequence
 from .core.methods import *
 from .core.routines import (
+    align,
     asdataarray,
     combine_by_coords,
     combine_by_field,

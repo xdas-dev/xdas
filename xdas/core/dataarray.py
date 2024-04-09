@@ -611,7 +611,7 @@ class DataArray:
         data = np.transpose(self.data, axes)
         return self.__class__(data, self.coords, dims, self.name, self.attrs)
 
-    def expand_dims(self, dim, axis):
+    def expand_dims(self, dim, axis=0):
         """
         Add an additional dimension at a given axis position.
 
