@@ -309,3 +309,14 @@ class TestDataArray:
             da.to_netcdf(path)
             da_recovered = DataArray.from_netcdf(path)
             assert da.equals(da_recovered)
+
+    def test_ufunc(self):
+        da = generate()
+        result = np.add(da, 1)
+        assert np.array_equal(result.data, da.data + 1)
+        result = np.add(da, np.ones(da.shape[-1]))
+        assert np.array_equal(result.data, da.data + 1)
+        result = np.add(da, da)
+        assert np.array_equal(result.data, da.data + da.data)
+        result = np.add(da, da.isel(time=0, drop=True))
+        assert np.array_equal(result.data, da.data + da.data[0])

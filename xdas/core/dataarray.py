@@ -118,9 +118,13 @@ class DataArray:
             return self.data.__array__(dtype)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        from .routines import align  # TODO: circular import
+
         if not method == "__call__":
             return NotImplemented
-        inputs = tuple(
+        if len(inputs) > 1 and all(isinstance(value, DataArray) for value in inputs):
+            inputs = align(*inputs)
+        arrays = tuple(
             value.data if isinstance(value, self.__class__) else value
             for value in inputs
         )
@@ -134,11 +138,11 @@ class DataArray:
                 value.data if isinstance(value, self.__class__) else value
                 for value in kwargs["where"]
             )
-        data = getattr(ufunc, method)(*inputs, **kwargs)
-        if isinstance(data, tuple):
-            return tuple(self.copy(data=d) for d in data)
+        outputs = getattr(ufunc, method)(*arrays, **kwargs)
+        if isinstance(outputs, tuple):
+            return tuple(da.copy(data=data) for da, data in zip(inputs, outputs))
         else:
-            return self.copy(data=data)
+            return inputs[0].copy(data=outputs)
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in HANDLED_NUMPY_FUNCTIONS:
@@ -682,6 +686,13 @@ class DataArray:
         Dimensions without coordinates: y
 
         """
+        if dim in self.dims:
+            raise ValueError(f"cannot expand on existing dimension {dim}")
+        elif dim in self.coords:
+            raise ValueError(
+                f"cannot expand along {dim} because of existing non-dimensional "
+                f"coordinate {dim}. Consider dropping this coordinate."
+            )
         data = np.expand_dims(self.data, axis)
         dims = self.dims[:axis] + (dim,) + self.dims[axis:]
         return self.__class__(data, self.coords, dims, self.name, self.attrs)
