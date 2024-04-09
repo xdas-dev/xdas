@@ -42,9 +42,8 @@ def process(seq, data_loader, data_writer):
 
 
 class DataArrayLoader:
-    """
-    
-    """
+    """ """
+
     def __init__(self, da, chunks):
         self.da = da
         ((self.chunk_dim, self.chunk_size),) = chunks.items()

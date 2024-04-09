@@ -482,6 +482,12 @@ class TestCoordinate:
         assert coord.isdense()
         assert coord.dim == "dim"
 
+    def test_to_dataarray(self):
+        coord = xdas.Coordinate([1, 2, 3], "dim")
+        result = coord.to_dataarray()
+        expected = xdas.DataArray([1, 2, 3], {"dim": [1, 2, 3]}, name="dim")
+        assert result.equals(expected)
+
 
 class TestCoordinates:
     def test_init(self):

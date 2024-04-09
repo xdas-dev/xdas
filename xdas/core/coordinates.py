@@ -303,6 +303,11 @@ class Coordinate:
     def isinterp(self):
         return isinstance(self, InterpCoordinate)
 
+    def to_dataarray(self):
+        from .dataarray import DataArray  # TODO: avoid defered import?
+
+        return DataArray(self.values, {self.dim: self}, name=self.dim)
+
 
 class ScalarCoordinate(Coordinate):
     def __new__(cls, *args, **kwargs):
