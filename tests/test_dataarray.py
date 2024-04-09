@@ -84,6 +84,19 @@ class TestDataArray:
             da["dim_0"] = [1, 2, 3, 4]
         with pytest.raises(ValueError, match="conflicting sizes"):
             da["dim_1"] = [1]
+        coords = da.coords.copy()
+        assert coords._parent is None
+        da.coords = coords
+        assert da.coords._parent is da
+        coords = da.coords.copy()
+        del coords["dim_1"]
+        da.coords = coords
+        assert list(da.coords.keys()) == ["dim_0", "metadata", "non-dimensional"]
+        assert da.dims == ("dim_0", "dim_1")
+        coords = da.coords.copy()
+        coords = coords.drop("dim_0")
+        with pytest.raises(ValueError, match="replacement coords must have the same"):
+            da.coords = coords
 
     def test_cannot_set_dims(self):
         da = self.generate()

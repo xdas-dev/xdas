@@ -60,6 +60,10 @@ class Coordinates(dict):
 
     def __init__(self, coords=None, dims=None):
         super().__init__()
+        if isinstance(coords, Coordinates):
+            if dims is None:
+                dims = coords.dims
+            coords = dict(coords)
         self._dims = () if dims is None else dims
         self._parent = None
         if coords is not None:
@@ -209,6 +213,20 @@ class Coordinates(dict):
         return self.__class__(
             {key: value for key, value in self.items() if not value.dim == dim}
         )
+
+    def _assign_parent(self, parent):
+        if not len(self.dims) == parent.ndim:
+            raise ValueError(
+                "infered dimension number from `coords` does not match "
+                "`data` dimensionality`"
+            )
+        for dim, size in zip(self.dims, parent.shape):
+            if (dim in self) and (not len(self[dim]) == size):
+                raise ValueError(
+                    f"conflicting sizes for dimension {dim}: size {len(self[dim])} "
+                    f"in `coords` and size {size} in `data`"
+                )
+        self._parent = parent
 
 
 class Coordinate:

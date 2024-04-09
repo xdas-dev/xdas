@@ -44,29 +44,24 @@ class DataArray:
     """
 
     def __init__(self, data=None, coords=None, dims=None, name=None, attrs=None):
+
+        # data
         if data is None:
             data = np.array(np.nan)
         if not hasattr(data, "__array__"):
             data = np.asarray(data)
+        self._data = data
+
+        # coords & dims
         if coords is None and dims is None:
             dims = tuple(f"dim_{index}" for index in range(data.ndim))
         if dims is not None and len(dims) != data.ndim:
             raise ValueError("different number of dimensions on `data` and `dims`")
         coords = Coordinates(coords, dims)
-        if not len(coords.dims) == data.ndim:
-            raise ValueError(
-                "infered dimension number from `coords` does not match "
-                "`data` dimensionality`"
-            )
-        for dim, size in zip(coords.dims, data.shape):
-            if (dim in coords) and (not len(coords[dim]) == size):
-                raise ValueError(
-                    f"conflicting sizes for dimension {dim}: size {len(coords[dim])} "
-                    f"in `coords` and size {size} in `data`"
-                )
-        coords._parent = self
-        self._data = data
-        self.coords = coords
+        coords._assign_parent(self)
+        self._coords = coords
+
+        # metadata
         self.name = name
         self.attrs = attrs
 
@@ -197,13 +192,29 @@ class DataArray:
 
     @data.setter
     def data(self, value):
-        value = np.asarray(value)
+        if not hasattr(value, "__array__"):
+            value = np.asarray(value)
         if not value.shape == self.shape:
             raise ValueError(
                 f"replacement data must match the same shape. Replacement data "
                 f"has shape {value.shape}; original data has shape {self.shape}"
             )
         self._data = value
+
+    @property
+    def coords(self):
+        return self._coords
+
+    @coords.setter
+    def coords(self, value):
+        value = Coordinates(value)
+        if not value.dims == self.coords.dims:
+            raise ValueError(
+                f"replacement coords must have the same dimensions. Replacement coords "
+                f"has dims {value.dims}; original coords has dims {self.dims}"
+            )
+        value._assign_parent(self)
+        self._coords = value
 
     @property
     def dims(self):
@@ -226,7 +237,7 @@ class DataArray:
 
     @property
     def ndim(self):
-        return len(self.dims)
+        return self.data.ndim
 
     @property
     def sizes(self):
@@ -242,7 +253,7 @@ class DataArray:
 
     @property
     def empty(self):
-        return np.prod(self.shape) == 0
+        return np.prod(self.data.shape) == 0
 
     @property
     def loc(self):
