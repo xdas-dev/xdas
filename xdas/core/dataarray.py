@@ -65,7 +65,7 @@ class DataArray:
                     f"in `coords` and size {size} in `data`"
                 )
         coords._parent = self
-        self.data = data
+        self._data = data
         self.coords = coords
         self.name = name
         self.attrs = attrs
@@ -190,6 +190,20 @@ class DataArray:
 
     def __rpow__(self, other):
         return self.copy(data=self.data.__rpow__(other))
+
+    @property
+    def data(self):
+        return self._data
+
+    @data.setter
+    def data(self, value):
+        value = np.asarray(value)
+        if not value.shape == self.shape:
+            raise ValueError(
+                f"replacement data must match the same shape. Replacement data "
+                f"has shape {value.shape}; original data has shape {self.shape}"
+            )
+        self._data = value
 
     @property
     def dims(self):

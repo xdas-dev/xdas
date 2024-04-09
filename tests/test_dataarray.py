@@ -108,6 +108,14 @@ class TestDataArray:
         # da[0] = -100.0
         # assert da[0].data == -100.0
 
+    def test_data_setter(self):
+        da = generate()
+        data = np.arange(np.prod(da.shape)).reshape(da.shape)
+        da.data = data
+        assert np.array_equal(da.data, data)
+        with pytest.raises(ValueError, match="replacement data must match"):
+            da.data = [1, 2, 3]
+
     def test_sel(self):
         # interp
         da = self.generate()
