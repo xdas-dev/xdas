@@ -8,7 +8,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    VirtualArray.shape
    VirtualArray.dtype
@@ -23,7 +23,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    VirtualStack.sources
    VirtualStack.axis
@@ -39,7 +39,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    VirtualLayout.shape
    VirtualLayout.dtype
@@ -50,7 +50,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    VirtualSource.vsource
    VirtualSource.shape
@@ -63,7 +63,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    Selection.shape
    Selection.ndim

@@ -11,6 +11,18 @@ from .monitor import Monitor
 
 
 def process(seq, data_loader, data_writer):
+    """
+    Execute a chunked processing pipeline ``seq``,
+    ingesting the data from ``data_loader`` and
+    flushing the processed data through ``data_writer``.
+
+    Parameters
+    ----------
+    seq : ``Sequential``
+        The sequence of atomic operations to execute
+    data_loader : ``DataArrayLoader``
+    data_writer : ``DataArrayWriter``
+    """
     seq.reset()
     if hasattr(data_loader, "nbytes"):
         total = data_loader.nbytes
@@ -30,6 +42,9 @@ def process(seq, data_loader, data_writer):
 
 
 class DataArrayLoader:
+    """
+    
+    """
     def __init__(self, da, chunks):
         self.da = da
         ((self.chunk_dim, self.chunk_size),) = chunks.items()
