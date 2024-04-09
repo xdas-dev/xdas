@@ -210,9 +210,9 @@ class Coordinates(dict):
 
     @wraps_first_last
     def drop(self, dim):
-        return self.__class__(
-            {key: value for key, value in self.items() if not value.dim == dim}
-        )
+        coords = {key: value for key, value in self.items() if not value.dim == dim}
+        dims = tuple(value for value in self.dims if not value == dim)
+        return self.__class__(coords, dims)
 
     def _assign_parent(self, parent):
         if not len(self.dims) == parent.ndim:
