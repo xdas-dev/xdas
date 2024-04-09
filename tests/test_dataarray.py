@@ -261,6 +261,17 @@ class TestDataArray:
         with pytest.raises(KeyError, match="not found in current object with dims"):
             da.swap_dims({"z": "x"})
 
+    def test_transpose(self):
+        da = generate()
+        result = da.transpose("distance", "time")
+        assert result.dims == ("distance", "time")
+        assert np.array_equal(result.values, da.values.T)
+        assert result.equals(da.transpose())
+        with pytest.raises(ValueError, match="must be a permutation of"):
+            da.transpose("distance")
+        with pytest.raises(ValueError, match="must be a permutation of"):
+            da.transpose("space", "frequency")
+
     def test_io(self):
         # both coords interpolated
         da = generate()

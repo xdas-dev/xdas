@@ -545,6 +545,41 @@ class DataArray:
             coords[name] = coord
         return self.__class__(self.data, coords, dims, self.name, self.attrs)
 
+    def transpose(self, *dims):
+        """
+        Return a new DataArray object with transposed dimensions.
+
+        Parameters
+        ----------
+        *dims : Hashable, optional
+            By default, reverse the dimensions. Otherwise, reorder the dimensions to
+            this order. the provided `dims` must be a permutation of the original
+            dimensions.
+
+        Returns
+        -------
+        transposed : DataArray
+            The returned DataArray's array is transposed.
+
+        Notes
+        -----
+        This operation returns a view of this array's data if this later is a
+        numpy.ndarray object. Otherwise the data is loaded into memory.
+
+        See Also
+        --------
+        numpy.transpose
+        Dataset.transpose
+        """
+        if not dims:
+            dims = tuple(reversed(self.dims))
+
+        if not (len(dims) == len(self.dims) and set(dims) == set(self.dims)):
+            raise ValueError(f"{dims} must be a permutation of {self.dims}")
+        axes = tuple(self.get_axis_num(dim) for dim in dims)
+        data = np.transpose(self.data, axes)
+        return self.__class__(data, self.coords, dims, self.name, self.attrs)
+
     def to_xarray(self):
         """
         Convert to the xarray implementation of the DataArray structure.
