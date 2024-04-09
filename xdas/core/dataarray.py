@@ -101,7 +101,14 @@ class DataArray:
         string = "<xdas.DataArray ("
         string += ", ".join([f"{dim}: {size}" for dim, size in self.sizes.items()])
         string += ")>\n"
-        string += data_repr + "\n" + repr(self.coords)
+        string += data_repr
+        if self.coords:
+            string += "\n" + repr(self.coords)
+        dim_without_coords = tuple(dim for dim in self.dims if dim not in self.coords)
+        if dim_without_coords:
+            string += (
+                "\n" + "Dimensions without coordinates: " + ",".join(dim_without_coords)
+            )
         return string
 
     def __array__(self, dtype=None):
@@ -527,6 +534,7 @@ class DataArray:
         Coordinates:
             x (z): ['a' 'b']
             y (z): [0 1]
+        Dimensions without coordinates: z
 
         """
         if dims_dict is None:

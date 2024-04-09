@@ -1,6 +1,5 @@
 import os
 from tempfile import TemporaryDirectory
-from weakref import KeyedRef
 
 import numpy as np
 import pytest
