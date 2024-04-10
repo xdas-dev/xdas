@@ -14,25 +14,35 @@ os.chdir("../_data")
 
 # Virtual Datasets
 
+```{warning}
+To me it feels that there is a lot of conceptual overlap between this chapter, and [](data-structures). It would make sense to merge these two chapters, and create more clarity about the use of `open_dataarray`, `open_mf_dataarray`, and `DataCollection`.
+```
+
 To deal with large multi-file dataset, *xdas* uses the flexibility offered by the 
 [virtual dataset](https://docs.h5py.org/en/stable/vds.html) capabilities of 
-netCDF4/HDF5. A virtual dataset is a file that contains pointers towards files that 
-can then be accessed seamlessly as a unique dataset. Because behind the scene this is 
-handled by HDF5 (which is C compiled) this can be done with almost no overhead. 
+netCDF4/HDF5. A virtual dataset is a file that contains pointers towards an arbitrary number of files that 
+can then be accessed seamlessly as a single, contiguous dataset. Since this is
+handled by HDF5 under the hood (which is C compiled) it comes with almost no overhead. 
 
 ```{note}
 Because netCDF4 are valid HDF5 files, the virtual dataset feature of HDF5 can be used 
 with netCDF4 files.
 ```
 
-In *xdas*, a {py:class}`VirtualSource` is a pointer toward a file while a 
-{py:class}`VirtualLayout` is linking table of multiple {py:class}`VirtualLayout`. Below an
-example of virtual dataset linking three files:
+In *xdas*, a {py:class}`VirtualSource` is a pointer towards a file, while a 
+{py:class}`VirtualLayout` is table linking multiple {py:class}`VirtualSource`s. Below is an
+example of a virtual dataset linking three files:
 
 ![](/_static/virtual-datasets.svg)
 
-The user normally do not need to deal directly with this objects. Below an example of 
-to link a multi-file dataset.
+In most cases, users do not need to deal with this object directly. To handle individual files, multiple files, and virtual datasets, *xdas* offers the following routines:
+
+- {py:func}`xdas.open_dataarray` is used to open a single (virtual) data file, and create a {py:class}`xdas.DataArray` object out of it.
+- {py:func}`xdas.open_mfdataarray` is used to open multiple (virtual) data files at once, creating a single {py:class}`xdas.DataArray` object that can be written to disk as a single virtual data file.
+
+```{warning}
+It isn't very clear what the note below is meant to convey...
+```
 
 ```{note}
 When opening a virtual dataset, this later will appear as a {py:class}`VirtualSource`. 
@@ -41,7 +51,7 @@ This is because HDF5 treats virtual dataset as regular files.
 
 ## Linking multi-file datasets
 
-The files can all be opened with the {py:func}`xdas.open_mfdataarray`:
+Multiple physical data files can be opened simultaneously with the {py:func}`xdas.open_mfdataarray`:
 
 ```{code-cell}
 :tags: [remove-stdout,remove-stderr]
@@ -50,14 +60,14 @@ da = xd.open_mfdataarray("00*.nc")
 da
 ```
 
-Then the dataarray can be written as a virtual dataset using the `virtual` argument
-(otherwise the whole data will be written to disk):
+Here, `*` is a wildcard operator. `open_mfdataarray` only creates file handles and loads basic metadata, but does not directly load the underlying DAS data in memory. Hence this method can open an arbitrary number
+of files with no concern over memory allocation. Next, the DataArray can be written to disk as a single dataset. The `virtual` argument ensures that only the pointers to the original data files are written to disk (otherwise the whole data set will be written to disk):
 
 ```{code-cell}
 da.to_netcdf("vds.nc", virtual=True)
 ```
 
-It can then be read again as a usual file:
+It can then be read again as a single file using {py:func}`xdas.open_dataarray`:
 
 ```{code-cell}
 xd.open_dataarray("vds.nc")

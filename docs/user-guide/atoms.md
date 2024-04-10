@@ -18,7 +18,7 @@ os.chdir("../_data")
 The API of this part of xdas is still experimental.
 ```
 
-The xdas library provides various routines from NumPy, SciPy, and ObsPy that have been optimized for DAS DataArray objects, and which can be incorporated in a processing pipeline. See [Process big dataarrays](processing) for an explanation of the xdas processing workflows, e.g. for bigger-than-RAM datasets. Higher-level operations (FK-filters, STA/LTA detector, etc.) can be constructed from a sequence of the elementary operations implemented in xdas. To facilitate this and other user-defined operations, xdas offers a convenient framework to create and execute a (nested) sequences of atomic operations. By using sequences, built-in and user-defined processing tasks mesh seamlessly with the optimization and IO-infrastructure that xdas offers, improving the robustness and reproducibility of complex processing pipelines.
+The xdas library provides various routines from NumPy, SciPy, and ObsPy that have been optimized for DAS DataArray objects, and which can be incorporated in a processing pipeline. See [](processing) for an explanation of the xdas processing workflows, e.g. for bigger-than-RAM datasets. Higher-level operations (FK-filters, STA/LTA detector, etc.) can be constructed from a sequence of the elementary operations implemented in xdas. To facilitate this and other user-defined operations, xdas offers a convenient framework to create and execute a (nested) sequences of atomic operations. By using sequences, built-in and user-defined processing tasks mesh seamlessly with the optimization and IO-infrastructure that xdas offers, improving the robustness and reproducibility of complex processing pipelines.
 
 ## Chaining elementary operations (atoms)
 
@@ -60,7 +60,7 @@ result.plot(yincrease=False)
 
 The same sequence can be re-used, so it only needs to be defined once.
 
-For executing a sequence on chunked data (e.g., larger-than-memory data sets), see the next section: [*Processing larger-than-RAM data*](processing.md).
+For executing a sequence on chunked data (e.g., larger-than-memory data sets), see the next section: [](processing.md).
 
 ## Defining custom atoms
 
