@@ -107,6 +107,49 @@ perform, the dataarray can be written as a pointer to the original data using th
 da.to_netcdf("dataarray.nc", virtual=False)
 ```
 
+### Assign new coordinates to your DataArray
+
+You can either replace the existing coordinates by new ones or assign new coordinates to a {py:class}`xdas.DataArray` and link it them an existing dimension. 
+
+#### Replace existing coordinates
+
+In the example below, we replace the "distance" coordinate with new ones.
+
+```python
+da = xdas.open_dataarray("datarray.nc")
+new_distances = np.linspace(30.8, 40.9, da.shape[1])
+da = da.assign_coords(distance=new_distances)
+da
+```
+
+#### Add new coordinates and link them to an existing dimension
+
+The new coordinates types can be a list of strings or numbers. In the example below, we will add the new coordinate "latitude" linked with the "distance" dimension.
+
+```python
+da = xdas.open_dataarray("datarray.nc")
+latitudes = np.linspace(-33.90, -35.90, da.shape[1])
+da = da.assign_coords(latitude=("distance", list(latitudes)))
+da
+```
+
+You can also swap a dimension to one of the new coordinates.
+
+```python
+da = da.swap_dims({"distance": "latitude"})
+da
+```
+
+### Plot your DataArray
+
+{py:class}`xdas.DataArray` includes the function {py:func}`xdas.DataArray.plot`. It uses the *xarray* way of plotting data depending on the number of dimensions your data has. You'll have to adapt the arguments and kwargs in {py:func}`xdas.DataArray.plot`.
+
+If your {py:class}`xdas.DataArray` has one dimension, please refer to the arguments and kwargs from the 'xarray.plot.line' function.
+
+For 2 dimensions or more, please refer to the 'xarray.plot.imshow' function.
+
+For other, please refer to 'xarray.plot' function.
+
 ## DataCollection
 
 Use {py:class}`xdas.DataCollection` when your experiment is composed of different acquisitions on a single or several cables/fibers. In this section, you will see how to use this functionality.
@@ -176,12 +219,15 @@ followed by one or more list placeholders that must share a unique name. The
 resulting data collection will be a nesting of dicts down to the lower level
 which will be a list of dataarrays.
 
+#### Gather all your DataCollections
+
 In this example, for the 19th of November 2023, our network REKA has 2 cables (RK1 and RK2), RK1 cable has 3 different acquisitions and RK2 has one acquisition. 
 
+If your data paths are something like: "/data/REKA/RK1/20231119/proc/*.hdf5" and "/data/REKA/RK2/20231119/proc/*.hdf5", you can define your data path as "/data/{network}/{cable}/20231119/proc/[acquisition].hdf5". You free to choose other words to define "network" and "cable", you juste have to replace them.
+
 ```python
-# Open all your DataCollections with open_mfdatatree
-paths = "/data/{network}/{cable}/20231119/proc/[acquisition].hdf5"
-dc = xdas.open_mfdatatree(paths, engine='asn')
+path = "/data/{network}/{cable}/20231119/proc/[acquisition].hdf5"
+dc = xdas.open_mfdatatree(path, engine='asn')
 dc
 ```
 ```text
@@ -201,9 +247,10 @@ Network:
 # Write it as your global DataCollection in .nc with the virtual argument True
 dc.to_netcdf("datacollection.nc", virtual=True)
 ```
+
 ```python
 # Read your global DataCollection with open_datacollection
-dc = open_datacollection("datacollection.nc")
+dc = xdas.open_datacollection("datacollection.nc")
 dc
 ```
 ```text
@@ -221,3 +268,45 @@ Network:
 ```
 
 If you have several {py:class}`xdas.DataCollection`, you can gather them in one file using `xdas.open_mfdatacollection` and write it to one single DataCollection.
+
+#### Extend your DataCollection
+
+You can extend your {py:class}`xdas.DataCollection` by inserting new {py:class}`xdas.DataArray` to the acquisitons list.
+
+```python
+# Read your global DataCollection with open_datacollection
+dc = xdas.open_datacollection("datacollection.nc")
+
+# Read the dataarray you want to add
+da = xdas.open_dataarray("dataarray.nc")
+da
+```
+```text
+<xdas.DataArray (time: 68577, distance: 50000)>
+VirtualSource: 72.5TB (float32)
+Coordinates:
+  * time (time): 2021-10-27T15:44:10.722 to 2021-12-03T15:45:18.419
+  * distance (distance): 0.000 to 204255.953
+```
+
+```python
+# Add the dataarray to the datacollection at the acquisition number 0
+dc['REKA']['RK2'].insert(0, da)
+dc
+```
+```text
+Network:
+  REKA:
+    Cable:
+        RK1: 
+        Acquisition:
+            0: <xdas.DataArray (time: 54000, distance: 10000)>
+            1: <xdas.DataArray (time: 10000, distance: 5000)>
+            2: <xdas.DataArray (time: 9000, distance: 10000)>
+        RK2: 
+        Acquisition:
+            0: <xdas.DataArray (time: 68577, distance: 50000)>
+            1: <xdas.DataArray (time: 54000, distance: 10000)>
+```
+
+You now have 2 acquisitions in your acquisitions list.
