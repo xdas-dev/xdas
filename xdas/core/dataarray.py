@@ -642,6 +642,27 @@ class DataArray:
         return cls(data, coords, da.dims, da.name, None if da.attrs == {} else da.attrs)
 
     def plot(self, *args, **kwargs):
+        """
+        Plot a DataArray. 
+        
+        This plot function uses the xarray way of plotting depending on the 
+        number of dimensions your data has. Please for the args and kwargs 
+        refer to the corresponding xarray functions.
+
+        For a DataArray with one dimension: refer to xarray.plot.line
+        For a DataArray of 2 dimensions or more: refer to xarray.plot.imshow
+        For other: refer to xarray.plot
+
+        Parameters
+        ----------
+        args: see the corresponding xarray args.
+        kwargs: see the corresponding xarray kwargs.
+
+        Returns
+        -------
+        artist
+            The same type of primitive artist that the wrapped Matplotlib function returns.
+        """
         if self.ndim == 1:
             self.to_xarray().plot.line(*args, **kwargs)
         elif self.ndim == 2:
