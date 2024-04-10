@@ -29,8 +29,9 @@ docs = [
     "ipykernel",
     "matplotlib",
     "myst-nb",
-    "sphinx-book-theme",
+    "pydata-sphinx-theme",
     "sphinx-design",
+    "sphinx-copybutton",
     "sphinx",
 ]
 tests = ["pytest", "pytest-cov"]
