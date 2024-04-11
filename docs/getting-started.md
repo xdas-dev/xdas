@@ -114,7 +114,7 @@ da
 At this point we consider that the selection is small enough to be loaded into memory:
 
 ```{code-cell}
-da = da.load()
+da = da.load()  # optional
 da
 ```
 
