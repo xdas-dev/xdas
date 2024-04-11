@@ -178,7 +178,7 @@ fk = xs.taper(fk, dim="time")
 fk = xfft.rfft(fk, dim={"time": "frequency"})  # rename "time" -> "frequency"
 fk = xfft.fft(fk, dim={"distance": "wavenumber"}) # rename "distance" -> "wavenumber"
 fk = 20 * np.log10(np.abs(fk))
-fk.plot(vmin=-20, vmax=40, interpolation="antialiased")
+fk.plot(xlim=(-0.004, 0.004), vmin=-40, vmax=20, interpolation="antialiased")
 ```
 
 ### Saving results
