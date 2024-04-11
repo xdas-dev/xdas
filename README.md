@@ -1,8 +1,10 @@
-<picture align="center">
+<div align="center">
+<picture>
     <source media="(prefers-color-scheme: dark)" srcset="./docs/_static/logo-dark.png">
     <source media="(prefers-color-scheme: light)" srcset="./docs/_static/logo-light.png">
-    <img alt="Xdas Logo" height="300px">
+    <img alt="Xdas Logo" height="250px">
 </picture>
+</div>
 
 -----------------
 
