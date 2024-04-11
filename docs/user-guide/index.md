@@ -3,7 +3,7 @@
 ```{toctree}
 :maxdepth: 1
 
-data-structures
+data-structure/index
 data-formats
 virtual-datasets
 interpolated-coordinates

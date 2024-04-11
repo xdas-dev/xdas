@@ -48,7 +48,7 @@ Found a bug, or you want to propose new features? Follow these instructions to l
 If you use *Xdas* for your DAS data processing, please consider [citing the project](cite).
 
 ```{toctree}
-  :maxdepth: 2
+  :maxdepth: 1
   :hidden:
 
 getting-started
