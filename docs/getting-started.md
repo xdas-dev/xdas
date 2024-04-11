@@ -50,6 +50,14 @@ Most instruments usually produces datasets made out of a multitude of files, eac
 
 If you are considering a unique acquisition you can use {py:func}`~xdas.open_mfdataarray`. You can either pass a list of paths or a path pattern containing wildcards to specify which files must be linked together. The `engine` keyword indicates the format of the data. Xdas support a variety of DAS formats and it is easy to add support to any custom or missing format. See the [](user-guide/data-formats) section for more information. 
 
+In the example here, we have three files of interest in the current working directory:
+
+```{code-cell}
+ls 00*.h5
+```
+
+We can link them like this:
+
 ```{code-cell}
 da = xdas.open_mfdataarray("00*.h5", engine=None)
 da

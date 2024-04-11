@@ -854,6 +854,10 @@ def douglas_peucker(x, y, epsilon):
 
 
 def format_datetime(x):
-    datetime, digits = str(x).split(".")
-    digits = digits[:3]
-    return ".".join([datetime, digits])
+    string = str(x)
+    if "." in string:
+        datetime, digits = string.split(".")
+        digits = digits[:3]
+        return ".".join([datetime, digits])
+    else:
+        return string
