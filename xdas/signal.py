@@ -665,7 +665,7 @@ def sosfiltfilt(sos, da, dim="last", padtype="odd", padlen=None, parallel=None):
 
 
 @atomized
-def decimate(da, q, n=None, ftype="iir", zero_phase=None, dim="last", parallel=None):
+def decimate(da, q, n=None, ftype="iir", zero_phase=True, dim="last", parallel=None):
     """
     Downsample the signal after applying an anti-aliasing filter.
 
