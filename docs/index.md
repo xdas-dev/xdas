@@ -58,7 +58,7 @@ If you use *Xdas* for your DAS data processing, please consider
 
 
 ```{toctree}
-  :maxdepth: 2
+  :maxdepth: 3
   :hidden:
 
 getting-started

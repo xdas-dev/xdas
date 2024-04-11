@@ -1,9 +1,10 @@
 # User Guide
 
 ```{toctree}
-:maxdepth: 1
+:maxdepth: 2
 
-data-structures
+data-structures/dataarray
+data-structures/datacollection
 data-formats
 virtual-datasets
 interpolated-coordinates

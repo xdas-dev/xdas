@@ -1020,14 +1020,16 @@ class DataArray:
         number of dimensions your data has. Please for the args and kwargs 
         refer to the corresponding xarray functions.
 
-        For a DataArray with one dimension: refer to xarray.plot.line
-        For a DataArray of 2 dimensions or more: refer to xarray.plot.imshow
-        For other: refer to xarray.plot
+        For a DataArray with one dimension: refer to `xarray.plot.line <https://docs.xarray.dev/en/stable/generated/xarray.plot.line.html>`_.
+        For a DataArray of 2 dimensions or more: refer to `xarray.plot.imshow <https://docs.xarray.dev/en/stable/generated/xarray.plot.imshow.html>`_.
+        For other: refer to `xarray.plot.hist <https://docs.xarray.dev/en/latest/generated/xarray.plot.hist.html#xarray.plot.hist>`_.
 
         Parameters
         ----------
-        args: see the corresponding xarray args.
-        kwargs: see the corresponding xarray kwargs.
+        *args: 
+            See the corresponding xarray *args.
+        **kwargs: 
+            See the corresponding xarray **kwargs.
 
         Returns
         -------
