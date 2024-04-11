@@ -11,6 +11,18 @@ from .monitor import Monitor
 
 
 def process(seq, data_loader, data_writer):
+    """
+    Execute a chunked processing pipeline ``seq``,
+    ingesting the data from ``data_loader`` and
+    flushing the processed data through ``data_writer``.
+
+    Parameters
+    ----------
+    seq : ``Sequential``
+        The sequence of atomic operations to execute
+    data_loader : ``DataArrayLoader``
+    data_writer : ``DataArrayWriter``
+    """
     seq.reset()
     if hasattr(data_loader, "nbytes"):
         total = data_loader.nbytes
@@ -30,6 +42,37 @@ def process(seq, data_loader, data_writer):
 
 
 class DataArrayLoader:
+    """
+    A class to handle data chunked data ingestion.
+
+    Parameters
+    ----------
+    da : ``DataArray``, ``DataCollection``
+        The (virtual) DataArray or DataCollection that
+        contains the data to be chunked
+    chunks : dict
+        The sizes of the chunks along each dimension.
+        Needs to be of the form: ``{"dim": int}``.
+        Each key needs to correspond with a dimension
+        (either "time" or "distance"), and each value
+        is an integer indicating the size of the chunk
+        (in samples) along that dimension.
+
+    Examples
+    --------
+    >>> import xdas
+    >>> from xdas.processing import DataArrayLoader
+    >>> da = xdas.open_dataarray(...)  # doctest: +SKIP
+    >>>
+    >>> # Create chunks along the time dimension
+    >>> chunks = {"time": 1000}
+    >>> dl = DataArrayLoader(da, chunks)
+    >>>
+    >>> # Create chunks along both dimensions
+    >>> chunks2 = {"time": 1000, "distance": 10}
+    >>> dl2 = DataArrayLoader(da, chunks2)
+    """
+
     def __init__(self, da, chunks):
         self.da = da
         ((self.chunk_dim, self.chunk_size),) = chunks.items()
@@ -102,6 +145,28 @@ class Handler(FileSystemEventHandler):
 
 
 class DataArrayWriter:
+    """
+    A class to handle chunked data egress.
+
+    Parameters
+    ----------
+    dirpath : str or path
+        The directory to store the outpt of a
+        processing pipeline. The directory needs
+        to exist and be empty.
+
+    Examples
+    --------
+    >>> import os, shutil
+    >>> from xdas.processing import DataArrayWriter
+    >>>
+    >>> output_dir = "./output"
+    >>> if os.path.isdir(output_dir):
+    >>>     shutil.rmtree(output_dir)
+    >>> os.makedirs(output_dir)
+    >>> dw = DataArrayWriter(output_dir)
+    """
+
     def __init__(self, dirpath):
         self.dirpath = dirpath
         self.queue = Queue(maxsize=1)

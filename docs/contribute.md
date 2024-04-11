@@ -1,4 +1,4 @@
-# Development of Xdas
+# Development
 
 ## Configure development environment
 

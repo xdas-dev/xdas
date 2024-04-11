@@ -8,7 +8,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    Sequential
    State
@@ -29,7 +29,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    signal.ResamplePoly
    signal.IIRFilter

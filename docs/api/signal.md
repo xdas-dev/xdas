@@ -8,7 +8,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    detrend
    taper
@@ -25,7 +25,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    filter
    hilbert

@@ -160,3 +160,16 @@ class TestCore:
     def test_chunk(self):
         da = generate()
         assert xdas.concatenate(xdas.split(da, 3)).equals(da)
+
+    def test_align(self):
+        da1 = xdas.DataArray(np.arange(2), {"x": [0, 1]})
+        da2 = xdas.DataArray(np.arange(3), {"y": [2, 3, 4]})
+        da1, da2 = xdas.align(da1, da2)
+        assert da1.sizes == {"x": 2, "y": 1}
+        assert da2.sizes == {"x": 1, "y": 3}
+        da3 = xdas.DataArray(np.arange(4).reshape(2, 2), {"x": [0, 1], "y": [2, 3]})
+        with pytest.raises(ValueError, match="incompatible sizes"):
+            xdas.align(da1, da2, da3)
+        da3 = xdas.DataArray(np.arange(6).reshape(2, 3), {"x": [1, 2], "y": [2, 3, 4]})
+        with pytest.raises(ValueError, match="differs from one data array to another"):
+            xdas.align(da1, da2, da3)

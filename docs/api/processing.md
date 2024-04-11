@@ -6,8 +6,9 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
+   process
    DataArrayLoader
    RealTimeLoader
    DataArrayWriter

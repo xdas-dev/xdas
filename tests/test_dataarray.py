@@ -20,6 +20,21 @@ class TestDataArray:
         da = xdas.DataArray(data, coords)
         return da
 
+    def test_init_without_coords(self):
+        data = np.arange(2 * 3 * 5).reshape(2, 3, 5)
+        da = xdas.DataArray(data)
+        assert np.array_equal(da.data, data)
+        assert da.dims == ("dim_0", "dim_1", "dim_2")
+        assert da.coords == {}
+        assert da.isel(dim_0=0).equals(da[0])
+        assert da.isel(dim_1=slice(1)).equals(da[:, :1])
+        assert da.isel(dim_2=[1, 2, 3]).equals(da[:, :, [1, 2, 3]])
+        assert da.sizes == {"dim_0": 2, "dim_1": 3, "dim_2": 5}
+        with pytest.raises(KeyError, match="no coordinate"):
+            da["dim_0"]
+        with pytest.raises(KeyError, match="no coordinate"):
+            da.sel(dim_0=0)
+
     def test_init_and_properties(self):
         da = self.generate()
         assert isinstance(da["dim"], InterpCoordinate)
@@ -46,6 +61,48 @@ class TestDataArray:
         assert da.dims == tuple()
         assert da.ndim == 0
 
+    def test_raises_on_data_and_coords_mismatch(self):
+        with pytest.raises(ValueError, match="different number of dimensions"):
+            DataArray(np.zeros(3), dims=("time", "distance"))
+        with pytest.raises(ValueError, match="infered dimension number from `coords`"):
+            DataArray(np.zeros(3), coords={"time": [1], "distance": [1]})
+        with pytest.raises(ValueError, match="conflicting sizes for dimension"):
+            DataArray(np.zeros((2, 3)), coords={"time": [1, 2], "distance": [1, 2]})
+
+    def test_coords_setter(self):
+        da = xdas.DataArray(np.arange(3 * 11).reshape(3, 11))
+        da["dim_0"] = [1, 2, 4]
+        da["dim_1"] = {"tie_indices": [0, 10], "tie_values": [0.0, 100.0]}
+        da["dim_0"] = [1, 2, 3]
+        da["metadata"] = 0
+        da["non-dimensional"] = ("dim_0", [-1, -1, -1])
+        assert da.dims == ("dim_0", "dim_1")
+        assert list(da.coords) == ["dim_0", "dim_1", "metadata", "non-dimensional"]
+        with pytest.raises(KeyError, match="cannot add new dimension"):
+            da["dim_2"] = [1, 2, 3]
+        with pytest.raises(ValueError, match="conflicting sizes"):
+            da["dim_0"] = [1, 2, 3, 4]
+        with pytest.raises(ValueError, match="conflicting sizes"):
+            da["dim_1"] = [1]
+        coords = da.coords.copy()
+        assert coords._parent is None
+        da.coords = coords
+        assert da.coords._parent is da
+        coords = da.coords.copy()
+        del coords["dim_1"]
+        da.coords = coords
+        assert list(da.coords.keys()) == ["dim_0", "metadata", "non-dimensional"]
+        assert da.dims == ("dim_0", "dim_1")
+        coords = da.coords.copy()
+        coords = coords.drop_dims("dim_0")
+        with pytest.raises(ValueError, match="replacement coords must have the same"):
+            da.coords = coords
+
+    def test_cannot_set_dims(self):
+        da = self.generate()
+        with pytest.raises(AttributeError):
+            da.dims = ("other_dim",)
+
     def test_getitem(self):
         da = self.generate()
         # assert da[0].data == 0.0
@@ -63,6 +120,14 @@ class TestDataArray:
         da = self.generate()
         # da[0] = -100.0
         # assert da[0].data == -100.0
+
+    def test_data_setter(self):
+        da = generate()
+        data = np.arange(np.prod(da.shape)).reshape(da.shape)
+        da.data = data
+        assert np.array_equal(da.data, data)
+        with pytest.raises(ValueError, match="replacement data must match"):
+            da.data = [1, 2, 3]
 
     def test_sel(self):
         # interp
@@ -85,6 +150,10 @@ class TestDataArray:
             da.sel(dim=225, method=None)
         assert da.sel(dim=slice(100.0, 300.0)).equals(da[0:3])
         assert da.sel(dim=slice(100.0, 300.0), endpoint=False).equals(da[0:2])
+        # drop
+        da = generate()
+        result = da.sel(distance=0, method="nearest", drop=True)
+        assert not "distance" in result.coords
 
     def test_isel(self):
         da = generate()
@@ -94,6 +163,10 @@ class TestDataArray:
         result = da.isel(last=0)
         excepted = da.isel(distance=0)
         assert result.equals(excepted)
+        # drop
+        da = generate()
+        result = da.sel(distance=0, drop=True)
+        assert not "distance" in result.coords
 
     def test_to_xarray(self):
         for dense in [True, False]:
@@ -167,6 +240,51 @@ class TestDataArray:
         assert da_isel.equals(da_expected)
         assert da_sel.equals(da_expected)
 
+    def test_assign_coords(self):
+        da = DataArray(
+            data=np.zeros(3),
+            coords={"time": np.array([3, 4, 5])},
+        )
+        result = da.assign_coords(time=[0, 1, 2])
+        assert np.array_equal(result["time"].values, [0, 1, 2])
+        assert result.equals(da.assign_coords({"time": [0, 1, 2]}))
+        result = da.assign_coords(relative_time=("time", [0, 1, 2]))
+        assert np.array_equal(result["relative_time"].values, [0, 1, 2])
+
+    def test_swap_dims(self):
+        da = DataArray(
+            data=[0, 1],
+            coords={"x": ["a", "b"], "y": ("x", [0, 1])},
+        )
+        result = da.swap_dims({"x": "y"})
+        assert result.dims == ("y",)
+        assert result["x"].dim == "y"
+        assert result["y"].dim == "y"
+        assert da.swap_dims({"x": "y"}).equals(result)
+        result = da.swap_dims(x="z")
+        assert result.dims == ("z",)
+        assert result["x"].dim == "z"
+        assert result["y"].dim == "z"
+        with pytest.raises(KeyError, match="not found in current object with dims"):
+            da.swap_dims({"z": "x"})
+
+    def test_transpose(self):
+        da = generate()
+        result = da.transpose("distance", "time")
+        assert result.dims == ("distance", "time")
+        assert np.array_equal(result.values, da.values.T)
+        assert result.equals(da.transpose())
+        with pytest.raises(ValueError, match="must be a permutation of"):
+            da.transpose("distance")
+        with pytest.raises(ValueError, match="must be a permutation of"):
+            da.transpose("space", "frequency")
+
+    def test_expand_dims(self):
+        da = DataArray([1.0, 2.0, 3.0], {"x": [0, 1, 2]})
+        result = da.expand_dims("y", 0)
+        assert result.dims == ("y", "x")
+        assert result.shape == (1, 3)
+
     def test_io(self):
         # both coords interpolated
         da = generate()
@@ -191,3 +309,25 @@ class TestDataArray:
             da.to_netcdf(path)
             da_recovered = DataArray.from_netcdf(path)
             assert da.equals(da_recovered)
+
+    def test_ufunc(self):
+        da = generate()
+        result = np.add(da, 1)
+        assert np.array_equal(result.data, da.data + 1)
+        result = np.add(da, np.ones(da.shape[-1]))
+        assert np.array_equal(result.data, da.data + 1)
+        result = np.add(da, da)
+        assert np.array_equal(result.data, da.data + da.data)
+        result = np.add(da, da.isel(time=0, drop=True))
+        assert np.array_equal(result.data, da.data + da.data[0])
+
+    def test_arithmetics(self):
+        da = generate()
+        result = da + 1
+        assert np.array_equal(result.data, da.data + 1)
+        result = da + np.ones(da.shape[-1])
+        assert np.array_equal(result.data, da.data + 1)
+        result = da + da
+        assert np.array_equal(result.data, da.data + da.data)
+        result = da + da.isel(time=0, drop=True)
+        assert np.array_equal(result.data, da.data + da.data[0])

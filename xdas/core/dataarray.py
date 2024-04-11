@@ -44,22 +44,24 @@ class DataArray:
     """
 
     def __init__(self, data=None, coords=None, dims=None, name=None, attrs=None):
+
+        # data
         if data is None:
             data = np.array(np.nan)
         if not hasattr(data, "__array__"):
             data = np.asarray(data)
+        self._data = data
+
+        # coords & dims
         if coords is None and dims is None:
             dims = tuple(f"dim_{index}" for index in range(data.ndim))
         if dims is not None and len(dims) != data.ndim:
             raise ValueError("different number of dimensions on `data` and `dims`")
         coords = Coordinates(coords, dims)
-        if not len(coords.dims) == data.ndim:
-            raise ValueError(
-                "infered dimension number from `coords` does not match "
-                "`data` dimensionality`"
-            )
-        self.data = data
-        self.coords = coords
+        coords._assign_parent(self)
+        self._coords = coords
+
+        # metadata
         self.name = name
         self.attrs = attrs
 
@@ -77,7 +79,7 @@ class DataArray:
                 )
                 for name, coord in self.coords.items()
             }
-            dims = tuple(dim for dim in self.dims if not coords[dim].isscalar())
+            dims = tuple(dim for dim in self.dims if not np.isscalar(query[dim]))
             return self.__class__(data, coords, dims, self.name, self.attrs)
 
     def __setitem__(self, key, value):
@@ -99,7 +101,14 @@ class DataArray:
         string = "<xdas.DataArray ("
         string += ", ".join([f"{dim}: {size}" for dim, size in self.sizes.items()])
         string += ")>\n"
-        string += data_repr + "\n" + repr(self.coords)
+        string += data_repr
+        if self.coords:
+            string += "\n" + repr(self.coords)
+        dim_without_coords = tuple(dim for dim in self.dims if dim not in self.coords)
+        if dim_without_coords:
+            string += (
+                "\n" + "Dimensions without coordinates: " + ",".join(dim_without_coords)
+            )
         return string
 
     def __array__(self, dtype=None):
@@ -109,9 +118,13 @@ class DataArray:
             return self.data.__array__(dtype)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        from .routines import align  # TODO: circular import
+
         if not method == "__call__":
             return NotImplemented
-        inputs = tuple(
+        if len(inputs) > 1 and all(isinstance(value, DataArray) for value in inputs):
+            inputs = align(*inputs)
+        arrays = tuple(
             value.data if isinstance(value, self.__class__) else value
             for value in inputs
         )
@@ -125,11 +138,11 @@ class DataArray:
                 value.data if isinstance(value, self.__class__) else value
                 for value in kwargs["where"]
             )
-        data = getattr(ufunc, method)(*inputs, **kwargs)
-        if isinstance(data, tuple):
-            return tuple(self.copy(data=d) for d in data)
+        outputs = getattr(ufunc, method)(*arrays, **kwargs)
+        if isinstance(outputs, tuple):
+            return tuple(da.copy(data=data) for da, data in zip(inputs, outputs))
         else:
-            return self.copy(data=data)
+            return inputs[0].copy(data=outputs)
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in HANDLED_NUMPY_FUNCTIONS:
@@ -155,38 +168,108 @@ class DataArray:
             raise AttributeError(f"'DataArray' object has no attribute '{name}'")
 
     def __add__(self, other):
-        return self.copy(data=self.data.__add__(other))
+        return np.add(self, other)
 
     def __radd__(self, other):
-        return self.copy(data=self.data.__radd__(other))
+        return np.add(self, other)
 
     def __sub__(self, other):
-        return self.copy(data=self.data.__sub__(other))
+        return np.subtract(self, other)
 
     def __rsub__(self, other):
-        return self.copy(data=self.data.__rsub__(other))
+        return np.subtract(self, other)
 
     def __mul__(self, other):
-        return self.copy(data=self.data.__mul__(other))
+        return np.multiply(self, other)
 
     def __rmul__(self, other):
-        return self.copy(data=self.data.__rmul__(other))
+        return np.multiply(self, other)
 
     def __truediv__(self, other):
-        return self.copy(data=self.data.__truediv__(other))
+        return np.true_divide(self, other)
 
     def __rtruediv__(self, other):
-        return self.copy(data=self.data.__rtruediv__(other))
+        return np.true_divide(self, other)
+
+    def __floordiv__(self, other):
+        return np.floor_divide(self, other)
+
+    def __rfloordiv__(self, other):
+        return np.floor_divide(self, other)
+
+    def __divmod__(self, other):
+        return np.divmod(self, other)
+
+    def __rdivmod__(self, other):
+        return np.divmod(self, other)
 
     def __pow__(self, other):
-        return self.copy(data=self.data.__pow__(other))
+        return np.power(self, other)
 
     def __rpow__(self, other):
-        return self.copy(data=self.data.__rpow__(other))
+        return np.power(self, other)
+
+    def __mod__(self, other):
+        return np.mod(self, other)
+
+    def __rmod__(self, other):
+        return np.mod(self, other)
+
+    def __neg__(self):
+        return np.negative(self)
+
+    def __pos__(self):
+        return np.positive(self)
+
+    def __abs__(self):
+        return np.absolute(self)
+
+    def conj(self):
+        return np.conj(self)
+
+    def conjugate(self):
+        return np.conjugate(self)
+
+    @property
+    def data(self):
+        return self._data
+
+    @data.setter
+    def data(self, value):
+        if not hasattr(value, "__array__"):
+            value = np.asarray(value)
+        if not value.shape == self.shape:
+            raise ValueError(
+                f"replacement data must match the same shape. Replacement data "
+                f"has shape {value.shape}; original data has shape {self.shape}"
+            )
+        self._data = value
+
+    @property
+    def coords(self):
+        return self._coords
+
+    @coords.setter
+    def coords(self, value):
+        value = Coordinates(value)
+        if not value.dims == self.coords.dims:
+            raise ValueError(
+                f"replacement coords must have the same dimensions. Replacement coords "
+                f"has dims {value.dims}; original coords has dims {self.dims}"
+            )
+        value._assign_parent(self)
+        self._coords = value
 
     @property
     def dims(self):
         return self.coords.dims
+
+    @dims.setter
+    def dims(self, value):
+        raise AttributeError(
+            "you cannot assign dims on a DataArray, "
+            "use .rename(), .transpose() or .swap_dims() instead"
+        )
 
     @property
     def shape(self):
@@ -198,7 +281,7 @@ class DataArray:
 
     @property
     def ndim(self):
-        return len(self.dims)
+        return self.data.ndim
 
     @property
     def sizes(self):
@@ -214,7 +297,7 @@ class DataArray:
 
     @property
     def empty(self):
-        return np.prod(self.shape) == 0
+        return np.prod(self.data.shape) == 0
 
     @property
     def loc(self):
@@ -259,7 +342,7 @@ class DataArray:
         else:
             raise ValueError("dim not found")
 
-    def isel(self, indexers=None, **indexers_kwargs):
+    def isel(self, indexers=None, drop=False, **indexers_kwargs):
         """
         Return a new DataArray whose data is given by selecting indexes along the
         specified dimension(s).
@@ -269,6 +352,9 @@ class DataArray:
         indexers : dict, optional
             A dict with keys matching dimensions and values given by integers, slice
             objects or arrays.
+        drop : bool, optional
+            If ``drop=True``, drop coordinates variables in `indexers` instead
+            of making them scalar.
         **indexers_kwargs : dict, optional
             The keyword arguments form of integers. Overwrite indexers input if both
             are provided.
@@ -281,9 +367,16 @@ class DataArray:
         if indexers is None:
             indexers = {}
         indexers.update(indexers_kwargs)
-        return self[indexers]
+        da = self[indexers]
+        if drop:
+            for dim in indexers:
+                if da[dim].isscalar():
+                    da = da.drop_coords(dim)
+        return da
 
-    def sel(self, indexers=None, method=None, endpoint=True, **indexers_kwargs):
+    def sel(
+        self, indexers=None, method=None, endpoint=True, drop=False, **indexers_kwargs
+    ):
         """
         Return a new DataArray whose data is given by selecting index labels along the
         specified dimension(s).
@@ -296,6 +389,9 @@ class DataArray:
         indexers : dict, optional
             A dict with keys matching dimensions and values given by scalars, slices or
             arrays of tick labels.
+        drop : bool, optional
+            If ``drop=True``, drop coordinates variables in `indexers` instead
+            of making them scalar.
         **indexers_kwargs : dict, optional
             The keyword arguments form of integers. Overwrite indexers input if both
             are provided.
@@ -309,7 +405,20 @@ class DataArray:
             indexers = {}
         indexers.update(indexers_kwargs)
         key = self.coords.to_index(indexers, method, endpoint)
-        return self[key]
+        da = self[key]
+        if drop:
+            for dim in indexers:
+                if da[dim].isscalar():
+                    da = da.drop_coords(dim)
+        return da
+
+    def drop_dims(self, *dims):
+        coords = self.coords.drop_dims(*dims)
+        return self.__class__(self.data, coords, coords.dims, self.name, self.attrs)
+
+    def drop_coords(self, *names):
+        coords = self.coords.drop_coords(*names)
+        return self.__class__(self.data, coords, coords.dims, self.name, self.attrs)
 
     def copy(self, deep=True, data=None):
         """
@@ -358,6 +467,268 @@ class DataArray:
 
     def load(self):
         return self.copy(data=self.data.__array__())
+
+    def assign_coords(self, coords=None, **coords_kwargs):
+        """Assign new coordinates to this object.
+
+        Returns a new object with all the original data in addition to the new
+        coordinates.
+
+        Parameters
+        ----------
+        coords : mapping of dim to coord, optional
+            A mapping whose keys are the names of the coordinates and values are the
+            coordinates to assign. The mapping will generally be a dict or
+            :class:`Coordinates`.
+
+            - If a value is a standard data value that can be parsed by Coordinate —
+              the data is simply assigned as a coordinate.
+            - A coordinate can also be defined and attached to an existing dimension
+              using a tuple with the first element the dimension name and the second
+              element the values for this new coordinate.
+
+        **coords_kwargs : optional
+            The keyword arguments form of ``coords``.
+            One of ``coords`` or ``coords_kwargs`` must be provided.
+
+        Returns
+        -------
+        assigned : same type as caller
+            A new object with the new coordinates in addition to the existing
+            data.
+
+        Examples
+        --------
+        Reset `DataArray` time to start at zero:
+
+        >>> import xdas as xd
+        >>> import numpy as np
+
+        >>> da = xd.DataArray(
+        ...     data=np.zeros(3),
+        ...     coords={"time": np.array([3, 4, 5])},
+        ... )
+        >>> da
+        <xdas.DataArray (time: 3)>
+        [0. 0. 0.]
+        Coordinates:
+          * time (time): [3 ... 5]
+
+        >>> da.assign_coords(time=[0, 1, 2])
+        <xdas.DataArray (time: 3)>
+        [0. 0. 0.]
+        Coordinates:
+          * time (time): [0 ... 2]
+
+        The function also accepts dictionary arguments:
+
+        >>> da.assign_coords({"time": [0, 1, 2]})
+        <xdas.DataArray (time: 3)>
+        [0. 0. 0.]
+        Coordinates:
+          * time (time): [0 ... 2]
+
+        New coordinate can also be attached to an existing dimension:
+
+        >>> da.assign_coords(relative_time=("time", [0, 1, 2]))
+        <xdas.DataArray (time: 3)>
+        [0. 0. 0.]
+        Coordinates:
+          * time (time): [3 ... 5]
+            relative_time (time): [0 ... 2]
+
+        """
+        da = self.copy(deep=False)
+        if coords is None:
+            coords = {}
+        coords.update(coords_kwargs)
+        for name, coord in coords.items():
+            da.coords[name] = coord
+        return da
+
+    def swap_dims(self, dims_dict=None, **dims_kwargs):
+        """
+        Returns a new DataArray with swapped dimensions.
+
+        Parameters
+        ----------
+        dims_dict : dict-like
+            Dictionary whose keys are current dimension names and whose values
+            are new names.
+        **dims_kwargs : {existing_dim: new_dim, ...}, optional
+            The keyword arguments form of ``dims_dict``.
+            One of dims_dict or dims_kwargs must be provided.
+
+        Returns
+        -------
+        swapped : DataArray
+            DataArray with swapped dimensions.
+
+        Examples
+        --------
+        >>> import xdas as xd
+
+        >>> da = xd.DataArray(
+        ...     data=[0, 1],
+        ...     coords={"x": ["a", "b"], "y": ("x", [0, 1])},
+        ... )
+        >>> da
+        <xdas.DataArray (x: 2)>
+        [0 1]
+        Coordinates:
+          * x (x): ['a' 'b']
+            y (x): [0 1]
+
+        Make y the dimensional coordinate:
+
+        >>> da.swap_dims({"x": "y"})
+        <xdas.DataArray (y: 2)>
+        [0 1]
+        Coordinates:
+            x (y): ['a' 'b']
+          * y (y): [0 1]
+
+        Assign a new empy coordinate z as dimensional coordinate.
+        Use the **kwargs syntax this time:
+
+        >>> da.swap_dims(x="z")
+        <xdas.DataArray (z: 2)>
+        [0 1]
+        Coordinates:
+            x (z): ['a' 'b']
+            y (z): [0 1]
+        Dimensions without coordinates: z
+
+        """
+        if dims_dict is None:
+            dims_dict = {}
+        dims_dict.update(dims_kwargs)
+        for dim in dims_dict:
+            if not dim in self.dims:
+                raise KeyError(
+                    f"dimension {dim} not found in current object with dims {self.dims}"
+                )
+        dims = tuple(dims_dict[dim] if dim in dims_dict else dim for dim in self.dims)
+        coords = {}
+        for name, coord in self.coords.copy(deep=False).items():
+            if coord.dim in dims_dict:
+                coord.dim = dims_dict[coord.dim]
+            coords[name] = coord
+        return self.__class__(self.data, coords, dims, self.name, self.attrs)
+
+    def transpose(self, *dims):
+        """
+        Return a new DataArray object with transposed dimensions.
+
+        Parameters
+        ----------
+        *dims : Hashable, optional
+            By default, reverse the dimensions. Otherwise, reorder the dimensions to
+            this order. the provided `dims` must be a permutation of the original
+            dimensions.
+
+        Returns
+        -------
+        transposed : DataArray
+            The returned DataArray's array is transposed.
+
+        Notes
+        -----
+        This operation returns a view of this array's data if this later is a
+        numpy.ndarray object. Otherwise the data is loaded into memory.
+
+        See Also
+        --------
+        numpy.transpose
+
+        Examples
+        --------
+        >>> import xdas as xd
+        >>> import numpy as np
+
+        >>> da = xd.DataArray(
+        ...     np.arange(2 * 3).reshape(2, 3), {"x": [0, 1], "y": [2, 3, 4]}
+        ... )
+        >>> da
+        <xdas.DataArray (x: 2, y: 3)>
+        [[0 1 2]
+         [3 4 5]]
+        Coordinates:
+          * x (x): [0 1]
+          * y (y): [2 ... 4]
+
+        >>> da.transpose("y", "x")  # equivalent to not providing any arguments here
+        <xdas.DataArray (y: 3, x: 2)>
+        [[0 3]
+         [1 4]
+         [2 5]]
+        Coordinates:
+          * x (x): [0 1]
+          * y (y): [2 ... 4]
+        """
+        if not dims:
+            dims = tuple(reversed(self.dims))
+        if not (len(dims) == len(self.dims) and set(dims) == set(self.dims)):
+            raise ValueError(f"{dims} must be a permutation of {self.dims}")
+        axes = tuple(self.get_axis_num(dim) for dim in dims)
+        data = np.transpose(self.data, axes)
+        return self.__class__(data, self.coords, dims, self.name, self.attrs)
+
+    def expand_dims(self, dim, axis=0):
+        """
+        Add an additional dimension at a given axis position.
+
+        Parameters
+        ----------
+        dim : str
+            Dimensions to include on the new variable.
+        axis : int
+            Axis position where new axis is to be inserted (position(s) on
+            the result array).
+
+        Returns
+        -------
+        expanded : DataArray
+            A copy of this object, but with additional dimension.
+
+        Notes
+        -----
+        This operation returns a view of this array's data if this later is a
+        numpy.ndarray object. Otherwise the data is loaded into memory.
+
+        See Also
+        --------
+        numpy.expand_dims
+
+        Examples
+        --------
+        >>> import xdas as xd
+
+        >>> da = xd.DataArray([1., 2., 3.], {"x": [0, 1, 2]})
+        >>> da
+        <xdas.DataArray (x: 3)>
+        [1. 2. 3.]
+        Coordinates:
+          * x (x): [0 ... 2]
+
+        >>> da.expand_dims("y", 0)
+        <xdas.DataArray (y: 1, x: 3)>
+        [[1. 2. 3.]]
+        Coordinates:
+          * x (x): [0 ... 2]
+        Dimensions without coordinates: y
+
+        """
+        if dim in self.dims:
+            raise ValueError(f"cannot expand on existing dimension {dim}")
+        elif dim in self.coords:
+            raise ValueError(
+                f"cannot expand along {dim} because of existing non-dimensional "
+                f"coordinate {dim}. Consider dropping this coordinate."
+            )
+        data = np.expand_dims(self.data, axis)
+        dims = self.dims[:axis] + (dim,) + self.dims[axis:]
+        return self.__class__(data, self.coords, dims, self.name, self.attrs)
 
     def to_xarray(self):
         """
@@ -686,7 +1057,7 @@ class LocIndexer:
 
 class DimSizer(dict):
     def __init__(self, obj):
-        super().__init__({dim: len(obj.coords[dim]) for dim in obj.dims})
+        super().__init__({dim: size for dim, size in zip(obj.dims, obj.shape)})
 
     def __getitem__(self, key):
         if key == "first":

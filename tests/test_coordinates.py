@@ -482,6 +482,12 @@ class TestCoordinate:
         assert coord.isdense()
         assert coord.dim == "dim"
 
+    def test_to_dataarray(self):
+        coord = xdas.Coordinate([1, 2, 3], "dim")
+        result = coord.to_dataarray()
+        expected = xdas.DataArray([1, 2, 3], {"dim": [1, 2, 3]}, name="dim")
+        assert result.equals(expected)
+
 
 class TestCoordinates:
     def test_init(self):
@@ -520,3 +526,20 @@ class TestCoordinates:
         coords = xdas.Coordinates({"dim_0": [1.0, 2.0, 3.0], "dim_1": [1.0, 2.0, 3.0]})
         assert coords["first"].dim == "dim_0"
         assert coords["last"].dim == "dim_1"
+
+    def test_setitem(self):
+        coords = xdas.Coordinates()
+        coords["dim_0"] = [1, 2, 4]
+        assert coords.dims == ("dim_0",)
+        coords["dim_1"] = {"tie_indices": [0, 10], "tie_values": [0.0, 100.0]}
+        assert coords.dims == ("dim_0", "dim_1")
+        coords["dim_0"] = [1, 2, 3]
+        assert coords.dims == ("dim_0", "dim_1")
+        coords["metadata"] = 0
+        assert coords.dims == ("dim_0", "dim_1")
+        coords["non-dimensional"] = ("dim_0", [-1, -1, -1])
+        assert coords.dims == ("dim_0", "dim_1")
+        coords["other_dim"] = ("dim_2", [0])
+        assert coords.dims == ("dim_0", "dim_1", "dim_2")
+        with pytest.raises(TypeError, match="must be of type str"):
+            coords[0] = ...

@@ -497,7 +497,7 @@ def combine_by_coords(
     for da in objs:
         if not bag:
             bag = [da]
-        elif da.coords.drop(dim).equals(bag[-1].coords.drop(dim)) and (
+        elif da.coords.drop_dims(dim).equals(bag[-1].coords.drop_dims(dim)) and (
             get_sampling_interval(da, dim) == get_sampling_interval(bag[-1], dim)
         ):
             bag.append(da)
@@ -635,3 +635,84 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
             for idx in range(len(div_points) - 1)
         ]
     )
+
+
+def align(*objs):
+    """
+    Given any number of data arrays, returns new objects with aligned dimensions.
+
+    New objects will all share the same dimensions with the same order. This is done by
+    expanding missing dimensions and transposing to the same `dims`. The order of
+    the resulting `dims` is given by the order in wich dimensions are first encountered
+    while iterating through each objects `dims`. For each dimensions, the data arrays
+    must either share the same coordinate or not having any.
+
+    Array from the aligned objects are suitable as input to mathematical
+    operators, as their shapes are compatible in term of broadcasting.
+
+    Parameters
+    ----------
+    *objects : DataArray
+        Data arrays to align.
+
+    Returns
+    -------
+    aligned : tuple of DataArray
+        Tuple of data arrays with aligned coordinates.
+
+    Examples
+    --------
+    >>> import xdas as xd
+    >>> import numpy as np
+
+    >>> da1 = xd.DataArray(np.arange(2), {"x": [0, 1]})
+    >>> da2 = xd.DataArray(np.arange(3), {"y": [2, 3, 4]})
+    >>> da1, da2 = xd.align(da1, da2)
+    >>> da1
+    <xdas.DataArray (x: 2, y: 1)>
+    [[0]
+    [1]]
+    Coordinates:
+      * x (x): [0 1]
+    Dimensions without coordinates: y
+
+    >>> da2
+    <xdas.DataArray (x: 1, y: 3)>
+    [[0 1 2]]
+    Coordinates:
+      * y (y): [2 ... 4]
+    Dimensions without coordinates: x
+
+    """
+    sizes = {}
+    coords = {}
+    for obj in objs:
+        for dim, size in obj.sizes.items():
+            if dim in sizes:
+                if sizes[dim] == 1:
+                    sizes[dim] = size
+                if not (size == 1 or size == sizes[dim]):
+                    raise ValueError(
+                        f"data arrays to align have incompatible sizes along {dim}"
+                    )
+            else:
+                sizes[dim] = size
+        for name, coord in obj.coords.items():
+            if coord.isscalar():
+                continue
+            if name in coords:
+                if not coord.equals(coords[name]):
+                    raise ValueError(
+                        f"coordinate {name} differs from one data array to another"
+                    )
+            else:
+                coords[name] = coord
+    dims = tuple(dim for dim in sizes)
+    out = []
+    for obj in objs:
+        for dim in dims:
+            if dim not in obj.dims:
+                obj = obj.expand_dims(dim)
+        obj = obj.transpose(*dims)
+        out.append(obj)
+    return tuple(out)

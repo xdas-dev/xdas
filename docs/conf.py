@@ -31,7 +31,9 @@ release = "0.1b4"
 extensions = [
     "myst_nb",
     "sphinx_design",
+    "sphinx_copybutton",
     "sphinx.ext.autosummary",
+    "sphinx.ext.coverage",
     "sphinx.ext.coverage",
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
@@ -52,7 +54,7 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = "sphinx_book_theme"
+html_theme = "pydata_sphinx_theme"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -60,13 +62,30 @@ html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
 
 
+html_sidebars = {"getting-started": [], "contribute": [], "cite": []}
+
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
 # documentation.
-html_theme_options = dict(
-    use_repository_button=True,
-    repository_url="https://github.com/xdas-dev/xdas",
-)
+html_theme_options = {
+    "logo": {
+        "image_light": "_static/logo-light.png",
+        "image_dark": "_static/logo-dark.png",
+    },
+    "header_links_before_dropdown": 4,
+    "icon_links": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/xdas-dev/xdas",
+            "icon": "fa-brands fa-square-github",
+        },
+        {
+            "name": "PyPI",
+            "url": "https://pypi.org/project/xdas",
+            "icon": "fa-custom fa-pypi",
+        },
+    ],
+}
 
 
 # Configuration for intersphinx.

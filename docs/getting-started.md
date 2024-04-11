@@ -46,7 +46,7 @@ pip install "git+https://github.com/xdas-dev xs.git@dev"
 import xdas 
 ```
 
-### Create a DataArray 
+## Create a DataArray 
 Link your DAS data to a DataArray:
 
 ```{code-cell}
@@ -64,10 +64,10 @@ da.to_netcdf("da.nc", virtual = True)
 ```
 
 Reading ASN, Febus, Optasense and Sintela data is already implemented and must be specified in engine. You also have the option to develop your own customized [engine](user-guide/engine.md). 
-If you want to create a single DataArray for multiple acquisitions (i.e. different fibers, changing acquisition parameters), you can use the [DataCollection](user-guide/DataCollection.md) object.  
+If you want to create a single DataArray for multiple acquisitions (i.e. different fibers, changing acquisition parameters), you can use the [DataCollection](user-guide/data-structures.md#datacollection) object.  
 
 
-### Load DataArray
+## Load DataArray
 
 Data can be fetched from a file:
 
@@ -93,7 +93,7 @@ da = da.load()
 da
 ```
 
-### Processing
+## Processing
 
 DataArray can be processed without need to convert it to numpyarray. The methods of DataArray are listed **here Need Link** . Xdas uses the following conventions : (i) instead of providing the axis number, the dimension label must be provided, (ii) a parallel keyword argument may be passed to require multithreading processing. For instance, decimating the DataArray in space and time can we done as : 
 
@@ -104,7 +104,7 @@ da = xs.decimate(da,2,ftype="fir", dim="distance")
 da = xs.decimate(da,2,ftype="iir", dim="time")
 ```
 
-### Plotting
+## Plotting
 
 Visualizing your DataArray is convenient:
 
@@ -123,13 +123,16 @@ fk = xfft.fft(fk, dim={"distance": "wavenumber"})
 np.abs(fk).plot(robust=True, interpolation="antialiased")
 ```
 
-### Saving
+## Saving
 Processed data can be saved as DataArray:
 ```{code-cell}
 np.abs(fk).to_netcdf("fk.nc")
 ```
 
+```{toctree}
+  :hidden:
 
+```
 
 [xarray API]: <https://docs.xarray.dev/en/stable/user-guide/indexing.html>
 [DataArray]: <https://docs.xarray.dev/en/stable/generated/xarray.DataArray.html#xarray.DataArray>

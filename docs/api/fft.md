@@ -8,7 +8,7 @@
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: ../_autosummary
 
    fft
    rfft
