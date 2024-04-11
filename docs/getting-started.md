@@ -15,16 +15,11 @@ os.chdir("_data")
 
 ## Welcome to Xdas!
 
- *Xdas* is an open source Python library that's used to work with huge labeled N-dimensional arrays as it is the case in Distributed Acoustic Sensing (DAS). *Xdas* API
-is highly inspired by the *xarray* project. It provides *xarray* like objects with custom
-functionalities that enable to deal with big multi-file netCDF4/HDF5 dataset with
-generally one very long dimension (usually time). It provides the classical signal
-processing tools to treat time-series that do not fit in memory. It also enables I/O
-capabilities with some DAS formats.
+ *Xdas* is an open-source Python library for working with huge labeled N-dimensional arrays as used in Distributed Acoustic Sensing (DAS). The *Xdas* API is heavily inspired by the [*Xarray*](https://xarray.dev) project. It implements a subset of the Xarray functionality and extends it with features that allow to deal with large multi-file netCDF4/HDF5 datasets, usually with a very long dimension (usually time). It provides the classic signal processing tools to handle time-series that do not fit in memory. It also provides I/O capabilities with most DAS formats.
 
 ## Installing xdas
 
-*xdas* is a pure python package. It can easily be installed with *pip*:
+Xdas is a pure python package. It can easily be installed with `pip` from [PyPI](https://pypi.org/project/xdas):
 
 `````{tab-set}
 ````{tab-item} Stable
@@ -34,49 +29,77 @@ pip install xdas
 ````
 ````{tab-item} Latest
 ```bash
-pip install "git+https://github.com/xdas-dev xs.git@dev"
+pip install "git+https://github.com/xdas-dev/xdas.git@dev"
 ```
 
 ````
 `````
 
-*xdas* must first be imported:
+Xdas must first be imported along with other useful libraries:
 
 ```{code-cell}
+import numpy as np
 import xdas 
 ```
 
-## Create a DataArray 
-Link your DAS data to a DataArray:
+## Dataset virtual consolidation
+
+Most instruments usually produces datasets made out of a multitude of files, each one containing a temporal chunk of the full acquisition. In Xdas you can virtually concatenate all those files to create a virtual dataset that allows to seamlessly access the entire dataset as if it was a unique file.
+
+### Linking multiple files 
+
+If you are considering a unique acquisition you can use {py:func}`~xdas.open_mfdataarray`. You can either pass a list of paths or a path pattern containing wildcards to specify which files must be linked together. The `engine` keyword indicates the format of the data. Xdas support a variety of DAS formats and it is easy to add support to any custom or missing format. See the [](user-guide/data-formats) section for more information. 
 
 ```{code-cell}
-:tags: [remove-output]
 da = xdas.open_mfdataarray("00*.h5", engine=None)
+da
 ```
 
-If you do not have GPS synchronization during your DAS acquisition, you may have gaps or overlaps between files. With Xdas, you can define a tolerance to what extent you accept to reinterpolate the time to avoid overlaps in the time axis. In the case you have overlaps in time you may have errors when slicing the DataArray. 
+Xdas only loads the metadata from each file and returns a {py:class}`~xdas.DataArray` object. This object has mainly two attributes. First a `data` attribute that contain the data. Here a {py:class}`~xdas.VirtualStack` object that is a pointer to the different files we opened. Second, a `coords` attribute that contains the metadata related to how the space and the time are sampled. Here both dimensions are labeled using {py:class}`~xdas.InterpCoordinate` objects. Those allow to concisely store the time and space information, including potential gaps and overlaps. See the [](user-guide/interpolated-coordinates) section for more information. 
+
+Note that if you want to create a single data collection object for multiple acquisitions (i.e. different instruments or several acquisition with different parameters), you can use the [DataCollection](user-guide/data-structures.md#datacollection) structure.  
+
+### Fixing small gaps and overlaps
+
+If you do not have GPS synchronization during your DAS acquisition, you may have gaps or overlaps between files. With Xdas, you can define a tolerance to what extent you accept to shift the time of some data blocks to fix overlaps along the time dimension. In the case you have overlaps in time you may have errors when slicing the DataArray. 
 
 ```{code-cell} 
-import numpy as np
-da["time"]=da["time"].simplify(np.timedelta64(30,"ms"))
-da.to_netcdf("da.nc", virtual = True)
+tolerance = np.timedelta64(30,"ms")  # usually enough for NTP synchronized experiments
+da["time"] = da["time"].simplify(tolerance)
+```
+More important overlaps will need a manual intervention. Big gaps are not problematic as they do to break the bijection between time indices and values.
 
+### Saving virtual dataset to disk
+
+Once you are happy with your consolidated dataset, you can write it to disk using the Xdas NetCDF format:
+
+```{code-cell} 
+da.to_netcdf("da.nc", virtual=True)  # Xdas tries to write data virtually by default
+```
+Once this is done you and your collaborators will simply need to open that master file to access the whole dataset.
+
+```{warning}
+The created file only contains pointers to you data. If you move you data somewhere else you consolidated file will be broken. If this happens it will return only `numpy.nan` values.
 ```
 
-Reading ASN, Febus, Optasense and Sintela data is already implemented and must be specified in engine. You also have the option to develop your own customized [engine](user-guide/engine.md). 
-If you want to create a single DataArray for multiple acquisitions (i.e. different fibers, changing acquisition parameters), you can use the [DataCollection](user-guide/data-structures.md#datacollection) object.  
+## Exploration
 
+Now that your dataset is ready to use, let's explore it!
 
-## Load DataArray
+### Read the virtual DataArray
 
-Data can be fetched from a file:
+The consolidated virtual dataset can be fetched as if it was a regular file:
 
 ```{code-cell} 
 da = xdas.open_dataarray("da.nc")
 da
 ```
 
-DataArray can be sliced using a Label-based selection:
+Usually the amount of data linked in such a file is too big to be loaded into memory. When exploring a dataset, a common practice is to first make a selection of a small part of interest and then to load it into memory.
+
+### Select the region of interest
+
+Data arrays can be sliced using a label-based selection meaning that instead of providing indices we can slice the data by coordinates values:
 
 ```{code-cell}
 da = da.sel(
@@ -86,53 +109,82 @@ da = da.sel(
 da
 ```
 
-Once the selection is small enough data can be loaded into memory or directly used for further processing:
+### Load the data in memory
+
+At this point we consider that the selection is small enough to be loaded into memory:
 
 ```{code-cell}
 da = da.load()
 da
 ```
 
+Note that you do not necessarily need to load it manually. Any step that requires to modify the data will automatically trigger the data importation.
+
+### Visualization
+
+Because DataArray objects are self-described (they encapsulate both the data an its related metadata), plotting your DataArray is a one line job:
+
+```{code-cell}
+da.plot(yincrease=False, vmin=-0.5, vmax=0.5)
+```
+
+
 ## Processing
 
-DataArray can be processed without need to convert it to numpyarray. The methods of DataArray are listed **here Need Link** . Xdas uses the following conventions : (i) instead of providing the axis number, the dimension label must be provided, (ii) a parallel keyword argument may be passed to require multithreading processing. For instance, decimating the DataArray in space and time can we done as : 
+DataArray can be processed without having to extract the underlying N-dimensional array. Most numpy functions can be applied while preserving metadata. Xdas also wraps a large subset of [numpy](https://numpy.org/) and [scipy](https://scipy.org/) function by adding coordinates handling. You mainly need to replace `axis` arguments by `dim` ones and to provides dimensions by name and not by position.
 
 
-```{code-cell}
-import xdas.signal as xs
-da = xs.decimate(da,2,ftype="fir", dim="distance")
-da = xs.decimate(da,2,ftype="iir", dim="time")
-```
+### Numpy functions
 
-## Plotting
-
-Visualizing your DataArray is convenient:
+You can apply most numpy functions to a data array. Xdas also have its own implementations that work by labels:
 
 ```{code-cell}
-da.plot(yincrease=False, vmin=-1, vmax=1)
+squared = np.square(da)
+mean = xdas.mean(da, "time")
+std = da.std("distance")
 ```
 
-Xdas makes it easy to display data in the spectral domain by renaming the axis as shown in the FK plot: 
+### Arithmetics 
+
+You can manipulate data arrays objects as regular arrays, Xdas will check that dimensions and coordinates are consistent. 
+
+```{code-cell}
+squared = da * da
+common_mode_removal = da - da.mean("distance")
+```
+
+### Scipy functions
+
+Most scipy function from the `signal` and `fft` submodule have been implemented. The Xdas function are multithreaded. A `parallel` keyword argument can be passed to most of them to indicate the number of cores to use.
+
+Bellow an example of spatial and temporal decimation:
+
+```{code-cell}
+import xdas.signal as xs 
+
+da = xs.decimate(da, 2, ftype="fir", dim="distance", parallel=None)  # all cores by default
+da = xs.decimate(da, 2, ftype="iir", dim="time", parallel=8)  # height cores
+
+da.plot(yincrease=False, vmin=-0.25, vmax=0.25)
+```
+
+Here how to compute a FK diagram. Note that the DataArray object can be used to represent any number and kind of dimensions:
 
 ```{code-cell}
 import xdas.fft as xfft
+
 fk = xs.taper(da, dim="distance")
 fk = xs.taper(fk, dim="time")
-fk = xfft.rfft(fk, dim={"time": "frequency"})
-fk = xfft.fft(fk, dim={"distance": "wavenumber"})
-np.abs(fk).plot(robust=True, interpolation="antialiased")
+fk = xfft.rfft(fk, dim={"time": "frequency"})  # rename "time" -> "frequency"
+fk = xfft.fft(fk, dim={"distance": "wavenumber"}) # rename "distance" -> "wavenumber"
+fk = 20 * np.log10(np.abs(fk))
+fk.plot(vmin=-20, vmax=40, interpolation="antialiased")
 ```
 
-## Saving
-Processed data can be saved as DataArray:
+### Saving results
+
+Processed data can be saved to NetCDF. This time, because the data was changed, the data must be entirely written to disk. 
+
 ```{code-cell}
-np.abs(fk).to_netcdf("fk.nc")
+fk.to_netcdf("fk.nc")
 ```
-
-```{toctree}
-  :hidden:
-
-```
-
-[xarray API]: <https://docs.xarray.dev/en/stable/user-guide/indexing.html>
-[DataArray]: <https://docs.xarray.dev/en/stable/generated/xarray.DataArray.html#xarray.DataArray>

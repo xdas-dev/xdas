@@ -71,6 +71,13 @@
 .. autosummary::
    :toctree: ../_autosummary
 
+   DataArray
+```
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
    DataArray.equals
    DataArray.get_axis_num
    DataArray.isel
@@ -88,6 +95,13 @@
 ```
 
 ### DataCollection
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+   
+   DataCollection
+```
 
 ```{eval-rst}
 .. autosummary::

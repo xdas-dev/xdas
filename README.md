@@ -28,7 +28,7 @@ Xdas can also be used in other context than DAS, for example in the context of o
 
 ## Installation
 
-Xdas is available at [PyPI](https://pypi.org/project/xdas/):
+Xdas can be fetched from [PyPI](https://pypi.org/project/xdas):
 
     pip install xdas
 
