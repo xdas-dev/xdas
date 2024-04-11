@@ -68,14 +68,15 @@ def open_mfdatacollection(
         )
     with ProcessPoolExecutor() as executor:
         futures = [executor.submit(open_datacollection, path) for path in paths]
-        objs = [
-            future.result()
-            for future in tqdm(
+        if verbose:
+            iterator = tqdm(
                 as_completed(futures),
                 total=len(futures),
                 desc="Fetching metadata from files",
             )
-        ]
+        else:
+            iterator = as_completed(futures)
+        objs = [future.result() for future in iterator]
     return combine_by_field(objs, dim, tolerance, squeeze, True, verbose)
 
 
@@ -288,14 +289,15 @@ def open_mfdataarray(
         futures = [
             executor.submit(open_dataarray, path, engine=engine) for path in paths
         ]
-        objs = [
-            future.result()
-            for future in tqdm(
+        if verbose:
+            iterator = tqdm(
                 as_completed(futures),
                 total=len(futures),
                 desc="Fetching metadata from files",
             )
-        ]
+        else:
+            iterator = as_completed(futures)
+        objs = [future.result() for future in iterator]
     return combine_by_coords(objs, dim, tolerance, squeeze, True, verbose)
 
 
