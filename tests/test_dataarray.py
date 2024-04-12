@@ -268,6 +268,19 @@ class TestDataArray:
         with pytest.raises(KeyError, match="not found in current object with dims"):
             da.swap_dims({"z": "x"})
 
+    def test_to_xarray_non_dimensional(self):
+        da = DataArray(
+            data=np.zeros(3),
+            coords={
+                "time": np.array([3, 4, 5]),
+                "relative_time": ("time", np.array([0, 1, 2])),
+            },
+        )
+        result = da.to_xarray()
+        assert np.array_equal(result["time"], [3, 4, 5])
+        assert np.array_equal(result["relative_time"], [0, 1, 2])
+        assert result.dims == da.dims
+
     def test_transpose(self):
         da = generate()
         result = da.transpose("distance", "time")

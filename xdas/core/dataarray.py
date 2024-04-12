@@ -742,7 +742,10 @@ class DataArray:
             The converted in-memory DataArray.
         """
         data = self.__array__()
-        return xr.DataArray(data, self.coords, self.dims, self.name, self.attrs)
+        coords = {
+            name: (coord.dim, coord.values) for name, coord in self.coords.items()
+        }
+        return xr.DataArray(data, coords, self.dims, self.name, self.attrs)
 
     @classmethod
     def from_xarray(cls, da):
@@ -1014,10 +1017,10 @@ class DataArray:
 
     def plot(self, *args, **kwargs):
         """
-        Plot a DataArray. 
-        
-        This plot function uses the xarray way of plotting depending on the 
-        number of dimensions your data has. Please for the args and kwargs 
+        Plot a DataArray.
+
+        This plot function uses the xarray way of plotting depending on the
+        number of dimensions your data has. Please for the args and kwargs
         refer to the corresponding xarray functions.
 
         For a DataArray with one dimension: refer to `xarray.plot.line <https://docs.xarray.dev/en/stable/generated/xarray.plot.line.html>`_.
@@ -1026,9 +1029,9 @@ class DataArray:
 
         Parameters
         ----------
-        *args: 
+        *args:
             See the corresponding xarray *args.
-        **kwargs: 
+        **kwargs:
             See the corresponding xarray **kwargs.
 
         Returns
