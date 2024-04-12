@@ -863,10 +863,6 @@ class DataArray:
             or a VirtualLayout. Default (None) is to try to write a virtual dataset if
             possible.
 
-        Raises
-        ------
-        ValueError
-            _description_
         """
         if virtual is None:
             virtual = isinstance(self.data, VirtualArray)
@@ -902,9 +898,9 @@ class DataArray:
             attrs={"Conventions": "CF-1.9"},
         )
         coords = {
-            dim: self.coords[dim].__array__()
-            for dim in self.coords
-            if not self.coords[dim].isinterp()
+            name: (coord.dim, coord.values)
+            for name, coord in self.coords.items()
+            if not coord.isinterp()
         }
         attrs = {"coordinate_interpolation": mapping} if mapping else None
         if not virtual:

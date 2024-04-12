@@ -281,6 +281,20 @@ class TestDataArray:
         assert np.array_equal(result["relative_time"], [0, 1, 2])
         assert result.dims == da.dims
 
+    def test_netcdf_non_dimensional(self):
+        da = DataArray(
+            data=np.zeros(3),
+            coords={
+                "time": np.array([3, 4, 5]),
+                "relative_time": ("time", np.array([0, 1, 2])),
+            },
+        )
+        with TemporaryDirectory() as dirpath:
+            path = os.path.join(dirpath, "tmp.nc")
+            da.to_netcdf(path)
+            result = xdas.open_dataarray(path)
+            assert result.equals(da)
+
     def test_transpose(self):
         da = generate()
         result = da.transpose("distance", "time")
