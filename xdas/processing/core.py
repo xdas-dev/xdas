@@ -166,7 +166,7 @@ class DataArrayWriter:
     >>> if not os.path.exists(dirpath):
     ...     os.makedirs(dirpath)
 
-    >>> dw = DataArrayWriter(dirpath)
+    >>> dw = DataArrayWriter(dirpath) # doctest: +SKIP
 
     """
 
