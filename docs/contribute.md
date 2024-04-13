@@ -37,7 +37,7 @@ pip install -e ".[dev,docs,tests]"
 pytest
 ```
 
-7. Check that the documentation builds without errors (there might be some though):
+7. Check that the documentation builds without errors:
 ```
 cd docs
 make html

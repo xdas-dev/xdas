@@ -8,10 +8,10 @@ kernelspec:
 :tags: [remove-cell]
 
 import os
-os.chdir("../_data")
+os.chdir("../../_data")
 ```
 
-## DataCollection
+# DataCollection
 
 Use {py:class}`xdas.DataCollection` when your experiment is composed of several acquisitions on a single or on multiple cables/fibers. In the following section, we will discuss how to use this functionality.
 
@@ -33,12 +33,15 @@ The alignment in the figure is a bit messed up
 
 ![](/_static/datacollection.svg)
 
-### Case A: DataCollection as a set of DataArrays
+## Case A: DataCollection as a set of DataArrays
 
 In the example, our `DataCollection` will be a sequence of {py:class}`xdas.DataArray`.
 
 ```{code-cell}
-# Reopen dataarray as virtual source
+import numpy as np
+import xdas
+
+# Reopen dataarray from previous section as a virtual source
 da = xdas.open_dataarray("dataarray.nc") 
 
 # Create a DataCollection
@@ -57,7 +60,7 @@ to minimize redundant data writing.
 
 ```{code-cell}
 # Write the DataCollection
-dc.to_netcdf("datacollection.nc", virtual=True)
+dc.to_netcdf("datacollection.nc", virtual=False)
 ```
 
 ```{code-cell}
@@ -66,7 +69,7 @@ dc = xdas.open_datacollection("datacollection.nc")
 dc
 ```
 
-### Case B: DataCollection comprising a set of acquisitions
+## Case B: DataCollection comprising a set of acquisitions
 
 ```{warning}
 I think the difference between `open_mfdatatree`, `open_mfdataarray`, and `open_mfdatacollection` needs
@@ -88,7 +91,7 @@ followed by one or more list placeholders that must share a unique name. The
 resulting data collection will be a nesting of dicts down to the lower level
 which will be a list of dataarrays.
 
-#### Gather all your DataCollections
+### Gather all your DataCollections
 
 In this example, for the 19th of November 2023, our network REKA featured 2 cables (RK1 and RK2), with the RK1 cable having 3 different acquisitions and RK2 one acquisition. 
 
@@ -138,7 +141,7 @@ Network:
 
 If you have several DataCollections, you can gather them in one file using {py:func}`xdas.open_mfdatacollection` and write it to one single DataCollection.
 
-#### Extend your DataCollection
+### Extend your DataCollection
 
 You can extend your {py:class}`xdas.DataCollection` by inserting new {py:class}`xdas.DataArray` to the acquisitons list.
 

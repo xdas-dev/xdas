@@ -11,12 +11,12 @@ import os
 os.chdir("../../_data")
 ```
 
-## DataArray
+# DataArray
 
 {py:class}`~xdas.DataArray` is the base class to load and manipulate big datasets to in *xdas*. It is mainly composed of two attributes: 
 
-- `data`: any N-dimensional array-like object. Compared to *xarray* `xdas.DataArray` are more permissive to the kinds of array-like objects that can be used. In particular, [virtual arrays](virtual-datasets) can be used.
-- `coords`: a dict-like container of coordinates. As opposed to *xarray*, which uses dense arrays to label each point, *xdas* also implements [interpolated coordinates](interpolated-coordinates) that provides an efficient representation of evenly spaced data (gracefully handling gaps and small sampling variations).
+- `data`: any N-dimensional array-like object. Compared to *xarray* `xdas.DataArray` are more permissive to the kinds of array-like objects that can be used. In particular, [virtual arrays](../virtual-datasets) can be used.
+- `coords`: a dict-like container of coordinates. As opposed to *xarray*, which uses dense arrays to label each point, *xdas* also implements [interpolated coordinates](../interpolated-coordinates) that provides an efficient representation of evenly spaced data (gracefully handling gaps and small sampling variations).
 
 ![](/_static/dataarray.svg)
 
@@ -28,9 +28,9 @@ Other important attributes are:
 
 In the following examples, we use only one `DataArray`, if you have several `DataArray`s, please use the multi-file version of the opening function: {py:func}`~xdas.open_mfdataarray`. You will just have to adapt the paths argument.
 
-### Creating a DataArray
+## Creating a DataArray
 
-The user can wrap together an n-dimensional array and some related coordinates. See the related description of how to create coordinates [here](interpolated-coordinates.md). For example:
+The user can wrap together an n-dimensional array and some related coordinates. See the related description of how to create coordinates [here](../interpolated-coordinates.md). For example:
 
 
 ```{code-cell}
@@ -55,29 +55,29 @@ da = xdas.DataArray(
 da
 ```
 
-### Writing a DataArray to disk
+## Writing a DataArray to disk
 
-*xdas* uses the CF conventions to write {py:class}`xdas.DataArray` to disk as netCDF4 files. If the DataArray was generated from a netCDF4/HDF5 file and only slicing was performed, the DataArray can be written as a pointer to the original data using the `virtual` argument. See the part on [](virtual-datasets.md).
+*xdas* uses the CF conventions to write {py:class}`xdas.DataArray` to disk as netCDF4 files. If the DataArray was generated from a netCDF4/HDF5 file and only slicing was performed, the DataArray can be written as a pointer to the original data using the `virtual` argument. See the part on [](../virtual-datasets).
 
 ```{code-cell}
 da.to_netcdf("dataarray.nc", virtual=None)  # try to write virtual, here it's impossible
 ```
 
-### Reading a DataArray from disk.
+## Reading a DataArray from disk.
 
 Xdas can read several DAS file format with {py:func}`~xdas.open_dataarray` along with its own format. Xdas uses the netCDF4 format with CF conventions. By default Xdas assumes that files are Xdas NetCDF format. If not the case the `engine` argument must be passed.
 
-To learn how to read your custom DAS data format with *xdas*, please see the chapter on [](data-formats.md).
+To learn how to read your custom DAS data format with *xdas*, please see the chapter on [](../data-formats.md).
 
 ```{code-cell}
 da = xdas.open_dataarray("dataarray.nc", engine=None)  # by default Xdas NetCDF
 ```
 
-### Assign new coordinates to your DataArray
+## Assign new coordinates to your DataArray
 
 You can either replace the existing coordinates by new ones or assign new coordinates to a {py:class}`xdas.DataArray` and link it them an existing dimension. 
 
-#### Replace existing coordinates
+### Replace existing coordinates
 
 In the example below, we replace the "distance" coordinate with new ones.
 
@@ -87,7 +87,7 @@ assigned = da.assign_coords(distance=new_distances)
 assigned
 ```
 
-#### Add new coordinates and link them to an existing dimension
+### Add new coordinates and link them to an existing dimension
 
 In the example below, we will add the new coordinate "latitude" linked with the "distance" dimension.
 
@@ -104,7 +104,7 @@ swapped = da.swap_dims({"distance": "latitude"})
 swapped
 ```
 
-### Plot your DataArray
+## Plot your DataArray
 
 {py:class}`xdas.DataArray` includes the function {py:func}`xdas.DataArray.plot`. It uses the *xarray* way of plotting data depending on the number of dimensions your data array has. You'll have to adapt the arguments and keyword arguments in {py:func}`xdas.DataArray.plot` depending on the dimensionality of your data:
 

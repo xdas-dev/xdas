@@ -4,25 +4,49 @@
 
 # xdas.atoms
 
-## Structure
+## Base Atom class
+
+Constructor
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   Atom
+```
+
+Attributes
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   Atom.state
+   Atom.initialized
+```
+
+
+Methods
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   Atom.initialize
+   Atom.initialize_from_state
+   Atom.call
+   Atom.reset
+```
+
+## Core atoms 
 
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
 
    Sequential
-   State
-   Atom.state
-   Atom.initialized
-   Atom.initialize
-   Atom.initialize_from_state
-   Atom.call
-   Atom.reset
-   Atom.save_state
-   Atom.set_state
-   Atom.load_state
    Partial
-   StatePartial
+   State
 ```
 
 ## Signal processing

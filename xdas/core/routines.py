@@ -90,10 +90,10 @@ def open_mfdatatree(
     containings placeholders. Two flavours of placeholder can be provided:
 
     - `{field}`: this level of the tree will behave as a dict. It will use the
-    directory/file names as keys.
+      directory/file names as keys.
     - `[field]`: this level of the tree will behave as a list. The directory/file
-    names are not considered (as if the placeholder was replaced by a `*`) and
-    files are gathered and combined as if using `open_mfdataarray`.
+      names are not considered (as if the placeholder was replaced by a `*`) and
+      files are gathered and combined as if using `open_mfdataarray`.
 
     Several dict placeholders with different names can be provided. They must be
     followed by one or more list placeholders that must share a unique name. The

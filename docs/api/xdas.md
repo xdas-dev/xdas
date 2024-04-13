@@ -4,20 +4,7 @@
 
 # *xdas*
 
-## Top-level functions
-
-```{eval-rst}
-.. autosummary::
-   :toctree: ../_autosummary
-
-   open_dataarray
-   open_mfdataarray
-   open_datacollection
-   open_mfdatacollection
-   concatenate
-```
-
-## Manipulation routines
+## Opening files
 
 ```{eval-rst}
 .. autosummary::
@@ -28,9 +15,19 @@
    open_mfdatatree
    open_datacollection
    open_mfdatacollection
+```
+
+## Data manipulation
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   align
    asdataarray
-   combine_by_field
    combine_by_coords
+   combine_by_field
+   concatenate
    concatenate
    split
 ```
@@ -96,12 +93,16 @@
 
 ### DataCollection
 
+Constructor
+
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
    
    DataCollection
 ```
+
+Methods
 
 ```{eval-rst}
 .. autosummary::
@@ -114,6 +115,17 @@
 ```
 
 ### DataMapping
+
+Constructor
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+   
+   DataMapping
+```
+
+Methods
 
 ```{eval-rst}
 .. autosummary::
@@ -130,6 +142,17 @@
 
 ### DataSequence
 
+Constructor
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+   
+   DataSequence
+```
+
+Methods
+
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
@@ -145,24 +168,19 @@
    DataSequence.map
 ```
 
-### Coordinate
+### Coordinates
+
+Constructor
+
 
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
 
-   Coordinate.dtype
-   Coordinate.ndim
-   Coordinate.shape
-   Coordinate.values
-   Coordinate.equals
-   Coordinate.to_index
-   Coordinate.isscalar
-   Coordinate.isdense
-   Coordinate.isinterp
+   Coordinates
 ```
 
-### Coordinates
+Methods
 
 ```{eval-rst}
 .. autosummary::
@@ -174,15 +192,64 @@
    Coordinates.equals
    Coordinates.to_dict
    Coordinates.copy
-   Coordinates.drop 
+   Coordinates.drop_dims 
+   Coordinates.drop_coords 
 ```
-### ScalarCoordinate
+
+### Coordinate
+
+Constructor
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+   
+   Coordinate
+```
+
+Attributes
 
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
 
-   ScalarCoordinate.isvlid
+   Coordinate.dtype
+   Coordinate.ndim
+   Coordinate.shape
+   Coordinate.values
+```
+
+Methods
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   Coordinate.to_index
+   Coordinate.isscalar
+   Coordinate.isdense
+   Coordinate.isinterp
+```
+
+
+### ScalarCoordinate
+
+Constructor
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   ScalarCoordinate
+```
+
+Methods
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   ScalarCoordinate.isvalid
    ScalarCoordinate.equals
    ScalarCoordinate.to_index
    ScalarCoordinate.to_dict
@@ -190,11 +257,22 @@
 
 ### DenseCoordinate
 
+Constructor
+
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
 
-   DenseCoordinate.isvlid
+   DenseCoordinate
+```
+
+Methods
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   DenseCoordinate.isvalid
    DenseCoordinate.index
    DenseCoordinate.get_indexer
    DenseCoordinate.slice_indexer
@@ -203,11 +281,22 @@
 
 ### InterpCoordinate
 
+Constructor
+
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
 
-   InterpCoordinate.isvlid
+   InterpCoordinate
+```
+
+Attributes
+
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
    InterpCoordinate.tie_indices
    InterpCoordinate.tie_values
    InterpCoordinate.empty
@@ -216,6 +305,15 @@
    InterpCoordinate.shape
    InterpCoordinate.indices
    InterpCoordinate.values
+```
+
+Methods
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   InterpCoordinate.isvalid
    InterpCoordinate.equals
    InterpCoordinate.get_value
    InterpCoordinate.format_index

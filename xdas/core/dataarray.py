@@ -916,9 +916,8 @@ class DataArray:
                 warnings.simplefilter("ignore")
                 ds.to_netcdf(fname, group=group, **kwargs)
         elif virtual and isinstance(self.data, VirtualArray):
-            da = xr.DataArray(  # TODO: this is dirty
-                data=np.empty((0, 0)),
-                coords=coords,
+            da = xr.DataArray(  # TODO: this is dirty and does not work with dens coords
+                data=np.empty((0,) * self.ndim, self.dtype),
                 dims=self.dims,
                 name="__tmp__",
             )
@@ -1026,9 +1025,9 @@ class DataArray:
         Parameters
         ----------
         *args:
-            See the corresponding xarray *args.
+            See the corresponding xarray args.
         **kwargs:
-            See the corresponding xarray **kwargs.
+            See the corresponding xarray kwargs.
 
         Returns
         -------

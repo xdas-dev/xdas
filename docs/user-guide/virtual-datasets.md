@@ -15,7 +15,7 @@ os.chdir("../_data")
 # Virtual Datasets
 
 ```{warning}
-To me it feels that there is a lot of conceptual overlap between this chapter, and [](data-structures). It would make sense to merge these two chapters, and create more clarity about the use of `open_dataarray`, `open_mf_dataarray`, and `DataCollection`.
+To me it feels that there is a lot of conceptual overlap between this chapter, and [](data-structure/index.md). It would make sense to merge these two chapters, and create more clarity about the use of `open_dataarray`, `open_mf_dataarray`, and `DataCollection`.
 ```
 
 To deal with large multi-file dataset, *xdas* uses the flexibility offered by the 

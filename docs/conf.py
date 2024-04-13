@@ -110,10 +110,12 @@ if not os.path.exists(dirpath):
 da = generate()
 chunks = xd.split(da, 3)
 da.to_netcdf(os.path.join(dirpath, "sample.h5"))
+da.to_netcdf(os.path.join(dirpath, "sample.nc"))
 for index, chunk in enumerate(chunks, start=1):
     if index == 2:
         chunk["time"] += np.timedelta64(3, "ms")
     chunk.to_netcdf(os.path.join(dirpath, f"00{index}.h5"))
+    chunk.to_netcdf(os.path.join(dirpath, f"00{index}.nc"))
 
 
 data = np.random.rand(20, 10)
