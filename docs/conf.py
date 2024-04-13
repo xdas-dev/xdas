@@ -20,7 +20,7 @@ copyright = "2024, Alister Trabattoni"
 author = "Alister Trabattoni"
 
 # The full version, including alpha/beta/rc tags
-release = "0.1rc"
+release = "0.1rc0"
 
 
 # -- General configuration ---------------------------------------------------
