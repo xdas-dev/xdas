@@ -177,7 +177,7 @@ class IIRFilter(Atom):
     ...    IIRFilter(order=6, cutoff=(1.0, 10.0), btype="bandpass", dim="time")
     ... ])
     >>> result = sequence(da)
-    >>> result["distance"].values
+    >>> result
     <xdas.DataArray (time: 300, distance: 401)>
     [[ 0.00031  -0.000396  0.00049  ... -0.000916  0.000844 -0.001767]
     [ 0.001484 -0.001998  0.002966 ... -0.005491  0.005625 -0.011501]
@@ -314,7 +314,7 @@ class FIRFilter(Atom):
     ...    FIRFilter(numtaps=6, cutoff=(1.0, 10.0), btype="bandpass", dim="time")
     ... ])
     >>> result = sequence(da)
-    >>> result["distance"].values
+    >>> result
     <xdas.DataArray (time: 300, distance: 401)>
     [[-0.000244  0.000312 -0.000386 ...  0.000722 -0.000665  0.001392]
     [ 0.00554  -0.007003  0.00828  ... -0.015509  0.013836 -0.029197]

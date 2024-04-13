@@ -63,16 +63,18 @@ class DataArrayLoader:
     >>> import xdas
     >>> from xdas.processing import DataArrayLoader
     >>> da = xdas.open_dataarray(...)  # doctest: +SKIP
-    >>>
-    >>> # Create chunks along the time dimension
-    >>> chunks = {"time": 1000}
-    >>> dl = DataArrayLoader(da, chunks)
-    >>>
-    >>> # Create chunks along both dimensions
-    >>> chunks2 = {"time": 1000, "distance": 10}
-    >>> dl2 = DataArrayLoader(da, chunks2)
-    """
 
+    Create chunks along the time dimension
+
+    >>> chunks = {"time": 1000}
+    >>> dl = DataArrayLoader(da, chunks)  # doctest: +SKIP
+
+    Create chunks along both dimensions
+
+    >>> chunks2 = {"time": 1000, "distance": 10}
+    >>> dl2 = DataArrayLoader(da, chunks2)  # doctest: +SKIP
+
+    """
     def __init__(self, da, chunks):
         self.da = da
         ((self.chunk_dim, self.chunk_size),) = chunks.items()
@@ -159,12 +161,13 @@ class DataArrayWriter:
     --------
     >>> import os, shutil
     >>> from xdas.processing import DataArrayWriter
-    >>>
-    >>> output_dir = "./output"
-    >>> if os.path.isdir(output_dir):
-    >>>     shutil.rmtree(output_dir)
-    >>> os.makedirs(output_dir)
-    >>> dw = DataArrayWriter(output_dir)
+
+    >>> dirpath = "output"
+    >>> if not os.path.exists(dirpath):
+    ...     os.makedirs(dirpath)
+
+    >>> dw = DataArrayWriter(dirpath)
+
     """
 
     def __init__(self, dirpath):
