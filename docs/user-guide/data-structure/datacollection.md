@@ -27,10 +27,6 @@ A {py:class}`xdas.DataCollection` can be viewed as a flexible way of organizing 
 - 3rd (mapping) level: concerns the fibers/cables names.
 - 4th (sequence) level: is related to the number of acquisitions with changing parameters.
 
-```{warning}
-The alignment in the figure is a bit messed up
-```
-
 ![](/_static/datacollection.svg)
 
 ## Case A: DataCollection as a set of DataArrays
@@ -70,11 +66,6 @@ dc
 ```
 
 ## Case B: DataCollection comprising a set of acquisitions
-
-```{warning}
-I think the difference between `open_mfdatatree`, `open_mfdataarray`, and `open_mfdatacollection` needs
-to be made more explicit.
-```
 
 You can also create a DataCollection to gather different acquisitions on a same fiber with {py:func}`xdas.open_mfdatatree`. This function opens a directory tree structure as a data collection. 
 The tree structure is described by a path descriptor provided as a string

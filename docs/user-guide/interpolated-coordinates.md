@@ -81,11 +81,6 @@ coord
 
 # Temporal Coordinates
 
-```{warning}
-Please rewrite the second sentence about the POSIX format: it is not clear to me
-what you mean.
-```
-
 The main use of coordinates in *xdas* is to deal with long time series. By default 
 *xdas* uses `"datetime64[us]"` dtype. Microseconds are used because to perform 
 interpolation *xdas* convert `datetime64` to POSIX `float` which cannot safely 

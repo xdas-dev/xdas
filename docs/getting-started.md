@@ -87,7 +87,7 @@ da.to_netcdf("da.nc", virtual=True)  # Xdas tries to write data virtually by def
 Once this is done you and your collaborators will simply need to open that master file to access the whole dataset.
 
 ```{warning}
-The created file only contains pointers to you data. If you move you data somewhere else you consolidated file will be broken. If this happens it will return only `numpy.nan` values.
+The created file only contains pointers to your data. If you move your data somewhere else your consolidated file will be broken. If this happens it will return only `numpy.nan` values.
 ```
 
 ## Exploration

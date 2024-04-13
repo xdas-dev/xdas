@@ -14,10 +14,6 @@ os.chdir("../_data")
 
 # Virtual Datasets
 
-```{warning}
-To me it feels that there is a lot of conceptual overlap between this chapter, and [](data-structure/index.md). It would make sense to merge these two chapters, and create more clarity about the use of `open_dataarray`, `open_mf_dataarray`, and `DataCollection`.
-```
-
 To deal with large multi-file dataset, *xdas* uses the flexibility offered by the 
 [virtual dataset](https://docs.h5py.org/en/stable/vds.html) capabilities of 
 netCDF4/HDF5. A virtual dataset is a file that contains pointers towards an arbitrary number of files that 
@@ -39,10 +35,6 @@ In most cases, users do not need to deal with this object directly. To handle in
 
 - {py:func}`xdas.open_dataarray` is used to open a single (virtual) data file, and create a {py:class}`xdas.DataArray` object out of it.
 - {py:func}`xdas.open_mfdataarray` is used to open multiple (virtual) data files at once, creating a single {py:class}`xdas.DataArray` object that can be written to disk as a single virtual data file.
-
-```{warning}
-It isn't very clear what the note below is meant to convey...
-```
 
 ```{note}
 When opening a virtual dataset, this later will appear as a {py:class}`VirtualSource`. 

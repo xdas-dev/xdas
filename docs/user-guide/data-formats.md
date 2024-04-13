@@ -20,11 +20,6 @@ os.chdir("../_data")
 
 ## Implemented file formats
 
-```{warning}
-Why the capital letters? Why FEBUS instead of Febus? What's the point of the table below?
-Maybe it makes more sense to indicate the interrogator model (ASN: OptoDAS; OptaSense: QuantX, ...)
-```
-
 The formats that are currently implemented are: ASN, FEBUS, OPTASENSE and SINTELA. To read them you have to specifiy which one you want in the `engine` argument in {py:func}`xdas.open_dataarray` for a single file or {py:func}`xdas.open_mfdataarray` for multiple files:
 
 | DAS constructor   | `engine` argument |
