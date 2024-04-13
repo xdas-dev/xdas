@@ -75,6 +75,7 @@ class DataArrayLoader:
     >>> dl2 = DataArrayLoader(da, chunks2)  # doctest: +SKIP
 
     """
+
     def __init__(self, da, chunks):
         self.da = da
         ((self.chunk_dim, self.chunk_size),) = chunks.items()

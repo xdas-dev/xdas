@@ -30,7 +30,6 @@ conda install pip
 5. Install xdas and optional dependencies in editable mode:
 ```
 pip install -e ".[dev,docs,tests]"
-pip install pandas watchdog   # missing in dependencies for now...
 ```
 
 6. Check that all tests are passing (one test is not passing but this is ok):
@@ -77,7 +76,7 @@ We will go through all the details
 
 The usual workflow is:
 - create a branch to have your independent version of the code
-- make modification by doing as many commits as you want
+- make modifications by doing as many commits as you want
 - format your code
 - check that the tests are passing (and that the documentation builds).
 - publish your branch online
