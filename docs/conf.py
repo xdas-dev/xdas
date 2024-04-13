@@ -103,22 +103,21 @@ import numpy as np
 import xdas as xd
 from xdas.synthetics import generate
 
-dirpath = "_data"
+dirpath = os.path.join(os.path.split(__file__)[0], "_data")
 if not os.path.exists(dirpath):
     os.makedirs(dirpath)
 
 da = generate()
 chunks = xd.split(da, 3)
-dirname = os.path.split(__file__)[0]
-da.to_netcdf(os.path.join(dirname, "_data/sample.h5"))
+da.to_netcdf(os.path.join(dirpath, "sample.h5"))
 for index, chunk in enumerate(chunks, start=1):
     if index == 2:
         chunk["time"] += np.timedelta64(3, "ms")
-    chunk.to_netcdf(os.path.join(dirname, f"_data/00{index}.h5"))
+    chunk.to_netcdf(os.path.join(dirpath, f"00{index}.h5"))
 
 
 data = np.random.rand(20, 10)
-with h5py.File(os.path.join(dirname, "_data/other_format.hdf5"), "w") as f:
+with h5py.File(os.path.join(dirpath, "other_format.hdf5"), "w") as f:
     dset = f.create_dataset("dataset", data.shape, data=data, dtype="float32")
     f["dataset"].attrs["t0"] = "2024-01-01T14:00:00.000"
     f["dataset"].attrs["dt"] = 1 / 100
