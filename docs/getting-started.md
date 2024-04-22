@@ -67,6 +67,10 @@ Xdas only loads the metadata from each file and returns a {py:class}`~xdas.DataA
 
 Note that if you want to create a single data collection object for multiple acquisitions (i.e. different instruments or several acquisition with different parameters), you can use the [DataCollection](user-guide/data-structure/datacollection) structure.  
 
+```{note}
+For Febus users, the current implementation is very slow when directly working with native files. This is due to the particular 3D layout of the Febus format that is for now virtually reshaped in a inefficient way. The current recommended workflow is to first convert each Febus file in the Xdas NetCDF format: `xdas.open_dataarray("path_to_febus_file.h5").to_netcdf("path_to_xdas_file.nc", virtual=False)`. Those converted file can then be linked as described above.
+```
+
 ### Fixing small gaps and overlaps
 
 If you do not have GPS synchronization during your DAS acquisition, you may have gaps or overlaps between files. With Xdas, you can define a tolerance to what extent you accept to shift the time of some data blocks to fix overlaps along the time dimension. In the case you have overlaps in time you may have errors when slicing the DataArray. 

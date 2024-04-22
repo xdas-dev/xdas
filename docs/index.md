@@ -21,7 +21,7 @@ Xdas can also be used in other context than DAS, for example in the context of o
 ```{grid-item-card} Getting Started
 :link: getting-started
 :link-type: doc
-New to *Xdas*? Check out the Getting Started Guide. It explains how install *Xdas* and how to usie its most important features. 
+New to *Xdas*? Check out the Getting Started Guide. It explains how install *Xdas* and how to use its most important features. 
 ```
 
 ```{grid-item-card} User Guide

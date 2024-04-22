@@ -100,7 +100,7 @@ assigned
 You can also swap a dimension to one of the new coordinates.
 
 ```{code-cell}
-swapped = da.swap_dims({"distance": "latitude"})
+swapped = assigned.swap_dims({"distance": "latitude"})
 swapped
 ```
 

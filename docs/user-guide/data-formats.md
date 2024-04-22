@@ -24,10 +24,10 @@ The formats that are currently implemented are: ASN, FEBUS, OPTASENSE and SINTEL
 
 | DAS constructor   | `engine` argument |
 |:-----------------:|:-----------------:|
-| ASN               | asn               |
-| FEBUS             | febus             |
-| OPTASENSE         | optasense         |
-| SINTELA           | sintela           |
+| ASN               | `"asn"`           |
+| FEBUS             | `"febus"`         |
+| OPTASENSE         | `"optasense"`     |
+| SINTELA           | `"sintela"`       |
 
 ## Exdending *xdas* with your file format
 
