@@ -80,8 +80,6 @@ def filter(
         Traces to filter.
     freq: float or list
         Cuttoff frequency or band corners [Hz].
-    fs: float
-        Sampling frequency [Hz].
     btype: {'bandpass', 'lowpass', 'highpass', 'bandstop'}
         The type of the filter.
     corners: int
@@ -94,15 +92,14 @@ def filter(
         The dimension along which to filter.
     """
     axis = da.get_axis_num(dim)
+    across = int(axis == 0)
     fs = 1.0 / get_sampling_interval(da, dim)
     sos = sp.iirfilter(corners, freq, btype=btype, ftype="butter", output="sos", fs=fs)
     if zerophase:
-        func = lambda x, sos, axis: sp.sosfiltfilt(sos, x, axis)
-        func = parallelize(axis, parallel)(func)
+        func = parallelize((None, across), across, parallel)(sp.sosfilt)
     else:
-        func = lambda x, sos, axis: sp.sosfilt(sos, x, axis)
-        func = parallelize(axis, parallel)(func)
-    data = func(da.values, sos, axis=axis)
+        func = parallelize((None, across), across, parallel)(sp.sosfiltfilt)
+    data = func(sos, da.values, axis=axis)
     return da.copy(data=data)
 
 
