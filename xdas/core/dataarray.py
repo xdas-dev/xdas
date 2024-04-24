@@ -111,6 +111,9 @@ class DataArray:
             )
         return string
 
+    def __len__(self):
+        return self.shape[0]
+
     def __array__(self, dtype=None):
         if dtype is None:
             return self.data.__array__()
@@ -282,6 +285,10 @@ class DataArray:
     @property
     def ndim(self):
         return self.data.ndim
+
+    @property
+    def size(self):
+        return self.data.size
 
     @property
     def sizes(self):
