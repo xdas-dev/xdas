@@ -68,7 +68,7 @@ Xdas only loads the metadata from each file and returns a {py:class}`~xdas.DataA
 Note that if you want to create a single data collection object for multiple acquisitions (i.e. different instruments or several acquisition with different parameters), you can use the [DataCollection](user-guide/data-structure/datacollection) structure.  
 
 ```{note}
-For Febus users, the current implementation is very slow when directly working with native files. This is due to the particular 3D layout of the Febus format that is for now virtually reshaped in a inefficient way. The current recommended workflow is to first convert each Febus file in the Xdas NetCDF format: `xdas.open_dataarray("path_to_febus_file.h5", engine="febus").to_netcdf("path_to_xdas_file.nc", virtual=False)`. Those converted file can then be linked as described above.
+For Febus users, converting native files into Xdas NetCDF format generally improves I/O operations and reduce the amount of data by a factor two. This can be done by looping over Febus files and running: `xdas.open_dataarray("path_to_febus_file.h5", engine="febus").to_netcdf("path_to_xdas_file.nc", virtual=False)`. The converted files can then be linked as described above.
 ```
 
 ### Fixing small gaps and overlaps
