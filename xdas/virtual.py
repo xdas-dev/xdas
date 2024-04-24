@@ -181,6 +181,7 @@ class VirtualStack(VirtualArray):
 
     def _to_layout(self):
         layout = VirtualLayout(self.shape, self.dtype)
+        ndim = self.ndim
         index = 0
         for source in self._sources:
             slc = tuple(
@@ -189,7 +190,7 @@ class VirtualStack(VirtualArray):
                     if axis == self._axis
                     else slice(None)
                 )
-                for axis in range(self.ndim)
+                for axis in range(ndim)
             )
             layout[slc] = source
         return layout
