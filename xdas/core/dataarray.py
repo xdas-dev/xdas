@@ -3,6 +3,7 @@ import re
 import warnings
 from functools import partial
 
+import h5netcdf
 import h5py
 import numpy as np
 import xarray as xr
@@ -873,75 +874,49 @@ class DataArray:
         """
         if virtual is None:
             virtual = isinstance(self.data, VirtualArray)
-        data_vars = []
-        mapping = ""
-        for dim in self.coords:
-            if self.coords[dim].isinterp():
-                tie_indices = self.coords[dim].tie_indices
-                tie_values = self.coords[dim].tie_values
-                if np.issubdtype(tie_values.dtype, np.datetime64):
-                    tie_values = tie_values.astype("M8[ns]")
-                mapping += f"{dim}: {dim}_indices {dim}_values "
-                interpolation = xr.DataArray(
-                    name=f"{dim}_interpolation",
-                    attrs={
-                        "interpolation_name": "linear",
-                        "tie_points_mapping": f"{dim}_points: {dim}_indices {dim}_values",
-                    },
+        ds = xr.Dataset(attrs={"Conventions": "CF-1.9"})
+        mappings = []
+        for name, coord in self.coords.items():
+            if coord.isinterp():
+                mappings.append(f"{name}: {name}_indices {name}_values")
+                tie_indices = coord.tie_indices
+                tie_values = (
+                    coord.tie_values.astype("M8[ns]")
+                    if np.issubdtype(coord.tie_values.dtype, np.datetime64)
+                    else coord.tie_values
                 )
-                indices = xr.DataArray(
-                    name=f"{dim}_indices",
-                    data=tie_indices,
-                    dims=f"{dim}_points",
+                attrs = {
+                    "interpolation_name": "linear",
+                    "tie_points_mapping": f"{name}_points: {name}_indices {name}_values",
+                }
+                ds.update(
+                    {
+                        f"{name}_interpolation": ((), np.nan, attrs),
+                        f"{name}_indices": (f"{name}_points", tie_indices),
+                        f"{name}_values": (f"{name}_points", tie_values),
+                    }
                 )
-                values = xr.DataArray(
-                    name=f"{dim}_values",
-                    data=tie_values,
-                    dims=f"{dim}_points",
-                )
-                data_vars.extend([interpolation, indices, values])
-        ds = xr.Dataset(
-            data_vars={da.name: da for da in data_vars},
-            attrs={"Conventions": "CF-1.9"},
-        )
-        coords = {
-            name: (coord.dim, coord.values)
-            for name, coord in self.coords.items()
-            if not coord.isinterp()
-        }
+            else:
+                ds = ds.assign_coords({name: (coord.dim, coord.values)})
+        mapping = " ".join(mappings)
         attrs = {"coordinate_interpolation": mapping} if mapping else None
+        name = "__values__" if self.name is None else self.name
         if not virtual:
-            da = xr.DataArray(
-                data=self.values,
-                coords=coords,
-                dims=self.dims,
-                name=self.name,
-                attrs=attrs,
-            )
-            ds[da.name] = da
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                ds.to_netcdf(fname, group=group, **kwargs)
-        elif virtual and isinstance(self.data, VirtualArray):
-            da = xr.DataArray(  # TODO: this is dirty and does not work with dens coords
-                data=np.empty((0,) * self.ndim, self.dtype),
-                dims=self.dims,
-                name="__tmp__",
-            )
-            ds[da.name] = da
+            ds[self.name] = (self.dims, self.values, attrs)
             ds.to_netcdf(fname, group=group, **kwargs)
-            with h5py.File(fname, "r+") as file:
-                if self.name is None:
-                    name = "__values__"
-                else:
-                    name = self.name
-                if group:
-                    file = file[group]
-                self.data.to_dataset(file, name)
-                for axis, dim in enumerate(self.dims):
-                    file[name].dims[axis].attach_scale(file[dim])
-                for key in attrs:
-                    file[name].attrs[key] = attrs[key]
+        elif virtual and isinstance(self.data, VirtualArray):
+            with h5netcdf.File(fname, mode="w") as file:
+                file = file if group is None else file[group]
+                file.dimensions.update(self.sizes)
+                self.data.to_dataset(file._h5file, name)
+                variable = file._variable_cls(file, name, self.dims)
+                file._variables[name] = variable
+                variable._attach_dim_scales()
+                variable._attach_coords()
+                variable._ensure_dim_id()
+                if attrs is not None:
+                    variable.attrs.update(attrs)
+            ds.to_netcdf(fname, mode="a", group=group, **kwargs)
         else:
             raise ValueError(
                 "can only use `virtual=True` with a VirtualSource or a VirtualLayout"

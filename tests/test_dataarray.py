@@ -294,6 +294,15 @@ class TestDataArray:
             da.to_netcdf(path)
             result = xdas.open_dataarray(path)
             assert result.equals(da)
+        with TemporaryDirectory() as dirpath:
+            path = os.path.join(dirpath, "da.nc")
+            da = generate().assign_coords(lon=("distance", np.arange(401)))
+            da.to_netcdf(path)
+            tmp = xdas.open_dataarray(path)
+            path = path = os.path.join(dirpath, "vds.nc")
+            tmp.to_netcdf(path)
+            result = xdas.open_dataarray(path)
+            assert result.equals(da)
 
     def test_transpose(self):
         da = generate()
