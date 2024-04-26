@@ -467,8 +467,8 @@ def combine_by_coords(
 
     The list `objs` if traversed and data arrays are grouped together as long as they
     share compatible coordinates. If a change is detected a new group is created. Shape
-    compatibiliy implies same sampling interval along the combination dimension and
-    exact equality along other dimensions. Each group is then concatenated.
+    compatibility implies same sampling interval along the combination dimension, exact
+    equality along other dimensions and same dtype. Each group is then concatenated.
 
     Parameters
     ----------
@@ -480,11 +480,11 @@ def combine_by_coords(
         The tolerance to consider that the end of a file is continuous with beginning of
         the following, zero by default.
     squeeze : bool, optional
-        Whether to return a Database instead of a DataCollection if the combinatison
+        Whether to return a Database instead of a DataCollection if the combination
         results in a data collection containing a unique Database.
     virtual : bool, optional
         Whether to create a virtual dataset. It requires that all concatenated
-        dataarrays are virtual. By default tries to create a virtual dataset if possible.
+        data arrays are virtual. By default tries to create a virtual dataset if possible.
     verbose: bool
         Whether to display a progress bar. Default to False.
 
@@ -499,8 +499,10 @@ def combine_by_coords(
     for da in objs:
         if not bag:
             bag = [da]
-        elif da.coords.drop_dims(dim).equals(bag[-1].coords.drop_dims(dim)) and (
-            get_sampling_interval(da, dim) == get_sampling_interval(bag[-1], dim)
+        elif (
+            da.coords.drop_dims(dim).equals(bag[-1].coords.drop_dims(dim))
+            and (get_sampling_interval(da, dim) == get_sampling_interval(bag[-1], dim))
+            and (da.dtype == bag[-1].dtype)
         ):
             bag.append(da)
         else:
@@ -518,12 +520,12 @@ def combine_by_coords(
 
 def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
     """
-    Concatenate dataarrays along a given dimension.
+    Concatenate data arrays along a given dimension.
 
     Parameters
     ----------
     objs : list of DataArray
-        List of dataarrays to concatenate.
+        List of data arrays to concatenate.
     dim : str
         The dimension along which concatenate.
     tolerance : float of timedelta64, optional
@@ -531,7 +533,7 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         the following, zero by default.
     virtual : bool, optional
         Whether to create a virtual dataset. It requires that all concatenated
-        dataarrays are virtual. By default tries to create a virtual dataset if possible.
+        data arrays are virtual. By default tries to create a virtual dataset if possible.
     verbose: bool
         Whether to display a progress bar.
 
@@ -586,20 +588,20 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
     da : DataArray
         The data array to split
     indices_or_sections : str, int or list of int, optional
-        If `indices_or_section` is an interger N, the array will be diveided into N
+        If `indices_or_section` is an integer N, the array will be divided into N
         almost equal (can differ by one element if the `dim` size is not a multiple of
         N). If `indices_or_section` is a 1-D array of sorted integers, the entries
         indicate where the array is split along `dim`. For example, `[2, 3]` would, for
         `dim="first"`, result in [da[:2], da[2:3], da[3:]]. If `indices_or_section` is
-        "discontinuites", the `dim` must be an interpolated coordinate and splitting
+        "discontinuities", the `dim` must be an interpolated coordinate and splitting
         will occurs at locations where they are two consecutive tie_indices with only
-        one index of difference and where the tie_values differance is greater than
+        one index of difference and where the tie_values difference is greater than
         `tolerance`. Default to "discontinuities".
     dim : str, optional
         The dimension along which to split, by default "first"
     tolerance : float or timedelta64, optional
         If `indices_or_sections="discontinuities"` split will only occur on gaps and
-        overlaps that are bigger thatn `tolerance`. Zero tolerance by default.
+        overlaps that are bigger than `tolerance`. Zero tolerance by default.
 
     Returns
     -------
@@ -645,7 +647,7 @@ def align(*objs):
 
     New objects will all share the same dimensions with the same order. This is done by
     expanding missing dimensions and transposing to the same `dims`. The order of
-    the resulting `dims` is given by the order in wich dimensions are first encountered
+    the resulting `dims` is given by the order in which dimensions are first encountered
     while iterating through each objects `dims`. For each dimensions, the data arrays
     must either share the same coordinate or not having any.
 
