@@ -284,8 +284,14 @@ class VirtualLayout(VirtualArray):
         return self._layout.dtype
 
     def to_dataset(self, file_or_group, name):
+        if np.issubdtype(self.dtype, np.integer):
+            fillvalue = np.iinfo(self.dtype).min
+        elif np.issubdtype(self.dtype, np.floating):
+            fillvalue = np.nan
+        else:
+            fillvalue = None
         return file_or_group.create_virtual_dataset(
-            name, self._layout, fillvalue=np.nan
+            name, self._layout, fillvalue=fillvalue
         )
 
 
