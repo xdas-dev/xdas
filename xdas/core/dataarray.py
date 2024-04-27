@@ -751,7 +751,8 @@ class DataArray:
         """
         data = self.__array__()
         coords = {
-            name: (coord.dim, coord.values) for name, coord in self.coords.items()
+            name: (coord.dim if coord.dim else (), coord.values)
+            for name, coord in self.coords.items()
         }
         return xr.DataArray(data, coords, self.dims, self.name, self.attrs)
 

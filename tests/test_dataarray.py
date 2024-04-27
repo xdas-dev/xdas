@@ -274,6 +274,7 @@ class TestDataArray:
             coords={
                 "time": np.array([3, 4, 5]),
                 "relative_time": ("time", np.array([0, 1, 2])),
+                "channel": (None, "DAS000001"),
             },
         )
         result = da.to_xarray()
