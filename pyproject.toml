@@ -11,8 +11,8 @@ authors = [
 ]
 dependencies = [
     "dask",
+    "h5netcdf",
     "h5py",
-    "netcdf4",
     "numpy",
     "obspy",
     "pandas",
