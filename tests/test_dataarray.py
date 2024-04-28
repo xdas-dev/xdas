@@ -313,6 +313,7 @@ class TestDataArray:
         assert result.equals(da.transpose())
         assert result.equals(da.transpose(..., "time"))
         assert result.equals(da.transpose("distance", ...))
+        assert result.equals(da.T)
         with pytest.raises(ValueError, match="must be a permutation of"):
             da.transpose("distance")
         with pytest.raises(ValueError, match="must be a permutation of"):

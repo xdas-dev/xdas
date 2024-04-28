@@ -623,6 +623,10 @@ class DataArray:
             coords[name] = coord
         return self.__class__(self.data, coords, dims, self.name, self.attrs)
 
+    @property
+    def T(self):
+        return self.transpose()
+
     def transpose(self, *dims):
         """
         Return a new DataArray object with transposed dimensions.
