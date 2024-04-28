@@ -45,7 +45,6 @@ class DataArray:
     """
 
     def __init__(self, data=None, coords=None, dims=None, name=None, attrs=None):
-
         # data
         if data is None:
             data = np.array(np.nan)
@@ -632,8 +631,8 @@ class DataArray:
         ----------
         *dims : Hashable, optional
             By default, reverse the dimensions. Otherwise, reorder the dimensions to
-            this order. the provided `dims` must be a permutation of the original
-            dimensions.
+            this order. The provided `dims` must be a permutation of the original
+            dimensions. If `...` is provided, it is replaced by the missing dimensions.
 
         Returns
         -------
@@ -673,9 +672,19 @@ class DataArray:
         Coordinates:
           * x (x): [0 1]
           * y (y): [2 ... 4]
+
+        >>> assert da.transpose(..., "x").equals(da.transpose("y", ...))  # equivalent
+
         """
         if not dims:
             dims = tuple(reversed(self.dims))
+        if ... in dims:
+            missing_dims = tuple(dim for dim in self.dims if dim not in dims)
+            dims = tuple(
+                item
+                for dim in dims
+                for item in (missing_dims if dim is ... else (dim,))
+            )
         if not (len(dims) == len(self.dims) and set(dims) == set(self.dims)):
             raise ValueError(f"{dims} must be a permutation of {self.dims}")
         axes = tuple(self.get_axis_num(dim) for dim in dims)
