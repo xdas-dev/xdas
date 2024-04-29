@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 import xdas
-from xdas.synthetics import generate
+from xdas.synthetics import wavelet_wavefronts
 from xdas.virtual import VirtualStack
 
 
@@ -36,9 +36,9 @@ class TestCore:
             dirnames = [os.path.join(dirpath, key) for key in keys]
             for dirname in dirnames:
                 os.mkdir(dirname)
-                for idx, da in enumerate(generate(nchunk=3), start=1):
+                for idx, da in enumerate(wavelet_wavefronts(nchunk=3), start=1):
                     da.to_netcdf(os.path.join(dirname, f"{idx:03d}.nc"))
-            da = generate()
+            da = wavelet_wavefronts()
             dc = xdas.open_mfdatatree(
                 os.path.join(dirpath, "{node}", "00[acquisition].nc")
             )
@@ -48,8 +48,8 @@ class TestCore:
 
     def test_open_mfdataarray(self):
         with TemporaryDirectory() as dirpath:
-            generate().to_netcdf(os.path.join(dirpath, "sample.nc"))
-            for idx, da in enumerate(generate(nchunk=3), start=1):
+            wavelet_wavefronts().to_netcdf(os.path.join(dirpath, "sample.nc"))
+            for idx, da in enumerate(wavelet_wavefronts(nchunk=3), start=1):
                 da.to_netcdf(os.path.join(dirpath, f"{idx:03}.nc"))
             da_monolithic = xdas.open_dataarray(os.path.join(dirpath, "sample.nc"))
             da_chunked = xdas.open_mfdataarray(os.path.join(dirpath, "00*.nc"))
@@ -87,19 +87,19 @@ class TestCore:
             ]
             count = 1
             for acq in acqs:
-                for da in generate(**acq):
+                for da in wavelet_wavefronts(**acq):
                     da.to_netcdf(os.path.join(dirpath, f"{count:03d}.nc"))
                     count += 1
             dc = xdas.open_mfdataarray(os.path.join(dirpath, "*.nc"))
             assert len(dc) == 3
             for da, acq in zip(dc, acqs):
                 acq |= {"nchunk": None}
-                assert da.equals(generate(**acq))
+                assert da.equals(wavelet_wavefronts(**acq))
 
     def test_concatenate(self):
         # concatenate two data arrays
-        da1 = generate(starttime="2023-01-01T00:00:00")
-        da2 = generate(starttime="2023-01-01T00:00:06")
+        da1 = wavelet_wavefronts(starttime="2023-01-01T00:00:00")
+        da2 = wavelet_wavefronts(starttime="2023-01-01T00:00:06")
         data = np.concatenate([da1.data, da2.data])
         coords = {
             "time": {
@@ -186,7 +186,7 @@ class TestCore:
         assert xdas.split(da, tolerance=20.0)[0].equals(da)
 
     def test_chunk(self):
-        da = generate()
+        da = wavelet_wavefronts()
         assert xdas.concatenate(xdas.split(da, 3)).equals(da)
 
     def test_align(self):

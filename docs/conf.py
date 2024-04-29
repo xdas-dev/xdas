@@ -101,13 +101,13 @@ import h5py
 import numpy as np
 
 import xdas as xd
-from xdas.synthetics import generate
+from xdas.synthetics import wavelet_wavefronts
 
 dirpath = os.path.join(os.path.split(__file__)[0], "_data")
 if not os.path.exists(dirpath):
     os.makedirs(dirpath)
 
-da = generate()
+da = wavelet_wavefronts()
 chunks = xd.split(da, 3)
 da.to_netcdf(os.path.join(dirpath, "sample.h5"))
 da.to_netcdf(os.path.join(dirpath, "sample.nc"))

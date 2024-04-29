@@ -5,7 +5,7 @@ from .core.dataarray import DataArray
 from .core.routines import split
 
 
-def generate(
+def wavelet_wavefronts(
     *,
     starttime="2023-01-01T00:00:00",
     resolution=(np.timedelta64(20, "ms"), 25.0),
@@ -31,13 +31,13 @@ def generate(
 
     >>> import os
     >>> import xdas
-    >>> from xdas.synthetics import generate
+    >>> from xdas.synthetics import wavelet_wavefronts
     >>> from tempfile import TemporaryDirectory
 
     >>> with TemporaryDirectory() as dirpath:
     ...     os.chdir(dirpath)
-    ...     generate().to_netcdf("sample.nc")
-    ...     for idx, da in enumerate(generate(nchunk=3), start=1):
+    ...     wavelet_wavefronts().to_netcdf("sample.nc")
+    ...     for idx, da in enumerate(wavelet_wavefronts(nchunk=3), start=1):
     ...         da.to_netcdf(f"{idx:03}.nc")
     ...     da_monolithic = xdas.open_dataarray("sample.nc")
     ...     da_chunked = xdas.open_mfdataarray("00*.nc")
@@ -93,3 +93,47 @@ def generate(
         return split(da, nchunk)
     else:
         return da
+
+
+def randn_wavefronts():
+    # sampling
+    resolution = (np.timedelta64(10, "ms"), 100.0)
+    starttime = np.datetime64("2024-01-01T00:00:00").astype("datetime64[ns]")
+    span = (np.timedelta64(200, "s"), 100000.0)  # (100 s, 10 km)
+    shape = (span[0] // resolution[0], int(span[1] // resolution[1]) + 1)
+    t = np.arange(shape[0]) * resolution[0] / np.timedelta64(1, "s")  # time values [s]
+    s = np.arange(shape[1]) * resolution[1]  # distance values [m]
+
+    # physical parameters
+    snr = 20  # signal to noise ratio
+    vp = 4000  # P-wave speed [m/s]
+    vs = vp / 1.75  # S-wave speed [m/s]
+    xc = 20_000  # source distance along [m]
+    t0 = 30.0  # source origin time relative to start of file [s]
+
+    d = np.hypot(xc, (s - np.mean(s)))  # channel distance to source [m]
+    ttp = d / vp  # P-wave travel time [s]
+    tts = d / vs  # S-wave travel time [s]
+    data = np.zeros(shape)
+    for k in range(shape[1]):
+        data[:, k] += (t > (t0 + ttp[k])) * np.random.randn(shape[0]) / 2
+        data[:, k] += (t > (t0 + tts[k])) * np.random.randn(shape[0])
+    data /= np.max(np.abs(data), axis=0, keepdims=True)  # normalize
+    np.random.seed(42)
+    data += np.random.randn(*shape) / snr  # add noise
+
+    # pack data and coordinates as Database or DataCollection if chunking.
+    da = DataArray(
+        data=data,
+        coords={
+            "time": {
+                "tie_indices": [0, shape[0] - 1],
+                "tie_values": [starttime, starttime + resolution[0] * (shape[0] - 1)],
+            },
+            "distance": {
+                "tie_indices": [0, shape[1] - 1],
+                "tie_values": [0.0, resolution[1] * (shape[1] - 1)],
+            },
+        },
+    )
+    return da

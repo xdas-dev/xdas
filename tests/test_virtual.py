@@ -6,14 +6,14 @@ import numpy as np
 import pytest
 
 import xdas
-from xdas.synthetics import generate
+from xdas.synthetics import wavelet_wavefronts
 from xdas.virtual import *
 
 
 class TestFunctional:  # TODO: move elsewhere
     def test_all(self):
         with tempfile.TemporaryDirectory() as dirpath:
-            expected = generate()
+            expected = wavelet_wavefronts()
             chunks = xdas.split(expected, 3)
             for index, chunk in enumerate(chunks, start=1):
                 chunk.to_netcdf(os.path.join(dirpath, f"{index:03d}.nc"))

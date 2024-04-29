@@ -26,8 +26,8 @@ class DataCollection:
     Examples
     --------
     >>> import xdas
-    >>> from xdas.synthetics import generate
-    >>> da = generate()
+    >>> from xdas.synthetics import wavelet_wavefronts
+    >>> da = wavelet_wavefronts()
     >>> dc = xdas.DataCollection(
     ...     {
     ...         "das1": ("acquisition", [da, da]),
@@ -89,8 +89,8 @@ class DataCollection:
         Examples
         --------
         >>> import xdas
-        >>> from xdas.synthetics import generate
-        >>> da = generate()
+        >>> from xdas.synthetics import wavelet_wavefronts
+        >>> da = wavelet_wavefronts()
         >>> dc = xdas.DataCollection(
         ...     {
         ...         "das1": ("acquisition", [da, da]),

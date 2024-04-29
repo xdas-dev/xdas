@@ -7,14 +7,14 @@ import xdas
 from xdas.atoms import Partial, Sequential
 from xdas.processing.core import DataArrayLoader, DataArrayWriter, process
 from xdas.signal import sosfilt
-from xdas.synthetics import generate
+from xdas.synthetics import wavelet_wavefronts
 
 
 class TestProcessing:
     def test_stateful(self):
         with tempfile.TemporaryDirectory() as tempdir:
             # generate test dataarray
-            generate().to_netcdf(os.path.join(tempdir, "sample.nc"))
+            wavelet_wavefronts().to_netcdf(os.path.join(tempdir, "sample.nc"))
             da = xdas.open_dataarray(os.path.join(tempdir, "sample.nc"))
 
             # declare processing sequence

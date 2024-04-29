@@ -40,9 +40,9 @@ class ResamplePoly(Atom):
 
     Examples
     --------
-    >>> from xdas.synthetics import generate
+    >>> from xdas.synthetics import wavelet_wavefronts
     >>> from xdas.atoms import Sequential, ResamplePoly
-    >>> da = generate()
+    >>> da = wavelet_wavefronts()
 
     Using ``ResamplePoly`` directly:
 
@@ -149,9 +149,9 @@ class IIRFilter(Atom):
 
     Examples
     --------
-    >>> from xdas.synthetics import generate
+    >>> from xdas.synthetics import wavelet_wavefronts
     >>> from xdas.atoms import Sequential, IIRFilter
-    >>> da = generate()
+    >>> da = wavelet_wavefronts()
 
     Using ``IIRFilter`` directly:
 
@@ -280,9 +280,9 @@ class FIRFilter(Atom):
 
     Examples
     --------
-    >>> from xdas.synthetics import generate
+    >>> from xdas.synthetics import wavelet_wavefronts
     >>> from xdas.atoms import Sequential, FIRFilter
-    >>> da = generate()
+    >>> da = wavelet_wavefronts()
 
     Using ``FIRFilter`` directly:
 

@@ -63,8 +63,8 @@ class Sequential(list):
 
     Applying the sequence to data:
 
-    >>> from xdas.synthetics import generate
-    >>> da = generate()
+    >>> from xdas.synthetics import wavelet_wavefronts
+    >>> da = wavelet_wavefronts()
     >>> sequence(da)
     <xdas.DataArray (time: 300, distance: 26)>
     [[0.000000e+00 0.000000e+00 0.000000e+00 ... 0.000000e+00 0.000000e+00

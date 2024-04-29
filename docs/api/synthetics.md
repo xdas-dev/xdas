@@ -8,5 +8,6 @@
 .. autosummary::
    :toctree: ../_autosummary
 
-   generate
+   wavelet_wavefronts
+   randn_wavefronts
 ```

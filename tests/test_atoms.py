@@ -16,7 +16,7 @@ from xdas.atoms import (
     UpSample,
 )
 from xdas.signal import lfilter
-from xdas.synthetics import generate
+from xdas.synthetics import wavelet_wavefronts
 
 
 class TestPartialAtom:
@@ -34,7 +34,7 @@ class TestPartialAtom:
 class TestProcessing:
     def test_sequence(self):
         # Generate a temporary dataset
-        da = generate()
+        da = wavelet_wavefronts()
 
         # Declare sequence to execute
         sequence = Sequential(
@@ -67,7 +67,7 @@ class TestDecorator:
 
 class TestFilters:
     def test_lfilter(self):
-        da = generate()
+        da = wavelet_wavefronts()
         chunks = xdas.split(da, 6, "time")
 
         b, a = sp.iirfilter(4, 10.0, btype="lowpass", fs=50.0)
@@ -101,7 +101,7 @@ class TestFilters:
         #     assert result.equals(expected)
 
     def test_sosfilter(self):
-        da = generate()
+        da = wavelet_wavefronts()
         chunks = xdas.split(da, 6, "time")
 
         sos = sp.iirfilter(4, 10.0, btype="lowpass", fs=50.0, output="sos")
@@ -135,7 +135,7 @@ class TestFilters:
         #     assert result.equals(expected)
 
     def test_downsample(self):
-        da = generate()
+        da = wavelet_wavefronts()
         chunks = xdas.split(da, 6, "time")
         expected = da.isel(time=slice(None, None, 3))
         atom = DownSample(3, "time")
@@ -159,7 +159,7 @@ class TestFilters:
         result = atom(da)
         assert result.equals(expected)
 
-        da = generate()
+        da = wavelet_wavefronts()
         chunks = xdas.split(da, 6, "time")
         atom = UpSample(3, dim="time")
         expected = atom(da)
@@ -169,7 +169,7 @@ class TestFilters:
         assert result.equals(expected)
 
     def test_firfilter(self):
-        da = generate()
+        da = wavelet_wavefronts()
         chunks = xdas.split(da, 6, "time")
         taps = sp.firwin(11, 0.4, pass_zero="lowpass")
         expected = xp.lfilter(taps, 1.0, da, "time")
@@ -188,7 +188,7 @@ class TestFilters:
         assert result.name == expected.name
 
     def test_resample_poly(self):
-        da = generate()
+        da = wavelet_wavefronts()
         chunks = xdas.split(da, 6, "time")
 
         expected = xp.resample_poly(da, 5, 2, "time")
