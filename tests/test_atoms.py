@@ -1,22 +1,25 @@
 import os
+from math import exp
 from tempfile import TemporaryDirectory
 
 import numpy as np
 import scipy.signal as sp
 
 import xdas
+import xdas as xd
 import xdas.signal as xp
 from xdas.atoms import (
     DownSample,
     FIRFilter,
     IIRFilter,
+    MLPicker,
     Partial,
     ResamplePoly,
     Sequential,
     UpSample,
 )
 from xdas.signal import lfilter
-from xdas.synthetics import wavelet_wavefronts
+from xdas.synthetics import randn_wavefronts, wavelet_wavefronts
 
 
 class TestPartialAtom:
@@ -212,3 +215,19 @@ class TestFilters:
         assert result.coords.equals(expected.coords)
         assert result.attrs == expected.attrs
         assert result.name == expected.name
+
+
+class TestMLPicker:
+    def test_picker(self):
+        from seisbench.models import PhaseNet
+
+        model = PhaseNet.from_pretrained("diting")
+        picker = MLPicker(model, "time", compile=False)
+        da = randn_wavefronts()
+        expected = picker(da)
+        chunks = xd.split(da, 4, "time")
+        picker = MLPicker(
+            model, "time", compile=False
+        )  # TODO: I shouldn't need to redeclare it.
+        result = xd.concatenate([picker(chunk, chunk="time") for chunk in chunks])
+        assert result.equals(expected)

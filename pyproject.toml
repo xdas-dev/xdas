@@ -34,7 +34,12 @@ docs = [
     "sphinx-copybutton",
     "sphinx",
 ]
-tests = ["pytest", "pytest-cov"]
+tests = [
+    "pytest",
+    "pytest-cov",
+    "seisbench",
+    "torch",
+]
 
 [tool.isort]
 profile = "black"
