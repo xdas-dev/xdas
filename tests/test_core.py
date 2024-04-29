@@ -128,22 +128,24 @@ class TestCore:
             result = xdas.concatenate([da1, da2])
             assert isinstance(result.data, VirtualStack)
             assert result.equals(expected)
-        # concat of 3D data arrays:
+        # concat of 3D data arrays with unsorted coords:
         da1 = xdas.DataArray(
             data=np.zeros((5, 4, 3)),
             coords={
+                "phase": ["A", "B", "C"],
                 "time": {"tie_indices": [0, 4], "tie_values": [0, 4]},
                 "distance": [0.0, 1.0, 2.0, 3.0],
-                "phase": ["A", "B", "C"],
             },
+            dims=("time", "distance", "phase"),
         )
         da2 = xdas.DataArray(
             data=np.ones((7, 4, 3)),
             coords={
+                "phase": ["A", "B", "C"],
                 "time": {"tie_indices": [0, 6], "tie_values": [5, 11]},
                 "distance": [0.0, 1.0, 2.0, 3.0],
-                "phase": ["A", "B", "C"],
             },
+            dims=("time", "distance", "phase"),
         )
         expected = xdas.DataArray(
             data=np.concatenate((np.zeros((5, 4, 3)), np.ones((7, 4, 3))), axis=0),

@@ -541,15 +541,24 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
     -------
     DataArray
         The concatenated dataarray.
+
     """
     objs = [da for da in objs if not da.empty]
+
     if virtual is None:
         virtual = all(isinstance(da.data, (VirtualSource, VirtualStack)) for da in objs)
+
     if not all(isinstance(da[dim], InterpCoordinate) for da in objs):
         raise NotImplementedError("can only concatenate along interpolated coordinate")
-    axis = objs[0].get_axis_num(dim)
-    dim = objs[0].dims[axis]
-    coords = objs[0].coords.copy()
+
+    obj = objs[0]
+    axis = obj.get_axis_num(dim)
+    dim = obj.dims[axis]
+    coords = obj.coords.copy()
+    dims = obj.dims
+    name = obj.name
+    attrs = obj.attrs
+
     objs = sorted(objs, key=lambda da: da[dim][0].values)
     iterator = tqdm(objs, desc="Linking dataarray") if verbose else objs
     data = []
@@ -562,17 +571,21 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
                 data.append(source)
         else:
             data.append(da.data)
+
         tie_indices.extend(idx + da[dim].tie_indices)
         tie_values.extend(da[dim].tie_values)
         idx += da.shape[axis]
+
     if virtual:
         data = VirtualStack(data, axis)
     else:
         data = np.concatenate(data, axis)
+
     coords[dim] = InterpCoordinate(
         {"tie_indices": tie_indices, "tie_values": tie_values}, dim
     ).simplify(tolerance)
-    return DataArray(data, coords)
+
+    return DataArray(data, coords, dims, name, attrs)
 
 
 def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None):
