@@ -168,7 +168,7 @@ class Sequential(Atom, list):
     def __init__(self, atoms: Any, name: str | None = None) -> None:
         super().__init__()
         for atom in atoms:
-            if not isinstance(atom, (Partial, Sequential)):
+            if not isinstance(atom, Atom):
                 atom = Partial(atom)
             self.append(atom)
         self.name = name
