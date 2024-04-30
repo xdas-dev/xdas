@@ -86,7 +86,7 @@ class Atom:
         self.set_state(state)
 
 
-class Sequential(list):
+class Sequential(Atom, list):
     """
     A class to handle a sequence of operations. Each operation is represented by an
     Atom class object, which contains the function and its arguments.
@@ -173,7 +173,7 @@ class Sequential(list):
             self.append(atom)
         self.name = name
 
-    def __call__(self, x: Any, **kwargs) -> Any:
+    def call(self, x: Any, **kwargs) -> Any:
         for atom in self:
             x = atom(x, **kwargs)
         return x
