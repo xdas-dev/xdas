@@ -7,6 +7,85 @@ from ..core.datacollection import DataCollection
 from ..core.routines import open_datacollection
 
 
+class State:
+    def __init__(self, state):
+        self.state = state
+
+
+class Atom:
+    def __init__(self):
+        super().__setattr__("_config", {})
+        super().__setattr__("_state", {})
+        super().__setattr__("_filters", {})
+
+    def __repr__(self):
+        name = self.__class__.__name__
+        sig = ", ".join(
+            f"{key}={value}" for key, value in self._config.items() if value is not None
+        )
+        s = f"{name}({sig})"
+        for name, filter in self._filters.items():
+            s += "\n" + "\n".join(f"  {e}" for e in repr(filter).split("\n"))
+        return s
+
+    def __setattr__(self, name, value):
+        match value:
+            case State(state=state):
+                self._state[name] = state
+                super().__setattr__(name, state)
+            case Atom():
+                self._filters[name] = value
+                super().__setattr__(name, value)
+            case other:
+                self._config[name] = value
+                super().__setattr__(name, other)
+
+    @property
+    def state(self):
+        return self._state | {
+            name: filter.state for name, filter in self._filters.items() if filter.state
+        }
+
+    @property
+    def initialized(self):
+        return all(value is not ... for value in self._state.values())
+
+    def initialize(self, x, **kwargs): ...
+
+    def initialize_from_state(self): ...
+
+    def call(self, x, **kwargs): ...
+
+    def __call__(self, x, **kwargs):
+        if not self.initialized:
+            self.initialize(x, **kwargs)
+        return self.call(x, **kwargs)
+
+    def reset(self):
+        for key in self._state:
+            setattr(self, key, State(...))
+        for _, filter in self._filters.items():
+            filter.reset()
+
+    def save_state(self, path):
+        DataCollection(self.state).to_netcdf(path)
+
+    def set_state(self, state):
+        for key, value in state.items():
+            if isinstance(value, DataArray):
+                setattr(
+                    self, key, State(value.__array__())
+                )  # TODO: shouldn't need __array__
+                self.initialize_from_state()
+            else:
+                filter = getattr(self, key)
+                filter.set_state(value)
+
+    def load_state(self, path):
+        state = open_datacollection(path).load()
+        self.set_state(state)
+
+
 class Sequential(list):
     """
     A class to handle a sequence of operations. Each operation is represented by an
@@ -117,85 +196,6 @@ class Sequential(list):
         for atom in self:
             if isinstance(atom, Partial):
                 atom.reset()
-
-
-class State:
-    def __init__(self, state):
-        self.state = state
-
-
-class Atom:
-    def __init__(self):
-        super().__setattr__("_config", {})
-        super().__setattr__("_state", {})
-        super().__setattr__("_filters", {})
-
-    def __repr__(self):
-        name = self.__class__.__name__
-        sig = ", ".join(
-            f"{key}={value}" for key, value in self._config.items() if value is not None
-        )
-        s = f"{name}({sig})"
-        for name, filter in self._filters.items():
-            s += "\n" + "\n".join(f"  {e}" for e in repr(filter).split("\n"))
-        return s
-
-    def __setattr__(self, name, value):
-        match value:
-            case State(state=state):
-                self._state[name] = state
-                super().__setattr__(name, state)
-            case Atom():
-                self._filters[name] = value
-                super().__setattr__(name, value)
-            case other:
-                self._config[name] = value
-                super().__setattr__(name, other)
-
-    @property
-    def state(self):
-        return self._state | {
-            name: filter.state for name, filter in self._filters.items() if filter.state
-        }
-
-    @property
-    def initialized(self):
-        return all(value is not ... for value in self._state.values())
-
-    def initialize(self, x, **kwargs): ...
-
-    def initialize_from_state(self): ...
-
-    def call(self, x, **kwargs): ...
-
-    def __call__(self, x, **kwargs):
-        if not self.initialized:
-            self.initialize(x, **kwargs)
-        return self.call(x, **kwargs)
-
-    def reset(self):
-        for key in self._state:
-            setattr(self, key, State(...))
-        for _, filter in self._filters.items():
-            filter.reset()
-
-    def save_state(self, path):
-        DataCollection(self.state).to_netcdf(path)
-
-    def set_state(self, state):
-        for key, value in state.items():
-            if isinstance(value, DataArray):
-                setattr(
-                    self, key, State(value.__array__())
-                )  # TODO: shouldn't need __array__
-                self.initialize_from_state()
-            else:
-                filter = getattr(self, key)
-                filter.set_state(value)
-
-    def load_state(self, path):
-        state = open_datacollection(path).load()
-        self.set_state(state)
 
 
 class Partial(Atom):
