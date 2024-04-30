@@ -10,7 +10,7 @@ from ..core.routines import concatenate, open_dataarray
 from .monitor import Monitor
 
 
-def process(atom, data_loader, data_writer, chunk_dim=None):
+def process(atom, data_loader, data_writer):
     """
     Execute a chunked processing pipeline ``seq``,
     ingesting the data from ``data_loader`` and
@@ -32,7 +32,7 @@ def process(atom, data_loader, data_writer, chunk_dim=None):
     monitor.tic("read")
     for chunk in data_loader:
         monitor.tic("proc")
-        result = atom(chunk, chunk=chunk_dim)
+        result = atom(chunk, chunk=data_loader.chunk_dim)
         monitor.tic("write")
         data_writer.to_netcdf(result)
         monitor.toc(chunk.nbytes)
