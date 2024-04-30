@@ -383,9 +383,9 @@ class LFilter(Atom):
         self.axis = State(...)
         self.zi = State(...)
 
-    def initialize(self, da, chunk=None, **flags):
+    def initialize(self, da, chunk_dim=None, **flags):
         self.axis = State(da.get_axis_num(self.dim))
-        if self.dim == chunk:
+        if self.dim == chunk_dim:
             n_sections = max(len(self.a), len(self.b)) - 1
             shape = tuple(
                 n_sections if name == self.dim else size
@@ -418,9 +418,9 @@ class SOSFilter(Atom):
         self.axis = State(...)
         self.zi = State(...)
 
-    def initialize(self, da, chunk=None, **flags):
+    def initialize(self, da, chunk_dim=None, **flags):
         self.axis = State(da.get_axis_num(self.dim))
-        if self.dim == chunk:
+        if self.dim == chunk_dim:
             n_sections = self.sos.shape[0]
             shape = (n_sections,) + tuple(
                 2 if index == self.axis else element
@@ -451,8 +451,8 @@ class DownSample(Atom):
         self.dim = dim
         self.buffer = State(...)
 
-    def initialize(self, da, chunk=None, **flags):
-        if chunk == self.dim:
+    def initialize(self, da, chunk_dim=None, **flags):
+        if chunk_dim == self.dim:
             self.buffer = State(da.isel({self.dim: slice(0, 0)}))
         else:
             self.buffer = State(None)

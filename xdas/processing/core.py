@@ -32,7 +32,7 @@ def process(atom, data_loader, data_writer):
     monitor.tic("read")
     for chunk in data_loader:
         monitor.tic("proc")
-        result = atom(chunk, chunk=data_loader.chunk_dim)
+        result = atom(chunk, chunk_dim=data_loader.chunk_dim)
         monitor.tic("write")
         data_writer.to_netcdf(result)
         monitor.toc(chunk.nbytes)

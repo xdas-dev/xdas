@@ -82,7 +82,7 @@ class TestFilters:
 
         atom = IIRFilter(4, 10.0, "lowpass", dim="time", stype="ba")
         chunked = xdas.concatenate(
-            [atom(chunk, chunk="time") for chunk in chunks], "time"
+            [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
         )
 
         assert monolithic.equals(expected)
@@ -93,12 +93,12 @@ class TestFilters:
         #     path = os.path.join(dirpath, "state.nc")
 
         #     atom_a = IIRFilter(4, 10.0, "lowpass", dim="time", stype="ba")
-        #     chunks_a = [atom_a(chunk, chunk="time") for chunk in chunks[:3]]
+        #     chunks_a = [atom_a(chunk, chunk_dim="time") for chunk in chunks[:3]]
         #     atom_a.save_state(path)
 
         #     atom_b = IIRFilter(4, 10.0, "lowpass", dim="time", stype="ba")
         #     atom_b.load_state(path)
-        #     chunks_b = [atom_b(chunk, chunk="time") for chunk in chunks[3:]]
+        #     chunks_b = [atom_b(chunk, chunk_dim="time") for chunk in chunks[3:]]
 
         #     result = xdas.concatenate(chunks_a + chunks_b, "time")
         #     assert result.equals(expected)
@@ -116,7 +116,7 @@ class TestFilters:
 
         atom = IIRFilter(4, 10.0, "lowpass", dim="time")
         chunked = xdas.concatenate(
-            [atom(chunk, chunk="time") for chunk in chunks], "time"
+            [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
         )
 
         assert monolithic.equals(expected)
@@ -127,12 +127,12 @@ class TestFilters:
         #     path = os.path.join(dirpath, "state.nc")
 
         #     atom_a = IIRFilter(4, 10.0, "lowpass", dim="time")
-        #     chunks_a = [atom_a(chunk, chunk="time") for chunk in chunks[:3]]
+        #     chunks_a = [atom_a(chunk, chunk_dim="time") for chunk in chunks[:3]]
         #     atom_a.save_state(path)
 
         #     atom_b = IIRFilter(4, 10.0, "lowpass", dim="time")
         #     atom_b.load_state(path)
-        #     chunks_b = [atom_b(chunk, chunk="time") for chunk in chunks[3:]]
+        #     chunks_b = [atom_b(chunk, chunk_dim="time") for chunk in chunks[3:]]
 
         #     result = xdas.concatenate(chunks_a + chunks_b, "time")
         #     assert result.equals(expected)
@@ -146,7 +146,7 @@ class TestFilters:
         assert result.equals(expected)
         atom.reset()
         result = xdas.concatenate(
-            [atom(chunk, chunk="time") for chunk in chunks], "time"
+            [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
         )
         assert result.equals(expected)
 
@@ -167,7 +167,7 @@ class TestFilters:
         atom = UpSample(3, dim="time")
         expected = atom(da)
         result = xdas.concatenate(
-            [atom(chunk, chunk="time") for chunk in chunks], "time"
+            [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
         )
         assert result.equals(expected)
 
@@ -183,7 +183,7 @@ class TestFilters:
 
         atom = FIRFilter(11, 10.0, "lowpass", dim="time")
         result = xdas.concatenate(
-            [atom(chunk, chunk="time") for chunk in chunks], "time"
+            [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
         )
         assert np.allclose(result.values, expected.values, atol=1e-16, rtol=1e-11)
         assert result.coords.equals(expected.coords)
@@ -199,7 +199,7 @@ class TestFilters:
         result = atom(da)
         atom = ResamplePoly(125, maxfactor=10, dim="time")
         result_chunked = xdas.concatenate(
-            [atom(chunk, chunk="time") for chunk in chunks], "time"
+            [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
         )
 
         assert np.allclose(result.values, result_chunked.values, atol=1e-15, rtol=1e-12)
@@ -229,5 +229,5 @@ class TestMLPicker:
         picker = MLPicker(
             model, "time", compile=False
         )  # TODO: I shouldn't need to redeclare it.
-        result = xd.concatenate([picker(chunk, chunk="time") for chunk in chunks])
+        result = xd.concatenate([picker(chunk, chunk_dim="time") for chunk in chunks])
         assert result.equals(expected)
