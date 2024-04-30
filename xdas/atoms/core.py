@@ -94,9 +94,9 @@ class Sequential(list):
             self.append(atom)
         self.name = name
 
-    def __call__(self, x: Any) -> Any:
+    def __call__(self, x: Any, **kwargs) -> Any:
         for atom in self:
-            x = atom(x)
+            x = atom(x, **kwargs)
         return x
 
     def __repr__(self) -> str:
@@ -266,7 +266,7 @@ class Partial(Atom):
     def stateful(self):
         return bool(self._state)
 
-    def call(self, x: Any) -> Any:
+    def call(self, x: Any, **kwargs) -> Any:
         args = tuple(x if arg is ... else arg for arg in self.args)
         kwargs = self.kwargs | self._state
         if self.stateful:
