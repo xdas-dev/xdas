@@ -59,13 +59,13 @@ class MLPicker(Atom):
                 "pytorch is not installed, use `pip install torch` to install it"
             )
 
-    def initialize(self, da, chunk=None, **kwargs):
+    def initialize(self, da, chunk=None, **flags):
         if chunk == self.dim:
             self.buffer = State(da.isel({self.dim: slice(0, 0)}))
         else:
             self.buffer = State(None)
 
-    def call(self, da, **kwargs):
+    def call(self, da, **flags):
         if self.buffer is None:
             out = self.process(da)
         else:

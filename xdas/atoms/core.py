@@ -50,16 +50,16 @@ class Atom:
     def initialized(self):
         return all(value is not ... for value in self._state.values())
 
-    def initialize(self, x, **kwargs): ...
+    def initialize(self, x, **flags): ...
 
     def initialize_from_state(self): ...
 
-    def call(self, x, **kwargs): ...
+    def call(self, x, **flags): ...
 
-    def __call__(self, x, **kwargs):
+    def __call__(self, x, **flags):
         if not self.initialized:
-            self.initialize(x, **kwargs)
-        return self.call(x, **kwargs)
+            self.initialize(x, **flags)
+        return self.call(x, **flags)
 
     def reset(self):
         for key in self._state:
@@ -173,9 +173,9 @@ class Sequential(Atom, list):
             self.append(atom)
         self.name = name
 
-    def call(self, x: Any, **kwargs) -> Any:
+    def call(self, x: Any, **flags) -> Any:
         for atom in self:
-            x = atom(x, **kwargs)
+            x = atom(x, **flags)
         return x
 
     def __repr__(self) -> str:
@@ -266,7 +266,7 @@ class Partial(Atom):
     def stateful(self):
         return bool(self._state)
 
-    def call(self, x: Any, **kwargs) -> Any:
+    def call(self, x: Any, **flags) -> Any:
         args = tuple(x if arg is ... else arg for arg in self.args)
         kwargs = self.kwargs | self._state
         if self.stateful:
