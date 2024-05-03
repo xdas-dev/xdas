@@ -97,12 +97,18 @@ class MLPicker(Atom):
         return concatenate(chunks, self.dim)
 
     def _process(self, x):
-        x = x - x.mean(-1, keepdim=True)
-        x = x / x.std(-1, keepdim=True)
-        y = torch.zeros((*x.shape[:-1], 3, x.shape[-1]), dtype=x.dtype)
+        self._normalize(x)
+        y = torch.zeros(
+            (*x.shape[:-1], 3, x.shape[-1]), dtype=x.dtype, device=self.device
+        )
         y[:, 1, :] = x
         y = self.model(y)
         y = y[:, :, self.noverlap // 2 : -self.noverlap // 2]
         return y
+
+    def _normalize(self, x):
+        std, mean = torch.std_mean(x, dim=-1, keepdim=True)
+        torch.sub(x, mean, out=x)
+        torch.div(x, std, out=x)
 
     _process_compiled = torch.compile(_process)
