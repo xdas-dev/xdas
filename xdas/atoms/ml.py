@@ -26,7 +26,7 @@ torch = LazyModule("torch")
 
 
 class MLPicker(Atom):
-    def __init__(self, model, dim, compile=True):
+    def __init__(self, model, dim, compile=False):
         super().__init__()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.eval().to(self.device)
@@ -49,15 +49,6 @@ class MLPicker(Atom):
     @property
     def phases(self):
         return list(self.model.labels)
-
-    @property
-    def _torch(self):
-        try:
-            return importlib.import_module("torch")
-        except ImportError:
-            raise ImportError(
-                "pytorch is not installed, use `pip install torch` to install it"
-            )
 
     def initialize(self, da, chunk_dim=None, **flags):
         if chunk_dim == self.dim:
@@ -105,12 +96,13 @@ class MLPicker(Atom):
             chunks.append(chunk)
         return concatenate(chunks, self.dim)
 
-    def _process(self, t):
-        t = t - t.mean(-1, keepdim=True)
-        t = t / t.std(-1, keepdim=True)
-        t = t[:, None, :].repeat(1, self.model.in_channels, 1)
-        t = self.model(t)
-        t = t[:, :, self.noverlap // 2 : -self.noverlap // 2]
-        return t
+    def _process(self, x):
+        x = x - x.mean(-1, keepdim=True)
+        x = x / x.std(-1, keepdim=True)
+        y = torch.zeros((*x.shape[:-1], 3, x.shape[-1]), dtype=x.dtype)
+        y[:, 1, :] = x
+        y = self.model(y)
+        y = y[:, :, self.noverlap // 2 : -self.noverlap // 2]
+        return y
 
     _process_compiled = torch.compile(_process)
