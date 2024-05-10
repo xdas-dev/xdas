@@ -74,28 +74,36 @@ class MLPicker(Atom):
             self.buffer = State(da.isel({self.dim: slice(0, 0)}))
         else:
             self.buffer = State(None)
-        self.batch_size = np.prod(
-            [size for dim, size in da.sizes.items() if not dim == self.dim]
+        self.batch_size = State(
+            np.prod([size for dim, size in da.sizes.items() if not dim == self.dim])
         )
-        self.circular_input = torch.zeros(
-            self.batch_size, self.nperseg, dtype=torch.float32, device=self.device
+        self.circular_input = State(
+            torch.zeros(
+                self.batch_size, self.nperseg, dtype=torch.float32, device=self.device
+            )
         )
-        self.model_input = torch.zeros(
-            self.batch_size,
-            self.in_channels,
-            self.nperseg,
-            dtype=torch.float32,
-            device=self.device,
+        self.model_input = State(
+            torch.zeros(
+                self.batch_size,
+                self.in_channels,
+                self.nperseg,
+                dtype=torch.float32,
+                device=self.device,
+            )
         )
-        self.circular_output = torch.zeros(
-            self.batch_size,
-            self.classes,
-            self.nperseg,
-            dtype=torch.float32,
-            device=self.device,
+        self.circular_output = State(
+            torch.zeros(
+                self.batch_size,
+                self.classes,
+                self.nperseg,
+                dtype=torch.float32,
+                device=self.device,
+            )
         )
-        self.circular_counts = torch.zeros(
-            self.batch_size, self.nperseg, dtype=torch.int32, device=self.device
+        self.circular_counts = State(
+            torch.zeros(
+                self.batch_size, self.nperseg, dtype=torch.int32, device=self.device
+            )
         )
 
     def call(self, da, **flags):
