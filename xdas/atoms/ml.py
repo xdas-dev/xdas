@@ -100,71 +100,98 @@ class MLPicker(Atom):
         return concatenate(chunks, self.dim)
 
     def _doit(self, da):
+
+        # To perform continuous processing, we use circular buffers both as input and
+        # as output. All buffer sizes are set to the model input size. At each
+        # iteration, we roll the input buffer by `self.step` and fill the last values
+        # with the new signal values. The input buffer is processed by the model and
+        # its output is added to the output buffer; a count buffer is also incremented.
+        # Because of the overlapping used, only the first values up to `self.step` are
+        # fully processed and can be saved. The output buffer is divided by the count
+        # buffer and stored for further concatenation.
+
         batch_size = np.prod(
             [size for dim, size in da.sizes.items() if not dim == self.dim]
         )
 
         # allocate memory
-        rolling_input = torch.zeros(
+        circular_input = torch.zeros(
             batch_size, self.nperseg, dtype=torch.float32, device=self.device
         )
         model_input = torch.zeros(
             batch_size, 3, self.nperseg, dtype=torch.float32, device=self.device
         )
-        rolling_output = torch.zeros(
+        circular_output = torch.zeros(
             batch_size, 3, self.nperseg, dtype=torch.float32, device=self.device
         )
-        rolling_counts = torch.zeros(
+        circular_counts = torch.zeros(
             batch_size, self.nperseg, dtype=torch.int32, device=self.device
         )
 
-        # initialize rolling_buffer
+        # initialize circular_buffer
         chunk = da.isel({self.dim: slice(0, self.noverlap)})
         chunk = chunk.transpose(..., self.dim)
         chunk = torch.tensor(chunk.values, dtype=torch.float32, device=self.device)
-        rolling_input[:, self.step :] = chunk
+        circular_input[:, self.step :] = chunk
 
         chunks = []
         for idx in range(0, da.sizes[self.dim] - self.nperseg, self.step):
 
             # roll buffer
-            rolling_input[:, : self.noverlap] = rolling_input[:, self.step :]
+            circular_input[:, : self.noverlap] = circular_input[:, self.step :]
 
             # send data
             chunk = da.isel({self.dim: slice(idx + self.noverlap, idx + self.nperseg)})
             chunk = chunk.transpose(..., self.dim)
-            chunk = torch.tensor(chunk.values, dtype=torch.float32, device=self.device)
-            rolling_input[:, self.noverlap :] = chunk
+            data = torch.tensor(chunk.values, dtype=torch.float32, device=self.device)
+            circular_input[:, self.noverlap :] = data
 
             # TODO: data = data.reshape(-1, data.shape[-1])
 
             # normalize into input_buffer
-            self._normalize(rolling_input, out=model_input[:, 1, :])
+            self._normalize(circular_input, out=model_input[:, 1, :])
 
             # run model
             with torch.no_grad():
                 out = self.model(model_input)
 
             # roll buffers
-            rolling_counts[:, : self.noverlap] = rolling_counts[:, self.step :]
-            rolling_counts[:, self.noverlap :] = 0
-            rolling_output[:, :, : self.noverlap] = rolling_output[:, :, self.step :]
-            rolling_output[:, :, self.noverlap :] = 0.0
+            circular_counts[:, : self.noverlap] = circular_counts[:, self.step :]
+            circular_counts[:, self.noverlap :] = 0
+            circular_output[:, :, : self.noverlap] = circular_output[:, :, self.step :]
+            circular_output[:, :, self.noverlap :] = 0.0
 
-            rolling_counts[:, 250:-250] += 1
-            rolling_output[:, :, 250:-250] += out[:, :, 250:-250]
+            # assign output
+            circular_counts[:, 250:-250] += 1
+            circular_output[:, :, 250:-250] += out[:, :, 250:-250]
 
-            chunk = (
-                rolling_output[:, :, : self.step] / rolling_counts[:, None, : self.step]
+            # get completed results
+            data = (
+                circular_output[:, :, : self.step]
+                / circular_counts[:, None, : self.step]
             )
 
-            # retrieve results
-            chunk = chunk.cpu().numpy()
+            # fetch results
+            data = data.cpu().numpy()
 
             # TODO: data = data.reshape(...)
 
+            # coords
+            coords = da.coords.copy()
+            coords[self.dim] = coords[self.dim][idx : idx + self.step]
+            coords["phase"] = self.phases
+
+            # dims
+            dims = chunk.dims[:-1] + ("phase",) + chunk.dims[-1:]
+
+            # pack
+            chunk = DataArray(data, coords, dims, da.name, da.attrs)
+            chunk = chunk.transpose(self.dim, ...)  # TODO: reorder better
+
+            # store
             chunks.append(chunk)
-        return np.concatenate(chunks, axis=-1)
+
+        return concatenate(chunks, self.dim)
 
     def _process(self, x):
         self._normalize(x)
