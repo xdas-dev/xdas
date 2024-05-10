@@ -25,7 +25,6 @@ class LazyModule:
 
 
 torch = LazyModule("torch")
-import torch  # TODO: remove
 
 
 class MLPicker(Atom):
@@ -52,6 +51,14 @@ class MLPicker(Atom):
     @property
     def phases(self):
         return list(self.model.labels)
+
+    @property
+    def in_channels(self):
+        return self.model.in_channels
+
+    @property
+    def classes(self):
+        return self.model.classes
 
     @property
     def blinding(self):
@@ -81,10 +88,18 @@ class MLPicker(Atom):
             batch_size, self.nperseg, dtype=torch.float32, device=self.device
         )
         model_input = torch.zeros(
-            batch_size, 3, self.nperseg, dtype=torch.float32, device=self.device
+            batch_size,
+            self.in_channels,
+            self.nperseg,
+            dtype=torch.float32,
+            device=self.device,
         )
         circular_output = torch.zeros(
-            batch_size, 3, self.nperseg, dtype=torch.float32, device=self.device
+            batch_size,
+            self.classes,
+            self.nperseg,
+            dtype=torch.float32,
+            device=self.device,
         )
         circular_counts = torch.zeros(
             batch_size, self.nperseg, dtype=torch.int32, device=self.device
@@ -100,7 +115,7 @@ class MLPicker(Atom):
             self._run_model(model_input, circular_counts, circular_output)
             data = self._pull_completed(circular_counts, circular_output)
             chunk = self._attach_metadata(data, da, idx)
-            chunk = chunk.transpose(self.dim, ...)  # TODO: reorder better
+            chunk = chunk.transpose(self.dim, ...)  # TODO: does it make sense?
             chunks.append(chunk)
         return concatenate(chunks, self.dim)
 
