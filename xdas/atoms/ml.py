@@ -35,6 +35,11 @@ class MLPicker(Atom):
         self.dim = dim
         self.compile = compile
         self.buffer = State(...)
+        self.batch_size = State(...)
+        self.circular_input = State(...)
+        self.model_input = State(...)  # TODO: should not be a state
+        self.circular_output = State(...)
+        self.circular_counts = State(...)
 
     @property
     def nperseg(self):
@@ -69,6 +74,29 @@ class MLPicker(Atom):
             self.buffer = State(da.isel({self.dim: slice(0, 0)}))
         else:
             self.buffer = State(None)
+        self.batch_size = np.prod(
+            [size for dim, size in da.sizes.items() if not dim == self.dim]
+        )
+        self.circular_input = torch.zeros(
+            self.batch_size, self.nperseg, dtype=torch.float32, device=self.device
+        )
+        self.model_input = torch.zeros(
+            self.batch_size,
+            self.in_channels,
+            self.nperseg,
+            dtype=torch.float32,
+            device=self.device,
+        )
+        self.circular_output = torch.zeros(
+            self.batch_size,
+            self.classes,
+            self.nperseg,
+            dtype=torch.float32,
+            device=self.device,
+        )
+        self.circular_counts = torch.zeros(
+            self.batch_size, self.nperseg, dtype=torch.int32, device=self.device
+        )
 
     def call(self, da, **flags):
         if self.buffer is None:
@@ -81,49 +109,26 @@ class MLPicker(Atom):
         return out
 
     def _process(self, da):
-        batch_size = np.prod(
-            [size for dim, size in da.sizes.items() if not dim == self.dim]
-        )
-        circular_input = torch.zeros(
-            batch_size, self.nperseg, dtype=torch.float32, device=self.device
-        )
-        model_input = torch.zeros(
-            batch_size,
-            self.in_channels,
-            self.nperseg,
-            dtype=torch.float32,
-            device=self.device,
-        )
-        circular_output = torch.zeros(
-            batch_size,
-            self.classes,
-            self.nperseg,
-            dtype=torch.float32,
-            device=self.device,
-        )
-        circular_counts = torch.zeros(
-            batch_size, self.nperseg, dtype=torch.int32, device=self.device
-        )
-        self._initialize(da, circular_input)
+        self._initialize(da)
         chunks = []
         for idx in range(0, da.sizes[self.dim] - self.nperseg, self.step):
             data = self._push_chunk(da, idx)
-            self._roll(circular_input, data)
-            self._roll(circular_counts, 0)
-            self._roll(circular_output, 0.0)
-            self._normalize(circular_input, out=model_input[:, 1, :])
-            self._run_model(model_input, circular_counts, circular_output)
-            data = self._pull_completed(circular_counts, circular_output)
+            self._roll(self.circular_input, data)
+            self._roll(self.circular_counts, 0)
+            self._roll(self.circular_output, 0.0)
+            self._normalize(self.circular_input, out=self.model_input[:, 1, :])
+            self._run_model()
+            data = self._pull_completed()
             chunk = self._attach_metadata(data, da, idx)
             chunk = chunk.transpose(self.dim, ...)  # TODO: does it make sense?
             chunks.append(chunk)
         return concatenate(chunks, self.dim)
 
-    def _initialize(self, da, circular_input):
+    def _initialize(self, da):
         chunk = da.isel({self.dim: slice(0, self.noverlap)})
         chunk = chunk.transpose(..., self.dim)
         chunk = torch.tensor(chunk.values, dtype=torch.float32, device=self.device)
-        circular_input[:, self.step :] = chunk
+        self.circular_input[:, self.step :] = chunk
 
     def _push_chunk(self, da, idx):
         chunk = da.isel({self.dim: slice(idx + self.noverlap, idx + self.nperseg)})
@@ -134,7 +139,8 @@ class MLPicker(Atom):
         buffer[..., : self.noverlap] = buffer[..., self.step :]
         buffer[..., self.noverlap :] = values
 
-    def _normalize(self, x, out=None):
+    @staticmethod
+    def _normalize(x, out=None):
         if out is None:
             out = torch.empty_like(x)
         std, mean = torch.std_mean(x, dim=-1, keepdim=True)
@@ -142,20 +148,18 @@ class MLPicker(Atom):
         torch.div(out, std, out=out)
         return out
 
-    def _run_model(self, model_input, circular_counts, circular_output):
+    def _run_model(self):
         with torch.no_grad():
-            out = self.model(model_input)
-
-            # assign output
+            out = self.model(self.model_input)
         slc = slice(self.blinding[0], -self.blinding[1])
-        circular_counts[:, slc] += 1
-        circular_output[:, :, slc] += out[:, :, slc]
+        self.circular_counts[:, slc] += 1
+        self.circular_output[:, :, slc] += out[:, :, slc]
 
-    def _pull_completed(self, circular_counts, circular_output):
+    def _pull_completed(self):
         data = (
-            circular_output[:, :, : self.step] / circular_counts[:, None, : self.step]
+            self.circular_output[:, :, : self.step]
+            / self.circular_counts[:, None, : self.step]
         )
-
         return data.cpu().numpy()
 
     def _attach_metadata(self, data, da, idx):
