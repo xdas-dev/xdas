@@ -70,10 +70,6 @@ class MLPicker(Atom):
         return self.model.default_args["blinding"]
 
     def initialize(self, da, chunk_dim=None, **flags):
-        if chunk_dim == self.dim:
-            self.buffer = State(da.isel({self.dim: slice(0, 0)}))
-        else:
-            self.buffer = State(None)
         self.batch_size = State(
             np.prod([size for dim, size in da.sizes.items() if not dim == self.dim])
         )
@@ -105,6 +101,10 @@ class MLPicker(Atom):
                 self.batch_size, self.nperseg, dtype=torch.int32, device=self.device
             )
         )
+        if chunk_dim == self.dim:
+            self.buffer = State(da.isel({self.dim: slice(0, 0)}))
+        else:
+            self.buffer = State(None)
 
     def call(self, da, **flags):
         if self.buffer is None:
