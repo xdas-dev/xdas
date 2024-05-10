@@ -53,6 +53,10 @@ class MLPicker(Atom):
     def phases(self):
         return list(self.model.labels)
 
+    @property
+    def blinding(self):
+        return self.model.default_args["blinding"]
+
     def initialize(self, da, chunk_dim=None, **flags):
         if chunk_dim == self.dim:
             self.buffer = State(da.isel({self.dim: slice(0, 0)}))
@@ -61,60 +65,18 @@ class MLPicker(Atom):
 
     def call(self, da, **flags):
         if self.buffer is None:
-            out = self._doit(da)
+            out = self._process(da)
         else:
             da = concatenate([self.buffer, da], self.dim)
-            out = self._doit(da)
+            out = self._process(da)
             divpoint = out.sizes[self.dim]
             self.buffer = State(da.isel({self.dim: slice(divpoint, None)}))
         return out
 
-    def _batch_process(self, da):
-        chunks = []
-        for idx in range(0, da.sizes[self.dim] - self.nperseg, self.step):
-            chunk = da.isel({self.dim: slice(idx, idx + self.nperseg)})
-            chunk = chunk.transpose(..., self.dim)
-            # data
-            data = chunk.data
-            # TODO: data = data.reshape(-1, data.shape[-1])
-            with torch.no_grad():  # TODO: avoiding sending data twice to GPU
-                t = torch.tensor(chunk.data, dtype=torch.float32, device=self.device)
-                if self.compile:
-                    t = self._process_compiled(t)
-                else:
-                    t = self._process(t)
-                data = t.cpu().numpy()
-            # TODO: data = data.reshape(...)
-            # coords
-            coords = chunk.coords.copy()
-            coords[self.dim] = coords[self.dim][
-                self.noverlap // 2 : -self.noverlap // 2
-            ]
-            coords["phase"] = self.phases
-            # dims
-            dims = chunk.dims[:-1] + ("phase",) + chunk.dims[-1:]
-            # pack
-            chunk = DataArray(data, coords, dims, da.name, da.attrs)
-            chunk = chunk.transpose(self.dim, ...)  # TODO: reorder better
-            chunks.append(chunk)
-        return concatenate(chunks, self.dim)
-
-    def _doit(self, da):
-
-        # To perform continuous processing, we use circular buffers both as input and
-        # as output. All buffer sizes are set to the model input size. At each
-        # iteration, we roll the input buffer by `self.step` and fill the last values
-        # with the new signal values. The input buffer is processed by the model and
-        # its output is added to the output buffer; a count buffer is also incremented.
-        # Because of the overlapping used, only the first values up to `self.step` are
-        # fully processed and can be saved. The output buffer is divided by the count
-        # buffer and stored for further concatenation.
-
+    def _process(self, da):
         batch_size = np.prod(
             [size for dim, size in da.sizes.items() if not dim == self.dim]
         )
-
-        # allocate memory
         circular_input = torch.zeros(
             batch_size, self.nperseg, dtype=torch.float32, device=self.device
         )
@@ -127,81 +89,35 @@ class MLPicker(Atom):
         circular_counts = torch.zeros(
             batch_size, self.nperseg, dtype=torch.int32, device=self.device
         )
+        self._initialize(da, circular_input)
+        chunks = []
+        for idx in range(0, da.sizes[self.dim] - self.nperseg, self.step):
+            data = self._push_chunk(da, idx)
+            self._roll(circular_input, data)
+            self._roll(circular_counts, 0)
+            self._roll(circular_output, 0.0)
+            self._normalize(circular_input, out=model_input[:, 1, :])
+            self._run_model(model_input, circular_counts, circular_output)
+            data = self._pull_completed(circular_counts, circular_output)
+            chunk = self._attach_metadata(data, da, idx)
+            chunk = chunk.transpose(self.dim, ...)  # TODO: reorder better
+            chunks.append(chunk)
+        return concatenate(chunks, self.dim)
 
-        # initialize circular_buffer
+    def _initialize(self, da, circular_input):
         chunk = da.isel({self.dim: slice(0, self.noverlap)})
         chunk = chunk.transpose(..., self.dim)
         chunk = torch.tensor(chunk.values, dtype=torch.float32, device=self.device)
         circular_input[:, self.step :] = chunk
 
-        chunks = []
-        for idx in range(0, da.sizes[self.dim] - self.nperseg, self.step):
+    def _push_chunk(self, da, idx):
+        chunk = da.isel({self.dim: slice(idx + self.noverlap, idx + self.nperseg)})
+        chunk = chunk.transpose(..., self.dim)
+        return torch.tensor(chunk.values, dtype=torch.float32, device=self.device)
 
-            # roll buffer
-            circular_input[:, : self.noverlap] = circular_input[:, self.step :]
-
-            # send data
-            chunk = da.isel({self.dim: slice(idx + self.noverlap, idx + self.nperseg)})
-            chunk = chunk.transpose(..., self.dim)
-            data = torch.tensor(chunk.values, dtype=torch.float32, device=self.device)
-            circular_input[:, self.noverlap :] = data
-
-            # TODO: data = data.reshape(-1, data.shape[-1])
-
-            # normalize into input_buffer
-            self._normalize(circular_input, out=model_input[:, 1, :])
-
-            # run model
-            with torch.no_grad():
-                out = self.model(model_input)
-
-            # roll buffers
-            circular_counts[:, : self.noverlap] = circular_counts[:, self.step :]
-            circular_counts[:, self.noverlap :] = 0
-            circular_output[:, :, : self.noverlap] = circular_output[:, :, self.step :]
-            circular_output[:, :, self.noverlap :] = 0.0
-
-            # assign output
-            circular_counts[:, 250:-250] += 1
-            circular_output[:, :, 250:-250] += out[:, :, 250:-250]
-
-            # get completed results
-            data = (
-                circular_output[:, :, : self.step]
-                / circular_counts[:, None, : self.step]
-            )
-
-            # fetch results
-            data = data.cpu().numpy()
-
-            # TODO: data = data.reshape(...)
-
-            # coords
-            coords = da.coords.copy()
-            coords[self.dim] = coords[self.dim][idx : idx + self.step]
-            coords["phase"] = self.phases
-
-            # dims
-            dims = chunk.dims[:-1] + ("phase",) + chunk.dims[-1:]
-
-            # pack
-            chunk = DataArray(data, coords, dims, da.name, da.attrs)
-            chunk = chunk.transpose(self.dim, ...)  # TODO: reorder better
-
-            # store
-            chunks.append(chunk)
-
-        return concatenate(chunks, self.dim)
-
-    def _process(self, x):
-        self._normalize(x)
-        y = torch.zeros(
-            (*x.shape[:-1], 3, x.shape[-1]), dtype=x.dtype, device=self.device
-        )
-        y[:, 1, :] = x
-        y = self.model(y)
-        y = y[:, :, self.noverlap // 2 : -self.noverlap // 2]
-        return y
+    def _roll(self, buffer, values):
+        buffer[..., : self.noverlap] = buffer[..., self.step :]
+        buffer[..., self.noverlap :] = values
 
     def _normalize(self, x, out=None):
         if out is None:
@@ -211,4 +127,28 @@ class MLPicker(Atom):
         torch.div(out, std, out=out)
         return out
 
-    _process_compiled = torch.compile(_process)
+    def _run_model(self, model_input, circular_counts, circular_output):
+        with torch.no_grad():
+            out = self.model(model_input)
+
+            # assign output
+        slc = slice(self.blinding[0], -self.blinding[1])
+        circular_counts[:, slc] += 1
+        circular_output[:, :, slc] += out[:, :, slc]
+
+    def _pull_completed(self, circular_counts, circular_output):
+        data = (
+            circular_output[:, :, : self.step] / circular_counts[:, None, : self.step]
+        )
+
+        return data.cpu().numpy()
+
+    def _attach_metadata(self, data, da, idx):
+        coords = da.coords.copy()
+        coords[self.dim] = coords[self.dim][idx : idx + self.step]
+        coords["phase"] = self.phases
+        dims = tuple(dim for dim in da.dims if not dim == self.dim) + (
+            "phase",
+            self.dim,
+        )
+        return DataArray(data, coords, dims, da.name, da.attrs)
