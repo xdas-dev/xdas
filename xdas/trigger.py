@@ -96,11 +96,12 @@ def _find_picks_numeric(cft, thresh, axis=-1):
     >>> cft = np.array([[0., 0.1, 0.9, 0.8, 0.2, 0.1, 0.6, 0.7, 0.3, 0.2]])
 
     >>> _find_picks_numeric(cft, thresh=0.5, axis=-1)
-    ((array([0, 0])), array([2, 7]), array([0.9, 0.7]))
+    ((array([0, 0]), array([2, 7])), array([0.9, 0.7]))
 
     """
     cft = np.asarray(cft, dtype=float)
     thresh = float(thresh)
+    axis = cft.ndim + int(axis) if axis < 0 else int(axis)
 
     # move axis to last and reshape to 2D grouping additional axes into lanes
     cft = np.moveaxis(cft, axis, -1)
