@@ -46,6 +46,7 @@ def find_picks(cft, thresh, dim="last"):
        space  time  value
     0    0.0   0.2    0.9
     1    0.0   0.7    0.7
+
     """
     data = cft.values
     indices, values = _find_picks_numeric(data, thresh, axis=cft.get_axis_num(dim))
@@ -154,9 +155,11 @@ def _trigger(cft, thresh_on, thresh_off, state_status, state_index, state_value)
     tuple of ndarray
         A tuple containing three arrays of shape (k,) where k is the number of picks
         found. The arrays are:
+
         - lanes : lanes indices (along first axis) of the picks.
         - indices : signal indices (along last axis) of the picks.
         - values : values of the picks.
+
     """
     lanes = []
     indices = []
