@@ -1,6 +1,9 @@
+import stat
+
 import numpy as np
-from numba import njit
 import pandas as pd
+from numba import njit
+from sympy import Le
 
 
 def find_picks(cft, thresh, dim="last"):
@@ -57,7 +60,7 @@ def find_picks(cft, thresh, dim="last"):
     return pd.DataFrame(picks)
 
 
-def _find_picks_numeric(cft, thresh, axis=-1):
+def _find_picks_numeric(cft, thresh, axis=-1, state=None):
     """
     Find picks in a N-dimensional array along a given axis based on a given threshold.
 
@@ -74,6 +77,21 @@ def _find_picks_numeric(cft, thresh, axis=-1):
         The threshold value for picking.
     axis : int, optional
         The axis along which to find picks. Defaults to -1.
+    state : Ellipsis or dict, optional
+        The state dictionary containing the previous state of the trigger. If not
+        provided or if '...' is passed, a new state will be initialized. The state
+        dictionary should have the following keys:
+
+        - "status": A boolean array indicating the trigger status for each lane.
+        - "index": An integer array indicating the index of the last triggered value
+          for each lane.
+        - "value": A float array indicating the value of the last triggered value for
+          each lane.
+
+        Each array must have the same shape as the input array without the axis along
+        which the picks are being found.
+
+        The state dictionary can be used to continue the trigger from the last state.
 
     Returns
     -------
@@ -81,11 +99,17 @@ def _find_picks_numeric(cft, thresh, axis=-1):
         A tuple containing the coordinates of the picks.
     values : 1d ndarray
         The values of the picks.
+    state : dict, optional
+        The updated state dictionary containing the current state of the trigger.
+        Indices are given as negative values relative to the end of the array to
+        distinguish picks from the last state.
+        This can be used as the `state` argument in subsequent calls to
+        `_find_picks_numeric` to continue the trigger from the last state.
 
     Notes
     -----
-    In the trigger does not turn off at the end of the array, the last pick will not be
-    found. This can be fixed by appending a zero to the end of the array.
+    If the trigger does not turn off at the end of the array, the last pick will not be found.
+    This can be fixed by appending a zero to the end of the array.
 
     Examples
     --------
@@ -102,20 +126,34 @@ def _find_picks_numeric(cft, thresh, axis=-1):
     cft = np.asarray(cft, dtype=float)
     thresh = float(thresh)
     axis = cft.ndim + int(axis) if axis < 0 else int(axis)
+    return_state = state is not None
 
-    # move axis to last and reshape to 2D grouping additional axes into lanes
+    # move axis to last
     cft = np.moveaxis(cft, axis, -1)
     shape = cft.shape[:-1]
-    cft = np.reshape(cft, (-1, cft.shape[-1]))
+    length = cft.shape[-1]
 
-    # initialize state variables
-    state_status = np.zeros(cft.shape[0], dtype=bool)
-    state_index = np.zeros(cft.shape[0], dtype=int)
-    state_value = np.zeros(cft.shape[0], dtype=float)
+    # if needed initialize state variables, copy if provided
+    if state is None or state is ...:
+        state = {
+            "status": np.zeros(shape, dtype=bool),
+            "index": np.zeros(shape, dtype=int),
+            "value": np.zeros(shape, dtype=float),
+        }
+    else:
+        state = {
+            "status": np.copy(state["status"]).astype(bool),
+            "index": np.copy(state["index"]).astype(int),
+            "value": np.copy(state["value"]).astype(float),
+        }
+
+    # group additional axes into a unique lanes axis
+    cft = np.reshape(cft, (-1, cft.shape[-1]))
+    state = {key: np.reshape(val, (-1,)) for key, val in state.items()}
 
     # find picks
     lanes, indices, values = _trigger(
-        cft, thresh, thresh / 2.0, state_status, state_index, state_value
+        cft, thresh, thresh / 2.0, state["status"], state["index"], state["value"]
     )
 
     # unravel lanes indices
@@ -124,8 +162,17 @@ def _find_picks_numeric(cft, thresh, axis=-1):
     # insert found indices into the original axis position
     coords = coords[:axis] + (indices,) + coords[axis:]
 
+    # set state indices to negative relative to the end of the array
+    state["index"] -= length
+
+    # reshape state back to original shape
+    state = {key: np.reshape(val, shape) for key, val in state.items()}
+
     # return picks
-    return coords, values
+    if return_state:
+        return coords, values, state
+    else:
+        return coords, values
 
 
 @njit("Tuple((i8[:], i8[:], f8[:]))(f8[:, :], f8, f8, b1[:], i8[:], f8[:])")
