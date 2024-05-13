@@ -69,3 +69,16 @@ def test_find_picks_numeric():
     expected_values = np.array([0.9, 0.7])
     assert np.array_equal(coords, expected_coords)
     assert np.array_equal(values, expected_values)
+
+    # Test chunked processing with pick in two chunk ago
+    cft = [1.0, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.0]
+    chunk_0, chunk_1, chunk_2 = cft[:3], cft[3:6], cft[6:]
+
+    coords, values, state = _find_picks_numeric(chunk_0, thresh, axis, state=...)
+    coords, values, state = _find_picks_numeric(chunk_1, thresh, axis, state=state)
+    coords, values, state = _find_picks_numeric(chunk_2, thresh, axis, state=state)
+
+    expected_coords = (np.array([-6]),)
+    expected_values = np.array([1.0])
+    assert np.array_equal(coords, expected_coords)
+    assert np.array_equal(values, expected_values)
