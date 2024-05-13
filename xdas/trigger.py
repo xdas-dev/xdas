@@ -1,7 +1,7 @@
 import numpy as np
 from numba import njit
 import pandas as pd
-import xdas
+
 
 def find_picks(cft, thresh, dim="last"):
     """
@@ -28,7 +28,7 @@ def find_picks(cft, thresh, dim="last"):
 
     Notes
     -----
-    In the trigger does not turn off at the end of the array, the last pick will not be 
+    In the trigger does not turn off at the end of the array, the last pick will not be
     found. This can be fixed by appending a zero to the end of the array.
 
     Examples
@@ -39,7 +39,7 @@ def find_picks(cft, thresh, dim="last"):
 
     >>> cft = xd.DataArray(
     ...     data=[[0., 0.1, 0.9, 0.8, 0.2, 0.1, 0.6, 0.7, 0.3, 0.2]],
-    ...     coords={"space": [0.0], "time": np.linspace(0, 0.9, 10)},  
+    ...     coords={"space": [0.0], "time": np.linspace(0, 0.9, 10)},
     ... )
 
     >>> find_picks(cft, thresh=0.5, dim="time")
@@ -49,10 +49,12 @@ def find_picks(cft, thresh, dim="last"):
     """
     data = cft.values
     indices, values = _find_picks_numeric(data, thresh, axis=cft.get_axis_num(dim))
-    picks = {dim: cft.coords[dim][indices[axis]].values for axis, dim in enumerate(cft.dims)}
+    picks = {
+        dim: cft.coords[dim][indices[axis]].values for axis, dim in enumerate(cft.dims)
+    }
     picks["value"] = values
     return pd.DataFrame(picks)
-        
+
 
 def _find_picks_numeric(cft, thresh, axis=-1):
     """
@@ -81,9 +83,9 @@ def _find_picks_numeric(cft, thresh, axis=-1):
 
     Notes
     -----
-    In the trigger does not turn off at the end of the array, the last pick will not be 
+    In the trigger does not turn off at the end of the array, the last pick will not be
     found. This can be fixed by appending a zero to the end of the array.
-        
+
     Examples
     --------
     >>> import numpy as np
@@ -132,7 +134,7 @@ def _trigger(cft, thresh_on, thresh_off, state_status, state_index, state_value)
     Parameters
     ----------
     cft : ndarray
-        2D array of shape (n, m) representing the input data. Each row is a lane. Each 
+        2D array of shape (n, m) representing the input data. Each row is a lane. Each
         column is the signal onto perform trigger detection.
     thresh_on : float
         Threshold value for turning on the trigger.
@@ -141,20 +143,20 @@ def _trigger(cft, thresh_on, thresh_off, state_status, state_index, state_value)
     state_status : ndarray
         Boolean buffer of shape (n,) holding the trigger status for each lane.
     state_index : ndarray
-        Integer buffer of shape (n,) holding the index of the last found pick for each 
+        Integer buffer of shape (n,) holding the index of the last found pick for each
         lane.
     state_value : ndarray
-        Float buffer of shape (n,) holding the value of the last found pick for each 
+        Float buffer of shape (n,) holding the value of the last found pick for each
         lane.
 
     Returns
     -------
     tuple of ndarray
-        A tuple containing three arrays of shape (k,) where k is the number of picks 
-        found. The arrays are: 
+        A tuple containing three arrays of shape (k,) where k is the number of picks
+        found. The arrays are:
         - lanes : lanes indices (along first axis) of the picks.
         - indices : signal indices (along last axis) of the picks.
-        - values : values of the picks.  
+        - values : values of the picks.
     """
     lanes = []
     indices = []
