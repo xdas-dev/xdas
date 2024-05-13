@@ -157,7 +157,10 @@ def _find_picks_numeric(cft, thresh, axis=-1, state=None):
     )
 
     # unravel lanes indices
-    coords = np.unravel_index(lanes, shape)
+    if shape:
+        coords = np.unravel_index(lanes, shape)
+    else:
+        coords = ()
 
     # insert found indices into the original axis position
     coords = coords[:axis] + (indices,) + coords[axis:]

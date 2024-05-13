@@ -27,6 +27,15 @@ def test_find_picks_numeric():
     assert np.array_equal(coords, expected_coords)
     assert np.array_equal(values, expected_values)
 
+    # Test 1d array
+    cft_squeezed = cft[0]
+    expected_coords = (np.array([2, 7]),)
+    expected_values = np.array([0.9, 0.7])
+
+    coords, values = _find_picks_numeric(cft_squeezed, thresh, axis)
+    assert np.array_equal(coords, expected_coords)
+    assert np.array_equal(values, expected_values)
+
     # Test chunked processing without pick in previous chunk
     axis = -1
     split = 7
