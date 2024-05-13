@@ -1,10 +1,6 @@
-import re
-import stat
-
 import numpy as np
 import pandas as pd
 from numba import njit
-from sympy import Le
 
 
 def find_picks(cft, thresh, dim="last"):
