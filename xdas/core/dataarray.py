@@ -15,7 +15,7 @@ HANDLED_NUMPY_FUNCTIONS = {}
 HANDLED_METHODS = {}
 
 
-class DataArray:
+class DataArray:  # TODO: use numpy.lib.mixins.NDArrayOperatorsMixin
     """
     N-dimensional array with labeled coordinates and dimensions.
 
