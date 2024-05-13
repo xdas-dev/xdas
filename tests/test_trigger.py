@@ -1,6 +1,8 @@
 import numpy as np
+import pandas as pd
 
-from xdas.trigger import _find_picks_numeric
+import xdas as xd
+from xdas.trigger import _find_picks_numeric, find_picks
 
 
 def test_find_picks_numeric():
@@ -82,3 +84,15 @@ def test_find_picks_numeric():
     expected_values = np.array([1.0])
     assert np.array_equal(coords, expected_coords)
     assert np.array_equal(values, expected_values)
+
+
+def test_find_picks():
+    cft = xd.DataArray(
+        data=[[0.0, 0.1, 0.9, 0.8, 0.2, 0.1, 0.6, 0.7, 0.3, 0.2]],
+        coords={"space": [0.0], "time": np.linspace(0, 9.0, 10)},
+    )
+    picks = find_picks(cft, thresh=0.5, dim="time")
+    expected = pd.DataFrame(
+        {"space": [0.0, 0.0], "time": [2.0, 7.0], "value": [0.9, 0.7]}
+    )
+    assert picks.equals(expected)
