@@ -43,14 +43,18 @@ def test_find_picks_numeric():
     split = 7
     first_chunk, last_chunk = cft[:, :split], cft[:, split:]
 
-    coords, values, state = _find_picks_numeric(first_chunk, thresh, axis, state=...)
+    coords, values, state, offset = _find_picks_numeric(
+        first_chunk, thresh, axis, state=..., offset=...
+    )
     expected_coords = (np.array([0]), np.array([2]))
     expected_values = np.array([0.9])
     assert np.array_equal(coords, expected_coords)
     assert np.array_equal(values, expected_values)
 
-    coords, values, state = _find_picks_numeric(last_chunk, thresh, axis, state=state)
-    expected_coords = (np.array([0]), np.array([7]) - split)
+    coords, values, state, offset = _find_picks_numeric(
+        last_chunk, thresh, axis, state=state, offset=offset
+    )
+    expected_coords = (np.array([0]), np.array([7]))
     expected_values = np.array([0.7])
     assert np.array_equal(coords, expected_coords)
     assert np.array_equal(values, expected_values)
@@ -60,14 +64,18 @@ def test_find_picks_numeric():
     split = 3
     first_chunk, last_chunk = cft[:, :split], cft[:, split:]
 
-    coords, values, state = _find_picks_numeric(first_chunk, thresh, axis, state=...)
+    coords, values, state, offset = _find_picks_numeric(
+        first_chunk, thresh, axis, state=..., offset=...
+    )
     expected_coords = (np.array([]), np.array([]))
     expected_values = np.array([])
     assert np.array_equal(coords, expected_coords)
     assert np.array_equal(values, expected_values)
 
-    coords, values, state = _find_picks_numeric(last_chunk, thresh, axis, state=state)
-    expected_coords = (np.array([0, 0]), np.array([-1, 7 - split]))
+    coords, values, state, offset = _find_picks_numeric(
+        last_chunk, thresh, axis, state=state, offset=offset
+    )
+    expected_coords = (np.array([0, 0]), np.array([2, 7]))
     expected_values = np.array([0.9, 0.7])
     assert np.array_equal(coords, expected_coords)
     assert np.array_equal(values, expected_values)
@@ -76,11 +84,17 @@ def test_find_picks_numeric():
     cft = [1.0, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.0]
     chunk_0, chunk_1, chunk_2 = cft[:3], cft[3:6], cft[6:]
 
-    coords, values, state = _find_picks_numeric(chunk_0, thresh, axis, state=...)
-    coords, values, state = _find_picks_numeric(chunk_1, thresh, axis, state=state)
-    coords, values, state = _find_picks_numeric(chunk_2, thresh, axis, state=state)
+    coords, values, state, offset = _find_picks_numeric(
+        chunk_0, thresh, axis, state=..., offset=...
+    )
+    coords, values, state, offset = _find_picks_numeric(
+        chunk_1, thresh, axis, state=state, offset=offset
+    )
+    coords, values, state, offset = _find_picks_numeric(
+        chunk_2, thresh, axis, state=state, offset=offset
+    )
 
-    expected_coords = (np.array([-6]),)
+    expected_coords = (np.array([0]),)
     expected_values = np.array([1.0])
     assert np.array_equal(coords, expected_coords)
     assert np.array_equal(values, expected_values)
