@@ -7,7 +7,7 @@ from .core.coordinates import InterpCoordinate
 
 
 @atomized
-def find_picks(cft, thresh, dim="last", state=None):
+def find_picks(cft, thresh, dim="last", state_dict=None):
     """
     Find picks in a data array along a given axis based on a given threshold.
 
@@ -24,11 +24,25 @@ def find_picks(cft, thresh, dim="last", state=None):
         The threshold value for picking.
     dim : str, optional
         The dimension along which to find picks. Defaults to "last".
+    state_dict : dict, optional
+        The state dictionary. If not provided or if '...' is passed, a new buffer will
+        be initialized. The state dictionary should have the following keys:
+
+        - "buffer": A dictionary containing the previous buffer of the trigger.
+        - "offset": An integer indicating the offset of the chunk.
+        - "coord": An InterpCoordinate containing coordinate information along 'dim' up
+          to the last processed chunk.
+
+        Defaults to None.
 
     Returns
     -------
-    DataFrame
+    picsk: DataFrame
         A DataFrame containing the pick coordinates and their corresponding values.
+    state_dict: dict, optional
+        The updated state dictionary containing the current buffer of the trigger. Can
+        be used as the `state_dict` argument in the subsequent call to ensure
+        continuity. If not provided (or ...), the state dictionary will not be returned.
 
     Notes
     -----
@@ -61,10 +75,12 @@ def find_picks(cft, thresh, dim="last", state=None):
     Chunked processing using passing state:
 
     >>> chunks = xd.split(cft, 3, dim="time")
-    >>> state = ...
+    >>> state_dict = ...
     >>> result = []
     >>> for chunk in chunks:
-    ...     picks, state = find_picks(chunk, thresh=0.5, dim="time", state=state)
+    ...     picks, state_dict = find_picks(
+    ...         chunk, thresh=0.5, dim="time", state_dict=state_dict
+    ...     )
     ...     result.append(picks)
     >>> result = pd.concat(result, ignore_index=True)
     >>> result
@@ -74,27 +90,27 @@ def find_picks(cft, thresh, dim="last", state=None):
 
     Chunked processing using atomic processing:
 
-    # >>> atom = find_picks(..., thresh=0.5, dim="time", state=...)
-    # >>> result = []
-    # >>> for chunk in chunks:
-    # ...     picks = atom(chunk)
-    # ...     result.append(picks)
-    # >>> result = pd.concat(result, ignore_index=True)
-    # >>> result
-    #    space  time  value
-    # 0    0.0   2.0    0.9
-    # 1    0.0   7.0    0.7
+    >>> atom = find_picks(..., thresh=0.5, dim="time", state_dict=...)
+    >>> result = []
+    >>> for chunk in chunks:
+    ...     picks = atom(chunk)
+    ...     result.append(picks)
+    >>> result = pd.concat(result, ignore_index=True)
+    >>> result
+       space  time  value
+    0    0.0   2.0    0.9
+    1    0.0   7.0    0.7
 
     """
     axis = cft.get_axis_num(dim)
     data = cft.values
-    return_state = state is not None
+    return_state = state_dict is not None
 
     # initialize state if not provided
-    if state is None:
-        state = {"buffer": None, "offset": None, "coord": None}
-    elif state is ...:
-        state = {
+    if state_dict is None:
+        state_dict = {"buffer": None, "offset": None, "coord": None}
+    elif state_dict is ...:
+        state_dict = {
             "buffer": ...,
             "offset": ...,
             "coord": InterpCoordinate({"tie_indices": [], "tie_values": []}, dim),
@@ -102,19 +118,25 @@ def find_picks(cft, thresh, dim="last", state=None):
 
     # find pick indices and update state
     if return_state:
-        indices, values, state["buffer"], state["offset"] = _find_picks_numeric(
-            data, thresh, axis, state=state["buffer"], offset=state["offset"]
+        indices, values, state_dict["buffer"], state_dict["offset"] = (
+            _find_picks_numeric(
+                data,
+                thresh,
+                axis,
+                buffer=state_dict["buffer"],
+                offset=state_dict["offset"],
+            )
         )
-        state["coord"] = _concat([state["coord"], cft.coords[dim]])
+        state_dict["coord"] = _concat([state_dict["coord"], cft.coords[dim]])
     else:
         indices, values = _find_picks_numeric(data, thresh, axis)
-        state["coord"] = cft.coords[dim]
+        state_dict["coord"] = cft.coords[dim]
 
     # get picks coordinates from indices and pack it into a dataframe
     picks = {}
     for a, d in enumerate(cft.dims):
         if d == dim:
-            picks[d] = state["coord"][indices[a]].values
+            picks[d] = state_dict["coord"][indices[a]].values
         else:
             picks[d] = cft.coords[d][indices[a]].values
     picks["value"] = values
@@ -122,7 +144,7 @@ def find_picks(cft, thresh, dim="last", state=None):
 
     # return state if requested
     if return_state:
-        return picks, state
+        return picks, state_dict
     else:
         return picks
 
@@ -182,7 +204,7 @@ def _concat(list_of_coord):  # TODO: make it a public function/method
     return coord.simplify()
 
 
-def _find_picks_numeric(cft, thresh, axis=-1, state=None, offset=None):
+def _find_picks_numeric(cft, thresh, axis=-1, buffer=None, offset=None):
     """
     Find picks in a N-dimensional array along a given axis based on a given threshold.
 
@@ -191,7 +213,7 @@ def _find_picks_numeric(cft, thresh, axis=-1, state=None, offset=None):
     on threshold. Picks are determined by finding the maximum value on each triggered
     region.
 
-    This function support chunked processing through the state and offset arguments.
+    This function support chunked processing through the buffer and offset arguments.
 
     Parameters
     ----------
@@ -201,9 +223,9 @@ def _find_picks_numeric(cft, thresh, axis=-1, state=None, offset=None):
         The threshold value above which picks are looked for.
     axis : int, optional
         The axis along which to find picks. Defaults to -1.
-    state : Ellipsis or dict, optional
-        The state dictionary containing the previous state of the trigger. If not
-        provided or if '...' is passed, a new state will be initialized. The state
+    buffer : Ellipsis or dict, optional
+        The buffer dictionary containing the previous buffer of the trigger. If not
+        provided or if '...' is passed, a new buffer will be initialized. The buffer
         dictionary should have the following keys:
 
         - "status": A boolean array indicating the trigger status for each lane.
@@ -227,9 +249,10 @@ def _find_picks_numeric(cft, thresh, axis=-1, state=None, offset=None):
         A tuple containing the coordinates of the picks.
     values : 1d ndarray
         The values of the picks.
-    state : dict, optional
-        The updated state dictionary containing the current state of the trigger.
-        Can be used as the `state` argument in the subsequent call to ensure continuity.
+    buffer : dict, optional
+        The updated buffer dictionary containing the current buffer of the trigger.
+        Can be used as the `buffer` argument in the subsequent call to ensure
+        continuity.
     offset : int, optional
         The updated offset value. Can be used as the `offset` argument in the
         subsequent call to ensure correct absolute indices.
@@ -254,7 +277,7 @@ def _find_picks_numeric(cft, thresh, axis=-1, state=None, offset=None):
     cft = np.asarray(cft, dtype=float)
     thresh = float(thresh)
     axis = cft.ndim + int(axis) if axis < 0 else int(axis)
-    return_state = state is not None
+    return_buffer = buffer is not None
     return_offset = offset is not None
 
     # move axis to last
@@ -262,18 +285,18 @@ def _find_picks_numeric(cft, thresh, axis=-1, state=None, offset=None):
     shape = cft.shape[:-1]
     length = cft.shape[-1]
 
-    # if not provided initialize state variables, copy if provided
-    if state is None or state is ...:
-        state = {
+    # if not provided initialize buffer variables, copy if provided
+    if buffer is None or buffer is ...:
+        buffer = {
             "status": np.zeros(shape, dtype=bool),
             "index": np.zeros(shape, dtype=int),
             "value": np.zeros(shape, dtype=float),
         }
     else:
-        state = {
-            "status": np.copy(state["status"]).astype(bool),
-            "index": np.copy(state["index"]).astype(int),
-            "value": np.copy(state["value"]).astype(float),
+        buffer = {
+            "status": np.copy(buffer["status"]).astype(bool),
+            "index": np.copy(buffer["index"]).astype(int),
+            "value": np.copy(buffer["value"]).astype(float),
         }
 
     # if not provided initialize offset
@@ -284,23 +307,23 @@ def _find_picks_numeric(cft, thresh, axis=-1, state=None, offset=None):
 
     # group additional axes into a unique lanes axis
     cft = np.reshape(cft, (-1, cft.shape[-1]))
-    state = {key: np.reshape(val, (-1,)) for key, val in state.items()}
+    buffer = {key: np.reshape(val, (-1,)) for key, val in buffer.items()}
 
     # find picks
     lanes, indices, values = _trigger(
         cft,
         thresh,
         thresh / 2.0,
-        state["status"],
-        state["index"],
-        state["value"],
+        buffer["status"],
+        buffer["index"],
+        buffer["value"],
         offset,
     )
     # handle offsetting
     if return_offset:
         offset += length
     else:
-        state["index"] -= length
+        buffer["index"] -= length
 
     # unravel lanes indices
     if shape:
@@ -311,13 +334,13 @@ def _find_picks_numeric(cft, thresh, axis=-1, state=None, offset=None):
     # insert found indices into the original axis position
     coords = coords[:axis] + (indices,) + coords[axis:]
 
-    # reshape state back to original shape
-    state = {key: np.reshape(val, shape) for key, val in state.items()}
+    # reshape buffer back to original shape
+    buffer = {key: np.reshape(val, shape) for key, val in buffer.items()}
 
     # return outputs
     out = (coords, values)
-    if return_state:
-        out = out + (state,)
+    if return_buffer:
+        out = out + (buffer,)
     if return_offset:
         out = out + (offset,)
     return out
@@ -325,7 +348,7 @@ def _find_picks_numeric(cft, thresh, axis=-1, state=None, offset=None):
 
 @njit("Tuple((i8[:], i8[:], f8[:]))(f8[:, :], f8, f8, b1[:], i8[:], f8[:], i8)")
 def _trigger(
-    cft, thresh_on, thresh_off, state_status, state_index, state_value, offset
+    cft, thresh_on, thresh_off, buffer_status, buffer_index, buffer_value, offset
 ):
     """
     Perform trigger detection on the input data.
@@ -339,12 +362,12 @@ def _trigger(
         Threshold value for turning on the trigger.
     thresh_off : float
         Threshold value for turning off the trigger.
-    state_status : ndarray
+    buffer_status : ndarray
         Boolean buffer of shape (n,) holding the trigger status for each lane.
-    state_index : ndarray
+    buffer_index : ndarray
         Integer buffer of shape (n,) holding the index of the last found pick for each
         lane.
-    state_value : ndarray
+    buffer_value : ndarray
         Float buffer of shape (n,) holding the value of the last found pick for each
         lane.
     offset : int
@@ -366,18 +389,18 @@ def _trigger(
     values = []
     for (lane, index), value in np.ndenumerate(cft):
         index += offset
-        if state_status[lane]:
-            if value > state_value[lane]:
-                state_index[lane] = index
-                state_value[lane] = value
+        if buffer_status[lane]:
+            if value > buffer_value[lane]:
+                buffer_index[lane] = index
+                buffer_value[lane] = value
             if value < thresh_off:
-                state_status[lane] = False
+                buffer_status[lane] = False
                 lanes.append(lane)
-                indices.append(state_index[lane])
-                values.append(state_value[lane])
+                indices.append(buffer_index[lane])
+                values.append(buffer_value[lane])
         else:
             if value > thresh_on:
-                state_status[lane] = True
-                state_index[lane] = index
-                state_value[lane] = value
+                buffer_status[lane] = True
+                buffer_index[lane] = index
+                buffer_value[lane] = value
     return np.array(lanes), np.array(indices), np.array(values)

@@ -45,16 +45,16 @@ def test_find_picks_numeric():
     split = 7
     first_chunk, last_chunk = cft[:, :split], cft[:, split:]
 
-    coords, values, state, offset = _find_picks_numeric(
-        first_chunk, thresh, axis, state=..., offset=...
+    coords, values, buffer, offset = _find_picks_numeric(
+        first_chunk, thresh, axis, buffer=..., offset=...
     )
     expected_coords = (np.array([0]), np.array([2]))
     expected_values = np.array([0.9])
     assert np.array_equal(coords, expected_coords)
     assert np.array_equal(values, expected_values)
 
-    coords, values, state, offset = _find_picks_numeric(
-        last_chunk, thresh, axis, state=state, offset=offset
+    coords, values, buffer, offset = _find_picks_numeric(
+        last_chunk, thresh, axis, buffer=buffer, offset=offset
     )
     expected_coords = (np.array([0]), np.array([7]))
     expected_values = np.array([0.7])
@@ -66,16 +66,16 @@ def test_find_picks_numeric():
     split = 3
     first_chunk, last_chunk = cft[:, :split], cft[:, split:]
 
-    coords, values, state, offset = _find_picks_numeric(
-        first_chunk, thresh, axis, state=..., offset=...
+    coords, values, buffer, offset = _find_picks_numeric(
+        first_chunk, thresh, axis, buffer=..., offset=...
     )
     expected_coords = (np.array([]), np.array([]))
     expected_values = np.array([])
     assert np.array_equal(coords, expected_coords)
     assert np.array_equal(values, expected_values)
 
-    coords, values, state, offset = _find_picks_numeric(
-        last_chunk, thresh, axis, state=state, offset=offset
+    coords, values, buffer, offset = _find_picks_numeric(
+        last_chunk, thresh, axis, buffer=buffer, offset=offset
     )
     expected_coords = (np.array([0, 0]), np.array([2, 7]))
     expected_values = np.array([0.9, 0.7])
@@ -86,14 +86,14 @@ def test_find_picks_numeric():
     cft = [1.0, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.0]
     chunk_0, chunk_1, chunk_2 = cft[:3], cft[3:6], cft[6:]
 
-    coords, values, state, offset = _find_picks_numeric(
-        chunk_0, thresh, axis, state=..., offset=...
+    coords, values, buffer, offset = _find_picks_numeric(
+        chunk_0, thresh, axis, buffer=..., offset=...
     )
-    coords, values, state, offset = _find_picks_numeric(
-        chunk_1, thresh, axis, state=state, offset=offset
+    coords, values, buffer, offset = _find_picks_numeric(
+        chunk_1, thresh, axis, buffer=buffer, offset=offset
     )
-    coords, values, state, offset = _find_picks_numeric(
-        chunk_2, thresh, axis, state=state, offset=offset
+    coords, values, buffer, offset = _find_picks_numeric(
+        chunk_2, thresh, axis, buffer=buffer, offset=offset
     )
 
     expected_coords = (np.array([0]),)
@@ -121,18 +121,20 @@ def test_find_picks():
 
     # test chunked processing
     chunks = xd.split(cft, 3, dim="time")
-    state = ...
+    state_dict = ...
     result = []
     for chunk in chunks:
-        picks, state = find_picks(chunk, thresh=0.5, dim="time", state=state)
+        picks, state_dict = find_picks(
+            chunk, thresh=0.5, dim="time", state_dict=state_dict
+        )
         result.append(picks)
     result = pd.concat(result, ignore_index=True)
     assert result.equals(expected)
 
-    # # test atomic processing
-    # atom = find_picks(..., thresh=0.5, dim="time", state=...)
-    # result = []
-    # for chunk in chunks:
-    #     result.append(atom(chunk))
-    # result = pd.concat(result, ignore_index=True)
-    # assert result.equals(expected)
+    # test atomic processing
+    atom = find_picks(..., thresh=0.5, dim="time", state_dict=...)
+    result = []
+    for chunk in chunks:
+        result.append(atom(chunk))
+    result = pd.concat(result, ignore_index=True)
+    assert result.equals(expected)
