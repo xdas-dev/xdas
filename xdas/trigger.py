@@ -7,7 +7,7 @@ from .core.coordinates import InterpCoordinate
 
 
 @atomized
-def find_picks(cft, thresh, dim="last", state_dict=None):
+def find_picks(cft, thresh, dim="last", state_dict=None):  # TODO: state_dict => state
     """
     Find picks in a data array along a given axis based on a given threshold.
 
@@ -37,7 +37,7 @@ def find_picks(cft, thresh, dim="last", state_dict=None):
 
     Returns
     -------
-    picsk: DataFrame
+    picks: DataFrame
         A DataFrame containing the pick coordinates and their corresponding values.
     state_dict: dict, optional
         The updated state dictionary containing the current buffer of the trigger. Can
