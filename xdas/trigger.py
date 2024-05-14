@@ -2,8 +2,12 @@ import numpy as np
 import pandas as pd
 from numba import njit
 
+from .atoms import atomized
+from .core.coordinates import InterpCoordinate
 
-def find_picks(cft, thresh, dim="last"):
+
+@atomized
+def find_picks(cft, thresh, dim="last", state=None):
     """
     Find picks in a data array along a given axis based on a given threshold.
 
@@ -37,24 +41,145 @@ def find_picks(cft, thresh, dim="last"):
     >>> import xdas as xd
     >>> from xdas.trigger import find_picks
 
+    Use case:
+
     >>> cft = xd.DataArray(
-    ...     data=[[0., 0.1, 0.9, 0.8, 0.2, 0.1, 0.6, 0.7, 0.3, 0.2]],
-    ...     coords={"space": [0.0], "time": np.linspace(0, 0.9, 10)},
+    ...     data=[[0.0, 0.1, 0.9, 0.8, 0.2, 0.1, 0.6, 0.7, 0.3, 0.2]],
+    ...     coords={
+    ...         "space": [0.0],
+    ...         "time": {"tie_indices": [0, 9], "tie_values": [0.0, 9.0]},
+    ...     },
     ... )
+
+    Monolithic processing:
 
     >>> find_picks(cft, thresh=0.5, dim="time")
        space  time  value
-    0    0.0   0.2    0.9
-    1    0.0   0.7    0.7
+    0    0.0   2.0    0.9
+    1    0.0   7.0    0.7
+
+    Chunked processing using passing state:
+
+    >>> chunks = xd.split(cft, 3, dim="time")
+    >>> state = ...
+    >>> result = []
+    >>> for chunk in chunks:
+    ...     picks, state = find_picks(chunk, thresh=0.5, dim="time", state=state)
+    ...     result.append(picks)
+    >>> result = pd.concat(result, ignore_index=True)
+    >>> result
+       space  time  value
+    0    0.0   2.0    0.9
+    1    0.0   7.0    0.7
+
+    Chunked processing using atomic processing:
+
+    # >>> atom = find_picks(..., thresh=0.5, dim="time", state=...)
+    # >>> result = []
+    # >>> for chunk in chunks:
+    # ...     picks = atom(chunk)
+    # ...     result.append(picks)
+    # >>> result = pd.concat(result, ignore_index=True)
+    # >>> result
+    #    space  time  value
+    # 0    0.0   2.0    0.9
+    # 1    0.0   7.0    0.7
 
     """
+    axis = cft.get_axis_num(dim)
     data = cft.values
-    indices, values = _find_picks_numeric(data, thresh, axis=cft.get_axis_num(dim))
-    picks = {
-        dim: cft.coords[dim][indices[axis]].values for axis, dim in enumerate(cft.dims)
-    }
+    return_state = state is not None
+
+    # initialize state if not provided
+    if state is None:
+        state = {"buffer": None, "offset": None, "coord": None}
+    elif state is ...:
+        state = {
+            "buffer": ...,
+            "offset": ...,
+            "coord": InterpCoordinate({"tie_indices": [], "tie_values": []}, dim),
+        }
+
+    # find pick indices and update state
+    if return_state:
+        indices, values, state["buffer"], state["offset"] = _find_picks_numeric(
+            data, thresh, axis, state=state["buffer"], offset=state["offset"]
+        )
+        state["coord"] = _concat([state["coord"], cft.coords[dim]])
+    else:
+        indices, values = _find_picks_numeric(data, thresh, axis)
+        state["coord"] = cft.coords[dim]
+
+    # get picks coordinates from indices and pack it into a dataframe
+    picks = {}
+    for a, d in enumerate(cft.dims):
+        if d == dim:
+            picks[d] = state["coord"][indices[a]].values
+        else:
+            picks[d] = cft.coords[d][indices[a]].values
     picks["value"] = values
-    return pd.DataFrame(picks)
+    picks = pd.DataFrame(picks)
+
+    # return state if requested
+    if return_state:
+        return picks, state
+    else:
+        return picks
+
+
+def _concat(list_of_coord):  # TODO: make it a public function/method
+    """
+    Concatenates a list of interpolated coordinates.
+
+    Parameters
+    ----------
+    list_of_coord : list
+        A list of InterpCoordinate objects to be concatenated.
+
+    Returns
+    -------
+    InterpCoordinate
+        The concatenated interpolated coordinate.
+
+    Examples
+    --------
+    >>> import xdas as xd
+
+    >>> coord1 = xd.Coordinate(
+    ...     {"tie_indices": [0, 2], "tie_values": [10, 30]},
+    ...      dim="dim",
+    ... )
+    >>> coord2 = xd.Coordinate(
+    ...     {"tie_indices": [0, 3], "tie_values": [40, 70]},
+    ...      dim="dim",
+    ... )
+
+    >>> concatenated = _concat([coord1, coord2])
+
+    >>> concatenated.tie_indices
+    array([0, 6])
+    >>> concatenated.tie_values
+    array([10, 70])
+    >>> concatenated.dim
+    'dim'
+
+    """
+    tie_indices = []
+    tie_values = []
+    idx = 0
+    dim = list_of_coord[0].dim
+    for coord in list_of_coord:
+        if not coord.isinterp:
+            raise ValueError("Only interpolated coordinates can be concatenated.")
+        if not coord.dim == dim:
+            raise ValueError("All coordinates must have the same dimension.")
+        tie_indices.extend(idx + coord.tie_indices)
+        tie_values.extend(coord.tie_values)
+        idx += len(coord)
+    coord = InterpCoordinate(
+        {"tie_indices": tie_indices, "tie_values": tie_values}, dim
+    )
+    return coord.simplify()
 
 
 def _find_picks_numeric(cft, thresh, axis=-1, state=None, offset=None):
