@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 
 import numpy as np
+import pandas as pd
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
@@ -12,16 +13,30 @@ from .monitor import Monitor
 
 def process(atom, data_loader, data_writer):
     """
-    Execute a chunked processing pipeline ``seq``,
-    ingesting the data from ``data_loader`` and
-    flushing the processed data through ``data_writer``.
+    Execute a chunked processing pipeline.
 
     Parameters
     ----------
-    seq : ``Sequential``
-        The sequence of atomic operations to execute
-    data_loader : ``DataArrayLoader``
-    data_writer : ``DataArrayWriter``
+    atom : callable
+        The atomic operation to execute on each chunk of data.
+    data_loader : DataArrayLoader
+        The data loader object that provides the chunks of data.
+    data_writer : DataArrayWriter
+        The data writer object that writes the processed data.
+
+    Returns
+    -------
+    result : object
+        The result of the processing pipeline.
+
+    Notes
+    -----
+    This function executes a chunked processing pipeline by ingesting the data from
+    the `data_loader` and flushing the processed data through the `data_writer`.
+    It iterates over the chunks of data provided by the `data_loader`, applies the
+    `atom` function to each chunk, and writes the processed data using the `data_writer`.
+    The progress of the processing is monitored using a `Monitor` object.
+
     """
     atom.reset()
     if hasattr(data_loader, "nbytes"):
@@ -34,7 +49,7 @@ def process(atom, data_loader, data_writer):
         monitor.tic("proc")
         result = atom(chunk, chunk_dim=data_loader.chunk_dim)
         monitor.tic("write")
-        data_writer.to_netcdf(result)
+        data_writer.write(result)
         monitor.toc(chunk.nbytes)
         monitor.tic("read")
     monitor.close()
@@ -48,14 +63,11 @@ class DataArrayLoader:
     Parameters
     ----------
     da : ``DataArray``, ``DataCollection``
-        The (virtual) DataArray or DataCollection that
-        contains the data to be chunked
+        The (virtual) DataArray or DataCollection that contains the data to be chunked
     chunks : dict
-        The sizes of the chunks along each dimension.
-        Needs to be of the form: ``{"dim": int}``.
-        Each key needs to correspond with a dimension
-        (either "time" or "distance"), and each value
-        is an integer indicating the size of the chunk
+        The sizes of the chunks along each dimension. Needs to be of the form:
+        ``{"dim": int}``. Each key needs to correspond with a dimension (either "time"
+        or "distance"), and each value is an integer indicating the size of the chunk
         (in samples) along that dimension.
 
     Examples
@@ -154,8 +166,7 @@ class DataArrayWriter:
     Parameters
     ----------
     dirpath : str or path
-        The directory to store the outpt of a
-        processing pipeline. The directory needs
+        The directory to store the output of a processing pipeline. The directory needs
         to exist and be empty.
 
     Examples
@@ -178,7 +189,7 @@ class DataArrayWriter:
         self.executor = ThreadPoolExecutor(1)
         self.future = self.executor.submit(self.task)
 
-    def to_netcdf(self, da):
+    def write(self, da):
         self.queue.put(da)
 
     def task(self):
@@ -204,3 +215,81 @@ class DataArrayWriter:
         self.queue.put(None)
         self.future.result()
         return concatenate(self.results)
+
+
+class DataFrameWriter:
+    """
+    A class for writing pandas DataFrames to a CSV file asynchronously.
+
+    Parameters
+    ----------
+    path : str
+        The path to the CSV file.
+
+    Attributes
+    ----------
+    path : str
+        The path to the CSV file.
+    queue : Queue
+        A queue to hold the DataFrames to be written.
+    executor : ThreadPoolExecutor
+        A thread pool executor for asynchronous writing.
+    future : Future
+        A future object representing the result of the asynchronous task.
+
+    Methods
+    -------
+    write(df)
+        Writes a DataFrame to the queue for asynchronous writing.
+    task()
+        The asynchronous task that writes the DataFrames to the CSV file.
+    result()
+        Waits for the asynchronous task to complete and returns the DataFrame read from the CSV file.
+    """
+
+    def __init__(self, path):
+        self.path = path
+        self.queue = Queue(maxsize=1)
+        self.executor = ThreadPoolExecutor(1)
+        self.future = self.executor.submit(self.task)
+
+    def write(self, df):
+        """
+        Writes a DataFrame to the queue for asynchronous writing.
+
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            The DataFrame to be written.
+        """
+        self.queue.put(df)
+
+    def task(self):
+        """
+        The asynchronous task that writes the DataFrames to the CSV file.
+        """
+        while True:
+            df = self.queue.get()
+            if df is None:
+                break
+            if not os.path.exists(self.path):
+                df.to_csv(self.path, mode="w", header=True, index=False)
+            else:
+                df.to_csv(self.path, mode="a", header=False, index=False)
+
+    def result(self):
+        """
+        Waits for the asynchronous task to complete and returns the DataFrame read from the CSV file.
+
+        Returns
+        -------
+        pandas.DataFrame
+            The DataFrame read from the CSV file.
+        """
+        self.queue.put(None)
+        self.future.result()
+        try:
+            out = pd.read_csv(self.path)
+        except pd.errors.EmptyDataError:
+            out = pd.DataFrame()
+        return out
