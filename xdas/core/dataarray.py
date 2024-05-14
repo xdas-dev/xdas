@@ -312,7 +312,7 @@ class DataArray:  # TODO: use numpy.lib.mixins.NDArrayOperatorsMixin
 
     def equals(self, other):
         if isinstance(other, self.__class__):
-            if not np.array_equal(self.values, other.values):
+            if not np.array_equal(self.values, other.values, equal_nan=True):
                 return False
             if not self.coords.equals(other.coords):
                 return False

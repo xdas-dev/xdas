@@ -1,7 +1,3 @@
-import os
-from math import exp
-from tempfile import TemporaryDirectory
-
 import numpy as np
 import scipy.signal as sp
 
