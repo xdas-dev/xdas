@@ -239,7 +239,7 @@ class DataMapping(DataCollection, dict):
             location = "/".join([name, str(key)])
             if group is not None:
                 location = "/".join([group, location])
-            self[key].to_netcdf(fname, location, virtual, mode="a")
+            self[key].to_netcdf(fname, mode="a", group=location, virtual=virtual)
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
@@ -417,7 +417,7 @@ class DataSequence(DataCollection, list):
         return cls(data.values(), data.name)
 
     def to_netcdf(self, fname, group=None, virtual=None, **kwargs):
-        self.to_mapping().to_netcdf(fname, group, virtual, **kwargs)
+        self.to_mapping().to_netcdf(fname, group=group, virtual=virtual, **kwargs)
 
     @classmethod
     def from_netcdf(cls, fname, group=None):

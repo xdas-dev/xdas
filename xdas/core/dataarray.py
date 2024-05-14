@@ -870,7 +870,7 @@ class DataArray:  # TODO: use numpy.lib.mixins.NDArrayOperatorsMixin
         }
         return cls(data, {dims[0]: channel, dims[1]: time})
 
-    def to_netcdf(self, fname, group=None, virtual=None, **kwargs):
+    def to_netcdf(self, fname, mode="w", group=None, virtual=None, **kwargs):
         """
         Write DataArray contents to a netCDF file.
 
@@ -917,12 +917,14 @@ class DataArray:  # TODO: use numpy.lib.mixins.NDArrayOperatorsMixin
         name = "__values__" if self.name is None else self.name
         if not virtual:
             ds[self.name] = (self.dims, self.values, attrs)
-            ds.to_netcdf(fname, group=group, **kwargs)
+            ds.to_netcdf(fname, mode=mode, group=group, **kwargs)
         elif virtual and isinstance(self.data, VirtualArray):
-            with h5netcdf.File(fname, mode="w") as file:
+            with h5netcdf.File(fname, mode=mode) as file:
+                if group is not None and group not in file:
+                    file.create_group(group)
                 file = file if group is None else file[group]
                 file.dimensions.update(self.sizes)
-                self.data.to_dataset(file._h5file, name)
+                self.data.to_dataset(file._h5group, name)
                 variable = file._variable_cls(file, name, self.dims)
                 file._variables[name] = variable
                 variable._attach_dim_scales()
