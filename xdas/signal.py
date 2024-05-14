@@ -5,6 +5,7 @@ from .atoms.core import atomized
 from .core.coordinates import Coordinate, get_sampling_interval
 from .core.dataarray import DataArray
 from .parallel import parallelize
+from .trigger import find_picks
 
 
 @atomized
