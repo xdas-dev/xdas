@@ -251,16 +251,15 @@ class Partial(Atom):
             raise ValueError("`*args` must contain at most one Ellipsis")
         self.func = func
         self.args = args
-        self.kwargs = kwargs
+        self.kwargs = {}
         self.name = name
         for key, value in kwargs.items():
             if value is ...:
                 setattr(self, key, State(...))
             elif isinstance(value, State):
                 setattr(self, key, value)
-        self.kwargs = {
-            key: value for key, value in kwargs.items() if key not in self._state
-        }
+            else:
+                self.kwargs[key] = value
 
     @property
     def stateful(self):
