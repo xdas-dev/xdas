@@ -230,6 +230,8 @@ class DataFrameWriter:
     ----------
     path : str
         The path to the CSV file.
+    parse_dates : list or bool
+        A list of columns to parse as dates.
     queue : Queue
         A queue to hold the DataFrames to be written.
     executor : ThreadPoolExecutor
@@ -247,8 +249,9 @@ class DataFrameWriter:
         Waits for the asynchronous task to complete and returns the DataFrame read from the CSV file.
     """
 
-    def __init__(self, path):
+    def __init__(self, path, parse_dates=False):
         self.path = path
+        self.parse_dates = parse_dates
         self.queue = Queue(maxsize=1)
         self.executor = ThreadPoolExecutor(1)
         self.future = self.executor.submit(self.task)
@@ -289,7 +292,7 @@ class DataFrameWriter:
         self.queue.put(None)
         self.future.result()
         try:
-            out = pd.read_csv(self.path)
+            out = pd.read_csv(self.path, parse_dates=self.parse_dates)
         except pd.errors.EmptyDataError:
             out = pd.DataFrame()
         return out
