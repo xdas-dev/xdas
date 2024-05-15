@@ -2,6 +2,8 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
+from sympy import sequence
+
 from ..core.dataarray import DataArray
 from ..core.datacollection import DataCollection
 from ..core.routines import open_datacollection
@@ -448,7 +450,7 @@ class StatePartial(Partial):  # TODO: Merge documentation
 
 def atomized(func):
     """
-    Make the function return an Atom if `...` is passed.
+    Make the function return an Atom if `...` or an atom is passed as argument.
 
     Functions that receive a `state` keyword argument which is not None will be
     considered as statefull atoms.
@@ -474,6 +476,17 @@ def atomized(func):
     def wrapper(*args, **kwargs):
         if any(arg is ... for arg in args):
             return Partial(func, *args, **kwargs)
+        elif objs := tuple(arg for arg in args if isinstance(arg, Atom)):
+            if len(objs) == 1:
+                input = objs[0]
+            else:
+                raise ValueError("Only one Atom object can be passed as function input")
+            args = tuple(... if isinstance(arg, Atom) else arg for arg in args)
+            output = Partial(func, *args, **kwargs)
+            if isinstance(input, Sequential):
+                return input.append(output)
+            else:
+                return Sequential([input, output])
         else:
             return func(*args, **kwargs)
 

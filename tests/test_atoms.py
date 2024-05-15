@@ -63,6 +63,14 @@ class TestDecorator:
         assert isinstance(statefull, Partial)
         assert statefull.state == {"zi": ...}
 
+    def test_passing_atom(self):
+        a = [1, 1]
+        b = [1, 1]
+        atom = lfilter(b, a, ..., "time")
+        atom = lfilter(b, a, atom, "time")
+        assert isinstance(atom, Sequential)
+        assert len(atom) == 2
+
 
 class TestFilters:
     def test_lfilter(self):
