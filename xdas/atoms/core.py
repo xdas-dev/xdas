@@ -96,7 +96,7 @@ class Atom:
             Initializes the atom from its minimal state.
         call(x, **flags)
             Performs the main processing logic of the atom.
-        reset() 
+        reset()
             Resets the atom to its initial state.
 
     """
@@ -293,45 +293,63 @@ class Sequential(Atom, list):
 
 class Partial(Atom):
     """
-    Base class for an xdas operation, to be used in conjunction with Sequence. Each
-    Atom should be seen as an elementary operation to apply to the data, such as
-    tapering, multiplication, integration, etc. More complex operations (fk-analysis,
-    strain-to-displacement conversion, ...) can be written as a sequence of Atoms,
-    executed in the right order. Each Atom can optionally be labelled with the `name`
-    argument for easy identification in long sequences.
+    Wraps a function into an Atom.
+
+    It works similarly to `functools.partial` but with additional features. If the
+    input is not the first argument, an `Ellipsis` (`...`) can be used to indicate the
+    position of the input. A `name` argument can be used to better identify the
+    resulting atom.
+
+    Some level of state passing can be achieved by passing `...` for one or several
+    keyword arguments. In that case, the function is expected to accept `...` as
+    keyword arguments, to properly initialize the corresponding states and to return as
+    many additional outputs as there are stateful arguments.
+
+    Partial uses several reserved keyword arguments that cannot by passed to `func`:
+    'func', 'name' and 'state'.
 
     Parameters
     ----------
     func : Callable
-        The function that is called. It must take a unique data object as first
-        argument and returns a unique output. Subsequent arguments are given by `*args`
-        and `**kwargs`. If the data is not passed as first argument, an Ellipsis must
-        be provided in the `*args` parameters.
+        The function that is called. One of its argument is used as the input of the
+        resulting Atom object while other parameters are fixed. The position of the
+        input is by default the first argument. Otherwise, an Ellipsis (`...`) must be
+        provided in the `*args` parameters to indicate the position of the input.
+        The function must return a unique output except if the function is stateful. In
+        that case, the function must return the processed data as first output and the
+        updated state as additional outputs.
     *args : Any
         Positional arguments to pass to `func`. If the data to process is passed as the
-        nth argument, the nth element of `args` must contain an Ellipis (`...`).
+        nth argument, the nth element of `args` must contain an Ellipsis (`...`).
     name : str
         Name to identify the function.
     **kwargs : Any
-        Keyword arguments to pass to `func`.
-
-    StateAtom uses one reserved keyword arguments that cannot by passed to `func`:
-    'name'.
+        Keyword arguments to pass to `func`. If one of the keyword arguments is `...`, 
+        it will be treated as a passing state and initialized or updated at each call.
 
 
     Examples
     --------
-    >>> from xdas.atoms import Partial
+    >>> import numpy as np
+    >>> import scipy.signal as sp
     >>> import xdas.signal as xp
-    >>> Partial(xp.decimate, 2, dim="time", name="downsampling")
+    >>> from xdas.atoms import Partial
+
+    Examples of a stateless atom:
+
+    >>> Partial(xp.decimate, 2, dim="time")
     decimate(..., 2, dim=time)
 
-    >>> import numpy as np
     >>> Partial(np.square)
     square(...)
 
-    """
+    Examples of a stateful atom with input data as second argument:
 
+    >>> sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
+    >>> Partial(xp.sosfilt, sos, ..., dim="time", zi=...)
+    sosfilt(<ndarray>, ..., dim=time)  [stateful]
+
+    """
     def __init__(
         self, func: Callable, *args: Any, name: str | None = None, **kwargs: Any
     ) -> None:
@@ -386,75 +404,6 @@ class Partial(Atom):
             kwargs.append(f"{key}={value}")
         params = ", ".join(args + kwargs)
         return f"{func}({params})" + ("  [stateful]" if self.stateful else "")
-
-
-class StatePartial(Partial):  # TODO: Merge documentation
-    """
-    A subclass of Atom that provides some logic for handling data states, which need to
-    be updated throughout the execution chain. An example of a stateful operation is a
-    recursive filter, passing on the state from t to t+1.
-
-    The StateAtom class assumes that the stateful function takes two inputs: some data
-    and a state. The stateful function must return the processed data and modified
-    state.
-
-    >>> def func(x, *args, state="zi", **kwargs):
-    ...     return x, zf
-
-    Here, `state` is a given keyword argument that contains the state, which can differ
-    from one function to the next. The user must pass a dict `{"zi": value}` to provide
-    the initial state. If no initial state is provided, the ... flag will be used.
-    That special string indicates to the function to initialize the state and to return
-    it along with the result. All xdas statefull function accepts this convention.
-
-    StateAtom uses reserved keyword arguments that cannot by passed to `func`:
-    'name' and 'state'.
-
-    Parameters
-    ----------
-    func : Callable
-        The function to call. It takes the data object to process as the first argument
-        and the actual state as second argument. It returns the processed data along
-        with the updated state. Subsequent arguments are given by `*args` and
-        `**kwargs`. If the data is not passed as first argument, an Ellipsis must
-        be provided in the `*args` parameters.
-    *args : Any
-        Positional arguments to pass to `func`. If the data to process is passed as the
-        nth argument, the nth element of `args` must contain an Ellipis (`...`).
-    state: Any
-        The initial state that will be passed at the `func`. If `state` is a dict, the
-        key indicates the keyword argument used by `func` for state passing, and the
-        value contains the state. The ... flag is used to indicate than a new
-        state must be initialized. If `state` is a string, it will use the default ...
-        flag by default for that keyword argument.
-    name : Hashable
-        Name to identify the function.
-    **kwargs : Any
-        Keyword arguments to pass to `func`.
-
-    Examples
-    --------
-    >>> from xdas.atoms import Partial, State
-    >>> import xdas.signal as xp
-    >>> import scipy.signal as sp
-
-    >>> sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
-
-    By default, `state` is the expected keyword argument and 'init' is the send value
-    to ask for initialisation.
-
-    >>> Partial(xp.sosfilt, sos, ..., dim="time", zi=...)
-    sosfilt(<ndarray>, ..., dim=time)  [stateful]
-
-    To manually specify the keyword argument and initial value a dict must be passed to
-    the state keyword argument.
-
-    >>> Partial(xp.sosfilt, sos, ..., dim="time", zi=State(...))
-    sosfilt(<ndarray>, ..., dim=time)  [stateful]
-
-    """
-
-    ...
 
 
 def atomized(func):

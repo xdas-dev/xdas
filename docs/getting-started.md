@@ -236,7 +236,7 @@ To convert your workflow into an atomic pipeline you need:
 1. to convert each processing step into an atom
 2. to bundle all steps into a {py:class}`~xdas.atoms.Sequential` atom.
 
-Converting each processing step into an atom depend on the nature of the step. In particular it depends wether the processing step is **stateful** (it does rely on the history along the chunked dimension) or **stateless** (the processing step can by applied separately on each chunk along the given dimension without any particular consideration). Not that this stateful/less caracteristic depends on the chunking dimension.
+Converting each processing step into an atom depend on the nature of the step. In particular it depends wether the operation is **stateful** (it does rely on the history along the chunked dimension) or **stateless** (the operation can by applied separately on each chunk along the given dimension without any particular consideration). An example of a stateful operation is a recursive filter, passing on the state from t to t+1.Not that this stateful/less caracteristic depends on the chunking dimension.
 
 - unary operators that are not stateful (that do not rely on the history along the chunked axis) can be used as is.
 - functions that are not stateful must be wrapped with the {py:class}`~xdas.atoms.Partial` class.
