@@ -5,8 +5,8 @@ from .signal import (
     DownSample,
     FIRFilter,
     IIRFilter,
-    ResamplePoly,
-    UpSample,
     LFilter,
+    ResamplePoly,
     SOSFilter,
+    UpSample,
 )

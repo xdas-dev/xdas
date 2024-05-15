@@ -9,9 +9,6 @@ from xdas.synthetics import wavelet_wavefronts
 
 class TestSignal:
     def test_get_sample_spacing(self):
-        s = (5.0 / 2) + 5.0 * np.arange(100)
-        dt = np.timedelta64(8, "ms")
-        t = np.datetime64(0, "s") + dt * np.arange(1000)
         shape = (6000, 1000)
         resolution = (np.timedelta64(8, "ms"), 5.0)
         starttime = np.datetime64("2023-01-01T00:00:00")

@@ -20,7 +20,7 @@ from xdas.synthetics import randn_wavefronts, wavelet_wavefronts
 
 class TestPartialAtom:
     def test_init(self):
-        seq = Sequential(
+        Sequential(
             [
                 Partial(xp.taper, dim="time"),
                 Partial(xp.taper, dim="distance"),

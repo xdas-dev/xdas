@@ -204,13 +204,13 @@ class Coordinates(dict):
 
     @wraps_first_last
     def drop_dims(self, *dims):
-        coords = {key: value for key, value in self.items() if not value.dim in dims}
-        dims = tuple(value for value in self.dims if not value in dims)
+        coords = {key: value for key, value in self.items() if value.dim not in dims}
+        dims = tuple(value for value in self.dims if value not in dims)
         return self.__class__(coords, dims)
 
     @wraps_first_last
     def drop_coords(self, *names):
-        coords = {key: value for key, value in self.items() if not key in names}
+        coords = {key: value for key, value in self.items() if key not in names}
         return self.__class__(coords, self.dims)
 
     def _assign_parent(self, parent):
@@ -582,10 +582,10 @@ class InterpCoordinate(Coordinate):
         return out
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        raise NotImplemented
+        raise NotImplementedError
 
     def __array_function__(self, func, types, args, kwargs):
-        raise NotImplemented
+        raise NotImplementedError
 
     @property
     def tie_indices(self):

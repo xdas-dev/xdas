@@ -7,7 +7,15 @@ import pytest
 
 import xdas
 from xdas.synthetics import wavelet_wavefronts
-from xdas.virtual import *
+from xdas.virtual import (
+    Selection,
+    Selectors,
+    SingleSelector,
+    SliceSelector,
+    VirtualLayout,
+    VirtualSource,
+    VirtualStack,
+)
 
 
 class TestFunctional:  # TODO: move elsewhere

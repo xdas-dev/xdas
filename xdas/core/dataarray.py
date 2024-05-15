@@ -611,7 +611,7 @@ class DataArray:  # TODO: use numpy.lib.mixins.NDArrayOperatorsMixin
             dims_dict = {}
         dims_dict.update(dims_kwargs)
         for dim in dims_dict:
-            if not dim in self.dims:
+            if dim not in self.dims:
                 raise KeyError(
                     f"dimension {dim} not found in current object with dims {self.dims}"
                 )

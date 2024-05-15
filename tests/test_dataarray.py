@@ -108,18 +108,19 @@ class TestDataArray:
         # assert da[0].data == 0.0
         # assert da[1].data == 0.1
         # assert da[0]["dim"] == 100.0
-        subda = da[2:4]
-        assert np.allclose(subda.data, [0.2, 0.3])
-        assert np.allclose(subda["dim"].tie_indices, [0, 1])
-        assert np.allclose(subda["dim"].tie_values, [300.0, 400.0])
+        sel = da[2:4]
+        assert np.allclose(sel.data, [0.2, 0.3])
+        assert np.allclose(sel["dim"].tie_indices, [0, 1])
+        assert np.allclose(sel["dim"].tie_values, [300.0, 400.0])
         da = self.generate(dense=True)
-        assert np.allclose(subda.data, [0.2, 0.3])
-        assert np.allclose(subda["dim"].values, [300.0, 400.0])
+        assert np.allclose(sel.data, [0.2, 0.3])
+        assert np.allclose(sel["dim"].values, [300.0, 400.0])
 
     def test_setitem(self):
-        da = self.generate()
+        # da = self.generate()
         # da[0] = -100.0
         # assert da[0].data == -100.0
+        ...
 
     def test_data_setter(self):
         da = wavelet_wavefronts()
@@ -153,7 +154,7 @@ class TestDataArray:
         # drop
         da = wavelet_wavefronts()
         result = da.sel(distance=0, method="nearest", drop=True)
-        assert not "distance" in result.coords
+        assert "distance" not in result.coords
 
     def test_isel(self):
         da = wavelet_wavefronts()
@@ -166,7 +167,7 @@ class TestDataArray:
         # drop
         da = wavelet_wavefronts()
         result = da.sel(distance=0, drop=True)
-        assert not "distance" in result.coords
+        assert "distance" not in result.coords
 
     def test_to_xarray(self):
         for dense in [True, False]:
@@ -206,7 +207,7 @@ class TestDataArray:
         coord = [f"D{k}" for k in range(9)]
         coords = Coordinates({"dim": coord})
         data = 0.1 * np.arange(9)
-        da = DataArray(data, coords)
+        DataArray(data, coords)
 
     def test_single_index_selection(self):
         da = DataArray(
