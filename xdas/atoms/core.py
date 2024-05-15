@@ -2,8 +2,6 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
-from sympy import sequence
-
 from ..core.dataarray import DataArray
 from ..core.datacollection import DataCollection
 from ..core.routines import open_datacollection
