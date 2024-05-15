@@ -80,16 +80,25 @@ class Atom:
     that are usefull for the processing but that can be recomputed from the minimal set
     are initialized in the `initialize_from_state` method.
 
-    Attributes:
-        state: (dict): Returns the current state of the atom recursively including
+    Attributes
+    ----------
+        state: dict
+            Returns the current state of the atom recursively including
             the state of nested atoms.
-        initialized (bool): Checks if the atom has been initialized.
+        initialized: bool
+            Wether the atom has been initialized or not.
 
-    Methods:
-        initialize(x, **flags): Initializes the atom with the given input.
-        initialize_from_state(): Initializes the atom from its minimal state.
-        call(x, **flags): Performs the main processing logic of the atom.
-        reset(): Resets the atom to its initial state.
+    Methods
+    -------
+        initialize(x, **flags)
+            Initializes the atom with the given input.
+        initialize_from_state()
+            Initializes the atom from its minimal state.
+        call(x, **flags)
+            Performs the main processing logic of the atom.
+        reset() 
+            Resets the atom to its initial state.
+
     """
 
     def __init__(self):

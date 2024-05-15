@@ -141,7 +141,7 @@ da.plot(yincrease=False, vmin=-0.5, vmax=0.5)
 ```
 
 
-## Processing
+## Signal processing
 
 DataArray can be processed without having to extract the underlying N-dimensional array. Most numpy functions can be applied while preserving metadata. Xdas also wraps a large subset of [numpy](https://numpy.org/) and [scipy](https://scipy.org/) function by adding coordinates handling. You mainly need to replace `axis` arguments by `dim` ones and to provides dimensions by name and not by position.
 
@@ -200,3 +200,12 @@ Processed data can be saved to NetCDF. This time, because the data was changed, 
 ```{code-cell}
 fk.to_netcdf("fk.nc")
 ```
+
+
+## Massive processing using Atoms
+
+The usual [numpy](https://numpy.org/)/[scipy](https://scipy.org/) way of processing 
+data works great when the data of interest fit in memory. To deal with huge datasets,
+xdas introduce {py:class}`~xdas.atoms.Atom`s. 
+
+a way to process data by chunks while ensuring continuity

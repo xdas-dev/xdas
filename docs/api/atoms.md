@@ -19,7 +19,6 @@ Attributes
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: ../_autosummary
 
    Atom.state
    Atom.initialized
@@ -30,7 +29,6 @@ Methods
 
 ```{eval-rst}
 .. autosummary::
-   :toctree: ../_autosummary
 
    Atom.initialize
    Atom.initialize_from_state
@@ -55,11 +53,12 @@ Methods
 .. autosummary::
    :toctree: ../_autosummary
 
-   signal.ResamplePoly
-   signal.IIRFilter
-   signal.FIRFilter
-   signal.LFilter
-   signal.SOSFilter
-   signal.DownSample
-   signal.UpSample
+   DownSample
+   FIRFilter
+   IIRFilter
+   LFilter
+   ResamplePoly
+   SOSFilter
+   Trigger
+   UpSample
 ```
