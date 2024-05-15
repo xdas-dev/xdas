@@ -324,7 +324,7 @@ class Partial(Atom):
     name : str
         Name to identify the function.
     **kwargs : Any
-        Keyword arguments to pass to `func`. If one of the keyword arguments is `...`, 
+        Keyword arguments to pass to `func`. If one of the keyword arguments is `...`,
         it will be treated as a passing state and initialized or updated at each call.
 
 
@@ -350,6 +350,7 @@ class Partial(Atom):
     sosfilt(<ndarray>, ..., dim=time)  [stateful]
 
     """
+
     def __init__(
         self, func: Callable, *args: Any, name: str | None = None, **kwargs: Any
     ) -> None:
@@ -410,23 +411,66 @@ def atomized(func):
     """
     Make the function return an Atom if `...` or an atom is passed as argument.
 
-    Functions that receive a `state` keyword argument which is not None will be
-    considered as statefull atoms.
+    In case `...` is passed as a positional argument, the function is wrapped into a
+    Partial object. If an Atom object is passed as a positional argument, the function
+    is wrapped into a Sequential object. Otherwise, the function is called as is.
 
     Parameters
     ----------
     func: callable
-        A function with a main data input that will trigger atomization if `...` is
-        passed. If it has a state keword argument this later will trigger statefull
-        atomization if anything but None is passed.
+        The function to wrap as a Partial atom if any `...` or input atom is a passed.
+        It must handle the `...` argument as a placeholder for the input data and for
+        the passing states. It must return a unique output except if the function is
+        stateful. In that case, the function must return the processed data as first
+        output and the updated state as additional outputs.
 
     Returns
     -------
-    callable
-        The atomized function. This latter has the same documentation and names than
-        the original function. If `...` is passed as a positional argument, returns an
-        Atom object. If a further `state` keyword argument is pass with a value other
-        than `None`, retruns a StateAtom object.
+    output or atom: Any or (Partial or Sequential)
+        if no `...` or Atom object is passed as a positional argument, returns the
+        output of the function. If an Atom object is passed as a positional argument,
+        returns a Sequential object containing the Atom object and the atomized function.
+        If `...` is passed as a positional argument, returns a Partial object containing
+        the atomized function. This latter has the same documentation and names than the
+        original function.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from xdas.atoms import atomized
+
+    Basic usage:
+
+    >>> @atomized
+    ... def square(x):
+    ...     return x ** 2
+    >>> square(2)
+    4
+    >>> square(...)
+    square(...)
+
+    Passing an Atom object as input:
+
+    >>> square(square(...))
+    Sequence:
+      0: square(...)
+      1: square(...)
+
+    Passing a stateful function:
+
+    >>> @atomized
+    ... def cumsum(x, cum=None):
+    ...     return_state = cum is not None
+    ...     if cum is None or cum is ...:
+    ...         cum = 0.0
+    ...     out = np.cumsum(x) + cum
+    ...     cum += out[-1]
+    ...     if return_state:
+    ...         return out, cum
+    ...     else:
+    ...         return out
+    >>> cumsum(..., cum=...)
+    cumsum(...)  [stateful]
 
     """
 
