@@ -13,6 +13,7 @@ dependencies = [
     "dask",
     "h5netcdf",
     "h5py",
+    "netcdf4",
     "numba",
     "numpy",
     "obspy",
