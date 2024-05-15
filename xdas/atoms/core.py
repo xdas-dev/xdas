@@ -8,15 +8,92 @@ from ..core.routines import open_datacollection
 
 
 class State:
+    """
+    A class to declare a new state or to update a preexising one into an Atom object.
+
+    Parameters
+    ----------
+    state: Any
+        The state to be passed to the Atom object.
+
+    Examples
+    --------
+
+    In practice the State object is used when implementing new Atom objects. Bellow a
+    dummy example without any class declaration.
+
+    >>> from xdas.atoms import Atom, State
+
+    Let's create an empty Atom object:
+
+    >>> self = Atom()
+    >>> self.state
+    {}
+
+    We can declare and initialize a new state:
+
+    >>> self.count = State(0)
+    >>> self.state
+    {'count': 0}
+
+    To update the state, we must use the State object again. The state is updated by:
+
+    >>> self.count = State(self.count + 1)
+    >>> self.state
+    {'count': 1}
+
+    """
+
     def __init__(self, state):
         self.state = state
 
 
 class Atom:
+    """
+    The base class for atoms. Used to implement new Atom objects.
+
+    Atoms are the building blocks to perform massive computations. They represent
+    processing units that can be combined to create complex data processing pipelines.
+    Each Atom object is a callable that takes a unique input data object and returns a
+    unique processed data object. Atoms can be stateful meaning that they can store
+    some memory between calls to ensure the continuity of the processing across chunks.
+    The memory of the Atom is stored in the state attribute. The state is a dictionary
+    that is updated during each execution of the Atom. The Atom object is initialized
+    with an initial state at the first call. In subsequent calls, the state is updated
+    **if and only if the `chunk_dim` flag is provided** along with the dimension along
+    wich chunking was performed. If this flag is not provided, the state is reset
+    between calls. The Atom can be reset manually to its initial state by calling the
+    `reset` method.
+
+    When implementing a new Atom object, the user must sublcass the Atom class, and
+    at minima define the `initialize` and the `call` methods. The `initialize` method
+    is called at the first call to the Atom and is used to initialize the Atom with the
+    input data. The `call` method is called at each subsequent call to the Atom and is
+    used to perform the main processing logic. The Atom class handles when an how those
+    two methods are called.
+
+    To reduce the size of the state that need to be stored, a good practive is to also
+    define the `initialize_from_state` method. This method is called in the
+    `initialize` as soon as the minimal set of states is initialized. The other states
+    that are usefull for the processing but that can be recomputed from the minimal set
+    are initialized in the `initialize_from_state` method.
+
+    Attributes:
+        state: (dict): Returns the current state of the atom recursively including
+            the state of nested atoms.
+        initialized (bool): Checks if the atom has been initialized.
+
+    Methods:
+        initialize(x, **flags): Initializes the atom with the given input.
+        initialize_from_state(): Initializes the atom from its minimal state.
+        call(x, **flags): Performs the main processing logic of the atom.
+        reset(): Resets the atom to its initial state.
+    """
+
     def __init__(self):
-        super().__setattr__("_config", {})
-        super().__setattr__("_state", {})
-        super().__setattr__("_filters", {})
+        object.__setattr__(self, "_config", {})
+        object.__setattr__(self, "_state", {})
+        object.__setattr__(self, "_atoms", {})
 
     def __repr__(self):
         name = self.__class__.__name__
@@ -24,7 +101,7 @@ class Atom:
             f"{key}={value}" for key, value in self._config.items() if value is not None
         )
         s = f"{name}({sig})"
-        for name, filter in self._filters.items():
+        for name, filter in self._atoms.items():
             s += "\n" + "\n".join(f"  {e}" for e in repr(filter).split("\n"))
         return s
 
@@ -32,18 +109,18 @@ class Atom:
         match value:
             case State(state=state):
                 self._state[name] = state
-                super().__setattr__(name, state)
+                object.__setattr__(self, name, state)
             case Atom():
-                self._filters[name] = value
-                super().__setattr__(name, value)
+                self._atoms[name] = value
+                object.__setattr__(self, name, value)
             case other:
                 self._config[name] = value
-                super().__setattr__(name, other)
+                object.__setattr__(self, name, other)
 
     @property
     def state(self):
         return self._state | {
-            name: filter.state for name, filter in self._filters.items() if filter.state
+            name: filter.state for name, filter in self._atoms.items() if filter.state
         }
 
     @property
@@ -57,14 +134,14 @@ class Atom:
     def call(self, x, **flags): ...
 
     def __call__(self, x, **flags):
-        if not self.initialized:
+        if not self.initialized or flags.get("chunk_dim", None) is None:
             self.initialize(x, **flags)
         return self.call(x, **flags)
 
     def reset(self):
         for key in self._state:
             setattr(self, key, State(...))
-        for _, filter in self._filters.items():
+        for _, filter in self._atoms.items():
             filter.reset()
 
     def save_state(self, path):
@@ -109,7 +186,7 @@ class Sequential(Atom, list):
 
     Basic usage:
 
-    >>> sequence = Sequential(
+    >>> seq = Sequential(
     ...     [
     ...         Partial(xp.taper, dim="time"),
     ...         Partial(xp.lfilter, [1.0], [0.5], ..., dim="time", zi=...),
@@ -117,7 +194,7 @@ class Sequential(Atom, list):
     ...     ],
     ...     name="Low frequency energy",
     ... )
-    >>> sequence
+    >>> seq
     Low frequency energy:
       0: taper(..., dim=time)
       1: lfilter([1.0], [0.5], ..., dim=time)  [stateful]
@@ -125,13 +202,13 @@ class Sequential(Atom, list):
 
     Nested sequences:
 
-    >>> sequence = Sequential(
+    >>> seq = Sequential(
     ...     [
     ...         Partial(xp.decimate, 16, dim="distance"),
-    ...         sequence,
+    ...         seq,
     ...     ]
     ... )
-    >>> sequence
+    >>> seq
     Sequence:
       0: decimate(..., 16, dim=distance)
       1:
@@ -144,7 +221,7 @@ class Sequential(Atom, list):
 
     >>> from xdas.synthetics import wavelet_wavefronts
     >>> da = wavelet_wavefronts()
-    >>> sequence(da)
+    >>> seq(da)
     <xdas.DataArray (time: 300, distance: 26)>
     [[0.000000e+00 0.000000e+00 0.000000e+00 ... 0.000000e+00 0.000000e+00
       0.000000e+00]
@@ -167,10 +244,11 @@ class Sequential(Atom, list):
 
     def __init__(self, atoms: Any, name: str | None = None) -> None:
         super().__init__()
-        for atom in atoms:
+        for key, atom in enumerate(atoms):
             if not isinstance(atom, Atom):
                 atom = Partial(atom)
             self.append(atom)
+            self._atoms[key] = atom
         self.name = name
 
     def call(self, x: Any, **flags) -> Any:

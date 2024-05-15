@@ -48,7 +48,7 @@ class Trigger(Atom):
     >>> chunks = xd.split(cft, 3, dim="time")
     >>> result = []
     >>> for chunk in chunks:
-    ...     picks = atom(chunk)
+    ...     picks = atom(chunk, chunk_dim="time")
     ...     result.append(picks)
     >>> result = pd.concat(result, ignore_index=True)
     >>> result
