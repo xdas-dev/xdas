@@ -71,12 +71,12 @@ def taper(da, window="hann", fftbins=False, dim="last", parallel=None):
 
 
 @atomized
-def filter(
-    da, freq, btype, corners=4, zerophase=False, dim="last", parallel=None
-):  # TODO
+def filter(da, freq, btype, corners=4, zerophase=False, dim="last", parallel=None):
     """
     SOS IIR filtering along given dimension.
 
+    Parameters
+    ----------
     da: DataArray
         Traces to filter.
     freq: float or list
@@ -91,6 +91,12 @@ def filter(
         the resulting filtered trace.
     dim: str, optional
         The dimension along which to filter.
+
+    Returns
+    -------
+    DataArray
+        Filtered traces.
+
     """
     axis = da.get_axis_num(dim)
     across = int(axis == 0)

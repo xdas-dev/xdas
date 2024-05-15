@@ -287,7 +287,7 @@ class FIRFilter(Atom):
     Using ``FIRFilter`` directly:
 
     >>> # Highpass > 1.5 Hz
-    >>> da2 = da2 = FIRFilter(numtaps=5, cutoff=1.5, btype="highpass", dim="time")(da)
+    >>> da2 = FIRFilter(numtaps=5, cutoff=1.5, btype="highpass", dim="time")(da)
     >>> da2
     <xdas.DataArray (time: 300, distance: 401)>
     [[-2.339751e-04  2.991040e-04 -3.702198e-04 ...  6.916895e-04

@@ -163,6 +163,6 @@ def test_find_picks():
     atom = find_picks(..., thresh=0.5, dim="time", state_dict=...)
     result = []
     for chunk in chunks:
-        result.append(atom(chunk))
+        result.append(atom(chunk, chunk_dim="time"))
     result = pd.concat(result, ignore_index=True)
     assert result.equals(expected)

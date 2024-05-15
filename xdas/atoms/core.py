@@ -134,9 +134,13 @@ class Atom:
     def call(self, x, **flags): ...
 
     def __call__(self, x, **flags):
-        if not self.initialized or flags.get("chunk_dim", None) is None:
+        chunk_dim = flags.get("chunk_dim", None)
+        if not self.initialized or chunk_dim is None:
             self.initialize(x, **flags)
-        return self.call(x, **flags)
+        y = self.call(x, **flags)
+        if not chunk_dim:
+            self.reset()
+        return y
 
     def reset(self):
         for key in self._state:

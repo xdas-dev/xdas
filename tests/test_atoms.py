@@ -20,7 +20,7 @@ from xdas.synthetics import randn_wavefronts, wavelet_wavefronts
 
 class TestPartialAtom:
     def test_init(self):
-        sequence = Sequential(
+        seq = Sequential(
             [
                 Partial(xp.taper, dim="time"),
                 Partial(xp.taper, dim="distance"),
@@ -36,7 +36,7 @@ class TestProcessing:
         da = wavelet_wavefronts()
 
         # Declare sequence to execute
-        sequence = Sequential(
+        seq = Sequential(
             [
                 Partial(np.abs),
                 Partial(np.square, name="some square"),
@@ -45,7 +45,7 @@ class TestProcessing:
         )
 
         # Sequence processing
-        result1 = sequence(da)
+        result1 = seq(da)
         # Manual processing
         result2 = xdas.mean(np.abs(da) ** 2, dim="time")
 
@@ -76,7 +76,6 @@ class TestFilters:
         atom = IIRFilter(4, 10.0, "lowpass", dim="time", stype="ba")
         monolithic = atom(da)
 
-        atom = IIRFilter(4, 10.0, "lowpass", dim="time", stype="ba")
         chunked = xdas.concatenate(
             [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
         )
@@ -110,7 +109,6 @@ class TestFilters:
         atom = IIRFilter(4, 10.0, "lowpass", dim="time")
         monolithic = atom(da)
 
-        atom = IIRFilter(4, 10.0, "lowpass", dim="time")
         chunked = xdas.concatenate(
             [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
         )
@@ -160,7 +158,6 @@ class TestFilters:
 
         da = wavelet_wavefronts()
         chunks = xdas.split(da, 6, "time")
-        atom = UpSample(3, dim="time")
         expected = atom(da)
         result = xdas.concatenate(
             [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
@@ -177,7 +174,6 @@ class TestFilters:
         result = atom(da)
         assert result.equals(expected)
 
-        atom = FIRFilter(11, 10.0, "lowpass", dim="time")
         result = xdas.concatenate(
             [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
         )
@@ -193,7 +189,6 @@ class TestFilters:
         expected = xp.resample_poly(da, 5, 2, "time")
         atom = ResamplePoly(125, maxfactor=10, dim="time")
         result = atom(da)
-        atom = ResamplePoly(125, maxfactor=10, dim="time")
         result_chunked = xdas.concatenate(
             [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
         )
@@ -222,8 +217,5 @@ class TestMLPicker:
         da = randn_wavefronts()
         expected = picker(da)
         chunks = xd.split(da, 4, "time")
-        picker = MLPicker(
-            model, "time", compile=False
-        )  # TODO: I shouldn't need to redeclare it.
         result = xd.concatenate([picker(chunk, chunk_dim="time") for chunk in chunks])
         assert result.equals(expected)

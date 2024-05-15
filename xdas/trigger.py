@@ -289,7 +289,7 @@ def find_picks(cft, thresh, dim="last", state_dict=None):  # TODO: state_dict =>
     >>> atom = find_picks(..., thresh=0.5, dim="time", state_dict=...)
     >>> result = []
     >>> for chunk in chunks:
-    ...     picks = atom(chunk)
+    ...     picks = atom(chunk, chunk_dim="time")
     ...     result.append(picks)
     >>> result = pd.concat(result, ignore_index=True)
     >>> result
