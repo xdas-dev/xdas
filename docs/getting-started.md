@@ -29,7 +29,7 @@ pip install xdas
 ````
 ````{tab-item} Latest
 ```bash
-pip install "git+https://github.com/xdas-dev/xdas.git@dev"
+pip install "git+https://github.com/xdas-dev/xdas.git@dev" --force-reinstall
 ```
 
 ````
