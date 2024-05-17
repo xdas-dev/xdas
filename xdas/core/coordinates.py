@@ -763,7 +763,7 @@ class InterpCoordinate(Coordinate):
                 "end_index": self.tie_indices[index + 1],
                 "start_value": start,
                 "end_value": end,
-                "span": end - start,
+                "delta": end - start,
                 "type": ("gap" if end > start else "overlap"),
             }
             records.append(record)
