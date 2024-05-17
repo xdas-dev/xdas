@@ -14,6 +14,8 @@ from .core.methods import *
 from .core.routines import (
     align,
     asdataarray,
+    broadcast_coords,
+    broadcast_to,
     combine_by_coords,
     combine_by_field,
     concatenate,

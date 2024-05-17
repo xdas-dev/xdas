@@ -53,8 +53,11 @@ class DataArray:  # TODO: use numpy.lib.mixins.NDArrayOperatorsMixin
         self._data = data
 
         # coords & dims
-        if coords is None and dims is None:
-            dims = tuple(f"dim_{index}" for index in range(data.ndim))
+        if dims is None:
+            if coords is None:
+                dims = tuple(f"dim_{index}" for index in range(data.ndim))
+            elif isinstance(coords, Coordinates):
+                dims = coords.dims
         if dims is not None and len(dims) != data.ndim:
             raise ValueError("different number of dimensions on `data` and `dims`")
         coords = Coordinates(coords, dims)
@@ -121,31 +124,28 @@ class DataArray:  # TODO: use numpy.lib.mixins.NDArrayOperatorsMixin
             return self.data.__array__(dtype)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        from .routines import align  # TODO: circular import
+        from .routines import broadcast_coords, broadcast_to  # TODO: circular import
 
         if not method == "__call__":
             return NotImplemented
-        if len(inputs) > 1 and all(isinstance(value, DataArray) for value in inputs):
-            inputs = align(*inputs)
-        arrays = tuple(
-            value.data if isinstance(value, self.__class__) else value
-            for value in inputs
+
+        coords = broadcast_coords(
+            *tuple(input for input in inputs if isinstance(input, self.__class__))
         )
+        inputs = tuple(broadcast_to(input, coords) for input in inputs)
+
+        arrays = tuple(input.values for input in inputs)
         if "out" in kwargs:
-            kwargs["out"] = tuple(
-                value.data if isinstance(value, self.__class__) else value
-                for value in kwargs["out"]
-            )
+            # TODO: check outputs alignements
+            kwargs["out"] = tuple(np.asarray(output) for output in kwargs["out"])
         if "where" in kwargs:
-            kwargs["where"] = tuple(
-                value.data if isinstance(value, self.__class__) else value
-                for value in kwargs["where"]
-            )
+            kwargs["where"] = np.asarray(broadcast_to(kwargs["where"], coords))
+
         outputs = getattr(ufunc, method)(*arrays, **kwargs)
         if isinstance(outputs, tuple):
-            return tuple(da.copy(data=data) for da, data in zip(inputs, outputs))
+            return tuple(self.__class__(output, coords) for output in outputs)
         else:
-            return inputs[0].copy(data=outputs)
+            return self.__class__(outputs, coords)
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in HANDLED_NUMPY_FUNCTIONS:

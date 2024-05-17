@@ -9,7 +9,7 @@ import xarray as xr
 from tqdm import tqdm
 
 from ..virtual import VirtualSource, VirtualStack
-from .coordinates import InterpCoordinate, get_sampling_interval
+from .coordinates import Coordinates, InterpCoordinate, get_sampling_interval
 from .dataarray import DataArray
 from .datacollection import DataCollection
 
@@ -701,6 +701,42 @@ def align(*objs):
     Dimensions without coordinates: x
 
     """
+    coords = broadcast_coords(*objs)
+    return tuple(broadcast_to(obj, coords) for obj in objs)
+
+
+def broadcast_coords(*objs):
+    """
+    Broadcasts the coordinates of multiple objects and returns a new Coordinates object.
+
+    Parameters
+    ----------
+    *objs : Variable number of objects with sizes and coordinates.
+
+    Returns
+    -------
+    Coordinates
+        A new Coordinates object with the broadcasted coordinates.
+
+    Raises
+    ------
+    ValueError
+        If the data arrays have incompatible sizes along any dimension or if the
+        coordinates differ between data arrays.
+
+    Examples
+    --------
+    >>> import xdas as xd
+    >>> import numpy as np
+
+    >>> da1 = xd.DataArray(np.arange(2), {"x": [0, 1]})
+    >>> da2 = xd.DataArray(np.arange(3), {"y": [2, 3, 4]})
+    >>> xd.broadcast_coords(da1, da2)
+    Coordinates:
+      * x (x): [0 1]
+      * y (y): [2 ... 4]
+
+    """
     sizes = {}
     coords = {}
     for obj in objs:
@@ -725,11 +761,46 @@ def align(*objs):
             else:
                 coords[name] = coord
     dims = tuple(dim for dim in sizes)
-    out = []
-    for obj in objs:
-        for dim in dims:
-            if dim not in obj.dims:
-                obj = obj.expand_dims(dim)
-        obj = obj.transpose(*dims)
-        out.append(obj)
-    return tuple(out)
+    return Coordinates(coords, dims)
+
+
+def broadcast_to(obj, coords):
+    """
+    Broadcasts an object to match the dimensions specified by the given coordinates.
+
+    Parameters
+    ----------
+    obj : DataArray or array-like
+        The object to be broadcasted.
+    coords : Coordinates
+        The coordinates specifying the dimensions to match.
+
+    Returns
+    -------
+    DataArray
+        The broadcasted object.
+
+    Notes
+    -----
+    - If the input object is not a DataArray, it will be converted to a DataArray using
+      the pro.
+    - The dimensions of the input object will be expanded to match the dimensions
+      specified by the coordinates.
+    - The order of dimensions in the output object will be rearranged to match the
+      order specified by the coordinates.
+
+    """
+    if not isinstance(obj, DataArray):
+        _data = np.asarray(obj)
+        _dims = coords.dims[len(coords.dims) - _data.ndim :]
+        _coords = {
+            name: (coord.dim, coord)
+            for name, coord in coords.items()
+            if coord.dim in _dims
+        }
+        obj = DataArray(_data, _coords, _dims)
+    for dim in coords.dims:
+        if dim not in obj.dims:
+            obj = obj.expand_dims(dim)
+    obj = obj.transpose(*coords.dims)
+    return obj
