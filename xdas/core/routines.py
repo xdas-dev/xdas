@@ -239,7 +239,12 @@ def open_mfdataarray(
     paths, dim="first", tolerance=None, squeeze=True, engine=None, verbose=False
 ):
     """
-    Open a multiple file dataarray.
+    Open a multiple file dataset.
+
+    Each file described by `path` will be opened as a data array. The data arrays are
+    then combined along the `dim` dimension using `combine_by_coords`. If the
+    cooridnates of the data arrays are not compatible, the resulting object will be
+    split into a sequence of data arrays.
 
     Parameters
     ----------
@@ -260,8 +265,9 @@ def open_mfdataarray(
 
     Returns
     -------
-    DataArray
-        The dataarray containing all files data.
+    DataArray or DataSequence
+        The dataarray containing all files data. If different acquisitions are found,
+        a DataSequence is returned.
 
     Raises
     ------

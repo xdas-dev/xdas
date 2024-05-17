@@ -754,13 +754,20 @@ class InterpCoordinate(Coordinate):
 
     def get_discontinuities(self):
         (indices,) = np.nonzero(np.diff(self.tie_indices) == 1)
-        return [
-            {
-                self.tie_indices[index]: self.tie_values[index],
-                self.tie_indices[index + 1]: self.tie_values[index + 1],
+        records = []
+        for index in indices:
+            start = self.tie_values[index]
+            end = self.tie_values[index + 1]
+            record = {
+                "start_index": self.tie_indices[index],
+                "end_index": self.tie_indices[index + 1],
+                "start_value": start,
+                "end_value": end,
+                "span": end - start,
+                "type": ("gap" if end > start else "overlap"),
             }
-            for index in indices
-        ]
+            records.append(record)
+        return pd.DataFrame.from_records(records)
 
     @classmethod
     def from_array(cls, arr, dim=None, tolerance=None):
