@@ -1,4 +1,5 @@
 import os
+import copy
 from fnmatch import fnmatch
 
 import h5py
@@ -181,6 +182,27 @@ class DataCollection:
                 return self
         except ValueError:
             return self
+
+    def copy(self, deep=True):
+        """
+        Return a copy of the data collection.
+
+        Parameters
+        ----------
+        deep: bool, optional
+            If True, a deep copy is returned. If False, a shallow copy is returned.
+
+        Returns
+        -------
+        DataCollection:
+            The copied data collection.
+
+        """
+        if deep:
+            copy_fn = copy.deepcopy
+        else:
+            copy_fn = copy.copy
+        return copy_fn(self)
 
 
 class DataMapping(DataCollection, dict):
