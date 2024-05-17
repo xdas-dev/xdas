@@ -28,12 +28,15 @@ torch = LazyModule("torch")
 
 
 class MLPicker(Atom):
-    def __init__(self, model, dim, compile=False):
+    def __init__(self, model, dim, device=None):
         super().__init__()
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            device = torch.device(device)
+        self.device = device
         self.model = model.eval().to(self.device)
         self.dim = dim
-        self.compile = compile
         self.buffer = State(...)
         self.batch_size = State(...)
         self.circular_input = State(...)

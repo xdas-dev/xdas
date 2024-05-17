@@ -275,8 +275,6 @@ In the example below the data array is loaded by chunks of 100 samples along the
 ```{code-cell}
 :tags: [remove-output]
 
-from tempfile import TemporaryDirectory
-
 from xdas.processing import process, DataArrayLoader, DataArrayWriter
 
 dl = DataArrayLoader(da, chunks={"time": 100})

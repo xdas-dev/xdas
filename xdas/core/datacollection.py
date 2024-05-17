@@ -207,7 +207,7 @@ class DataMapping(DataCollection, dict):
         if len(self) == 0:
             return "Empty"
         width = max([len(str(key)) for key in self])
-        name = self.name if self.name is not None else "sequence"
+        name = self.name if self.name is not None else "collection"
         s = f"{name.capitalize()}:\n"
         for key, value in self.items():
             if isinstance(key, int):
