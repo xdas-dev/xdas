@@ -1,5 +1,4 @@
 import os
-import copy
 from fnmatch import fnmatch
 
 import h5py
@@ -182,27 +181,6 @@ class DataCollection:
                 return self
         except ValueError:
             return self
-
-    def copy(self, deep=True):
-        """
-        Return a copy of the data collection.
-
-        Parameters
-        ----------
-        deep: bool, optional
-            If True, a deep copy is returned. If False, a shallow copy is returned.
-
-        Returns
-        -------
-        DataCollection:
-            The copied data collection.
-
-        """
-        if deep:
-            copy_fn = copy.deepcopy
-        else:
-            copy_fn = copy.copy
-        return copy_fn(self)
 
 
 class DataMapping(DataCollection, dict):
@@ -398,6 +376,25 @@ class DataMapping(DataCollection, dict):
                 raise TypeError(f"{type(obj)} encountered in the collection")
         return self.__class__(data, self.name)
 
+    def copy(self, deep=True):
+        """
+        Return a copy of the data collection.
+
+        Parameters
+        ----------
+        deep: bool, optional
+            If True, a deep copy is returned. If False, a shallow copy is returned.
+
+        Returns
+        -------
+        DataCollection:
+            The copied data collection.
+
+        """
+        return self.__class__(
+            {key: value.copy() for key, value in self.items()}, self.name
+        )
+
 
 class DataSequence(DataCollection, list):
     """
@@ -557,6 +554,23 @@ class DataSequence(DataCollection, list):
             else:
                 raise TypeError(f"{type(obj)} encountered in the collection")
         return self.__class__(data, self.name)
+
+    def copy(self, deep=True):
+        """
+        Return a copy of the data collection.
+
+        Parameters
+        ----------
+        deep: bool, optional
+            If True, a deep copy is returned. If False, a shallow copy is returned.
+
+        Returns
+        -------
+        DataCollection:
+            The copied data collection.
+
+        """
+        return self.__class__([value.copy() for value in self], self.name)
 
 
 def parse(data, name=None):
