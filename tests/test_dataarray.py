@@ -366,6 +366,12 @@ class TestDataArray:
         da = wavelet_wavefronts()
         result = da + 1
         assert np.array_equal(result.data, da.data + 1)
+        result = da + np.array(1)
+        assert np.array_equal(result.data, da.data + np.array(1))
+        result = np.array(1) + da
+        assert np.array_equal(result.data, np.array(1) + da.data)
+        result = 1 + da
+        assert np.array_equal(result.data, 1 + da.data)
         result = da + np.ones(da.shape[-1])
         assert np.array_equal(result.data, da.data + 1)
         result = da + da

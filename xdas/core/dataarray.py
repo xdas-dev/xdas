@@ -7,6 +7,7 @@ import h5netcdf
 import h5py
 import numpy as np
 import xarray as xr
+from numpy.lib.mixins import NDArrayOperatorsMixin
 
 from ..virtual import VirtualArray, VirtualSource
 from .coordinates import Coordinate, Coordinates, get_sampling_interval
@@ -15,7 +16,7 @@ HANDLED_NUMPY_FUNCTIONS = {}
 HANDLED_METHODS = {}
 
 
-class DataArray:  # TODO: use numpy.lib.mixins.NDArrayOperatorsMixin
+class DataArray(NDArrayOperatorsMixin):
     """
     N-dimensional array with labeled coordinates and dimensions.
 
@@ -169,63 +170,6 @@ class DataArray:  # TODO: use numpy.lib.mixins.NDArrayOperatorsMixin
             return method
         else:
             raise AttributeError(f"'DataArray' object has no attribute '{name}'")
-
-    def __add__(self, other):
-        return np.add(self, other)
-
-    def __radd__(self, other):
-        return np.add(self, other)
-
-    def __sub__(self, other):
-        return np.subtract(self, other)
-
-    def __rsub__(self, other):
-        return np.subtract(self, other)
-
-    def __mul__(self, other):
-        return np.multiply(self, other)
-
-    def __rmul__(self, other):
-        return np.multiply(self, other)
-
-    def __truediv__(self, other):
-        return np.true_divide(self, other)
-
-    def __rtruediv__(self, other):
-        return np.true_divide(self, other)
-
-    def __floordiv__(self, other):
-        return np.floor_divide(self, other)
-
-    def __rfloordiv__(self, other):
-        return np.floor_divide(self, other)
-
-    def __divmod__(self, other):
-        return np.divmod(self, other)
-
-    def __rdivmod__(self, other):
-        return np.divmod(self, other)
-
-    def __pow__(self, other):
-        return np.power(self, other)
-
-    def __rpow__(self, other):
-        return np.power(self, other)
-
-    def __mod__(self, other):
-        return np.mod(self, other)
-
-    def __rmod__(self, other):
-        return np.mod(self, other)
-
-    def __neg__(self):
-        return np.negative(self)
-
-    def __pos__(self):
-        return np.positive(self)
-
-    def __abs__(self):
-        return np.absolute(self)
 
     def conj(self):
         return np.conj(self)
