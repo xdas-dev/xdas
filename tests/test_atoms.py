@@ -221,7 +221,7 @@ class TestMLPicker:
         from seisbench.models import PhaseNet
 
         model = PhaseNet.from_pretrained("diting")
-        picker = MLPicker(model, "time", compile=False)
+        picker = MLPicker(model, "time", device="cpu")
         da = randn_wavefronts()
         expected = picker(da)
         chunks = xd.split(da, 4, "time")
