@@ -5,6 +5,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from glob import glob
 
 import numpy as np
+import pandas as pd
+import plotly.express as px
 import xarray as xr
 from tqdm import tqdm
 
@@ -810,3 +812,52 @@ def broadcast_to(obj, coords):
             obj = obj.expand_dims(dim)
     obj = obj.transpose(*coords.dims)
     return obj
+
+
+def plot_availability(da, dim, **kwargs):
+    """
+    Plot the availability of a given dimension in a timeline chart.
+
+    The availability is determined by finding the discontinuities and availabilities
+    of the specified dimension in the data array. The resulting timeline chart shows
+    the start and end values of each availability period, as well as any gaps or
+    overlaps in the data.
+
+    This function only works on interpolated coordinates.
+
+    Parameters
+    ----------
+    da : DataArray
+        The data array containing the dimension to plot.
+    dim : str
+        The name of the dimension to plot.
+    **kwargs
+        Additional keyword arguments to be passed to the `px.timeline` function.
+
+    Notes
+    -----
+    This function uses the `px.timeline` function from the `plotly.express` library.
+
+    """
+    discontinuities = da[dim].get_discontinuities()
+    availabilities = da[dim].get_availabilities()
+    dataframe = pd.concat([availabilities, discontinuities])
+    dataframe["name"] = ""
+    category_orders = {"type": ["data", "gap", "overlap"]}
+    color_discrete_map = {"data": "#00CC96", "gap": "#636EFA", "overlap": "#EF553B"}
+    pattern_shape_map = {"data": "", "gap": "/", "overlap": "\\"}
+    fig = px.timeline(
+        dataframe,
+        x_start="start_value",
+        x_end="end_value",
+        y="name",
+        color="type",
+        category_orders=category_orders,
+        color_discrete_map=color_discrete_map,
+        pattern_shape_map=pattern_shape_map,
+        **kwargs,
+    )
+    for elem in fig.data:
+        elem["marker"]["line_color"] = color_discrete_map[elem["legendgroup"]]
+    fig.update_yaxes(title_text="")
+    fig.show()
