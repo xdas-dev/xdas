@@ -13,7 +13,7 @@ from tqdm import tqdm
 from ..virtual import VirtualSource, VirtualStack
 from .coordinates import Coordinates, InterpCoordinate, get_sampling_interval
 from .dataarray import DataArray
-from .datacollection import DataCollection
+from .datacollection import DataCollection, DataMapping, DataSequence
 
 
 def open_mfdatacollection(
@@ -814,20 +814,23 @@ def broadcast_to(obj, coords):
     return obj
 
 
-def plot_availability(da, dim, **kwargs):
+def plot_availability(obj, dim="first", **kwargs):
     """
     Plot the availability of a given dimension in a timeline chart.
 
     The availability is determined by finding the discontinuities and availabilities
-    of the specified dimension in the data array. The resulting timeline chart shows
+    of the specified dimension in the object. The resulting timeline chart shows
     the start and end values of each availability period, as well as any gaps or
-    overlaps in the data.
+    overlaps in the data. If a data collection is provided, the timeline chart will
+    show the availability of each data array in the collection. Note that data arrays
+    in the same data sequence will be on the same timeline whereas data arrays in
+    data mappings will be on separate timelines.
 
     This function only works on interpolated coordinates.
 
     Parameters
     ----------
-    da : DataArray
+    obj : DataArray or DataCollection
         The data array containing the dimension to plot.
     dim : str
         The name of the dimension to plot.
@@ -839,10 +842,7 @@ def plot_availability(da, dim, **kwargs):
     This function uses the `px.timeline` function from the `plotly.express` library.
 
     """
-    discontinuities = da[dim].get_discontinuities()
-    availabilities = da[dim].get_availabilities()
-    dataframe = pd.concat([availabilities, discontinuities])
-    dataframe["name"] = ""
+    dataframe = _get_timeline_dataframe(obj, dim, "")
     category_orders = {"type": ["data", "gap", "overlap"]}
     color_discrete_map = {"data": "#00CC96", "gap": "#636EFA", "overlap": "#EF553B"}
     pattern_shape_map = {"data": "", "gap": "/", "overlap": "\\"}
@@ -861,3 +861,21 @@ def plot_availability(da, dim, **kwargs):
         elem["marker"]["line_color"] = color_discrete_map[elem["legendgroup"]]
     fig.update_yaxes(title_text="")
     fig.show()
+
+
+def _get_timeline_dataframe(obj, dim="first", name=None):
+    if isinstance(obj, DataArray):
+        discontinuities = obj[dim].get_discontinuities()
+        availabilities = obj[dim].get_availabilities()
+        dataframe = pd.concat([availabilities, discontinuities])
+        dataframe["name"] = "" if name is None else name
+    elif isinstance(obj, DataSequence):
+        dataframes = [_get_timeline_dataframe(val, dim, name) for val in obj]
+        dataframe = pd.concat(dataframes)
+    elif isinstance(obj, DataMapping):
+        dataframes = [
+            _get_timeline_dataframe(val, dim, f"{name}.{key}" if name else key)
+            for key, val in obj.items()
+        ]
+        dataframe = pd.concat(dataframes)
+    return dataframe
