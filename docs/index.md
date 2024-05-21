@@ -2,7 +2,7 @@
 
 *Xdas* is an python library for managing, processing and visualizing **Distributed Acoustic Sensing (DAS)** data. It reads any DAS format into self-described python abstractions that encapsulates both the data and the metadata (coordinates and attributes). Xdas reuses concepts of labeled N-dimensional arrays developed by the [Xarray](https://xarray.dev) library. It takes inspiration from [Dask](https://www.dask.org/) in term of lazy computing.
 
-**Useful links:** [Code Repository](https://github.com/xdas-dev/xdas) | [Issues](https://github.com/xdas-dev/xdas/issues) | [Discussions](https://github.com/xdas-dev/xdas/discussions) | [Newsletter](https://groups.google.com/g/xdas)
+**Useful links:** [Code Repository](https://github.com/xdas-dev/xdas) | [Issues](https://github.com/xdas-dev/xdas/issues) | [Discussions](https://github.com/xdas-dev/xdas/discussions) | [Newsletter](https://groups.google.com/g/xdas) | [Tutorials](https://github.com/xdas-dev/tutorials)
 
 ## Key Features
 

@@ -37,6 +37,10 @@ Xdas can be fetched from [PyPI](https://pypi.org/project/xdas):
 
 The documentation is available at: [https://xdas.readthedocs.io](https://xdas.readthedocs.io).
 
+## Tutorials
+
+A comprehensive series of tutorials can be found at: [https://github.com/xdas-dev/tutorials](https://github.com/xdas-dev/tutorials).
+
 ## Contributing
 
 You can find information about contributing to Xdas in our [Contributing Guide](https://xdas.readthedocs.io/en/latest/contribute.html).
