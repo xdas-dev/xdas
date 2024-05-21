@@ -40,9 +40,9 @@ class ResamplePoly(Atom):
 
     Examples
     --------
-    >>> from xdas.synthetics import generate
+    >>> from xdas.synthetics import wavelet_wavefronts
     >>> from xdas.atoms import Sequential, ResamplePoly
-    >>> da = generate()
+    >>> da = wavelet_wavefronts()
 
     Using ``ResamplePoly`` directly:
 
@@ -91,7 +91,7 @@ class ResamplePoly(Atom):
         self.downsampling = DownSample(..., self.dim)
         self.fs = State(...)
 
-    def initialize(self, da, **kwargs):
+    def initialize(self, da, **flags):
         self.fs = State(1.0 / get_sampling_interval(da, self.dim))
         self.initialize_from_state()
 
@@ -109,10 +109,10 @@ class ResamplePoly(Atom):
         self.firfilter.cutoff = cutoff
         self.downsampling.factor = down
 
-    def call(self, da, **kwargs):
-        da = self.upsampling(da, **kwargs)
-        da = self.firfilter(da, **kwargs)
-        da = self.downsampling(da, **kwargs)
+    def call(self, da, **flags):
+        da = self.upsampling(da, **flags)
+        da = self.firfilter(da, **flags)
+        da = self.downsampling(da, **flags)
         return da
 
 
@@ -149,9 +149,9 @@ class IIRFilter(Atom):
 
     Examples
     --------
-    >>> from xdas.synthetics import generate
+    >>> from xdas.synthetics import wavelet_wavefronts
     >>> from xdas.atoms import Sequential, IIRFilter
-    >>> da = generate()
+    >>> da = wavelet_wavefronts()
 
     Using ``IIRFilter`` directly:
 
@@ -220,7 +220,7 @@ class IIRFilter(Atom):
             raise ValueError()
         self.fs = State(...)
 
-    def initialize(self, da, **kwargs):
+    def initialize(self, da, **flags):
         self.fs = State(1.0 / get_sampling_interval(da, self.dim))
         self.initialize_from_state()
 
@@ -243,8 +243,8 @@ class IIRFilter(Atom):
         else:
             raise ValueError()
 
-    def call(self, da, **kwargs):
-        return self.iirfilter(da, **kwargs)
+    def call(self, da, **flags):
+        return self.iirfilter(da, **flags)
 
 
 class FIRFilter(Atom):
@@ -280,14 +280,14 @@ class FIRFilter(Atom):
 
     Examples
     --------
-    >>> from xdas.synthetics import generate
+    >>> from xdas.synthetics import wavelet_wavefronts
     >>> from xdas.atoms import Sequential, FIRFilter
-    >>> da = generate()
+    >>> da = wavelet_wavefronts()
 
     Using ``FIRFilter`` directly:
 
     >>> # Highpass > 1.5 Hz
-    >>> da2 = da2 = FIRFilter(numtaps=5, cutoff=1.5, btype="highpass", dim="time")(da)
+    >>> da2 = FIRFilter(numtaps=5, cutoff=1.5, btype="highpass", dim="time")(da)
     >>> da2
     <xdas.DataArray (time: 300, distance: 401)>
     [[-2.339751e-04  2.991040e-04 -3.702198e-04 ...  6.916895e-04
@@ -350,7 +350,7 @@ class FIRFilter(Atom):
         self.lfilter = LFilter(..., [1.0], self.dim)
         self.fs = State(...)
 
-    def initialize(self, da, **kwargs):
+    def initialize(self, da, **flags):
         self.fs = State(1.0 / get_sampling_interval(da, self.dim))
         self.initialize_from_state()
 
@@ -367,8 +367,8 @@ class FIRFilter(Atom):
         self.lag = (len(taps) - 1) // 2
         self.lfilter.b = taps
 
-    def call(self, da, **kwargs):
-        da = self.lfilter(da, **kwargs)
+    def call(self, da, **flags):
+        da = self.lfilter(da, **flags)
         da[self.dim] -= get_sampling_interval(da, self.dim, cast=False) * self.lag
         return da
 
@@ -383,9 +383,9 @@ class LFilter(Atom):
         self.axis = State(...)
         self.zi = State(...)
 
-    def initialize(self, da, chunk=None, **kwargs):
+    def initialize(self, da, chunk_dim=None, **flags):
         self.axis = State(da.get_axis_num(self.dim))
-        if self.dim == chunk:
+        if self.dim == chunk_dim:
             n_sections = max(len(self.a), len(self.b)) - 1
             shape = tuple(
                 n_sections if name == self.dim else size
@@ -395,7 +395,7 @@ class LFilter(Atom):
         else:
             self.zi = State(None)
 
-    def call(self, da, **kwargs):
+    def call(self, da, **flags):
         across = int(self.axis == 0)
         if self.zi is None:
             func = parallelize((None, None, across), across, self.parallel)(sp.lfilter)
@@ -418,9 +418,9 @@ class SOSFilter(Atom):
         self.axis = State(...)
         self.zi = State(...)
 
-    def initialize(self, da, chunk=None, **kwargs):
+    def initialize(self, da, chunk_dim=None, **flags):
         self.axis = State(da.get_axis_num(self.dim))
-        if self.dim == chunk:
+        if self.dim == chunk_dim:
             n_sections = self.sos.shape[0]
             shape = (n_sections,) + tuple(
                 2 if index == self.axis else element
@@ -430,7 +430,7 @@ class SOSFilter(Atom):
         else:
             self.zi = State(None)
 
-    def call(self, da, **kwargs):
+    def call(self, da, **flags):
         across = int(self.axis == 0)
         if self.zi is None:
             func = parallelize((None, across), across, self.parallel)(sp.sosfilt)
@@ -451,13 +451,13 @@ class DownSample(Atom):
         self.dim = dim
         self.buffer = State(...)
 
-    def initialize(self, da, chunk=None, **kwargs):
-        if chunk == self.dim:
+    def initialize(self, da, chunk_dim=None, **flags):
+        if chunk_dim == self.dim:
             self.buffer = State(da.isel({self.dim: slice(0, 0)}))
         else:
             self.buffer = State(None)
 
-    def call(self, da, **kwargs):
+    def call(self, da, **flags):
         if self.buffer is not None:
             da = concatenate([self.buffer, da], self.dim)
             divpoint = da.sizes[self.dim] - da.sizes[self.dim] % self.factor
@@ -473,7 +473,7 @@ class UpSample(Atom):
         self.scale = scale
         self.dim = dim
 
-    def call(self, da, **kwargs):
+    def call(self, da, **flags):
         shape = tuple(
             self.factor * size if dim == self.dim else size
             for dim, size in da.sizes.items()

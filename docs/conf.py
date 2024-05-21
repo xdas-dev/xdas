@@ -4,15 +4,6 @@
 # list see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
-# -- Path setup --------------------------------------------------------------
-
-# If extensions (or modules to document with autodoc) are in another directory,
-# add these directories to sys.path here. If the directory is relative to the
-# documentation root, use os.path.abspath to make it absolute, like shown here.
-#
-import os
-import sys
-
 # -- Project information -----------------------------------------------------
 
 project = "xdas"
@@ -20,7 +11,7 @@ copyright = "2024, Alister Trabattoni"
 author = "Alister Trabattoni"
 
 # The full version, including alpha/beta/rc tags
-release = "0.1rc0"
+release = "0.1"
 
 
 # -- General configuration ---------------------------------------------------
@@ -101,13 +92,13 @@ import h5py
 import numpy as np
 
 import xdas as xd
-from xdas.synthetics import generate
+from xdas.synthetics import wavelet_wavefronts
 
 dirpath = os.path.join(os.path.split(__file__)[0], "_data")
 if not os.path.exists(dirpath):
     os.makedirs(dirpath)
 
-da = generate()
+da = wavelet_wavefronts()
 chunks = xd.split(da, 3)
 da.to_netcdf(os.path.join(dirpath, "sample.h5"))
 da.to_netcdf(os.path.join(dirpath, "sample.nc"))

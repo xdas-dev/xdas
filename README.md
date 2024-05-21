@@ -9,6 +9,7 @@
 -----------------
 
 [![Documentation Status](https://readthedocs.org/projects/xdas/badge/?version=latest)](https://xdas.readthedocs.io/en/latest/?badge=latest)
+[![Tests Status](https://github.com/xdas-dev/xdas/actions/workflows/tests.yaml/badge.svg)](https://github.com/xdas-dev/xdas/actions/workflows/tests.yaml)
 [![PyPI](https://img.shields.io/pypi/v/xdas)](https://pypi.org/project/xdas/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![DOI](https://zenodo.org/badge/560867006.svg)](https://zenodo.org/badge/latestdoi/560867006)

@@ -3,9 +3,11 @@ import re
 import warnings
 from functools import partial
 
+import h5netcdf
 import h5py
 import numpy as np
 import xarray as xr
+from numpy.lib.mixins import NDArrayOperatorsMixin
 
 from ..virtual import VirtualArray, VirtualSource
 from .coordinates import Coordinate, Coordinates, get_sampling_interval
@@ -14,7 +16,7 @@ HANDLED_NUMPY_FUNCTIONS = {}
 HANDLED_METHODS = {}
 
 
-class DataArray:
+class DataArray(NDArrayOperatorsMixin):
     """
     N-dimensional array with labeled coordinates and dimensions.
 
@@ -44,7 +46,6 @@ class DataArray:
     """
 
     def __init__(self, data=None, coords=None, dims=None, name=None, attrs=None):
-
         # data
         if data is None:
             data = np.array(np.nan)
@@ -53,8 +54,11 @@ class DataArray:
         self._data = data
 
         # coords & dims
-        if coords is None and dims is None:
-            dims = tuple(f"dim_{index}" for index in range(data.ndim))
+        if dims is None:
+            if coords is None:
+                dims = tuple(f"dim_{index}" for index in range(data.ndim))
+            elif isinstance(coords, Coordinates):
+                dims = coords.dims
         if dims is not None and len(dims) != data.ndim:
             raise ValueError("different number of dimensions on `data` and `dims`")
         coords = Coordinates(coords, dims)
@@ -111,6 +115,9 @@ class DataArray:
             )
         return string
 
+    def __len__(self):
+        return self.shape[0]
+
     def __array__(self, dtype=None):
         if dtype is None:
             return self.data.__array__()
@@ -118,31 +125,28 @@ class DataArray:
             return self.data.__array__(dtype)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        from .routines import align  # TODO: circular import
+        from .routines import broadcast_coords, broadcast_to  # TODO: circular import
 
         if not method == "__call__":
             return NotImplemented
-        if len(inputs) > 1 and all(isinstance(value, DataArray) for value in inputs):
-            inputs = align(*inputs)
-        arrays = tuple(
-            value.data if isinstance(value, self.__class__) else value
-            for value in inputs
+
+        coords = broadcast_coords(
+            *tuple(input for input in inputs if isinstance(input, self.__class__))
         )
+        inputs = tuple(broadcast_to(input, coords) for input in inputs)
+
+        arrays = tuple(input.values for input in inputs)
         if "out" in kwargs:
-            kwargs["out"] = tuple(
-                value.data if isinstance(value, self.__class__) else value
-                for value in kwargs["out"]
-            )
+            # TODO: check outputs alignements
+            kwargs["out"] = tuple(np.asarray(output) for output in kwargs["out"])
         if "where" in kwargs:
-            kwargs["where"] = tuple(
-                value.data if isinstance(value, self.__class__) else value
-                for value in kwargs["where"]
-            )
+            kwargs["where"] = np.asarray(broadcast_to(kwargs["where"], coords))
+
         outputs = getattr(ufunc, method)(*arrays, **kwargs)
         if isinstance(outputs, tuple):
-            return tuple(da.copy(data=data) for da, data in zip(inputs, outputs))
+            return tuple(self.__class__(output, coords) for output in outputs)
         else:
-            return inputs[0].copy(data=outputs)
+            return self.__class__(outputs, coords)
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in HANDLED_NUMPY_FUNCTIONS:
@@ -166,63 +170,6 @@ class DataArray:
             return method
         else:
             raise AttributeError(f"'DataArray' object has no attribute '{name}'")
-
-    def __add__(self, other):
-        return np.add(self, other)
-
-    def __radd__(self, other):
-        return np.add(self, other)
-
-    def __sub__(self, other):
-        return np.subtract(self, other)
-
-    def __rsub__(self, other):
-        return np.subtract(self, other)
-
-    def __mul__(self, other):
-        return np.multiply(self, other)
-
-    def __rmul__(self, other):
-        return np.multiply(self, other)
-
-    def __truediv__(self, other):
-        return np.true_divide(self, other)
-
-    def __rtruediv__(self, other):
-        return np.true_divide(self, other)
-
-    def __floordiv__(self, other):
-        return np.floor_divide(self, other)
-
-    def __rfloordiv__(self, other):
-        return np.floor_divide(self, other)
-
-    def __divmod__(self, other):
-        return np.divmod(self, other)
-
-    def __rdivmod__(self, other):
-        return np.divmod(self, other)
-
-    def __pow__(self, other):
-        return np.power(self, other)
-
-    def __rpow__(self, other):
-        return np.power(self, other)
-
-    def __mod__(self, other):
-        return np.mod(self, other)
-
-    def __rmod__(self, other):
-        return np.mod(self, other)
-
-    def __neg__(self):
-        return np.negative(self)
-
-    def __pos__(self):
-        return np.positive(self)
-
-    def __abs__(self):
-        return np.absolute(self)
 
     def conj(self):
         return np.conj(self)
@@ -284,6 +231,10 @@ class DataArray:
         return self.data.ndim
 
     @property
+    def size(self):
+        return self.data.size
+
+    @property
     def sizes(self):
         return DimSizer(self)
 
@@ -305,7 +256,7 @@ class DataArray:
 
     def equals(self, other):
         if isinstance(other, self.__class__):
-            if not np.array_equal(self.values, other.values):
+            if not np.array_equal(self.values, other.values, equal_nan=True):
                 return False
             if not self.coords.equals(other.coords):
                 return False
@@ -604,7 +555,7 @@ class DataArray:
             dims_dict = {}
         dims_dict.update(dims_kwargs)
         for dim in dims_dict:
-            if not dim in self.dims:
+            if dim not in self.dims:
                 raise KeyError(
                     f"dimension {dim} not found in current object with dims {self.dims}"
                 )
@@ -616,6 +567,10 @@ class DataArray:
             coords[name] = coord
         return self.__class__(self.data, coords, dims, self.name, self.attrs)
 
+    @property
+    def T(self):
+        return self.transpose()
+
     def transpose(self, *dims):
         """
         Return a new DataArray object with transposed dimensions.
@@ -624,8 +579,8 @@ class DataArray:
         ----------
         *dims : Hashable, optional
             By default, reverse the dimensions. Otherwise, reorder the dimensions to
-            this order. the provided `dims` must be a permutation of the original
-            dimensions.
+            this order. The provided `dims` must be a permutation of the original
+            dimensions. If `...` is provided, it is replaced by the missing dimensions.
 
         Returns
         -------
@@ -665,9 +620,19 @@ class DataArray:
         Coordinates:
           * x (x): [0 1]
           * y (y): [2 ... 4]
+
+        >>> assert da.transpose(..., "x").equals(da.transpose("y", ...))  # equivalent
+
         """
         if not dims:
             dims = tuple(reversed(self.dims))
+        if ... in dims:
+            missing_dims = tuple(dim for dim in self.dims if dim not in dims)
+            dims = tuple(
+                item
+                for dim in dims
+                for item in (missing_dims if dim is ... else (dim,))
+            )
         if not (len(dims) == len(self.dims) and set(dims) == set(self.dims)):
             raise ValueError(f"{dims} must be a permutation of {self.dims}")
         axes = tuple(self.get_axis_num(dim) for dim in dims)
@@ -743,7 +708,8 @@ class DataArray:
         """
         data = self.__array__()
         coords = {
-            name: (coord.dim, coord.values) for name, coord in self.coords.items()
+            name: (coord.dim if coord.dim else (), coord.values)
+            for name, coord in self.coords.items()
         }
         return xr.DataArray(data, coords, self.dims, self.name, self.attrs)
 
@@ -848,7 +814,7 @@ class DataArray:
         }
         return cls(data, {dims[0]: channel, dims[1]: time})
 
-    def to_netcdf(self, fname, group=None, virtual=None, **kwargs):
+    def to_netcdf(self, fname, mode="w", group=None, virtual=None, **kwargs):
         """
         Write DataArray contents to a netCDF file.
 
@@ -866,75 +832,51 @@ class DataArray:
         """
         if virtual is None:
             virtual = isinstance(self.data, VirtualArray)
-        data_vars = []
-        mapping = ""
-        for dim in self.coords:
-            if self.coords[dim].isinterp():
-                tie_indices = self.coords[dim].tie_indices
-                tie_values = self.coords[dim].tie_values
-                if np.issubdtype(tie_values.dtype, np.datetime64):
-                    tie_values = tie_values.astype("M8[ns]")
-                mapping += f"{dim}: {dim}_indices {dim}_values "
-                interpolation = xr.DataArray(
-                    name=f"{dim}_interpolation",
-                    attrs={
-                        "interpolation_name": "linear",
-                        "tie_points_mapping": f"{dim}_points: {dim}_indices {dim}_values",
-                    },
+        ds = xr.Dataset(attrs={"Conventions": "CF-1.9"})
+        mappings = []
+        for name, coord in self.coords.items():
+            if coord.isinterp():
+                mappings.append(f"{name}: {name}_indices {name}_values")
+                tie_indices = coord.tie_indices
+                tie_values = (
+                    coord.tie_values.astype("M8[ns]")
+                    if np.issubdtype(coord.tie_values.dtype, np.datetime64)
+                    else coord.tie_values
                 )
-                indices = xr.DataArray(
-                    name=f"{dim}_indices",
-                    data=tie_indices,
-                    dims=f"{dim}_points",
+                attrs = {
+                    "interpolation_name": "linear",
+                    "tie_points_mapping": f"{name}_points: {name}_indices {name}_values",
+                }
+                ds.update(
+                    {
+                        f"{name}_interpolation": ((), np.nan, attrs),
+                        f"{name}_indices": (f"{name}_points", tie_indices),
+                        f"{name}_values": (f"{name}_points", tie_values),
+                    }
                 )
-                values = xr.DataArray(
-                    name=f"{dim}_values",
-                    data=tie_values,
-                    dims=f"{dim}_points",
-                )
-                data_vars.extend([interpolation, indices, values])
-        ds = xr.Dataset(
-            data_vars={da.name: da for da in data_vars},
-            attrs={"Conventions": "CF-1.9"},
-        )
-        coords = {
-            name: (coord.dim, coord.values)
-            for name, coord in self.coords.items()
-            if not coord.isinterp()
-        }
+            else:
+                ds = ds.assign_coords({name: (coord.dim, coord.values)})
+        mapping = " ".join(mappings)
         attrs = {"coordinate_interpolation": mapping} if mapping else None
+        name = "__values__" if self.name is None else self.name
         if not virtual:
-            da = xr.DataArray(
-                data=self.values,
-                coords=coords,
-                dims=self.dims,
-                name=self.name,
-                attrs=attrs,
-            )
-            ds[da.name] = da
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                ds.to_netcdf(fname, group=group, **kwargs)
+            ds[self.name] = (self.dims, self.values, attrs)
+            ds.to_netcdf(fname, mode=mode, group=group, **kwargs)
         elif virtual and isinstance(self.data, VirtualArray):
-            da = xr.DataArray(  # TODO: this is dirty and does not work with dens coords
-                data=np.empty((0,) * self.ndim, self.dtype),
-                dims=self.dims,
-                name="__tmp__",
-            )
-            ds[da.name] = da
-            ds.to_netcdf(fname, group=group, **kwargs)
-            with h5py.File(fname, "r+") as file:
-                if self.name is None:
-                    name = "__values__"
-                else:
-                    name = self.name
-                if group:
-                    file = file[group]
-                self.data.to_dataset(file, name)
-                for axis, dim in enumerate(self.dims):
-                    file[name].dims[axis].attach_scale(file[dim])
-                for key in attrs:
-                    file[name].attrs[key] = attrs[key]
+            with h5netcdf.File(fname, mode=mode) as file:
+                if group is not None and group not in file:
+                    file.create_group(group)
+                file = file if group is None else file[group]
+                file.dimensions.update(self.sizes)
+                self.data.to_dataset(file._h5group, name)
+                variable = file._variable_cls(file, name, self.dims)
+                file._variables[name] = variable
+                variable._attach_dim_scales()
+                variable._attach_coords()
+                variable._ensure_dim_id()
+                if attrs is not None:
+                    variable.attrs.update(attrs)
+            ds.to_netcdf(fname, mode="a", group=group, **kwargs)
         else:
             raise ValueError(
                 "can only use `virtual=True` with a VirtualSource or a VirtualLayout"

@@ -5,13 +5,15 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from glob import glob
 
 import numpy as np
+import pandas as pd
+import plotly.express as px
 import xarray as xr
 from tqdm import tqdm
 
 from ..virtual import VirtualSource, VirtualStack
-from .coordinates import InterpCoordinate, get_sampling_interval
+from .coordinates import Coordinates, InterpCoordinate, get_sampling_interval
 from .dataarray import DataArray
-from .datacollection import DataCollection
+from .datacollection import DataCollection, DataMapping, DataSequence
 
 
 def open_mfdatacollection(
@@ -239,7 +241,12 @@ def open_mfdataarray(
     paths, dim="first", tolerance=None, squeeze=True, engine=None, verbose=False
 ):
     """
-    Open a multiple file dataarray.
+    Open a multiple file dataset.
+
+    Each file described by `path` will be opened as a data array. The data arrays are
+    then combined along the `dim` dimension using `combine_by_coords`. If the
+    cooridnates of the data arrays are not compatible, the resulting object will be
+    split into a sequence of data arrays.
 
     Parameters
     ----------
@@ -260,8 +267,9 @@ def open_mfdataarray(
 
     Returns
     -------
-    DataArray
-        The dataarray containing all files data.
+    DataArray or DataSequence
+        The dataarray containing all files data. If different acquisitions are found,
+        a DataSequence is returned.
 
     Raises
     ------
@@ -467,8 +475,8 @@ def combine_by_coords(
 
     The list `objs` if traversed and data arrays are grouped together as long as they
     share compatible coordinates. If a change is detected a new group is created. Shape
-    compatibiliy implies same sampling interval along the combination dimension and
-    exact equality along other dimensions. Each group is then concatenated.
+    compatibility implies same sampling interval along the combination dimension, exact
+    equality along other dimensions and same dtype. Each group is then concatenated.
 
     Parameters
     ----------
@@ -480,11 +488,11 @@ def combine_by_coords(
         The tolerance to consider that the end of a file is continuous with beginning of
         the following, zero by default.
     squeeze : bool, optional
-        Whether to return a Database instead of a DataCollection if the combinatison
+        Whether to return a Database instead of a DataCollection if the combination
         results in a data collection containing a unique Database.
     virtual : bool, optional
         Whether to create a virtual dataset. It requires that all concatenated
-        dataarrays are virtual. By default tries to create a virtual dataset if possible.
+        data arrays are virtual. By default tries to create a virtual dataset if possible.
     verbose: bool
         Whether to display a progress bar. Default to False.
 
@@ -499,8 +507,10 @@ def combine_by_coords(
     for da in objs:
         if not bag:
             bag = [da]
-        elif da.coords.drop_dims(dim).equals(bag[-1].coords.drop_dims(dim)) and (
-            get_sampling_interval(da, dim) == get_sampling_interval(bag[-1], dim)
+        elif (
+            da.coords.drop_dims(dim).equals(bag[-1].coords.drop_dims(dim))
+            and (get_sampling_interval(da, dim) == get_sampling_interval(bag[-1], dim))
+            and (da.dtype == bag[-1].dtype)
         ):
             bag.append(da)
         else:
@@ -518,12 +528,12 @@ def combine_by_coords(
 
 def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
     """
-    Concatenate dataarrays along a given dimension.
+    Concatenate data arrays along a given dimension.
 
     Parameters
     ----------
     objs : list of DataArray
-        List of dataarrays to concatenate.
+        List of data arrays to concatenate.
     dim : str
         The dimension along which concatenate.
     tolerance : float of timedelta64, optional
@@ -531,7 +541,7 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         the following, zero by default.
     virtual : bool, optional
         Whether to create a virtual dataset. It requires that all concatenated
-        dataarrays are virtual. By default tries to create a virtual dataset if possible.
+        data arrays are virtual. By default tries to create a virtual dataset if possible.
     verbose: bool
         Whether to display a progress bar.
 
@@ -539,15 +549,24 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
     -------
     DataArray
         The concatenated dataarray.
+
     """
     objs = [da for da in objs if not da.empty]
+
     if virtual is None:
         virtual = all(isinstance(da.data, (VirtualSource, VirtualStack)) for da in objs)
+
     if not all(isinstance(da[dim], InterpCoordinate) for da in objs):
         raise NotImplementedError("can only concatenate along interpolated coordinate")
-    axis = objs[0].get_axis_num(dim)
-    dim = objs[0].dims[axis]
-    coords = objs[0].coords.copy()
+
+    obj = objs[0]
+    axis = obj.get_axis_num(dim)
+    dim = obj.dims[axis]
+    coords = obj.coords.copy()
+    dims = obj.dims
+    name = obj.name
+    attrs = obj.attrs
+
     objs = sorted(objs, key=lambda da: da[dim][0].values)
     iterator = tqdm(objs, desc="Linking dataarray") if verbose else objs
     data = []
@@ -560,17 +579,21 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
                 data.append(source)
         else:
             data.append(da.data)
+
         tie_indices.extend(idx + da[dim].tie_indices)
         tie_values.extend(da[dim].tie_values)
         idx += da.shape[axis]
+
     if virtual:
         data = VirtualStack(data, axis)
     else:
         data = np.concatenate(data, axis)
+
     coords[dim] = InterpCoordinate(
         {"tie_indices": tie_indices, "tie_values": tie_values}, dim
     ).simplify(tolerance)
-    return DataArray(data, coords)
+
+    return DataArray(data, coords, dims, name, attrs)
 
 
 def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None):
@@ -586,20 +609,20 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
     da : DataArray
         The data array to split
     indices_or_sections : str, int or list of int, optional
-        If `indices_or_section` is an interger N, the array will be diveided into N
+        If `indices_or_section` is an integer N, the array will be divided into N
         almost equal (can differ by one element if the `dim` size is not a multiple of
         N). If `indices_or_section` is a 1-D array of sorted integers, the entries
         indicate where the array is split along `dim`. For example, `[2, 3]` would, for
         `dim="first"`, result in [da[:2], da[2:3], da[3:]]. If `indices_or_section` is
-        "discontinuites", the `dim` must be an interpolated coordinate and splitting
+        "discontinuities", the `dim` must be an interpolated coordinate and splitting
         will occurs at locations where they are two consecutive tie_indices with only
-        one index of difference and where the tie_values differance is greater than
+        one index of difference and where the tie_values difference is greater than
         `tolerance`. Default to "discontinuities".
     dim : str, optional
         The dimension along which to split, by default "first"
     tolerance : float or timedelta64, optional
         If `indices_or_sections="discontinuities"` split will only occur on gaps and
-        overlaps that are bigger thatn `tolerance`. Zero tolerance by default.
+        overlaps that are bigger than `tolerance`. Zero tolerance by default.
 
     Returns
     -------
@@ -645,7 +668,7 @@ def align(*objs):
 
     New objects will all share the same dimensions with the same order. This is done by
     expanding missing dimensions and transposing to the same `dims`. The order of
-    the resulting `dims` is given by the order in wich dimensions are first encountered
+    the resulting `dims` is given by the order in which dimensions are first encountered
     while iterating through each objects `dims`. For each dimensions, the data arrays
     must either share the same coordinate or not having any.
 
@@ -686,6 +709,42 @@ def align(*objs):
     Dimensions without coordinates: x
 
     """
+    coords = broadcast_coords(*objs)
+    return tuple(broadcast_to(obj, coords) for obj in objs)
+
+
+def broadcast_coords(*objs):
+    """
+    Broadcasts the coordinates of multiple objects and returns a new Coordinates object.
+
+    Parameters
+    ----------
+    *objs : Variable number of objects with sizes and coordinates.
+
+    Returns
+    -------
+    Coordinates
+        A new Coordinates object with the broadcasted coordinates.
+
+    Raises
+    ------
+    ValueError
+        If the data arrays have incompatible sizes along any dimension or if the
+        coordinates differ between data arrays.
+
+    Examples
+    --------
+    >>> import xdas as xd
+    >>> import numpy as np
+
+    >>> da1 = xd.DataArray(np.arange(2), {"x": [0, 1]})
+    >>> da2 = xd.DataArray(np.arange(3), {"y": [2, 3, 4]})
+    >>> xd.broadcast_coords(da1, da2)
+    Coordinates:
+      * x (x): [0 1]
+      * y (y): [2 ... 4]
+
+    """
     sizes = {}
     coords = {}
     for obj in objs:
@@ -710,11 +769,113 @@ def align(*objs):
             else:
                 coords[name] = coord
     dims = tuple(dim for dim in sizes)
-    out = []
-    for obj in objs:
-        for dim in dims:
-            if dim not in obj.dims:
-                obj = obj.expand_dims(dim)
-        obj = obj.transpose(*dims)
-        out.append(obj)
-    return tuple(out)
+    return Coordinates(coords, dims)
+
+
+def broadcast_to(obj, coords):
+    """
+    Broadcasts an object to match the dimensions specified by the given coordinates.
+
+    Parameters
+    ----------
+    obj : DataArray or array-like
+        The object to be broadcasted.
+    coords : Coordinates
+        The coordinates specifying the dimensions to match.
+
+    Returns
+    -------
+    DataArray
+        The broadcasted object.
+
+    Notes
+    -----
+    - If the input object is not a DataArray, it will be converted to a DataArray using
+      the pro.
+    - The dimensions of the input object will be expanded to match the dimensions
+      specified by the coordinates.
+    - The order of dimensions in the output object will be rearranged to match the
+      order specified by the coordinates.
+
+    """
+    if not isinstance(obj, DataArray):
+        _data = np.asarray(obj)
+        _dims = coords.dims[len(coords.dims) - _data.ndim :]
+        _coords = {
+            name: (coord.dim, coord)
+            for name, coord in coords.items()
+            if coord.dim in _dims
+        }
+        obj = DataArray(_data, _coords, _dims)
+    for dim in coords.dims:
+        if dim not in obj.dims:
+            obj = obj.expand_dims(dim)
+    obj = obj.transpose(*coords.dims)
+    return obj
+
+
+def plot_availability(obj, dim="first", **kwargs):
+    """
+    Plot the availability of a given dimension in a timeline chart.
+
+    The availability is determined by finding the discontinuities and availabilities
+    of the specified dimension in the object. The resulting timeline chart shows
+    the start and end values of each availability period, as well as any gaps or
+    overlaps in the data. If a data collection is provided, the timeline chart will
+    show the availability of each data array in the collection. Note that data arrays
+    in the same data sequence will be on the same timeline whereas data arrays in
+    data mappings will be on separate timelines.
+
+    This function only works on interpolated coordinates.
+
+    Parameters
+    ----------
+    obj : DataArray or DataCollection
+        The data array containing the dimension to plot.
+    dim : str
+        The name of the dimension to plot.
+    **kwargs
+        Additional keyword arguments to be passed to the `px.timeline` function.
+
+    Notes
+    -----
+    This function uses the `px.timeline` function from the `plotly.express` library.
+
+    """
+    dataframe = _get_timeline_dataframe(obj, dim, "")
+    category_orders = {"type": ["data", "gap", "overlap"]}
+    color_discrete_map = {"data": "#00CC96", "gap": "#636EFA", "overlap": "#EF553B"}
+    pattern_shape_map = {"data": "", "gap": "/", "overlap": "\\"}
+    fig = px.timeline(
+        dataframe,
+        x_start="start_value",
+        x_end="end_value",
+        y="name",
+        color="type",
+        category_orders=category_orders,
+        color_discrete_map=color_discrete_map,
+        pattern_shape_map=pattern_shape_map,
+        **kwargs,
+    )
+    for elem in fig.data:
+        elem["marker"]["line_color"] = color_discrete_map[elem["legendgroup"]]
+    fig.update_yaxes(title_text="")
+    fig.show()
+
+
+def _get_timeline_dataframe(obj, dim="first", name=None):
+    if isinstance(obj, DataArray):
+        discontinuities = obj[dim].get_discontinuities()
+        availabilities = obj[dim].get_availabilities()
+        dataframe = pd.concat([availabilities, discontinuities])
+        dataframe["name"] = "" if name is None else name
+    elif isinstance(obj, DataSequence):
+        dataframes = [_get_timeline_dataframe(val, dim, name) for val in obj]
+        dataframe = pd.concat(dataframes)
+    elif isinstance(obj, DataMapping):
+        dataframes = [
+            _get_timeline_dataframe(val, dim, f"{name}.{key}" if name else key)
+            for key, val in obj.items()
+        ]
+        dataframe = pd.concat(dataframes)
+    return dataframe

@@ -7,7 +7,176 @@ from ..core.datacollection import DataCollection
 from ..core.routines import open_datacollection
 
 
-class Sequential(list):
+class State:
+    """
+    A class to declare a new state or to update a preexising one into an Atom object.
+
+    Parameters
+    ----------
+    state: Any
+        The state to be passed to the Atom object.
+
+    Examples
+    --------
+
+    In practice the State object is used when implementing new Atom objects. Bellow a
+    dummy example without any class declaration.
+
+    >>> from xdas.atoms import Atom, State
+
+    Let's create an empty Atom object:
+
+    >>> self = Atom()
+    >>> self.state
+    {}
+
+    We can declare and initialize a new state:
+
+    >>> self.count = State(0)
+    >>> self.state
+    {'count': 0}
+
+    To update the state, we must use the State object again. The state is updated by:
+
+    >>> self.count = State(self.count + 1)
+    >>> self.state
+    {'count': 1}
+
+    """
+
+    def __init__(self, state):
+        self.state = state
+
+
+class Atom:
+    """
+    The base class for atoms. Used to implement new Atom objects.
+
+    Atoms are the building blocks to perform massive computations. They represent
+    processing units that can be combined to create complex data processing pipelines.
+    Each Atom object is a callable that takes a unique input data object and returns a
+    unique processed data object. Atoms can be stateful meaning that they can store
+    some memory between calls to ensure the continuity of the processing across chunks.
+    The memory of the Atom is stored in the state attribute. The state is a dictionary
+    that is updated during each execution of the Atom. The Atom object is initialized
+    with an initial state at the first call. In subsequent calls, the state is updated
+    **if and only if the `chunk_dim` flag is provided** along with the dimension along
+    wich chunking was performed. If this flag is not provided, the state is reset
+    between calls. The Atom can be reset manually to its initial state by calling the
+    `reset` method.
+
+    When implementing a new Atom object, the user must sublcass the Atom class, and
+    at minima define the `initialize` and the `call` methods. The `initialize` method
+    is called at the first call to the Atom and is used to initialize the Atom with the
+    input data. The `call` method is called at each subsequent call to the Atom and is
+    used to perform the main processing logic. The Atom class handles when an how those
+    two methods are called.
+
+    To reduce the size of the state that need to be stored, a good practive is to also
+    define the `initialize_from_state` method. This method is called in the
+    `initialize` as soon as the minimal set of states is initialized. The other states
+    that are usefull for the processing but that can be recomputed from the minimal set
+    are initialized in the `initialize_from_state` method.
+
+    Attributes
+    ----------
+        state: dict
+            Returns the current state of the atom recursively including
+            the state of nested atoms.
+        initialized: bool
+            Wether the atom has been initialized or not.
+
+    Methods
+    -------
+        initialize(x, **flags)
+            Initializes the atom with the given input.
+        initialize_from_state()
+            Initializes the atom from its minimal state.
+        call(x, **flags)
+            Performs the main processing logic of the atom.
+        reset()
+            Resets the atom to its initial state.
+
+    """
+
+    def __init__(self):
+        object.__setattr__(self, "_config", {})
+        object.__setattr__(self, "_state", {})
+        object.__setattr__(self, "_atoms", {})
+
+    def __repr__(self):
+        name = self.__class__.__name__
+        sig = ", ".join(
+            f"{key}={value}" for key, value in self._config.items() if value is not None
+        )
+        s = f"{name}({sig})"
+        for name, filter in self._atoms.items():
+            s += "\n" + "\n".join(f"  {e}" for e in repr(filter).split("\n"))
+        return s
+
+    def __setattr__(self, name, value):
+        match value:
+            case State(state=state):
+                self._state[name] = state
+                object.__setattr__(self, name, state)
+            case Atom():
+                self._atoms[name] = value
+                object.__setattr__(self, name, value)
+            case other:
+                self._config[name] = value
+                object.__setattr__(self, name, other)
+
+    @property
+    def state(self):
+        return self._state | {
+            name: filter.state for name, filter in self._atoms.items() if filter.state
+        }
+
+    @property
+    def initialized(self):
+        return all(value is not ... for value in self._state.values())
+
+    def initialize(self, x, **flags): ...
+
+    def initialize_from_state(self): ...
+
+    def call(self, x, **flags): ...
+
+    def __call__(self, x, **flags):
+        chunk_dim = flags.get("chunk_dim", None)
+        if not self.initialized or chunk_dim is None:
+            self.initialize(x, **flags)
+        y = self.call(x, **flags)
+        if not chunk_dim:
+            self.reset()
+        return y
+
+    def reset(self):
+        for key in self._state:
+            setattr(self, key, State(...))
+        for _, filter in self._atoms.items():
+            filter.reset()
+
+    def save_state(self, path):
+        DataCollection(self.state).to_netcdf(path)
+
+    def set_state(self, state):
+        for key, value in state.items():
+            if isinstance(value, DataArray):
+                setattr(
+                    self, key, State(value.__array__())
+                )  # TODO: shouldn't need __array__
+                self.initialize_from_state()
+            else:
+                filter = getattr(self, key)
+                filter.set_state(value)
+
+    def load_state(self, path):
+        state = open_datacollection(path).load()
+        self.set_state(state)
+
+
+class Sequential(Atom, list):
     """
     A class to handle a sequence of operations. Each operation is represented by an
     Atom class object, which contains the function and its arguments.
@@ -30,7 +199,7 @@ class Sequential(list):
 
     Basic usage:
 
-    >>> sequence = Sequential(
+    >>> seq = Sequential(
     ...     [
     ...         Partial(xp.taper, dim="time"),
     ...         Partial(xp.lfilter, [1.0], [0.5], ..., dim="time", zi=...),
@@ -38,7 +207,7 @@ class Sequential(list):
     ...     ],
     ...     name="Low frequency energy",
     ... )
-    >>> sequence
+    >>> seq
     Low frequency energy:
       0: taper(..., dim=time)
       1: lfilter([1.0], [0.5], ..., dim=time)  [stateful]
@@ -46,13 +215,13 @@ class Sequential(list):
 
     Nested sequences:
 
-    >>> sequence = Sequential(
+    >>> seq = Sequential(
     ...     [
     ...         Partial(xp.decimate, 16, dim="distance"),
-    ...         sequence,
+    ...         seq,
     ...     ]
     ... )
-    >>> sequence
+    >>> seq
     Sequence:
       0: decimate(..., 16, dim=distance)
       1:
@@ -63,9 +232,9 @@ class Sequential(list):
 
     Applying the sequence to data:
 
-    >>> from xdas.synthetics import generate
-    >>> da = generate()
-    >>> sequence(da)
+    >>> from xdas.synthetics import wavelet_wavefronts
+    >>> da = wavelet_wavefronts()
+    >>> seq(da)
     <xdas.DataArray (time: 300, distance: 26)>
     [[0.000000e+00 0.000000e+00 0.000000e+00 ... 0.000000e+00 0.000000e+00
       0.000000e+00]
@@ -88,15 +257,16 @@ class Sequential(list):
 
     def __init__(self, atoms: Any, name: str | None = None) -> None:
         super().__init__()
-        for atom in atoms:
-            if not isinstance(atom, (Partial, Sequential)):
+        for key, atom in enumerate(atoms):
+            if not isinstance(atom, Atom):
                 atom = Partial(atom)
             self.append(atom)
+            self._atoms[key] = atom
         self.name = name
 
-    def __call__(self, x: Any) -> Any:
+    def call(self, x: Any, **flags) -> Any:
         for atom in self:
-            x = atom(x)
+            x = atom(x, **flags)
         return x
 
     def __repr__(self) -> str:
@@ -119,123 +289,63 @@ class Sequential(list):
                 atom.reset()
 
 
-class State:
-    def __init__(self, state):
-        self.state = state
-
-
-class Atom:
-    def __init__(self):
-        super().__setattr__("_config", {})
-        super().__setattr__("_state", {})
-        super().__setattr__("_filters", {})
-
-    def __repr__(self):
-        name = self.__class__.__name__
-        sig = ", ".join(
-            f"{key}={value}" for key, value in self._config.items() if value is not None
-        )
-        s = f"{name}({sig})"
-        for name, filter in self._filters.items():
-            s += "\n" + "\n".join(f"  {e}" for e in repr(filter).split("\n"))
-        return s
-
-    def __setattr__(self, name, value):
-        match value:
-            case State(state=state):
-                self._state[name] = state
-                super().__setattr__(name, state)
-            case Atom():
-                self._filters[name] = value
-                super().__setattr__(name, value)
-            case other:
-                self._config[name] = value
-                super().__setattr__(name, other)
-
-    @property
-    def state(self):
-        return self._state | {
-            name: filter.state for name, filter in self._filters.items() if filter.state
-        }
-
-    @property
-    def initialized(self):
-        return all(value is not ... for value in self._state.values())
-
-    def initialize(self, x, **kwargs): ...
-
-    def initialize_from_state(self): ...
-
-    def call(self, x, **kwargs): ...
-
-    def __call__(self, x, **kwargs):
-        if not self.initialized:
-            self.initialize(x, **kwargs)
-        return self.call(x, **kwargs)
-
-    def reset(self):
-        for key in self._state:
-            setattr(self, key, State(...))
-        for _, filter in self._filters.items():
-            filter.reset()
-
-    def save_state(self, path):
-        DataCollection(self.state).to_netcdf(path)
-
-    def set_state(self, state):
-        for key, value in state.items():
-            if isinstance(value, DataArray):
-                setattr(
-                    self, key, State(value.__array__())
-                )  # TODO: shouldn't need __array__
-                self.initialize_from_state()
-            else:
-                filter = getattr(self, key)
-                filter.set_state(value)
-
-    def load_state(self, path):
-        state = open_datacollection(path).load()
-        self.set_state(state)
-
-
 class Partial(Atom):
     """
-    Base class for an xdas operation, to be used in conjunction with Sequence. Each
-    Atom should be seen as an elementary operation to apply to the data, such as
-    tapering, multiplication, integration, etc. More complex operations (fk-analysis,
-    strain-to-displacement conversion, ...) can be written as a sequence of Atoms,
-    executed in the right order. Each Atom can optionally be labelled with the `name`
-    argument for easy identification in long sequences.
+    Wraps a function into an Atom.
+
+    It works similarly to `functools.partial` but with additional features. If the
+    input is not the first argument, an `Ellipsis` (`...`) can be used to indicate the
+    position of the input. A `name` argument can be used to better identify the
+    resulting atom.
+
+    Some level of state passing can be achieved by passing `...` for one or several
+    keyword arguments. In that case, the function is expected to accept `...` as
+    keyword arguments, to properly initialize the corresponding states and to return as
+    many additional outputs as there are stateful arguments.
+
+    Partial uses several reserved keyword arguments that cannot by passed to `func`:
+    'func', 'name' and 'state'.
 
     Parameters
     ----------
     func : Callable
-        The function that is called. It must take a unique data object as first
-        argument and returns a unique output. Subsequent arguments are given by `*args`
-        and `**kwargs`. If the data is not passed as first argument, an Ellipsis must
-        be provided in the `*args` parameters.
+        The function that is called. One of its argument is used as the input of the
+        resulting Atom object while other parameters are fixed. The position of the
+        input is by default the first argument. Otherwise, an Ellipsis (`...`) must be
+        provided in the `*args` parameters to indicate the position of the input.
+        The function must return a unique output except if the function is stateful. In
+        that case, the function must return the processed data as first output and the
+        updated state as additional outputs.
     *args : Any
         Positional arguments to pass to `func`. If the data to process is passed as the
-        nth argument, the nth element of `args` must contain an Ellipis (`...`).
+        nth argument, the nth element of `args` must contain an Ellipsis (`...`).
     name : str
         Name to identify the function.
     **kwargs : Any
-        Keyword arguments to pass to `func`.
-
-    StateAtom uses one reserved keyword arguments that cannot by passed to `func`:
-    'name'.
+        Keyword arguments to pass to `func`. If one of the keyword arguments is `...`,
+        it will be treated as a passing state and initialized or updated at each call.
 
 
     Examples
     --------
-    >>> from xdas.atoms import Partial
+    >>> import numpy as np
+    >>> import scipy.signal as sp
     >>> import xdas.signal as xp
-    >>> Partial(xp.decimate, 2, dim="time", name="downsampling")
+    >>> from xdas.atoms import Partial
+
+    Examples of a stateless atom:
+
+    >>> Partial(xp.decimate, 2, dim="time")
     decimate(..., 2, dim=time)
 
-    >>> import numpy as np
     >>> Partial(np.square)
     square(...)
+
+    Examples of a stateful atom with input data as second argument:
+
+    >>> sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
+    >>> Partial(xp.sosfilt, sos, ..., dim="time", zi=...)
+    sosfilt(<ndarray>, ..., dim=time)  [stateful]
 
     """
 
@@ -251,22 +361,21 @@ class Partial(Atom):
             raise ValueError("`*args` must contain at most one Ellipsis")
         self.func = func
         self.args = args
-        self.kwargs = kwargs
+        self.kwargs = {}
         self.name = name
         for key, value in kwargs.items():
             if value is ...:
                 setattr(self, key, State(...))
             elif isinstance(value, State):
                 setattr(self, key, value)
-        self.kwargs = {
-            key: value for key, value in kwargs.items() if key not in self._state
-        }
+            else:
+                self.kwargs[key] = value
 
     @property
     def stateful(self):
         return bool(self._state)
 
-    def call(self, x: Any) -> Any:
+    def call(self, x: Any, **flags) -> Any:
         args = tuple(x if arg is ... else arg for arg in self.args)
         kwargs = self.kwargs | self._state
         if self.stateful:
@@ -296,96 +405,70 @@ class Partial(Atom):
         return f"{func}({params})" + ("  [stateful]" if self.stateful else "")
 
 
-class StatePartial(Partial):  # TODO: Merge documentation
-    """
-    A subclass of Atom that provides some logic for handling data states, which need to
-    be updated throughout the execution chain. An example of a stateful operation is a
-    recursive filter, passing on the state from t to t+1.
-
-    The StateAtom class assumes that the stateful function takes two inputs: some data
-    and a state. The stateful function must return the processed data and modified
-    state.
-
-    >>> def func(x, *args, state="zi", **kwargs):
-    ...     return x, zf
-
-    Here, `state` is a given keyword argument that contains the state, which can differ
-    from one function to the next. The user must pass a dict `{"zi": value}` to provide
-    the initial state. If no initial state is provided, the ... flag will be used.
-    That special string indicates to the function to initialize the state and to return
-    it along with the result. All xdas statefull function accepts this convention.
-
-    StateAtom uses reserved keyword arguments that cannot by passed to `func`:
-    'name' and 'state'.
-
-    Parameters
-    ----------
-    func : Callable
-        The function to call. It takes the data object to process as the first argument
-        and the actual state as second argument. It returns the processed data along
-        with the updated state. Subsequent arguments are given by `*args` and
-        `**kwargs`. If the data is not passed as first argument, an Ellipsis must
-        be provided in the `*args` parameters.
-    *args : Any
-        Positional arguments to pass to `func`. If the data to process is passed as the
-        nth argument, the nth element of `args` must contain an Ellipis (`...`).
-    state: Any
-        The initial state that will be passed at the `func`. If `state` is a dict, the
-        key indicates the keyword argument used by `func` for state passing, and the
-        value contains the state. The ... flag is used to indicate than a new
-        state must be initialized. If `state` is a string, it will use the default ...
-        flag by default for that keyword argument.
-    name : Hashable
-        Name to identify the function.
-    **kwargs : Any
-        Keyword arguments to pass to `func`.
-
-    Examples
-    --------
-    >>> from xdas.atoms import Partial, State
-    >>> import xdas.signal as xp
-    >>> import scipy.signal as sp
-
-    >>> sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
-
-    By default, `state` is the expected keyword argument and 'init' is the send value
-    to ask for initialisation.
-
-    >>> Partial(xp.sosfilt, sos, ..., dim="time", zi=...)
-    sosfilt(<ndarray>, ..., dim=time)  [stateful]
-
-    To manually specify the keyword argument and initial value a dict must be passed to
-    the state keyword argument.
-
-    >>> Partial(xp.sosfilt, sos, ..., dim="time", zi=State(...))
-    sosfilt(<ndarray>, ..., dim=time)  [stateful]
-
-    """
-
-    ...
-
-
 def atomized(func):
     """
-    Make the function return an Atom if `...` is passed.
+    Make the function return an Atom if `...` or an atom is passed as argument.
 
-    Functions that receive a `state` keyword argument which is not None will be
-    considered as statefull atoms.
+    In case `...` is passed as a positional argument, the function is wrapped into a
+    Partial object. If an Atom object is passed as a positional argument, the function
+    is wrapped into a Sequential object. Otherwise, the function is called as is.
 
     Parameters
     ----------
     func: callable
-        A function with a main data input that will trigger atomization if `...` is
-        passed. If it has a state keword argument this later will trigger statefull
-        atomization if anything but None is passed.
+        The function to wrap as a Partial atom if any `...` or input atom is a passed.
+        It must handle the `...` argument as a placeholder for the input data and for
+        the passing states. It must return a unique output except if the function is
+        stateful. In that case, the function must return the processed data as first
+        output and the updated state as additional outputs.
 
     Returns
     -------
-    callable
-        The atomized function. This latter has the same documentation and names than
-        the original function. If `...` is passed as a positional argument, returns an
-        Atom object. If a further `state` keyword argument is pass with a value other
-        than `None`, retruns a StateAtom object.
+    output or atom: Any or (Partial or Sequential)
+        if no `...` or Atom object is passed as a positional argument, returns the
+        output of the function. If an Atom object is passed as a positional argument,
+        returns a Sequential object containing the Atom object and the atomized function.
+        If `...` is passed as a positional argument, returns a Partial object containing
+        the atomized function. This latter has the same documentation and names than the
+        original function.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from xdas.atoms import atomized
+
+    Basic usage:
+
+    >>> @atomized
+    ... def square(x):
+    ...     return x ** 2
+    >>> square(2)
+    4
+    >>> square(...)
+    square(...)
+
+    Passing an Atom object as input:
+
+    >>> square(square(...))
+    Sequence:
+      0: square(...)
+      1: square(...)
+
+    Passing a stateful function:
+
+    >>> @atomized
+    ... def cumsum(x, cum=None):
+    ...     return_state = cum is not None
+    ...     if cum is None or cum is ...:
+    ...         cum = 0.0
+    ...     out = np.cumsum(x) + cum
+    ...     cum += out[-1]
+    ...     if return_state:
+    ...         return out, cum
+    ...     else:
+    ...         return out
+    >>> cumsum(..., cum=...)
+    cumsum(...)  [stateful]
 
     """
 
@@ -393,6 +476,17 @@ def atomized(func):
     def wrapper(*args, **kwargs):
         if any(arg is ... for arg in args):
             return Partial(func, *args, **kwargs)
+        elif objs := tuple(arg for arg in args if isinstance(arg, Atom)):
+            if len(objs) == 1:
+                input = objs[0]
+            else:
+                raise ValueError("Only one Atom object can be passed as function input")
+            args = tuple(... if isinstance(arg, Atom) else arg for arg in args)
+            output = Partial(func, *args, **kwargs)
+            if isinstance(input, Sequential):
+                return input.append(output)
+            else:
+                return Sequential([input, output])
         else:
             return func(*args, **kwargs)
 

@@ -26,8 +26,8 @@ class DataCollection:
     Examples
     --------
     >>> import xdas
-    >>> from xdas.synthetics import generate
-    >>> da = generate()
+    >>> from xdas.synthetics import wavelet_wavefronts
+    >>> da = wavelet_wavefronts()
     >>> dc = xdas.DataCollection(
     ...     {
     ...         "das1": ("acquisition", [da, da]),
@@ -89,8 +89,8 @@ class DataCollection:
         Examples
         --------
         >>> import xdas
-        >>> from xdas.synthetics import generate
-        >>> da = generate()
+        >>> from xdas.synthetics import wavelet_wavefronts
+        >>> da = wavelet_wavefronts()
         >>> dc = xdas.DataCollection(
         ...     {
         ...         "das1": ("acquisition", [da, da]),
@@ -207,7 +207,7 @@ class DataMapping(DataCollection, dict):
         if len(self) == 0:
             return "Empty"
         width = max([len(str(key)) for key in self])
-        name = self.name if self.name is not None else "sequence"
+        name = self.name if self.name is not None else "collection"
         s = f"{name.capitalize()}:\n"
         for key, value in self.items():
             if isinstance(key, int):
@@ -220,6 +220,9 @@ class DataMapping(DataCollection, dict):
                 s += label + "\n"
                 s += "\n".join(f"    {e}" for e in repr(value).split("\n")[:-1]) + "\n"
         return s
+
+    def __reduce__(self):
+        return self.__class__, (dict(self), self.name)
 
     @property
     def fields(self):
@@ -236,7 +239,7 @@ class DataMapping(DataCollection, dict):
             location = "/".join([name, str(key)])
             if group is not None:
                 location = "/".join([group, location])
-            self[key].to_netcdf(fname, location, virtual, mode="a")
+            self[key].to_netcdf(fname, mode="a", group=location, virtual=virtual)
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
@@ -373,6 +376,25 @@ class DataMapping(DataCollection, dict):
                 raise TypeError(f"{type(obj)} encountered in the collection")
         return self.__class__(data, self.name)
 
+    def copy(self, deep=True):
+        """
+        Return a copy of the data collection.
+
+        Parameters
+        ----------
+        deep: bool, optional
+            If True, a deep copy is returned. If False, a shallow copy is returned.
+
+        Returns
+        -------
+        DataCollection:
+            The copied data collection.
+
+        """
+        return self.__class__(
+            {key: value.copy() for key, value in self.items()}, self.name
+        )
+
 
 class DataSequence(DataCollection, list):
     """
@@ -396,6 +418,9 @@ class DataSequence(DataCollection, list):
     def __repr__(self):
         return repr(self.to_mapping())
 
+    def __reduce__(self):
+        return self.__class__, (list(self), self.name)
+
     @property
     def fields(self):
         out = (self.name,) + tuple(
@@ -411,7 +436,7 @@ class DataSequence(DataCollection, list):
         return cls(data.values(), data.name)
 
     def to_netcdf(self, fname, group=None, virtual=None, **kwargs):
-        self.to_mapping().to_netcdf(fname, group, virtual, **kwargs)
+        self.to_mapping().to_netcdf(fname, group=group, virtual=virtual, **kwargs)
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
@@ -529,6 +554,23 @@ class DataSequence(DataCollection, list):
             else:
                 raise TypeError(f"{type(obj)} encountered in the collection")
         return self.__class__(data, self.name)
+
+    def copy(self, deep=True):
+        """
+        Return a copy of the data collection.
+
+        Parameters
+        ----------
+        deep: bool, optional
+            If True, a deep copy is returned. If False, a shallow copy is returned.
+
+        Returns
+        -------
+        DataCollection:
+            The copied data collection.
+
+        """
+        return self.__class__([value.copy() for value in self], self.name)
 
 
 def parse(data, name=None):

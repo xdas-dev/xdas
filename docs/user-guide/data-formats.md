@@ -29,7 +29,7 @@ The formats that are currently implemented are: ASN, FEBUS, OPTASENSE and SINTEL
 | OPTASENSE         | `"optasense"`     |
 | SINTELA           | `"sintela"`       |
 
-## Exdending *xdas* with your file format
+## Extending *xdas* with your file format
 
 *xdas* insists on its extensibility, the power is in the hands of the users. Extending *xdas* usually consists of writing few-line-of-code-long functions. The process consists in dealing with the two main aspects of a {py:class}`xarray.DataArray`: unpacking the data and coordinates objects, eventually processing them and packing them back into a Database object. 
 

@@ -70,18 +70,16 @@ def taper(da, window="hann", fftbins=False, dim="last", parallel=None):
 
 
 @atomized
-def filter(
-    da, freq, btype, corners=4, zerophase=False, dim="last", parallel=None
-):  # TODO
+def filter(da, freq, btype, corners=4, zerophase=False, dim="last", parallel=None):
     """
     SOS IIR filtering along given dimension.
 
+    Parameters
+    ----------
     da: DataArray
         Traces to filter.
     freq: float or list
         Cuttoff frequency or band corners [Hz].
-    fs: float
-        Sampling frequency [Hz].
     btype: {'bandpass', 'lowpass', 'highpass', 'bandstop'}
         The type of the filter.
     corners: int
@@ -92,17 +90,22 @@ def filter(
         the resulting filtered trace.
     dim: str, optional
         The dimension along which to filter.
+
+    Returns
+    -------
+    DataArray
+        Filtered traces.
+
     """
     axis = da.get_axis_num(dim)
+    across = int(axis == 0)
     fs = 1.0 / get_sampling_interval(da, dim)
     sos = sp.iirfilter(corners, freq, btype=btype, ftype="butter", output="sos", fs=fs)
     if zerophase:
-        func = lambda x, sos, axis: sp.sosfiltfilt(sos, x, axis)
-        func = parallelize(axis, parallel)(func)
+        func = parallelize((None, across), across, parallel)(sp.sosfilt)
     else:
-        func = lambda x, sos, axis: sp.sosfilt(sos, x, axis)
-        func = parallelize(axis, parallel)(func)
-    data = func(da.values, sos, axis=axis)
+        func = parallelize((None, across), across, parallel)(sp.sosfiltfilt)
+    data = func(sos, da.values, axis=axis)
     return da.copy(data=data)
 
 
@@ -139,9 +142,9 @@ def hilbert(da, N=None, dim="last", parallel=None):
     In this example we use the Hilbert transform to determine the analytic signal.
 
     >>> import xdas.signal as xp
-    >>> from xdas.synthetics import generate
+    >>> from xdas.synthetics import wavelet_wavefronts
 
-    >>> da = generate()
+    >>> da = wavelet_wavefronts()
     >>> xp.hilbert(da, dim="time")
     <xdas.DataArray (time: 300, distance: 401)>
     [[ 0.0497+0.1632j -0.0635+0.0125j ...  0.1352-0.3107j -0.2832-0.0126j]
@@ -200,9 +203,9 @@ def resample(da, num, dim="last", window=None, domain="time", parallel=None):
     The 'hamming' window is used.
 
     >>> import xdas.signal as xp
-    >>> from xdas.synthetics import generate
+    >>> from xdas.synthetics import wavelet_wavefronts
 
-    >>> da = generate()
+    >>> da = wavelet_wavefronts()
     >>> xp.resample(da, 100, dim='time', window='hamming', domain='time')
     <xdas.DataArray (time: 100, distance: 401)>
     [[ 0.039988  0.04855  -0.08251  ...  0.02539  -0.055219 -0.006693]
@@ -291,9 +294,9 @@ def resample_poly(
     The dataarray is synthetic data.
 
     >>> import xdas.signal as xp
-    >>> from xdas.synthetics import generate
+    >>> from xdas.synthetics import wavelet_wavefronts
 
-    >>> da = generate()
+    >>> da = wavelet_wavefronts()
     >>> xp.resample_poly(da, 2, 5, dim='time')
     <xdas.DataArray (time: 120, distance: 401)>
     [[-0.006378  0.012767 -0.002068 ... -0.033461  0.002603 -0.027478]
@@ -374,9 +377,9 @@ def lfilter(b, a, da, dim="last", zi=None, parallel=None):
     --------
     >>> import scipy.signal as sp
     >>> import xdas.signal as xp
-    >>> from xdas.synthetics import generate
+    >>> from xdas.synthetics import wavelet_wavefronts
 
-    >>> da = generate()
+    >>> da = wavelet_wavefronts()
     >>> b, a = sp.iirfilter(4, 0.5, btype="low")
     >>> xp.lfilter(b, a, da, dim='time')
     <xdas.DataArray (time: 300, distance: 401)>
@@ -482,9 +485,9 @@ def filtfilt(
     --------
     >>> import scipy.signal as sp
     >>> import xdas.signal as xp
-    >>> from xdas.synthetics import generate
+    >>> from xdas.synthetics import wavelet_wavefronts
 
-    >>> da = generate()
+    >>> da = wavelet_wavefronts()
     >>> b, a = sp.iirfilter(4, 0.5, btype="low")
     >>> xp.lfilter(b, a, da, dim='time')
     <xdas.DataArray (time: 300, distance: 401)>
@@ -551,9 +554,9 @@ def sosfilt(sos, da, dim="last", zi=None, parallel=None):
     --------
     >>> import scipy.signal as sp
     >>> import xdas.signal as xp
-    >>> from xdas.synthetics import generate
+    >>> from xdas.synthetics import wavelet_wavefronts
 
-    >>> da = generate()
+    >>> da = wavelet_wavefronts()
     >>> sos = sp.iirfilter(4, 0.5, btype="low", output="sos")
     >>> xp.sosfilt(sos, da, dim='time')
     <xdas.DataArray (time: 300, distance: 401)>
@@ -639,9 +642,9 @@ def sosfiltfilt(sos, da, dim="last", padtype="odd", padlen=None, parallel=None):
     --------
     >>> import scipy.signal as sp
     >>> import xdas.signal as xp
-    >>> from xdas.synthetics import generate
+    >>> from xdas.synthetics import wavelet_wavefronts
 
-    >>> da = generate()
+    >>> da = wavelet_wavefronts()
     >>> sos = sp.iirfilter(4, 0.5, btype="low", output="sos")
     >>> xp.sosfiltfilt(sos, da, dim='time')
     <xdas.DataArray (time: 300, distance: 401)>
@@ -896,9 +899,9 @@ def medfilt(da, kernel_dim):  # TODO: parallelize
     of 7 along the time dimension and 5 along the space dimension.
 
     >>> import xdas.signal as xp
-    >>> from xdas.synthetics import generate
+    >>> from xdas.synthetics import wavelet_wavefronts
 
-    >>> da = generate()
+    >>> da = wavelet_wavefronts()
     >>> xp.medfilt(da, {"time": 7, "distance": 5})
     <xdas.DataArray (time: 300, distance: 401)>
     [[ 0.        0.        0.       ...  0.        0.        0.      ]

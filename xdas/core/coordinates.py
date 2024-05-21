@@ -204,13 +204,13 @@ class Coordinates(dict):
 
     @wraps_first_last
     def drop_dims(self, *dims):
-        coords = {key: value for key, value in self.items() if not value.dim in dims}
-        dims = tuple(value for value in self.dims if not value in dims)
+        coords = {key: value for key, value in self.items() if value.dim not in dims}
+        dims = tuple(value for value in self.dims if value not in dims)
         return self.__class__(coords, dims)
 
     @wraps_first_last
     def drop_coords(self, *names):
-        coords = {key: value for key, value in self.items() if not key in names}
+        coords = {key: value for key, value in self.items() if key not in names}
         return self.__class__(coords, self.dims)
 
     def _assign_parent(self, parent):
@@ -582,10 +582,10 @@ class InterpCoordinate(Coordinate):
         return out
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        raise NotImplemented
+        raise NotImplementedError
 
     def __array_function__(self, func, types, args, kwargs):
-        raise NotImplemented
+        raise NotImplementedError
 
     @property
     def tie_indices(self):
@@ -753,14 +753,87 @@ class InterpCoordinate(Coordinate):
         )
 
     def get_discontinuities(self):
+        """
+        Returns a DataFrame containing information about the discontinuities.
+
+        Returns
+        -------
+        pandas.DataFrame
+            A DataFrame with the following columns:
+
+            - start_index : int
+                The index where the discontinuity starts.
+            - end_index : int
+                The index where the discontinuity ends.
+            - start_value : float
+                The value at the start of the discontinuity.
+            - end_value : float
+                The value at the end of the discontinuity.
+            - delta : float
+                The difference between the end_value and start_value.
+            - type : str
+                The type of the discontinuity, either "gap" or "overlap".
+
+        """
         (indices,) = np.nonzero(np.diff(self.tie_indices) == 1)
-        return [
-            {
-                self.tie_indices[index]: self.tie_values[index],
-                self.tie_indices[index + 1]: self.tie_values[index + 1],
+        records = []
+        for index in indices:
+            start_index = self.tie_indices[index]
+            end_index = self.tie_indices[index + 1]
+            start_value = self.tie_values[index]
+            end_value = self.tie_values[index + 1]
+            record = {
+                "start_index": start_index,
+                "end_index": end_index,
+                "start_value": start_value,
+                "end_value": end_value,
+                "delta": end_value - start_value,
+                "type": ("gap" if end_value > start_value else "overlap"),
             }
-            for index in indices
-        ]
+            records.append(record)
+        return pd.DataFrame.from_records(records)
+
+    def get_availabilities(self):
+        """
+        Returns a DataFrame containing information about the data availability.
+
+        Returns
+        -------
+        pandas.DataFrame
+            A DataFrame with the following columns:
+
+            - start_index : int
+                The index where the discontinuity starts.
+            - end_index : int
+                The index where the discontinuity ends.
+            - start_value : float
+                The value at the start of the discontinuity.
+            - end_value : float
+                The value at the end of the discontinuity.
+            - delta : float
+                The difference between the end_value and start_value.
+            - type : str
+                The type of the discontinuity, always "data".
+
+        """
+        (indices,) = np.nonzero(np.diff(self.tie_indices) == 1)
+        indices = np.insert(indices, [0, len(indices)], [0, len(self.tie_indices) - 1])
+        records = []
+        for start, end in zip(indices[:-1], indices[1:]):
+            start_index = self.tie_indices[start]
+            end_index = self.tie_indices[end]
+            start_value = self.tie_values[start]
+            end_value = self.tie_values[end]
+            record = {
+                "start_index": start_index,
+                "end_index": end_index,
+                "start_value": start_value,
+                "end_value": end_value,
+                "delta": end_value - start_value,
+                "type": "data",
+            }
+            records.append(record)
+        return pd.DataFrame.from_records(records)
 
     @classmethod
     def from_array(cls, arr, dim=None, tolerance=None):

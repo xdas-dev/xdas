@@ -4,14 +4,11 @@ import xarray as xr
 
 import xdas
 import xdas.signal as xp
-from xdas.synthetics import generate
+from xdas.synthetics import wavelet_wavefronts
 
 
 class TestSignal:
     def test_get_sample_spacing(self):
-        s = (5.0 / 2) + 5.0 * np.arange(100)
-        dt = np.timedelta64(8, "ms")
-        t = np.datetime64(0, "s") + dt * np.arange(1000)
         shape = (6000, 1000)
         resolution = (np.timedelta64(8, "ms"), 5.0)
         starttime = np.datetime64("2023-01-01T00:00:00")
@@ -87,7 +84,7 @@ class TestSignal:
         assert np.allclose(da.values, 0)
 
     def test_medfilt(self):
-        da = generate()
+        da = wavelet_wavefronts()
         result1 = xp.medfilt(da, {"distance": 3})
         result2 = xp.medfilt(da, {"time": 1, "distance": 3})
         assert result1.equals(result2)
@@ -95,40 +92,40 @@ class TestSignal:
         assert da.equals(xp.medfilt(da, {"time": 7, "distance": 3}))
 
     def test_hilbert(self):
-        da = generate()
+        da = wavelet_wavefronts()
         result = xp.hilbert(da, dim="time")
         assert np.allclose(da.values, np.real(result.values))
 
     def test_resample(self):
-        da = generate()
+        da = wavelet_wavefronts()
         result = xp.resample(da, 100, dim="time", window="hamming", domain="time")
         assert result.sizes["time"] == 100
 
     def test_resample_poly(self):
-        da = generate()
+        da = wavelet_wavefronts()
         result = xp.resample_poly(da, 2, 5, dim="time")
         assert result.sizes["time"] == 120
 
     def test_lfilter(self):
-        da = generate()
+        da = wavelet_wavefronts()
         b, a = sp.iirfilter(4, 0.5, btype="low")
         result1 = xp.lfilter(b, a, da, "time")
         result2, zf = xp.lfilter(b, a, da, "time", zi=...)
         assert result1.equals(result2)
 
     def test_filtfilt(self):
-        da = generate()
+        da = wavelet_wavefronts()
         b, a = sp.iirfilter(2, 0.5, btype="low")
         xp.filtfilt(b, a, da, "time", padtype=None)
 
     def test_sosfilter(self):
-        da = generate()
+        da = wavelet_wavefronts()
         sos = sp.iirfilter(4, 0.5, btype="low", output="sos")
         result1 = xp.sosfilt(sos, da, "time")
         result2, zf = xp.sosfilt(sos, da, "time", zi=...)
         assert result1.equals(result2)
 
     def test_sosfiltfilt(self):
-        da = generate()
+        da = wavelet_wavefronts()
         sos = sp.iirfilter(2, 0.5, btype="low", output="sos")
         xp.sosfiltfilt(sos, da, "time", padtype=None)

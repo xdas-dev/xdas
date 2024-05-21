@@ -7,7 +7,7 @@ import pytest
 import xdas
 from xdas.core.coordinates import Coordinates, DenseCoordinate, InterpCoordinate
 from xdas.core.dataarray import DataArray
-from xdas.synthetics import generate
+from xdas.synthetics import wavelet_wavefronts
 
 
 class TestDataArray:
@@ -108,21 +108,22 @@ class TestDataArray:
         # assert da[0].data == 0.0
         # assert da[1].data == 0.1
         # assert da[0]["dim"] == 100.0
-        subda = da[2:4]
-        assert np.allclose(subda.data, [0.2, 0.3])
-        assert np.allclose(subda["dim"].tie_indices, [0, 1])
-        assert np.allclose(subda["dim"].tie_values, [300.0, 400.0])
+        sel = da[2:4]
+        assert np.allclose(sel.data, [0.2, 0.3])
+        assert np.allclose(sel["dim"].tie_indices, [0, 1])
+        assert np.allclose(sel["dim"].tie_values, [300.0, 400.0])
         da = self.generate(dense=True)
-        assert np.allclose(subda.data, [0.2, 0.3])
-        assert np.allclose(subda["dim"].values, [300.0, 400.0])
+        assert np.allclose(sel.data, [0.2, 0.3])
+        assert np.allclose(sel["dim"].values, [300.0, 400.0])
 
     def test_setitem(self):
-        da = self.generate()
+        # da = self.generate()
         # da[0] = -100.0
         # assert da[0].data == -100.0
+        ...
 
     def test_data_setter(self):
-        da = generate()
+        da = wavelet_wavefronts()
         data = np.arange(np.prod(da.shape)).reshape(da.shape)
         da.data = data
         assert np.array_equal(da.data, data)
@@ -151,12 +152,12 @@ class TestDataArray:
         assert da.sel(dim=slice(100.0, 300.0)).equals(da[0:3])
         assert da.sel(dim=slice(100.0, 300.0), endpoint=False).equals(da[0:2])
         # drop
-        da = generate()
+        da = wavelet_wavefronts()
         result = da.sel(distance=0, method="nearest", drop=True)
-        assert not "distance" in result.coords
+        assert "distance" not in result.coords
 
     def test_isel(self):
-        da = generate()
+        da = wavelet_wavefronts()
         result = da.isel(first=0)
         excepted = da.isel(time=0)
         assert result.equals(excepted)
@@ -164,9 +165,9 @@ class TestDataArray:
         excepted = da.isel(distance=0)
         assert result.equals(excepted)
         # drop
-        da = generate()
+        da = wavelet_wavefronts()
         result = da.sel(distance=0, drop=True)
-        assert not "distance" in result.coords
+        assert "distance" not in result.coords
 
     def test_to_xarray(self):
         for dense in [True, False]:
@@ -187,7 +188,7 @@ class TestDataArray:
         assert np.array_equal(result["dim"].values, da["dim"].values)
 
     def test_stream(self):
-        da = generate()
+        da = wavelet_wavefronts()
         st = da.to_stream(dim={"distance": "time"})
         assert st[0].id == "NET.DAS00001.00.BN1"
         assert len(st) == da.sizes["distance"]
@@ -206,7 +207,7 @@ class TestDataArray:
         coord = [f"D{k}" for k in range(9)]
         coords = Coordinates({"dim": coord})
         data = 0.1 * np.arange(9)
-        da = DataArray(data, coords)
+        DataArray(data, coords)
 
     def test_single_index_selection(self):
         da = DataArray(
@@ -274,6 +275,7 @@ class TestDataArray:
             coords={
                 "time": np.array([3, 4, 5]),
                 "relative_time": ("time", np.array([0, 1, 2])),
+                "channel": (None, "DAS000001"),
             },
         )
         result = da.to_xarray()
@@ -294,13 +296,25 @@ class TestDataArray:
             da.to_netcdf(path)
             result = xdas.open_dataarray(path)
             assert result.equals(da)
+        with TemporaryDirectory() as dirpath:
+            path = os.path.join(dirpath, "da.nc")
+            da = wavelet_wavefronts().assign_coords(lon=("distance", np.arange(401)))
+            da.to_netcdf(path)
+            tmp = xdas.open_dataarray(path)
+            path = path = os.path.join(dirpath, "vds.nc")
+            tmp.to_netcdf(path)
+            result = xdas.open_dataarray(path)
+            assert result.equals(da)
 
     def test_transpose(self):
-        da = generate()
+        da = wavelet_wavefronts()
         result = da.transpose("distance", "time")
         assert result.dims == ("distance", "time")
         assert np.array_equal(result.values, da.values.T)
         assert result.equals(da.transpose())
+        assert result.equals(da.transpose(..., "time"))
+        assert result.equals(da.transpose("distance", ...))
+        assert result.equals(da.T)
         with pytest.raises(ValueError, match="must be a permutation of"):
             da.transpose("distance")
         with pytest.raises(ValueError, match="must be a permutation of"):
@@ -314,7 +328,7 @@ class TestDataArray:
 
     def test_io(self):
         # both coords interpolated
-        da = generate()
+        da = wavelet_wavefronts()
         with TemporaryDirectory() as dirpath:
             path = os.path.join(dirpath, "tmp.nc")
             da.to_netcdf(path)
@@ -338,7 +352,7 @@ class TestDataArray:
             assert da.equals(da_recovered)
 
     def test_ufunc(self):
-        da = generate()
+        da = wavelet_wavefronts()
         result = np.add(da, 1)
         assert np.array_equal(result.data, da.data + 1)
         result = np.add(da, np.ones(da.shape[-1]))
@@ -349,9 +363,15 @@ class TestDataArray:
         assert np.array_equal(result.data, da.data + da.data[0])
 
     def test_arithmetics(self):
-        da = generate()
+        da = wavelet_wavefronts()
         result = da + 1
         assert np.array_equal(result.data, da.data + 1)
+        result = da + np.array(1)
+        assert np.array_equal(result.data, da.data + np.array(1))
+        result = np.array(1) + da
+        assert np.array_equal(result.data, np.array(1) + da.data)
+        result = 1 + da
+        assert np.array_equal(result.data, 1 + da.data)
         result = da + np.ones(da.shape[-1])
         assert np.array_equal(result.data, da.data + 1)
         result = da + da

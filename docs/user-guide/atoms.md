@@ -47,9 +47,9 @@ The last operation, `IIRFilter`, instantiates a specific class dedicated to chun
 Once the processing sequence has been defined, it can operate on data in memory by simply calling the sequence with the data array as the argument:
 
 ```{code-cell} 
-from xdas.synthetics import generate
+from xdas.synthetics import wavelet_wavefronts
 
-da = generate()
+da = wavelet_wavefronts()
 result = sequence(da)
 result.plot(yincrease=False)
 ```

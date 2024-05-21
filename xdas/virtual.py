@@ -181,6 +181,7 @@ class VirtualStack(VirtualArray):
 
     def _to_layout(self):
         layout = VirtualLayout(self.shape, self.dtype)
+        ndim = self.ndim
         index = 0
         for source in self._sources:
             slc = tuple(
@@ -189,7 +190,7 @@ class VirtualStack(VirtualArray):
                     if axis == self._axis
                     else slice(None)
                 )
-                for axis in range(self.ndim)
+                for axis in range(ndim)
             )
             layout[slc] = source
         return layout
@@ -283,8 +284,14 @@ class VirtualLayout(VirtualArray):
         return self._layout.dtype
 
     def to_dataset(self, file_or_group, name):
+        if np.issubdtype(self.dtype, np.integer):
+            fillvalue = np.iinfo(self.dtype).min
+        elif np.issubdtype(self.dtype, np.floating):
+            fillvalue = np.nan
+        else:
+            fillvalue = None
         return file_or_group.create_virtual_dataset(
-            name, self._layout, fillvalue=np.nan
+            name, self._layout, fillvalue=fillvalue
         )
 
 

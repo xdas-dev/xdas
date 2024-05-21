@@ -1,2 +1,8 @@
 from . import monitor
-from .core import DataArrayLoader, DataArrayWriter, RealTimeLoader, process
+from .core import (
+    DataArrayLoader,
+    DataArrayWriter,
+    DataFrameWriter,
+    RealTimeLoader,
+    process,
+)

@@ -7,7 +7,7 @@ import pytest
 import xdas
 import xdas.signal as xs
 from xdas.core.datacollection import get_depth
-from xdas.synthetics import generate
+from xdas.synthetics import wavelet_wavefronts
 
 
 class TestDataCollection:
@@ -21,7 +21,7 @@ class TestDataCollection:
         )
 
     def test_init(self):
-        da = generate()
+        da = wavelet_wavefronts()
         dc = self.nest(da)
         data = (
             "instrument",
@@ -34,7 +34,7 @@ class TestDataCollection:
         assert result.equals(dc)
 
     def test_io(self):
-        da = generate()
+        da = wavelet_wavefronts()
         dc = xdas.DataCollection(
             {
                 "das1": da,
@@ -69,7 +69,7 @@ class TestDataCollection:
             assert result.equals(dc)
 
     def test_depth_counter(self):
-        da = generate()
+        da = wavelet_wavefronts()
         da.name = "da"
         dc = self.nest(da)
         with TemporaryDirectory() as dirpath:
@@ -85,7 +85,7 @@ class TestDataCollection:
                     get_depth(file["instrument/das1/acquisition/0/da"]) == 0
 
     def test_isel(self):
-        da = generate()
+        da = wavelet_wavefronts()
         dc = self.nest(da)
         da_isel = da.isel(distance=slice(100, 200))
         dc_isel = dc.isel(distance=slice(100, 200))
@@ -95,7 +95,7 @@ class TestDataCollection:
         assert dc_isel["das2"].empty
 
     def test_sel(self):
-        da = generate()
+        da = wavelet_wavefronts()
         dc = self.nest(da)
         da_sel = da.sel(distance=slice(1000, 2000))
         dc_sel = dc.sel(distance=slice(1000, 2000))
@@ -105,7 +105,7 @@ class TestDataCollection:
         assert dc_sel["das2"].empty
 
     def test_query(self):
-        da = generate()
+        da = wavelet_wavefronts()
         dc = self.nest(da)
         result = dc.query(instrument="das1", acquisition=0)
         expected = xdas.DataCollection(
@@ -121,12 +121,12 @@ class TestDataCollection:
         assert result.equals(dc)
 
     def test_fields(self):
-        da = generate()
+        da = wavelet_wavefronts()
         dc = self.nest(da)
         assert dc.fields == ("instrument", "acquisition")
 
     def test_map(self):
-        da = generate()
+        da = wavelet_wavefronts()
         dc = self.nest(da)
         atom = xs.decimate(..., 2, ftype="fir")
         result = dc.map(atom)

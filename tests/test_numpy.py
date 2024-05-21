@@ -2,12 +2,12 @@ import numpy as np
 import pytest
 
 from xdas.core.dataarray import HANDLED_NUMPY_FUNCTIONS, DataArray
-from xdas.synthetics import generate
+from xdas.synthetics import wavelet_wavefronts
 
 
 class TestUfuncs:
     def test_unitary_operators(self):
-        da = generate()
+        da = wavelet_wavefronts()
         result = np.abs(da)
         expected = da.copy(data=np.abs(da.data))
         da_out = da.copy()
@@ -19,8 +19,8 @@ class TestUfuncs:
         assert da_where.equals(da)
 
     def test_binary_operators(self):
-        da1 = generate()
-        da2 = generate()
+        da1 = wavelet_wavefronts()
+        da2 = wavelet_wavefronts()
         result = np.add(da1, da2)
         expected = da1.copy(data=da1.data + da2.data)
         da_out = da1.copy()
@@ -34,7 +34,7 @@ class TestUfuncs:
             np.add(da1, da2[1:])
 
     def test_multiple_outputs(self):
-        da = generate()
+        da = wavelet_wavefronts()
         result1, result2 = np.divmod(da, da)
         expected1 = da.copy(data=np.ones(da.shape))
         expected2 = da.copy(data=np.zeros(da.shape))
@@ -46,7 +46,7 @@ class TestUfuncs:
 
 class TestFunc:
     def test_returns_dataarray(self):
-        da = generate()
+        da = wavelet_wavefronts()
         for numpy_function in HANDLED_NUMPY_FUNCTIONS:
             if numpy_function == np.clip:
                 result = numpy_function(da, -1, 1)
@@ -67,7 +67,7 @@ class TestFunc:
                 assert isinstance(result, DataArray)
 
     def test_reduce(self):
-        da = generate()
+        da = wavelet_wavefronts()
         result = np.sum(da)
         assert result.shape == ()
         result = np.sum(da, axis=0)
@@ -80,7 +80,7 @@ class TestFunc:
             np.sum(da, axis=2)
 
     def test_out(self):
-        da = generate()
+        da = wavelet_wavefronts()
         out = da.copy()
         np.cumsum(da, axis=-1, out=out)
         assert not out.equals(da)
