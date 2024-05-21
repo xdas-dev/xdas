@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xdas"
-version = "0.1rc0"
-requires-python = ">= 3.7"
+version = "0.1"
+requires-python = ">= 3.10"
 authors = [
     { name = "Alister Trabattoni", email = "alister.trabattoni@gmail.com" },
 ]
