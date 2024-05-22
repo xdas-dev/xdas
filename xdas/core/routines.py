@@ -878,4 +878,8 @@ def _get_timeline_dataframe(obj, dim="first", name=None):
             for key, val in obj.items()
         ]
         dataframe = pd.concat(dataframes)
+    else:
+        raise TypeError(
+            f"`obj` must be a DataArray of a DataCollection, found {type(obj)}"
+        )
     return dataframe
