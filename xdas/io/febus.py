@@ -17,6 +17,7 @@ def read(fname):
         chunks = VirtualSource(zone[name])
         delta = [zone.attrs["Spacing"][1] / 1000.0, zone.attrs["Spacing"][0]]
     name = "".join(["_" + c.lower() if c.isupper() else c for c in name]).lstrip("_")
+    # Detect overlap method
     if "BlockOverlap" in zone.attrs:
         noverlap = zone.attrs["BlockOverlap"][0]
     else:
