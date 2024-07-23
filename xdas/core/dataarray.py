@@ -815,7 +815,9 @@ class DataArray(NDArrayOperatorsMixin):
         }
         return cls(data, {dims[0]: channel, dims[1]: time})
 
-    def to_netcdf(self, fname, mode="w", group=None, virtual=None, **kwargs):
+    def to_netcdf(
+        self, fname, mode="w", group=None, virtual=None, encoding=None, **kwargs
+    ):
         """
         Write DataArray contents to a netCDF file.
 
@@ -831,6 +833,33 @@ class DataArray(NDArrayOperatorsMixin):
             Weather to write a virtual dataset. The DataArray data must be a VirtualSource
             or a VirtualLayout. Default (None) is to try to write a virtual dataset if
             possible.
+        encoding : dict, optional
+            Dictionary of encoding attributes. Because a DataArray contains a unique
+            data variable, the encoding dictionary should not contain the variable name.
+            For more information on encoding, see the `xarray documentation
+            <http://xarray.pydata.org/en/stable/io.html#netcdf>`_. Note that xdas use 
+            the `h5netcdf` engine to write the data. If you want to use a specific plugin
+            for compression, you can use the `hdf5plugin` package. For example, to use the
+            ZFP compression, you can use the `hdf5plugin.Zfp` class.
+
+        Examples
+        --------
+        >>> import os
+        >>> import tempfile
+
+        >>> import numpy as np
+        >>> import xdas as xd
+        >>> import hdf5plugin
+
+        Create some sample data array:
+
+        >>> da = xd.DataArray(np.random.rand(1000, 1000))
+
+        Save the dataset with ZFP compression:
+
+        >>> with tempfile.TemporaryDirectory() as tmpdir:
+        ...     tmpfile = os.path.join(tmpdir, "path.nc")
+        ...     da.to_netcdf(tmpfile, encoding=hdf5plugin.Zfp(accuracy=0.001))
 
         """
         if virtual is None:
@@ -864,7 +893,15 @@ class DataArray(NDArrayOperatorsMixin):
         name = "__values__" if self.name is None else self.name
         if not virtual:
             ds[name] = (self.dims, self.values, attrs)
-            ds.to_netcdf(fname, mode=mode, group=group, engine="h5netcdf", **kwargs)
+            encoding = {name: encoding} if encoding is not None else None
+            ds.to_netcdf(
+                fname,
+                mode=mode,
+                group=group,
+                engine="h5netcdf",
+                encoding=encoding,
+                **kwargs,
+            )
         elif virtual and isinstance(self.data, VirtualArray):
             with h5netcdf.File(fname, mode=mode) as file:
                 if group is not None and group not in file:
