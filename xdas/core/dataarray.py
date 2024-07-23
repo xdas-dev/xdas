@@ -861,7 +861,7 @@ class DataArray(NDArrayOperatorsMixin):
         name = "__values__" if self.name is None else self.name
         if not virtual:
             ds[self.name] = (self.dims, self.values, attrs)
-            ds.to_netcdf(fname, mode=mode, group=group, **kwargs)
+            ds.to_netcdf(fname, mode=mode, group=group, engine="h5netcdf", **kwargs)
         elif virtual and isinstance(self.data, VirtualArray):
             with h5netcdf.File(fname, mode=mode) as file:
                 if group is not None and group not in file:
@@ -876,7 +876,7 @@ class DataArray(NDArrayOperatorsMixin):
                 variable._ensure_dim_id()
                 if attrs is not None:
                     variable.attrs.update(attrs)
-            ds.to_netcdf(fname, mode="a", group=group, **kwargs)
+            ds.to_netcdf(fname, mode="a", group=group, engine="h5netcdf", **kwargs)
         else:
             raise ValueError(
                 "can only use `virtual=True` with a VirtualSource or a VirtualLayout"
@@ -899,7 +899,7 @@ class DataArray(NDArrayOperatorsMixin):
         DataArray
             The openend data array.
         """
-        with xr.open_dataset(fname, group=group) as ds:
+        with xr.open_dataset(fname, group=group, engine="h5netcdf") as ds:
             if not ("Conventions" in ds.attrs and "CF" in ds.attrs["Conventions"]):
                 raise TypeError(
                     "file format not recognized. please provide the file format "
