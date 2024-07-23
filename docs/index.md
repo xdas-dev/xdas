@@ -43,6 +43,10 @@ Found a bug, or you want to propose new features? Follow these instructions to l
 ```
 ````
 
+## Release Notes
+
+Head [here](release-notes) to learn about the latest features.
+
 ## Citing xdas
 
 If you use *Xdas* for your DAS data processing, please consider [citing the project](cite).
@@ -55,5 +59,6 @@ getting-started
 user-guide/index
 api/index
 contribute
+release-notes
 cite
 ```
