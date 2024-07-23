@@ -182,8 +182,9 @@ class DataArrayWriter:
 
     """
 
-    def __init__(self, dirpath):
+    def __init__(self, dirpath, encoding=None):
         self.dirpath = dirpath
+        self.encoding = encoding
         self.queue = Queue(maxsize=1)
         self.results = []
         self.executor = ThreadPoolExecutor(1)
@@ -201,7 +202,7 @@ class DataArrayWriter:
             if os.path.exists(path):
                 raise OSError(f"the file '{path}' already exists.")
             else:
-                da.to_netcdf(path)
+                da.to_netcdf(path, encoding=self.encoding)
             self.results.append(open_dataarray(path))
 
     def get_path(self, da):

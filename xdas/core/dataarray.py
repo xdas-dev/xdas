@@ -837,7 +837,7 @@ class DataArray(NDArrayOperatorsMixin):
             Dictionary of encoding attributes. Because a DataArray contains a unique
             data variable, the encoding dictionary should not contain the variable name.
             For more information on encoding, see the `xarray documentation
-            <http://xarray.pydata.org/en/stable/io.html#netcdf>`_. Note that xdas use 
+            <http://xarray.pydata.org/en/stable/io.html#netcdf>`_. Note that xdas use
             the `h5netcdf` engine to write the data. If you want to use a specific plugin
             for compression, you can use the `hdf5plugin` package. For example, to use the
             ZFP compression, you can use the `hdf5plugin.Zfp` class.
