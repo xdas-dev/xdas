@@ -1,9 +1,9 @@
 import os
 from tempfile import TemporaryDirectory
 
+import hdf5plugin
 import numpy as np
 import pytest
-import hdf5plugin
 
 import xdas
 from xdas.core.coordinates import Coordinates, DenseCoordinate, InterpCoordinate
@@ -353,11 +353,23 @@ class TestDataArray:
             assert da.equals(da_recovered)
 
     def test_io_with_zfp_compression(self):
-        da = DataArray(np.random.rand(101, 100))
+        da = DataArray(np.random.rand(101, 101))
         with TemporaryDirectory() as tmpdir:
-            tmpfile = os.path.join(tmpdir, "path.nc")
-            da.to_netcdf(tmpfile, encoding=hdf5plugin.Zfp(accuracy=0.001))
-            _da = DataArray.from_netcdf(tmpfile)
+            tmpfile_uncompressed = os.path.join(tmpdir, "uncompressed.nc")
+            da.to_netcdf(tmpfile_uncompressed)
+            tmpfile_compressed = os.path.join(tmpdir, "compressed.nc")
+            da.to_netcdf(tmpfile_compressed, encoding=hdf5plugin.Zfp(accuracy=0.001))
+            tmpfile_chunk_compressed = os.path.join(tmpdir, "chunk_compressed.nc")
+            da.to_netcdf(
+                tmpfile_chunk_compressed,
+                encoding={"chunks": (10, 10), **hdf5plugin.Zfp(accuracy=0.001)},
+            )
+            uncompressed_size = os.path.getsize(tmpfile_uncompressed)
+            compressed_size = os.path.getsize(tmpfile_compressed)
+            chunk_compressed_size = os.path.getsize(tmpfile_chunk_compressed)
+            assert chunk_compressed_size < uncompressed_size
+            assert compressed_size < chunk_compressed_size
+            _da = DataArray.from_netcdf(tmpfile_compressed)
             assert np.abs(da - _da).max().values < 0.001
 
     def test_ufunc(self):

@@ -231,9 +231,7 @@ class DataMapping(DataCollection, dict):
         )
         return uniquifiy(out)
 
-    def to_netcdf(
-        self, fname, mode="w", group=None, virtual=None, encoding=None, **kwargs
-    ):
+    def to_netcdf(self, fname, mode="w", group=None, virtual=None, encoding=None):
         if mode == "w" and group is None and os.path.exists(fname):
             os.remove(fname)
         for key in self:
@@ -247,7 +245,6 @@ class DataMapping(DataCollection, dict):
                 group=location,
                 virtual=virtual,
                 encoding=encoding,
-                **kwargs,
             )
 
     @classmethod
@@ -444,11 +441,9 @@ class DataSequence(DataCollection, list):
     def from_mapping(cls, data):
         return cls(data.values(), data.name)
 
-    def to_netcdf(
-        self, fname, mode="w", group=None, virtual=None, encoding=None, **kwargs
-    ):
+    def to_netcdf(self, fname, mode="w", group=None, virtual=None, encoding=None):
         self.to_mapping().to_netcdf(
-            fname, mode=mode, group=group, virtual=virtual, encoding=encoding, **kwargs
+            fname, mode=mode, group=group, virtual=virtual, encoding=encoding
         )
 
     @classmethod

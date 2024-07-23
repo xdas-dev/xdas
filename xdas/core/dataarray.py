@@ -815,9 +815,7 @@ class DataArray(NDArrayOperatorsMixin):
         }
         return cls(data, {dims[0]: channel, dims[1]: time})
 
-    def to_netcdf(
-        self, fname, mode="w", group=None, virtual=None, encoding=None, **kwargs
-    ):
+    def to_netcdf(self, fname, mode="w", group=None, virtual=None, encoding=None):
         """
         Write DataArray contents to a netCDF file.
 
@@ -853,13 +851,14 @@ class DataArray(NDArrayOperatorsMixin):
 
         Create some sample data array:
 
-        >>> da = xd.DataArray(np.random.rand(1000, 1000))
+        >>> da = xd.DataArray(np.random.rand(100, 100))
 
         Save the dataset with ZFP compression:
 
+        >>> encoding = {"chunks": (10, 10), **hdf5plugin.Zfp(accuracy=0.001)}
         >>> with tempfile.TemporaryDirectory() as tmpdir:
         ...     tmpfile = os.path.join(tmpdir, "path.nc")
-        ...     da.to_netcdf(tmpfile, encoding=hdf5plugin.Zfp(accuracy=0.001))
+        ...     da.to_netcdf(tmpfile, encoding=encoding)
 
         """
         if virtual is None:
@@ -892,20 +891,22 @@ class DataArray(NDArrayOperatorsMixin):
         attrs = {"coordinate_interpolation": mapping} if mapping else None
         name = "__values__" if self.name is None else self.name
         if not virtual:
-            ds[name] = (self.dims, self.values, attrs)
-            encoding = (
-                {name: {"chunksizes": self.shape, **encoding}}  # TODO: dirty fix...
-                if encoding is not None
-                else None
-            )
-            ds.to_netcdf(
-                fname,
-                mode=mode,
-                group=group,
-                engine="h5netcdf",
-                encoding=encoding,
-                **kwargs,
-            )
+            encoding = {} if encoding is None else encoding
+            with h5netcdf.File(fname, mode=mode) as file:
+                if group is not None and group not in file:
+                    file.create_group(group)
+                file = file if group is None else file[group]
+                file.dimensions.update(self.sizes)
+                variable = file.create_variable(
+                    name,
+                    self.dims,
+                    self.dtype,
+                    data=self.values,
+                    **encoding,
+                )
+                if attrs is not None:
+                    variable.attrs.update(attrs)
+            ds.to_netcdf(fname, mode="a", group=group, engine="h5netcdf")
         elif virtual and isinstance(self.data, VirtualArray):
             with h5netcdf.File(fname, mode=mode) as file:
                 if group is not None and group not in file:
@@ -920,7 +921,7 @@ class DataArray(NDArrayOperatorsMixin):
                 variable._ensure_dim_id()
                 if attrs is not None:
                     variable.attrs.update(attrs)
-            ds.to_netcdf(fname, mode="a", group=group, engine="h5netcdf", **kwargs)
+            ds.to_netcdf(fname, mode="a", group=group, engine="h5netcdf")
         else:
             raise ValueError(
                 "can only use `virtual=True` with a VirtualSource or a VirtualLayout"
