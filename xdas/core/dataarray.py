@@ -893,7 +893,11 @@ class DataArray(NDArrayOperatorsMixin):
         name = "__values__" if self.name is None else self.name
         if not virtual:
             ds[name] = (self.dims, self.values, attrs)
-            encoding = {name: encoding} if encoding is not None else None
+            encoding = (
+                {name: {"chunksizes": self.shape, **encoding}}  # TODO: dirty fix...
+                if encoding is not None
+                else None
+            )
             ds.to_netcdf(
                 fname,
                 mode=mode,

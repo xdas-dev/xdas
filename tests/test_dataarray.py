@@ -3,6 +3,7 @@ from tempfile import TemporaryDirectory
 
 import numpy as np
 import pytest
+import hdf5plugin
 
 import xdas
 from xdas.core.coordinates import Coordinates, DenseCoordinate, InterpCoordinate
@@ -350,6 +351,14 @@ class TestDataArray:
             da.to_netcdf(path)
             da_recovered = DataArray.from_netcdf(path)
             assert da.equals(da_recovered)
+
+    def test_io_with_zfp_compression(self):
+        da = DataArray(np.random.rand(101, 100))
+        with TemporaryDirectory() as tmpdir:
+            tmpfile = os.path.join(tmpdir, "path.nc")
+            da.to_netcdf(tmpfile, encoding=hdf5plugin.Zfp(accuracy=0.001))
+            _da = DataArray.from_netcdf(tmpfile)
+            assert np.abs(da - _da).max().values < 0.001
 
     def test_ufunc(self):
         da = wavelet_wavefronts()
