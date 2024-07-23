@@ -890,13 +890,13 @@ class DataArray(NDArrayOperatorsMixin):
         mapping = " ".join(mappings)
         attrs = {"coordinate_interpolation": mapping} if mapping else None
         name = "__values__" if self.name is None else self.name
-        if not virtual:
-            encoding = {} if encoding is None else encoding
-            with h5netcdf.File(fname, mode=mode) as file:
-                if group is not None and group not in file:
-                    file.create_group(group)
-                file = file if group is None else file[group]
-                file.dimensions.update(self.sizes)
+        with h5netcdf.File(fname, mode=mode) as file:
+            if group is not None and group not in file:
+                file.create_group(group)
+            file = file if group is None else file[group]
+            file.dimensions.update(self.sizes)
+            if not virtual:
+                encoding = {} if encoding is None else encoding
                 variable = file.create_variable(
                     name,
                     self.dims,
@@ -904,28 +904,22 @@ class DataArray(NDArrayOperatorsMixin):
                     data=self.values,
                     **encoding,
                 )
-                if attrs is not None:
-                    variable.attrs.update(attrs)
-            ds.to_netcdf(fname, mode="a", group=group, engine="h5netcdf")
-        elif virtual and isinstance(self.data, VirtualArray):
-            with h5netcdf.File(fname, mode=mode) as file:
-                if group is not None and group not in file:
-                    file.create_group(group)
-                file = file if group is None else file[group]
-                file.dimensions.update(self.sizes)
+            elif virtual and isinstance(self.data, VirtualArray):
+                if encoding is not None:
+                    raise ValueError("cannot use `encoding` with in virtual mode")
                 self.data.to_dataset(file._h5group, name)
                 variable = file._variable_cls(file, name, self.dims)
                 file._variables[name] = variable
                 variable._attach_dim_scales()
                 variable._attach_coords()
                 variable._ensure_dim_id()
-                if attrs is not None:
-                    variable.attrs.update(attrs)
+            else:
+                raise ValueError(
+                    "can only use `virtual=True` with a virtual array as data"
+                )
+            if attrs is not None:
+                variable.attrs.update(attrs)
             ds.to_netcdf(fname, mode="a", group=group, engine="h5netcdf")
-        else:
-            raise ValueError(
-                "can only use `virtual=True` with a VirtualSource or a VirtualLayout"
-            )
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
