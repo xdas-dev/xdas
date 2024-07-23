@@ -861,7 +861,7 @@ class DataArray(NDArrayOperatorsMixin):
         attrs = {"coordinate_interpolation": mapping} if mapping else None
         name = "__values__" if self.name is None else self.name
         if not virtual:
-            ds[self.name] = (self.dims, self.values, attrs)
+            ds[name] = (self.dims, self.values, attrs)
             ds.to_netcdf(fname, mode=mode, group=group, engine="h5netcdf", **kwargs)
         elif virtual and isinstance(self.data, VirtualArray):
             with h5netcdf.File(fname, mode=mode) as file:
