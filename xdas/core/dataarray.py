@@ -5,6 +5,7 @@ from functools import partial
 
 import h5netcdf
 import h5py
+import hdf5plugin
 import numpy as np
 import xarray as xr
 from numpy.lib.mixins import NDArrayOperatorsMixin
