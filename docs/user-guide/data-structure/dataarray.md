@@ -63,7 +63,7 @@ da
 da.to_netcdf("dataarray.nc", virtual=None)  # try to write virtual, here it's impossible
 ```
 
-## Reading a DataArray from disk.
+## Reading a DataArray from disk
 
 Xdas can read several DAS file format with {py:func}`~xdas.open_dataarray` along with its own format. Xdas uses the netCDF4 format with CF conventions. By default Xdas assumes that files are Xdas NetCDF format. If not the case the `engine` argument must be passed.
 
@@ -71,7 +71,31 @@ To learn how to read your custom DAS data format with *xdas*, please see the cha
 
 ```{code-cell}
 da = xdas.open_dataarray("dataarray.nc", engine=None)  # by default Xdas NetCDF
+da
 ```
+
+By default any file is read in virtual mode, meaning that at this point only the metadata have been read.
+
+## Using Compression
+
+Compression that are included in HDF5 and NETCDF4 can be used along with additional one that are provided by the [hdf5plugin](https://hdf5plugin.readthedocs.io) library.
+
+In this example, we use the Zfp compression which is a lossy compression that is particularly suited for floating point numbers. The recommended compression scheme is the *fixed accuracy mode* which ensure that your data is not altered by the compression above that threshold in absolute value. Be careful to choose a value which is much lower than your instrumental noise. Compression ratio of around 3-4 can usually be achieved in such a way. For big files, compressing by chunks can be useful to enhance slicing through the data (otherwise the entire data must be decompressed each time some part must be accessed).
+
+```{code-cell}
+import hdf5plugin
+encoding = {"chunks": (10, 10), **hdf5plugin.Zfp(accuracy=1e-6)}
+
+da.to_netcdf("chunked_and_compressed.nc", virtual=False, encoding=encoding)
+```
+
+Reading compressed data is completely transparent, you do not need to specify anything.
+
+```{code-cell}
+xdas.open_dataarray("chunked_and_compressed.nc")
+```
+
+Note that the indicated data size is the uncompressed data size.
 
 ## Assign new coordinates to your DataArray
 
