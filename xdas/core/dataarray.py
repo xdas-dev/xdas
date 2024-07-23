@@ -823,6 +823,8 @@ class DataArray(NDArrayOperatorsMixin):
         ----------
         fname : str
             Path to which to save this dataset.
+        mode : {'w', 'a'}, optional
+            Write ('w') or append ('a') mode. If mode='a', the file must already exist.
         group : str, optional
             Path to the netCDF4 group in the given file to open.
         virtual : bool, optional
