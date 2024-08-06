@@ -21,7 +21,7 @@ jobs:
           pip install '.[tests]'
 
       - name: Run tests with coverage
-        run: coverage run -m pytest
+        run: coverage run --source=xdas -m pytest
 
       - name: Generate coverage report
         run: coverage xml
