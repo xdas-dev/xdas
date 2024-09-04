@@ -20,14 +20,19 @@ os.chdir("../_data")
 
 ## Implemented file formats
 
-The formats that are currently implemented are: ASN, FEBUS, OPTASENSE and SINTELA. To read them you have to specifiy which one you want in the `engine` argument in {py:func}`xdas.open_dataarray` for a single file or {py:func}`xdas.open_mfdataarray` for multiple files:
+Here below the list of formats that are currently implemented. All HDF5 based formats actually support virtualization, meaning that format that does not support it will load data in memory when reading files. To read them you have to specifiy which one you want in the `engine` argument in {py:func}`xdas.open_dataarray` for a single file or {py:func}`xdas.open_mfdataarray` for multiple files:
 
-| DAS constructor   | `engine` argument |
-|:-----------------:|:-----------------:|
-| ASN               | `"asn"`           |
-| FEBUS             | `"febus"`         |
-| OPTASENSE         | `"optasense"`     |
-| SINTELA           | `"sintela"`       |
+| DAS constructor   | `engine` argument | Virtualization |
+|:-----------------:|:-----------------:|:-:|
+| ASN               | `"asn"`           | ✅︎ |
+| FEBUS             | `"febus"`         | ✅︎ |
+| OPTASENSE         | `"optasense"`     | ✅︎ |
+| SILIXA            | `"silixa"`        | ❌ |
+| SINTELA           | `"sintela"`       | ✅︎ |
+
+```{warning}
+File formats that do not support virtualization will be loaded in memory. We are working on a solution for non-HDF5 based file formats.
+```
 
 ## Extending *xdas* with your file format
 
