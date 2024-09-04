@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import h5py
 import numpy as np
@@ -10,10 +10,10 @@ from ..virtual import VirtualSource
 def read(fname):
     with h5py.File(fname, "r") as file:
         ti = np.datetime64(
-            datetime.fromtimestamp(file["data_product"]["gps_time"][0]), UTC
+            datetime.fromtimestamp(file["data_product"]["gps_time"][0]), timezone.utc
         ).astype("datetime64[ms]")
         tf = np.datetime64(
-            datetime.fromtimestamp(file["data_product"]["gps_time"][-1]), UTC
+            datetime.fromtimestamp(file["data_product"]["gps_time"][-1]), timezone.utc
         ).astype("datetime64[ms]")
         d0 = file.attrs["sensing_range_start"]
         dx = file.attrs["dx"]
