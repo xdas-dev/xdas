@@ -306,7 +306,7 @@ def open_mfdataarray(
         else:
             iterator = as_completed(futures)
         objs = [future.result() for future in iterator]
-    return combine_by_coords(objs, dim, tolerance, squeeze, True, verbose)
+    return combine_by_coords(objs, dim, tolerance, squeeze, None, verbose)
 
 
 def open_dataarray(fname, group=None, engine=None, **kwargs):
