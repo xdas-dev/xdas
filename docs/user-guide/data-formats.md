@@ -20,7 +20,7 @@ os.chdir("../_data")
 
 ## Implemented file formats
 
-The formats that are currently implemented are: ASN, FEBUS, OPTASENSE and SINTELA. To read them you have to specifiy which one you want in the `engine` argument in {py:func}`xdas.open_dataarray` for a single file or {py:func}`xdas.open_mfdataarray` for multiple files:
+The formats that are currently implemented are: ASN, FEBUS, OPTASENSE, SINTELA and TERRA15. To read them you have to specifiy which one you want in the `engine` argument in {py:func}`xdas.open_dataarray` for a single file or {py:func}`xdas.open_mfdataarray` for multiple files:
 
 | DAS constructor   | `engine` argument |
 |:-----------------:|:-----------------:|
@@ -28,6 +28,7 @@ The formats that are currently implemented are: ASN, FEBUS, OPTASENSE and SINTEL
 | FEBUS             | `"febus"`         |
 | OPTASENSE         | `"optasense"`     |
 | SINTELA           | `"sintela"`       |
+| TERRA15           | `"terra15"`       |
 
 ## Extending *xdas* with your file format
 
