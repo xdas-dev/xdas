@@ -202,28 +202,29 @@ class TdmsReader(object):
         if self._properties is None:
             self._properties = self._read_properties()
         if mapped:
-            props = self._properties.copy()
-            tmp = [
-                prop_map.get(col.replace(" ", ""), col.replace(" ", ""))
-                for col in self._properties.index
-            ]
-            tmp1 = []
+            raise NotImplementedError("Mapped properties not implemented")
+            # props = self._properties.copy()
+            # tmp = [
+            #     prop_map.get(col.replace(" ", ""), col.replace(" ", ""))
+            #     for col in self._properties.index
+            # ]
+            # tmp1 = []
 
-            def addToList(ls, val, cnt=0):
-                if val not in ls:
-                    ls.append(val)
-                else:
-                    newVal = val + "_" + str(cnt + 1)
-                    if newVal not in ls:
-                        ls.append(newVal)
-                    else:
-                        addToList(ls, val, cnt + 1)
+            # def addToList(ls, val, cnt=0):
+            #     if val not in ls:
+            #         ls.append(val)
+            #     else:
+            #         newVal = val + "_" + str(cnt + 1)
+            #         if newVal not in ls:
+            #             ls.append(newVal)
+            #         else:
+            #             addToList(ls, val, cnt + 1)
 
-            for col in tmp:
-                addToList(tmp1, col)
+            # for col in tmp:
+            #     addToList(tmp1, col)
 
-            props.index = tmp1
-            return props.loc[:, "Value"].to_dict()
+            # props.index = tmp1
+            # return props.loc[:, "Value"].to_dict()
         else:
             return self._properties.loc[:, "Value"].to_dict()
 
@@ -292,7 +293,7 @@ class TdmsReader(object):
             raise Exception("Unsupported TDMS data type: " + self._data_type)
 
         # Read Dimension of the raw data array (has to be 1):
-        dummy = struct.unpack("<i", self._tdms_file.read(4))[0]
+        _ = struct.unpack("<i", self._tdms_file.read(4))[0]
 
         self._chunk_size = struct.unpack("<i", self._tdms_file.read(4))[0]
 
@@ -323,7 +324,7 @@ class TdmsReader(object):
 
         # Allocate output container
         data = np.empty((ns, nch), dtype=np.dtype(self._data_type))
-        if data.size is 0:
+        if data.size == 0:
             return data
 
         ## 1. Index first block & reshape?
