@@ -1,1 +1,1 @@
-from . import asn, febus, optasense, sintela
+from . import asn, febus, optasense, silixa, sintela
