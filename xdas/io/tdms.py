@@ -318,8 +318,8 @@ class TdmsReader(object):
         else:
             # return data inclusive of last_s, numpy indexing is exclusive of end index
             last_s += 1
-        nch = np.int(max(last_ch - first_ch, 0))
-        ns = np.int(max(last_s - first_s, 0))
+        nch = int(max(last_ch - first_ch, 0))
+        ns = int(max(last_s - first_s, 0))
 
         # Allocate output container
         data = np.empty((ns, nch), dtype=np.dtype(self._data_type))
@@ -409,19 +409,19 @@ class TdmsReader(object):
             self._read_chunk_size()
 
         dmap = mmap.mmap(self._tdms_file.fileno(), 0, access=mmap.ACCESS_READ)
-        rdo = np.int(self.fileinfo["raw_data_offset"])
-        nch = np.int(self.fileinfo["n_channels"])
+        rdo = int(self.fileinfo["raw_data_offset"])
+        nch = int(self.fileinfo["n_channels"])
 
         # TODO: Support streaming file type?
         # TODO: Is this a valid calculation for ChannelLength?
         nso = self.fileinfo["next_segment_offset"]
-        self._seg1_length = np.int(
+        self._seg1_length = int(
             (nso - rdo) / nch / np.dtype(self._data_type).itemsize
         )
         self._channel_length = self._seg1_length
 
         if self.fileinfo["decimated"]:
-            n_complete_blk = np.int(self._seg1_length / self._chunk_size)
+            n_complete_blk = int(self._seg1_length / self._chunk_size)
             ax_ord = "C"
         else:
             n_complete_blk = 0
@@ -434,7 +434,7 @@ class TdmsReader(object):
         )
         # Rotate the axes to [chunk_size, nblk, nch]
         self._raw_data = np.rollaxis(self._raw_data, 2)
-        additional_samples = np.int(
+        additional_samples = int(
             self._seg1_length - n_complete_blk * self._chunk_size
         )
         additional_samples_offset = (
@@ -463,9 +463,9 @@ class TdmsReader(object):
                 (seg2_nso - seg2_rdo) / nch / np.dtype(self._data_type).itemsize
             )
             if self.fileinfo["decimated"]:
-                n_complete_blk2 = np.int(self._seg2_length / self._chunk_size)
+                n_complete_blk2 = int(self._seg2_length / self._chunk_size)
             else:
-                n_complete_blk2 = np.int(0)
+                n_complete_blk2 = int(0)
             self._raw_data2 = np.ndarray(
                 (n_complete_blk2, nch, self._chunk_size),
                 dtype=self._data_type,
@@ -473,7 +473,7 @@ class TdmsReader(object):
                 offset=(nso + LEAD_IN_LENGTH + seg2_rdo),
             )
             self._raw_data2 = np.rollaxis(self._raw_data2, 2)
-            additional_samples = np.int(
+            additional_samples = int(
                 self._seg2_length - n_complete_blk2 * self._chunk_size
             )
             additional_samples_offset = (
