@@ -12,7 +12,7 @@ def read(fname):
 
     # Create the time tie points
     t0 = np.datetime64(props["GPSTimeStamp"])
-    dt = np.timedelta64(round(1e9 /  props["SamplingFrequency[Hz]"]))
+    dt = np.timedelta64(round(1e9 /  props["SamplingFrequency[Hz]"]), "ns")
     time = {"tie_indices": [0, nt - 1], "tie_values": [t0, t0 + dt * (nt - 1)]}
 
     # Create the distance tie points
