@@ -60,6 +60,56 @@ class ZMQStream:
         Updates the header information based on the received message.
     stream_packet(message)
         Processes a packet and returns a DataArray object.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import xdas as xd
+    >>> from xdas.io.asn import ZMQStream
+    >>> import holoviews as hv
+    >>> from holoviews.streams import Pipe
+    >>> hv.extension("bokeh")
+
+    >>> stream = ZMQStream("tcp://pisco.unice.fr:3333")
+
+    >>> nbuffer = 100
+    >>> buffer = np.zeros((nbuffer, stream.shape[1]))
+    >>> pipe = Pipe(data=buffer)
+
+    >>> bounds = (
+    ...     stream.distance["tie_values"][0],
+    ...     0,
+    ...     stream.distance["tie_values"][1],
+    ...     (nbuffer * stream.dt) / np.timedelta64(1, "s"),
+    ... )
+
+    >>> def image(data):
+    ...     return hv.Image(data, bounds=bounds)
+
+    >>> dmap = hv.DynamicMap(image, streams=[pipe])
+    >>> dmap.opts(
+    ...     xlabel="distance",
+    ...     ylabel="time",
+    ...     invert_yaxis=True,
+    ...     clim=(-1, 1),
+    ...     cmap="viridis",
+    ...     width=800,
+    ...     height=400,
+    ... )
+    >>> dmap
+
+    >>> atom = xd.atoms.Sequential(
+    ...     [
+    ...         xd.signal.integrate(..., dim="distance"),
+    ...         xd.signal.sliding_mean_removal(..., wlen=1000.0, dim="distance"),
+    ...     ]
+    ... )
+    >>> for da in stream:
+    ...     da = atom(da) / 100.0
+    ...     buffer = np.concatenate([buffer, da.values], axis=0)
+    ...     buffer = buffer[-nbuffer:None]
+    ...     pipe.send(buffer)
+
     """
 
     def __init__(self, address):
