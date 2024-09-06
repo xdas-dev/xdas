@@ -312,11 +312,15 @@ class ZMQPublisher:
 
     Examples
     --------
+    >>> import xdas as xd
     >>> from xdas.processing import ZMQPublisher
 
-    >>> address = "tcp://*:5556"
-    >>> pub = ZMQPublisher(address) # doctest: +SKIP
+    >>> publisher = ZMQPublisher("tcp://*:5556")
+    >>> packets = xd.split(xd.synthetics.randn_wavefronts(), 10)
 
+    >>> for n, da in enumerate(packets, start=1):
+    ...     print(f"Sending packet {n}")
+    ...     publisher.write(da)
     """
 
     def __init__(self, address):
@@ -353,11 +357,21 @@ class ZMQSubscriber:
 
     Examples
     --------
+    >>> import xdas as xd
     >>> from xdas.processing import ZMQSubscriber
 
-    >>> address = "tcp://localhost:5556"
-    >>> sub = ZMQSubscriber(address) # doctest: +SKIP
+    >>> subscriber = ZMQSubscriber("tcp://localhost:5556")
 
+    >>> packets = []
+    >>> for n, da in enumerate(subscriber, start=1):
+    ...     print(f"Received packet {n}")
+    ...     packets.append(da)
+    ...     if n == 10:
+    ...         break
+
+    >>> da = xd.concatenate(packets)
+
+    >>> assert da.equals(xd.synthetics.randn_wavefronts())
     """
 
     def __init__(self, address):
