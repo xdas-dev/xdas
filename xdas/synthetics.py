@@ -45,6 +45,9 @@ def wavelet_wavefronts(
     True
 
     """
+    # ensure reporducibility
+    np.random.seed(42)
+
     # sampling
     starttime = np.datetime64(starttime).astype("datetime64[ns]")
     span = (np.timedelta64(6, "s"), 10000.0)  # (6 s, 10 km)
@@ -68,7 +71,6 @@ def wavelet_wavefronts(
         data[:, k] += sp.gausspulse(t - ttp[k] - t0, fc) / 2  # P is twice weaker
         data[:, k] += sp.gausspulse(t - tts[k] - t0, fc)
     data /= np.max(np.abs(data), axis=0, keepdims=True)  # normalize
-    np.random.seed(42)
     data += np.random.randn(*shape) / snr  # add noise
 
     # strain rate like response
@@ -96,6 +98,9 @@ def wavelet_wavefronts(
 
 
 def randn_wavefronts():
+    # ensure reporducibility
+    np.random.seed(42)
+
     # sampling
     resolution = (np.timedelta64(10, "ms"), 100.0)
     starttime = np.datetime64("2024-01-01T00:00:00").astype("datetime64[ns]")
@@ -119,7 +124,6 @@ def randn_wavefronts():
         data[:, k] += (t > (t0 + ttp[k])) * np.random.randn(shape[0]) / 2
         data[:, k] += (t > (t0 + tts[k])) * np.random.randn(shape[0])
     data /= np.max(np.abs(data), axis=0, keepdims=True)  # normalize
-    np.random.seed(42)
     data += np.random.randn(*shape) / snr  # add noise
 
     # pack data and coordinates as Database or DataCollection if chunking.
