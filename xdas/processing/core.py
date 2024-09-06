@@ -1,9 +1,11 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
+from tempfile import TemporaryDirectory
 
 import numpy as np
 import pandas as pd
+import zmq
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
@@ -297,3 +299,92 @@ class DataFrameWriter:
         except pd.errors.EmptyDataError:
             out = pd.DataFrame()
         return out
+
+
+class ZMQPublisher:
+    """
+    A class for publishing DataArray chunks over ZeroMQ.
+
+    Parameters
+    ----------
+    address : str
+        The address to bind the publisher to.
+
+    Examples
+    --------
+    >>> from xdas.processing import ZMQPublisher
+
+    >>> address = "tcp://*:5556"
+    >>> pub = ZMQPublisher(address) # doctest: +SKIP
+
+    """
+
+    def __init__(self, address):
+        import zmq
+
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.PUB)
+        self.socket.bind(address)
+
+    def write(self, da):
+        """
+        Send a DataArray over ZeroMQ.
+
+        Parameters
+        ----------
+        da : DataArray
+            The DataArray to be sent.
+
+        """
+        self.socket.send(tobytes(da))
+
+    def result():
+        return None
+
+
+class ZMQSubscriber:
+    """
+    A class for subscribing to DataArray chunks over ZeroMQ.
+
+    Parameters
+    ----------
+    address : str
+        The address to connect the subscriber to.
+
+    Examples
+    --------
+    >>> from xdas.processing import ZMQSubscriber
+
+    >>> address = "tcp://localhost:5556"
+    >>> sub = ZMQSubscriber(address) # doctest: +SKIP
+
+    """
+
+    def __init__(self, address):
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.SUB)
+        self.socket.connect(address)
+        self.socket.setsockopt_string(zmq.SUBSCRIBE, "")
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        message = self.socket.recv()
+        return frombuffer(message)
+
+
+def tobytes(da):
+    with TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "tmp.nc")
+        da.to_netcdf(path, virtual=False)
+        with open(path, "rb") as file:
+            return file.read()
+
+
+def frombuffer(da):
+    with TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "tmp.nc")
+        with open(path, "wb") as file:
+            file.write(da)
+        return open_dataarray(path).load()
