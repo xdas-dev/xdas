@@ -179,21 +179,40 @@ class Coordinates(dict):
 
         >>> import xdas
 
-        >>> coords = {
-        ...     "time": {"tie_indices": [0, 999], "tie_values": [0.0, 10.0]},
-        ...     "distance": [0, 1, 2],
-        ...     "channel": ("distance", ["DAS01", "DAS02", "DAS03"]),
-        ...     "interrogator": (None, "SRN"),
-        ... }
-        >>> xdas.Coordinates(coords).to_dict()
-        {'time': {'dim': 'time',
-          'data': {'tie_indices': [0, 999], 'tie_values': [0.0, 10.0]}},
-         'distance': {'dim': 'distance', 'data': [0, 1, 2]},
-         'channel': {'dim': 'distance', 'data': ['DAS01', 'DAS02', 'DAS03']},
-         'interrogator': {'dim': None, 'data': 'SRN'}}
-        """
+        >>> coords = xdas.Coordinates(
+        ...     {
+        ...         "time": {"tie_indices": [0, 999], "tie_values": [0.0, 10.0]},
+        ...         "distance": [0, 1, 2],
+        ...         "channel": ("distance", ["DAS01", "DAS02", "DAS03"]),
+        ...         "interrogator": (None, "SRN"),
+        ...     }
+        ... )
+        >>> coords.to_dict()
+        {'dims': ('time', 'distance'),
+         'coords': {'time': {'dim': 'time',
+           'data': {'tie_indices': [0, 999], 'tie_values': [0.0, 10.0]},
+           'dtype': 'float64'},
+          'distance': {'dim': 'distance', 'data': [0, 1, 2], 'dtype': 'int64'},
+          'channel': {'dim': 'distance',
+           'data': ['DAS01', 'DAS02', 'DAS03'],
+           'dtype': '<U5'},
+          'interrogator': {'dim': None, 'data': 'SRN', 'dtype': '<U3'}}}
 
-        return {name: self[name].to_dict() for name in self}
+        """
+        return {
+            "dims": self.dims,
+            "coords": {name: self[name].to_dict() for name in self},
+        }
+
+    @classmethod
+    def from_dict(cls, dct):
+        return cls(
+            {
+                key: Coordinate.from_dict(value)
+                for key, value in dct["coords"].items()
+            },
+            dct["dims"],
+        )
 
     def copy(self, deep=True):
         if deep:
@@ -229,7 +248,7 @@ class Coordinates(dict):
 
 
 class Coordinate:
-    def __new__(cls, data, dim=None):
+    def __new__(cls, data, dim=None, dtype=None):
         data, dim = parse(data, dim)
         if ScalarCoordinate.isvalid(data):
             return object.__new__(ScalarCoordinate)
@@ -313,18 +332,25 @@ class Coordinate:
 
         return DataArray(self.values, {self.dim: self}, name=self.dim)
 
+    def to_dict(self):
+        raise NotImplementedError
+
+    @classmethod
+    def from_dict(cls, dct):
+        return cls(**dct)
+
 
 class ScalarCoordinate(Coordinate):
     def __new__(cls, *args, **kwargs):
         return object.__new__(cls)
 
-    def __init__(self, data, dim=None):
+    def __init__(self, data, dim=None, dtype=None):
         data, dim = parse(data, dim)
         if dim is not None:
             raise ValueError("a scalar coordinate cannot be a dim")
         if not self.__class__.isvalid(data):
             raise TypeError("`data` must be scalar-like")
-        self.data = np.asarray(data)
+        self.data = np.asarray(data, dtype=dtype)
 
     @property
     def dim(self):
@@ -354,17 +380,19 @@ class ScalarCoordinate(Coordinate):
             data = self.data.astype(str).item()
         else:
             data = self.data.item()
-        return {"dim": self.dim, "data": data}
+        return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
 
 
 class DefaultCoordinate(Coordinate):
     def __new__(cls, *args, **kwargs):
         return object.__new__(cls)
 
-    def __init__(self, data, dim=None):
+    def __init__(self, data, dim=None, dtype=None):
         data, dim = parse(data, dim)
         if not self.isvalid(data):
             raise TypeError("`data` must be a mapping {'size': <int>}")
+        if dtype is not None:
+            raise ValueError("`dtype` is not supported for DefaultCoordinate")
         self.data = data
         self.dim = dim
 
@@ -419,18 +447,18 @@ class DefaultCoordinate(Coordinate):
         return slice(start, stop, step)
 
     def to_dict(self):
-        return {"dim": self.dim, "data": self.data}
+        return {"dim": self.dim, "data": self.data.tolist(), "dtype": str(self.dtype)}
 
 
 class DenseCoordinate(Coordinate):
     def __new__(cls, *args, **kwargs):
         return object.__new__(cls)
 
-    def __init__(self, data, dim=None):
+    def __init__(self, data, dim=None, dtype=None):
         data, dim = parse(data, dim)
         if not self.isvalid(data):
             raise TypeError("`data` must be array-like")
-        self.data = np.asarray(data)
+        self.data = np.asarray(data, dtype=dtype)
         self.dim = dim
 
     @staticmethod
@@ -469,10 +497,10 @@ class DenseCoordinate(Coordinate):
 
     def to_dict(self):
         if np.issubdtype(self.dtype, np.datetime64):
-            data = list(self.data.astype(str))
+            data = self.data.astype(str).tolist()
         else:
-            data = list(self.data)
-        return {"dim": self.dim, "data": data}
+            data = self.data.tolist()
+        return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
 
 
 class InterpCoordinate(Coordinate):
@@ -496,7 +524,7 @@ class InterpCoordinate(Coordinate):
     def __new__(cls, *args, **kwargs):
         return object.__new__(cls)
 
-    def __init__(self, data, dim=None):
+    def __init__(self, data, dim=None, dtype=None):
         data, dim = parse(data, dim)
         if not self.__class__.isvalid(data):
             raise TypeError("`data` must be dict-like")
@@ -505,7 +533,7 @@ class InterpCoordinate(Coordinate):
                 "both `tie_indices` and `tie_values` key should be provided"
             )
         tie_indices = np.asarray(data["tie_indices"])
-        tie_values = np.asarray(data["tie_values"])
+        tie_values = np.asarray(data["tie_values"], dtype=dtype)
         if not tie_indices.ndim == 1:
             raise ValueError("`tie_indices` must be 1D")
         if not tie_values.ndim == 1:
@@ -846,8 +874,11 @@ class InterpCoordinate(Coordinate):
         tie_values = self.data["tie_values"]
         if np.issubdtype(tie_values.dtype, np.datetime64):
             tie_values = tie_values.astype(str)
-        data = {"tie_indices": list(tie_indices), "tie_values": list(tie_values)}
-        return {"dim": self.dim, "data": data}
+        data = {
+            "tie_indices": tie_indices.tolist(),
+            "tie_values": tie_values.tolist(),
+        }
+        return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
 
 
 def parse(data, dim=None):
