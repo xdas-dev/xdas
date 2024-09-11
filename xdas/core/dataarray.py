@@ -3,6 +3,7 @@ import re
 import warnings
 from functools import partial
 
+import dask
 import h5netcdf
 import h5py
 import hdf5plugin
@@ -10,6 +11,7 @@ import numpy as np
 import xarray as xr
 from numpy.lib.mixins import NDArrayOperatorsMixin
 
+from ..dask import from_dict, to_dict
 from ..virtual import VirtualArray, VirtualSource
 from .coordinates import Coordinate, Coordinates, get_sampling_interval
 
@@ -990,6 +992,34 @@ class DataArray(NDArrayOperatorsMixin):
             name = "__values__" if da.name is None else da.name
             data = VirtualSource(file[name])
         return cls(data, coords, da.dims, da.name, None if da.attrs == {} else da.attrs)
+
+    def to_dict(self):
+        """Convert the DataArray to a dictionary."""
+        if isinstance(self.data, VirtualArray):
+            raise NotImplementedError("cannot convert a virtual array to a dictionary")
+        elif isinstance(self.data, np.ndarray):
+            data = self.data.tolist()
+        elif isinstance(self.data, dask.array.Array):
+            data = to_dict(self.data)
+        return {
+            "data": data,
+            "coords": self.coords.to_dict()["coords"],
+            "dims": self.dims,
+            "name": self.name,
+            "attrs": self.attrs,
+        }
+
+    @classmethod
+    def from_dict(cls, dct):
+        """Create a DataArray from a dictionary."""
+        if isinstance(dct["data"], list):
+            data = np.array(dct["data"])
+        elif isinstance(dct["data"], dict):
+            data = from_dict(dct["data"])
+        else:
+            raise ValueError("data must be a list or a dictionary")
+        coords = Coordinates.from_dict({key: dct[key] for key in ["coords", "dims"]})
+        return cls(data, coords, dct["dims"], dct["name"], dct["attrs"])
 
     def plot(self, *args, **kwargs):
         """
