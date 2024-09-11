@@ -416,9 +416,7 @@ class TdmsReader(object):
         # TODO: Support streaming file type?
         # TODO: Is this a valid calculation for ChannelLength?
         nso = self.fileinfo["next_segment_offset"]
-        self._seg1_length = int(
-            (nso - rdo) / nch / np.dtype(self._data_type).itemsize
-        )
+        self._seg1_length = int((nso - rdo) / nch / np.dtype(self._data_type).itemsize)
         self._channel_length = self._seg1_length
 
         if self.fileinfo["decimated"]:
@@ -435,9 +433,7 @@ class TdmsReader(object):
         )
         # Rotate the axes to [chunk_size, nblk, nch]
         self._raw_data = np.rollaxis(self._raw_data, 2)
-        additional_samples = int(
-            self._seg1_length - n_complete_blk * self._chunk_size
-        )
+        additional_samples = int(self._seg1_length - n_complete_blk * self._chunk_size)
         additional_samples_offset = (
             rdo
             + n_complete_blk
