@@ -6,7 +6,7 @@ import dask
 import numpy as np
 import pytest
 
-from xdas.io.dask import decode, encode, from_dict, fuse, iskey, to_dict
+from xdas.dask import decode, encode, from_dict, fuse, iskey, to_dict
 
 
 class TestIsKey:

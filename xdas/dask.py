@@ -55,7 +55,7 @@ def decode(graph):
             key = (parts[0], *[int(part) for part in parts[1:]])
         match computation:
             case "@read", path, engine:
-                from .. import io
+                from . import io
 
                 module = getattr(io, engine)
                 computation = module.read_data, path
