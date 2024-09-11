@@ -11,10 +11,10 @@ def to_dict(arr):
     }
 
 
-def from_dict(dct, read_fn):
+def from_dict(dct):
     """Convert a dictionary to a dask array."""
     dct = dct.copy()
-    dct["dask"] = decode(dct["dask"], read_fn)
+    dct["dask"] = decode(dct["dask"])
     return Array(**dct)
 
 
@@ -29,8 +29,13 @@ def encode(graph):
                 key = name + "@" + "@".join(str(index) for index in indices)
         match computation:
             # TODO: put correct engine and check func name
-            case (func, *args) if callable(func) and func.__name__ == "read_data":
-                computation = "@read", args[0], "silixa"
+            case (func, *args) if callable(func):
+                if func.__name__ == "read_data":
+                    computation = "@read", args[0], func.__module__.split(".")[-1]
+                else:
+                    raise NotImplementedError(
+                        f"Function {func.__name__} not supported."
+                    )
             case (str(name), *indices) if all(
                 isinstance(index, int) for index in indices
             ):
@@ -39,15 +44,25 @@ def encode(graph):
     return dsk
 
 
-def decode(graph, read_fn):
+def decode(graph):
     """Decode a graph by replacing string chunks and functions with tuples."""
     dsk = {}
     for key, computation in graph.items():
-        parts = key.split("@")
-        key = (parts[0], *[int(part) for part in parts[1:]])
+        if not iskey(key):
+            raise ValueError(f"Invalid key: {key}")
+        if "@" in key:
+            parts = key.split("@")
+            key = (parts[0], *[int(part) for part in parts[1:]])
         match computation:
             case "@read", path, engine:
-                computation = read_fn, path  # TODO: use engine
+                from .. import io
+
+                module = getattr(io, engine)
+                computation = module.read_data, path
+            case str(name):
+                if "@" in name:
+                    parts = name.split("@")
+                    computation = (parts[0], *[int(part) for part in parts[1:]])
         dsk[key] = computation
     return dsk
 
@@ -59,8 +74,20 @@ def fuse(graph):
     for key, computation in graph.items():
         if key in ignore:
             continue
-        while isinstance(computation, str) and computation in graph:
-            computation = graph[computation]
+        while iskey(computation) and computation in graph:
             ignore.add(computation)
+            computation = graph[computation]
         dsk[key] = computation
     return dsk
+
+
+def iskey(obj):
+    match obj:
+        case str(name) if name and not name.startswith("@") and not name.endswith("@"):
+            return True
+        case (str(name), *indices) if all(
+            isinstance(index, int) for index in indices
+        ) and iskey(name):
+            return True
+        case _:
+            return False

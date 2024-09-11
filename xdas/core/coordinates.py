@@ -207,10 +207,7 @@ class Coordinates(dict):
     @classmethod
     def from_dict(cls, dct):
         return cls(
-            {
-                key: Coordinate.from_dict(value)
-                for key, value in dct["coords"].items()
-            },
+            {key: Coordinate.from_dict(value) for key, value in dct["coords"].items()},
             dct["dims"],
         )
 
