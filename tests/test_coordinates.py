@@ -82,6 +82,11 @@ class TestScalarCoordinate:
         assert not ScalarCoordinate(1).isdense()
         assert not ScalarCoordinate(1).isinterp()
 
+    def test_to_from_dict(self):
+        for data in self.valid:
+            coord = ScalarCoordinate(data)
+            assert ScalarCoordinate.from_dict(coord.to_dict()).equals(coord)
+
 
 class TestDenseCoordinate:
     valid = [
@@ -187,6 +192,11 @@ class TestDenseCoordinate:
         assert np.array_equiv(
             DenseCoordinate([1, 2, 3]).to_index(slice(2, None)), slice(1, 3)
         )
+
+    def test_to_from_dict(self):
+        for data in self.valid:
+            coord = DenseCoordinate(data)
+            assert DenseCoordinate.from_dict(coord.to_dict()).equals(coord)
 
 
 class TestInterpCoordinate:
@@ -472,6 +482,11 @@ class TestInterpCoordinate:
         coord = InterpCoordinate({"tie_indices": [0], "tie_values": [1.0]})
         assert coord[0].values == 1.0
 
+    def test_to_from_dict(self):
+        for data in self.valid:
+            coord = InterpCoordinate(data)
+            assert InterpCoordinate.from_dict(coord.to_dict()).equals(coord)
+
 
 class TestCoordinate:
     def test_new(self):
@@ -543,3 +558,15 @@ class TestCoordinates:
         assert coords.dims == ("dim_0", "dim_1", "dim_2")
         with pytest.raises(TypeError, match="must be of type str"):
             coords[0] = ...
+
+    def test_to_from_dict(self):
+        starttime = np.datetime64("2020-01-01T00:00:00.000")
+        endtime = np.datetime64("2020-01-01T00:00:10.000")
+        coords = {
+            "time": {"tie_indices": [0, 999], "tie_values": [starttime, endtime]},
+            "distance": np.linspace(0, 1000, 3),
+            "channel": ("distance", ["DAS01", "DAS02", "DAS03"]),
+            "interrogator": (None, "SRN"),
+        }
+        coords = xdas.Coordinates(coords)
+        assert xdas.Coordinates.from_dict(coords.to_dict()).equals(coords)
