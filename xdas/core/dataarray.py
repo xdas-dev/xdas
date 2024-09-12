@@ -13,7 +13,7 @@ import xarray as xr
 from numpy.lib.mixins import NDArrayOperatorsMixin
 
 from ..dask import from_dict, to_dict
-from ..virtual import VirtualArray, VirtualSource
+from ..virtual import VirtualArray, VirtualSource, _to_human
 from .coordinates import Coordinate, Coordinates, get_sampling_interval
 
 HANDLED_NUMPY_FUNCTIONS = {}
@@ -104,6 +104,8 @@ class DataArray(NDArrayOperatorsMixin):
             data_repr = np.array2string(
                 self.data, precision=precision, threshold=0, edgeitems=edgeitems
             )
+        elif isinstance(self.data, dask.array.Array):
+            data_repr = f"DaskArray: {_to_human(self.data.nbytes)} ({self.data.dtype})"
         else:
             data_repr = repr(self.data)
         string = "<xdas.DataArray ("
