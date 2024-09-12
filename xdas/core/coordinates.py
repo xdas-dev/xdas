@@ -330,6 +330,9 @@ class Coordinate:
     def isinterp(self):
         return isinstance(self, InterpCoordinate)
 
+    def append(self, other):
+        raise NotImplementedError(f"append is not implemented for {self.__class__}")
+
     def to_dataarray(self):
         from .dataarray import DataArray  # TODO: avoid defered import?
 
@@ -453,6 +456,13 @@ class DefaultCoordinate(Coordinate):
     def slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
         return slice(start, stop, step)
 
+    def append(self, other):
+        if not isinstance(other, self.__class__):
+            raise TypeError(f"cannot append {type(other)} to {self.__class__}")
+        if not self.dim == other.dim:
+            raise ValueError("cannot append coordinate with different dimension")
+        return self.__class__({"size": len(self) + len(other)}, self.dim)
+
     def to_dict(self):
         return {"dim": self.dim, "data": self.data.tolist(), "dtype": str(self.dtype)}
 
@@ -481,7 +491,11 @@ class DenseCoordinate(Coordinate):
 
     def equals(self, other):
         if isinstance(other, self.__class__):
-            return np.array_equal(self.data, other.data)
+            return (
+                np.array_equal(self.data, other.data)
+                and self.dim == other.dim
+                and self.dtype == other.dtype
+            )
         else:
             return False
 
@@ -503,6 +517,19 @@ class DenseCoordinate(Coordinate):
         ):
             slc = slice(slc.start, slc.stop - 1, slc.step)
         return slc
+
+    def append(self, other):
+        if not isinstance(other, self.__class__):
+            raise TypeError(f"cannot append {type(other)} to {self.__class__}")
+        if not self.dim == other.dim:
+            raise ValueError("cannot append coordinate with different dimension")
+        if self.empty:
+            return other
+        if other.empty:
+            return self
+        if not self.dtype == other.dtype:
+            raise ValueError("cannot append coordinate with different dtype")
+        return self.__class__(np.concatenate([self.data, other.data]), self.dim)
 
     def to_dict(self):
         if np.issubdtype(self.dtype, np.datetime64):
@@ -665,8 +692,11 @@ class InterpCoordinate(Coordinate):
             return self.get_value(self.indices)
 
     def equals(self, other):
-        return np.array_equal(self.tie_indices, other.tie_indices) and np.array_equal(
-            self.tie_values, other.tie_values
+        return (
+            np.array_equal(self.tie_indices, other.tie_indices)
+            and np.array_equal(self.tie_values, other.tie_values)
+            and self.dim == other.dim
+            and self.dtype == other.dtype
         )
 
     def get_value(self, index):
@@ -766,6 +796,29 @@ class InterpCoordinate(Coordinate):
         ):
             stop_index -= 1
         return slice(start_index, stop_index)
+
+    def append(self, other):
+        if not isinstance(other, self.__class__):
+            raise TypeError(f"cannot append {type(other)} to {self.__class__}")
+        if not self.dim == other.dim:
+            raise ValueError("cannot append coordinate with different dimension")
+        if self.empty:
+            return other
+        if other.empty:
+            return self
+        if not self.dtype == other.dtype:
+            raise ValueError("cannot append coordinate with different dtype")
+        coord = self.__class__(
+            {
+                "tie_indices": np.append(
+                    self.tie_indices, other.tie_indices + len(self)
+                ),
+                "tie_values": np.append(self.tie_values, other.tie_values),
+            },
+            self.dim,
+        )
+        coord = coord.simplify()
+        return coord
 
     def decimate(self, q):
         tie_indices = (self.tie_indices // q) * q
