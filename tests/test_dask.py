@@ -79,13 +79,17 @@ class TestEncode:
         }
 
     def test_callable(self):
+        from dask.array.chunk import getitem
+
         from xdas.io.silixa import read_data
 
         graph = {
             "a": (read_data, "path"),
+            "b": (getitem, "a", 0),
         }
         assert encode(graph) == {
             "a": ("@read", "path", "silixa"),
+            "b": ("@getitem", "a", 0),
         }
 
     def test_invalid(self):
@@ -122,13 +126,17 @@ class TestDecode:
         }
 
     def test_callable(self):
+        from dask.array.chunk import getitem
+
         from xdas.io.silixa import read_data
 
         graph = {
             "a": ("@read", "path", "silixa"),
+            "b": ("@getitem", "a", 0),
         }
         assert decode(graph) == {
             "a": (read_data, "path"),
+            "b": (getitem, "a", 0),
         }
 
 
@@ -159,3 +167,5 @@ class TestToFromDict:
             data = dask.array.concatenate(chunks, axis=1)
             assert np.array_equal(data.compute(), values)
             assert np.array_equal(data.compute(), from_dict(to_dict(data)).compute())
+            sliced = data[:, 0]
+            assert np.array_equal(sliced.compute(), values[:, 0])

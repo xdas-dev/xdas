@@ -1,10 +1,14 @@
 from dask.array import Array
+from dask.array.chunk import getitem
 
 
 def to_dict(arr):
     """Convert a dask array to a dictionary."""
+    graph = arr.__dask_graph__().cull(arr.__dask_keys__())
+    graph = fuse(graph)
+    graph = encode(graph)
     return {
-        "dask": fuse(encode(arr.__dask_graph__())),  # TODO: fuse then encode fails...
+        "dask": graph,  # TODO: fuse then encode fails...
         "name": arr.name,
         "chunks": arr.chunks,
         "dtype": str(arr.dtype),
@@ -28,10 +32,13 @@ def encode(graph):
             ):
                 key = name + "@" + "@".join(str(index) for index in indices)
         match computation:
-            # TODO: put correct engine and check func name
             case (func, *args) if callable(func):
                 if func.__name__ == "read_data":
                     computation = "@read", args[0], func.__module__.split(".")[-1]
+                elif (
+                    func.__name__ == "getitem" and func.__module__ == "dask.array.chunk"
+                ):
+                    computation = "@getitem", *args
                 else:
                     raise NotImplementedError(
                         f"Function {func.__name__} not supported."
@@ -59,6 +66,8 @@ def decode(graph):
 
                 module = getattr(io, engine)
                 computation = module.read_data, path
+            case "@getitem", *args:
+                computation = getitem, *args
             case str(name):
                 if "@" in name:
                     parts = name.split("@")
