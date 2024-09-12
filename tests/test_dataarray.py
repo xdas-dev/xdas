@@ -372,6 +372,43 @@ class TestDataArray:
             _da = DataArray.from_netcdf(tmpfile_compressed)
             assert np.abs(da - _da).max().values < 0.001
 
+    def test_io_json(self):
+        import types
+        from glob import glob
+
+        import dask
+
+        import xdas.io
+
+        def read_data(path):
+            return np.load(path)
+
+        xdas.io.numpy = types.ModuleType("numpy")
+        xdas.io.numpy.read_data = read_data
+        xdas.io.numpy.read_data.__module__ = "xdas.io.numpy"
+
+        with TemporaryDirectory() as tmpdir:
+            values = np.random.rand(3, 10)
+            chunks = np.split(values, 5, axis=1)
+            for idx, chunk in enumerate(chunks):
+                np.save(os.path.join(tmpdir, f"chunk_{idx}.npy"), chunk)
+            paths = glob(os.path.join(tmpdir, "*.npy"))
+            chunks = [dask.delayed(xdas.io.numpy.read_data)(path) for path in paths]
+            chunks = [
+                dask.array.from_delayed(chunk, shape=(3, 2), dtype=values.dtype)
+                for chunk in chunks
+            ]
+            data = dask.array.concatenate(chunks, axis=1)
+            da = DataArray(
+                data, coords={"time": np.arange(3), "distance": np.arange(10)}
+            )
+
+            fname = os.path.join(tmpdir, "tmp.json")
+            assert da.equals(DataArray.from_dict(da.to_dict()))
+            da.to_json(fname)
+            result = DataArray.from_json(fname)
+            assert da.equals(result)
+
     def test_ufunc(self):
         da = wavelet_wavefronts()
         result = np.add(da, 1)

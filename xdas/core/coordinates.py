@@ -64,7 +64,7 @@ class Coordinates(dict):
             if dims is None:
                 dims = coords.dims
             coords = dict(coords)
-        self._dims = () if dims is None else dims
+        self._dims = () if dims is None else tuple(dims)
         self._parent = None
         if coords is not None:
             for name in coords:
