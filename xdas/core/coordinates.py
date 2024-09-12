@@ -245,7 +245,9 @@ class Coordinates(dict):
 
 
 class Coordinate:
-    def __new__(cls, data, dim=None, dtype=None):
+    def __new__(cls, data=None, dim=None, dtype=None):
+        if data is None:
+            raise TypeError("cannot infer coordinate type if no `data` is provided")
         data, dim = parse(data, dim)
         if ScalarCoordinate.isvalid(data):
             return object.__new__(ScalarCoordinate)
@@ -307,6 +309,10 @@ class Coordinate:
     def values(self):
         return self.__array__()
 
+    @property
+    def empty(self):
+        return len(self) == 0
+
     def equals(self, other): ...
 
     def to_index(self, item, method=None, endpoint=True):
@@ -341,7 +347,9 @@ class ScalarCoordinate(Coordinate):
     def __new__(cls, *args, **kwargs):
         return object.__new__(cls)
 
-    def __init__(self, data, dim=None, dtype=None):
+    def __init__(self, data=None, dim=None, dtype=None):
+        if data is None:
+            raise TypeError("scalar coordinate cannot be empty, please provide a value")
         data, dim = parse(data, dim)
         if dim is not None:
             raise ValueError("a scalar coordinate cannot be a dim")
@@ -384,7 +392,9 @@ class DefaultCoordinate(Coordinate):
     def __new__(cls, *args, **kwargs):
         return object.__new__(cls)
 
-    def __init__(self, data, dim=None, dtype=None):
+    def __init__(self, data=None, dim=None, dtype=None):
+        if data is None:
+            data = {"size": 0}
         data, dim = parse(data, dim)
         if not self.isvalid(data):
             raise TypeError("`data` must be a mapping {'size': <int>}")
@@ -451,7 +461,9 @@ class DenseCoordinate(Coordinate):
     def __new__(cls, *args, **kwargs):
         return object.__new__(cls)
 
-    def __init__(self, data, dim=None, dtype=None):
+    def __init__(self, data=None, dim=None, dtype=None):
+        if data is None:
+            data = []
         data, dim = parse(data, dim)
         if not self.isvalid(data):
             raise TypeError("`data` must be array-like")
@@ -521,7 +533,9 @@ class InterpCoordinate(Coordinate):
     def __new__(cls, *args, **kwargs):
         return object.__new__(cls)
 
-    def __init__(self, data, dim=None, dtype=None):
+    def __init__(self, data=None, dim=None, dtype=None):
+        if data is None:
+            data = {"tie_indices": [], "tie_values": []}
         data, dim = parse(data, dim)
         if not self.__class__.isvalid(data):
             raise TypeError("`data` must be dict-like")

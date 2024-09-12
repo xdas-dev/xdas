@@ -87,6 +87,10 @@ class TestScalarCoordinate:
             coord = ScalarCoordinate(data)
             assert ScalarCoordinate.from_dict(coord.to_dict()).equals(coord)
 
+    def test_empty(self):
+        with pytest.raises(TypeError, match="cannot be empty"):
+            ScalarCoordinate()
+
 
 class TestDenseCoordinate:
     valid = [
@@ -197,6 +201,10 @@ class TestDenseCoordinate:
         for data in self.valid:
             coord = DenseCoordinate(data)
             assert DenseCoordinate.from_dict(coord.to_dict()).equals(coord)
+
+    def test_empty(self):
+        coord = DenseCoordinate()
+        assert coord.empty
 
 
 class TestInterpCoordinate:
@@ -502,6 +510,10 @@ class TestCoordinate:
         result = coord.to_dataarray()
         expected = xdas.DataArray([1, 2, 3], {"dim": [1, 2, 3]}, name="dim")
         assert result.equals(expected)
+
+    def test_empty(self):
+        with pytest.raises(TypeError, match="cannot infer coordinate type"):
+            xdas.Coordinate()
 
 
 class TestCoordinates:
