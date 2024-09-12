@@ -156,6 +156,35 @@ class TestCore:
             },
         )
         assert xdas.concatenate((da1, da2), dim="time").equals(expected)
+        # concat dense coordinates
+        da1 = xdas.DataArray(
+            data=np.zeros((5, 4, 3)),
+            coords={
+                "phase": ["A", "B", "C"],
+                "time": [0, 1, 2, 3, 4],
+                "distance": [0.0, 1.0, 2.0, 3.0],
+            },
+            dims=("time", "distance", "phase"),
+        )
+        da2 = xdas.DataArray(
+            data=np.ones((7, 4, 3)),
+            coords={
+                "phase": ["A", "B", "C"],
+                "time": [5, 6, 7, 8, 9, 10, 11],
+                "distance": [0.0, 1.0, 2.0, 3.0],
+            },
+            dims=("time", "distance", "phase"),
+        )
+        expected = xdas.DataArray(
+            data=np.concatenate((np.zeros((5, 4, 3)), np.ones((7, 4, 3))), axis=0),
+            coords={
+                "phase": ["A", "B", "C"],
+                "time": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+                "distance": [0.0, 1.0, 2.0, 3.0],
+            },
+            dims=("time", "distance", "phase"),
+        )
+        assert xdas.concatenate((da1, da2), dim="time").equals(expected)
 
     def test_open_dataarray(self):
         with pytest.raises(FileNotFoundError):

@@ -556,9 +556,6 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
     if virtual is None:
         virtual = all(isinstance(da.data, (VirtualSource, VirtualStack)) for da in objs)
 
-    if not all(isinstance(da[dim], InterpCoordinate) for da in objs):
-        raise NotImplementedError("can only concatenate along interpolated coordinate")
-
     obj = objs[0]
     axis = obj.get_axis_num(dim)
     dim = obj.dims[axis]
@@ -570,28 +567,26 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
     objs = sorted(objs, key=lambda da: da[dim][0].values)
     iterator = tqdm(objs, desc="Linking dataarray") if verbose else objs
     data = []
-    tie_indices = []
-    tie_values = []
-    idx = 0
+    coord = coords[dim].__class__(data=None, dim=dim, dtype=coords[dim].dtype)
     for da in iterator:
         if isinstance(da.data, VirtualStack):
             for source in da.data.sources:
                 data.append(source)
         else:
             data.append(da.data)
-
-        tie_indices.extend(idx + da[dim].tie_indices)
-        tie_values.extend(da[dim].tie_values)
-        idx += da.shape[axis]
+        coord = coord.append(da[dim])
 
     if virtual:
         data = VirtualStack(data, axis)
     else:
         data = np.concatenate(data, axis)
 
-    coords[dim] = InterpCoordinate(
-        {"tie_indices": tie_indices, "tie_values": tie_values}, dim
-    ).simplify(tolerance)
+    if tolerance is not None:
+        if hasattr(coord, "simplify"):
+            coord = coord.simplify(tolerance)
+        else:
+            raise TypeError("tolerance can only be used with interpolated coordinates")
+    coords[dim] = coord
 
     return DataArray(data, coords, dims, name, attrs)
 
