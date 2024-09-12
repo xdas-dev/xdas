@@ -190,6 +190,10 @@ class TestDataArray:
 
     def test_stream(self):
         da = wavelet_wavefronts()
+        da["time"] = {
+            "tie_indices": da["time"].tie_indices,
+            "tie_values": da["time"].tie_values.astype("datetime64[us]"),
+        }
         st = da.to_stream(dim={"distance": "time"})
         assert st[0].id == "NET.DAS00001.00.BN1"
         assert len(st) == da.sizes["distance"]
