@@ -970,12 +970,16 @@ class DataArray(NDArrayOperatorsMixin):
                 name, da = next(iter(ds.items()))
                 coords = {
                     name: (
-                        coord.dims[0],
                         (
-                            coord.values.astype("U")
-                            if coord.dtype == np.dtype("O")
-                            else coord.values
-                        ),
+                            coord.dims[0],
+                            (
+                                coord.values.astype("U")
+                                if coord.dtype == np.dtype("O")
+                                else coord.values
+                            ),
+                        )
+                        if coord.dims
+                        else coord.values
                     )
                     for name, coord in da.coords.items()
                 }
