@@ -4,9 +4,8 @@ from tempfile import TemporaryDirectory
 
 import dask
 import numpy as np
-import pytest
 
-from xdas.dask import from_dict, fuse, iskey, to_dict
+from xdas.dask.core import from_dict, fuse, iskey, to_dict
 
 
 class TestIsKey:

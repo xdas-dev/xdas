@@ -1,5 +1,7 @@
 from dask.array import Array
 
+from . import serial
+
 
 def to_dict(arr):
     """Convert a dask array to a dictionary."""

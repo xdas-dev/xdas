@@ -1,7 +1,7 @@
 import pytest
 
 import xdas as xd
-from xdas.encode import dumps, loads
+from xdas.dask.serial import dumps, loads
 
 
 def test_tuple():
