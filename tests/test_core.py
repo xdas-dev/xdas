@@ -185,6 +185,15 @@ class TestCore:
             dims=("time", "distance", "phase"),
         )
         assert xdas.concatenate((da1, da2), dim="time").equals(expected)
+        # stack
+        da = wavelet_wavefronts()
+        objs = [obj for obj in da]
+        result = xdas.concatenate(objs, dim="time")
+        result["time"] = xdas.InterpCoordinate.from_array(result["time"].values)
+        assert result.equals(da)
+        objs = [obj.drop_coords("time") for obj in da]
+        result = xdas.concatenate(objs, dim="time")
+        assert result.equals(da.drop_coords("time"))
 
     def test_open_dataarray(self):
         with pytest.raises(FileNotFoundError):

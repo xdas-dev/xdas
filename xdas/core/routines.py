@@ -556,37 +556,50 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
     if virtual is None:
         virtual = all(isinstance(da.data, (VirtualSource, VirtualStack)) for da in objs)
 
-    obj = objs[0]
-    axis = obj.get_axis_num(dim)
-    dim = obj.dims[axis]
-    coords = obj.coords.copy()
-    dims = obj.dims
-    name = obj.name
-    attrs = obj.attrs
+    if dim in objs[0].dims + ("first", "last"):
+        axis = objs[0].get_axis_num(dim)
+        dim = objs[0].dims[axis]  # ensure not "first" or "last"
+        dims = objs[0].dims
+    else:
+        axis = 0
+        dims = (dim, *objs[0].dims)
+        objs = [da.expand_dims(dim) for da in objs]
 
-    objs = sorted(objs, key=lambda da: da[dim][0].values)
+    coords = objs[0].coords.copy()
+    name = objs[0].name
+    attrs = objs[0].attrs
+
+    dim_has_coords = dim in coords
+
+    if dim_has_coords:
+        objs = sorted(objs, key=lambda da: da[dim][0].values)
+        coord = coords[dim].__class__(data=None, dim=dim, dtype=coords[dim].dtype)
+
     iterator = tqdm(objs, desc="Linking dataarray") if verbose else objs
     data = []
-    coord = coords[dim].__class__(data=None, dim=dim, dtype=coords[dim].dtype)
     for da in iterator:
         if isinstance(da.data, VirtualStack):
             for source in da.data.sources:
                 data.append(source)
         else:
             data.append(da.data)
-        coord = coord.append(da[dim])
+
+        if dim in coords:
+            coord = coord.append(da[dim])
 
     if virtual:
         data = VirtualStack(data, axis)
     else:
         data = np.concatenate(data, axis)
-
-    if tolerance is not None:
-        if hasattr(coord, "simplify"):
-            coord = coord.simplify(tolerance)
-        else:
-            raise TypeError("tolerance can only be used with interpolated coordinates")
-    coords[dim] = coord
+    if dim_has_coords:
+        if tolerance is not None:
+            if hasattr(coord, "simplify"):
+                coord = coord.simplify(tolerance)
+            else:
+                raise TypeError(
+                    "tolerance can only be used with interpolated coordinates"
+                )
+        coords[dim] = coord
 
     return DataArray(data, coords, dims, name, attrs)
 
