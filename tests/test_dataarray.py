@@ -376,7 +376,7 @@ class TestDataArray:
             _da = DataArray.from_netcdf(tmpfile_compressed)
             assert np.abs(da - _da).max().values < 0.001
 
-    def test_io_json(self):
+    def test_io_dask(self):
         import types
         from glob import glob
 
@@ -406,12 +406,7 @@ class TestDataArray:
             da = DataArray(
                 data, coords={"time": np.arange(3), "distance": np.arange(10)}
             )
-
-            fname = os.path.join(tmpdir, "tmp.json")
-            assert da.equals(DataArray.from_dict(da.to_dict()))
-            da.to_json(fname)
-            result = DataArray.from_json(fname)
-            assert da.equals(result)
+            # TODO: test writing dask array to netcdf
 
     def test_ufunc(self):
         da = wavelet_wavefronts()

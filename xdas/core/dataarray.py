@@ -1024,17 +1024,6 @@ class DataArray(NDArrayOperatorsMixin):
         coords = Coordinates.from_dict({key: dct[key] for key in ["coords", "dims"]})
         return cls(data, coords, dct["dims"], dct["name"], dct["attrs"])
 
-    def to_json(self, fname):
-        """Write the DataArray to a JSON file."""
-        with open(fname, "w") as file:
-            json.dump(self.to_dict(), file)
-
-    @classmethod
-    def from_json(self, fname):
-        """Read the DataArray from a JSON file."""
-        with open(fname, "r") as file:
-            return self.from_dict(json.load(file))
-
     def plot(self, *args, **kwargs):
         """
         Plot a DataArray.
