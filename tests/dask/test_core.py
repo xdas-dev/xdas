@@ -1,11 +1,13 @@
 import os
+import types
 from glob import glob
 from tempfile import TemporaryDirectory
 
 import dask
 import numpy as np
 
-from xdas.dask.core import from_dict, fuse, iskey, to_dict
+import xdas.io
+from xdas.dask.core import dumps, from_dict, fuse, iskey, loads, to_dict
 
 
 class TestIsKey:
@@ -52,32 +54,34 @@ class TestFuse:
         assert fuse(graph) == graph
 
 
-class TestToFromDict:
-    def test(self):
-        import types
+class TestIO:
+    def generate(self, tmpdir):
+        expected = np.random.rand(3, 10)
+        chunks = np.split(expected, 5, axis=1)
+        for idx, chunk in enumerate(chunks):
+            np.save(os.path.join(tmpdir, f"chunk_{idx}.npy"), chunk)
+        paths = glob(os.path.join(tmpdir, "*.npy"))
+        chunks = [dask.delayed(np.load)(path) for path in paths]
+        chunks = [
+            dask.array.from_delayed(chunk, shape=(3, 2), dtype=expected.dtype)
+            for chunk in chunks
+        ]
+        data = dask.array.concatenate(chunks, axis=1)
+        assert np.array_equal(data.compute(), expected)
+        return expected, data
 
-        import xdas.io
-
-        def read_data(path):
-            return np.load(path)
-
-        xdas.io.numpy = types.ModuleType("numpy")
-        xdas.io.numpy.read_data = read_data
-        xdas.io.numpy.read_data.__module__ = "xdas.io.numpy"
-
+    def test_dict(self):
         with TemporaryDirectory() as tmpdir:
-            values = np.random.rand(3, 10)
-            chunks = np.split(values, 5, axis=1)
-            for idx, chunk in enumerate(chunks):
-                np.save(os.path.join(tmpdir, f"chunk_{idx}.npy"), chunk)
-            paths = glob(os.path.join(tmpdir, "*.npy"))
-            chunks = [dask.delayed(xdas.io.numpy.read_data)(path) for path in paths]
-            chunks = [
-                dask.array.from_delayed(chunk, shape=(3, 2), dtype=values.dtype)
-                for chunk in chunks
-            ]
-            data = dask.array.concatenate(chunks, axis=1)
-            assert np.array_equal(data.compute(), values)
-            assert np.array_equal(data.compute(), from_dict(to_dict(data)).compute())
-            sliced = data[:, 0]
-            assert np.array_equal(sliced.compute(), values[:, 0])
+            expected, data = self.generate(tmpdir)
+            result = from_dict(to_dict(data))
+            assert np.array_equal(result.compute(), expected)
+            sliced = result[:, 0]
+            assert np.array_equal(sliced.compute(), expected[:, 0])
+
+    def test_serial(self):
+        with TemporaryDirectory() as tmpdir:
+            expected, data = self.generate(tmpdir)
+            result = loads(dumps(data))
+            assert np.array_equal(result.compute(), expected)
+            sliced = result[:, 0]
+            assert np.array_equal(sliced.compute(), expected[:, 0])

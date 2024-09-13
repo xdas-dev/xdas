@@ -3,6 +3,16 @@ from dask.array import Array
 from . import serial
 
 
+def dumps(arr):
+    """Serialize a dask array."""
+    return serial.dumps(to_dict(arr))
+
+
+def loads(data):
+    """Deserialize a dask array."""
+    return from_dict(serial.loads(data))
+
+
 def to_dict(arr):
     """Convert a dask array to a dictionary."""
     graph = arr.__dask_graph__().cull(arr.__dask_keys__())
