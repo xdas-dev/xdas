@@ -891,7 +891,9 @@ class DataArray(NDArrayOperatorsMixin):
                     }
                 )
             else:
-                ds = ds.assign_coords({name: (coord.dim, coord.values)})
+                ds = ds.assign_coords(
+                    {name: (coord.dim, coord.values) if coord.dim else coord.values}
+                )
         mapping = " ".join(mappings)
         attrs = {} if self.attrs is None else self.attrs
         attrs |= {"coordinate_interpolation": mapping} if mapping else attrs
@@ -985,12 +987,16 @@ class DataArray(NDArrayOperatorsMixin):
                     raise ValueError("several possible data arrays detected")
                 coords = {
                     name: (
-                        coord.dims[0],
                         (
-                            coord.values.astype("U")
-                            if coord.dtype == np.dtype("O")
-                            else coord.values
-                        ),
+                            coord.dims[0],
+                            (
+                                coord.values.astype("U")
+                                if coord.dtype == np.dtype("O")
+                                else coord.values
+                            ),
+                        )
+                        if coord.dims
+                        else coord.values
                     )
                     for name, coord in da.coords.items()
                 }

@@ -408,6 +408,14 @@ class TestDataArray:
             assert expected.name == result.name
             assert expected.attrs == result.attrs
 
+    def test_io_non_dimensional(self):
+        expected = DataArray(coords={"dim": 0}, dims=())
+        with TemporaryDirectory() as dirpath:
+            path = os.path.join(dirpath, "tmp.nc")
+            expected.to_netcdf(path)
+            result = DataArray.from_netcdf(path)
+            assert expected.equals(result)
+
     def test_ufunc(self):
         da = wavelet_wavefronts()
         result = np.add(da, 1)
