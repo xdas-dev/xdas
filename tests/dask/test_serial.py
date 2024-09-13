@@ -1,4 +1,5 @@
 import pytest
+from dask.utils import itemgetter, methodcaller
 
 import xdas as xd
 from xdas.dask.serial import dumps, loads
@@ -50,6 +51,16 @@ def test_mixed_structure():
         ("d", 1, 1): (dumps, "data"),
         "e": (xd.DataArray, "path"),
     }
+    assert loads(dumps(obj)) == obj
+
+
+def test_methdocaller():
+    obj = methodcaller("method")
+    assert loads(dumps(obj)) == obj
+
+
+def test_itemgetter():
+    obj = itemgetter(1)
     assert loads(dumps(obj)) == obj
 
 
