@@ -692,14 +692,18 @@ class DataArray(NDArrayOperatorsMixin):
         """
         if dim in self.dims:
             raise ValueError(f"cannot expand on existing dimension {dim}")
-        elif dim in self.coords:
-            raise ValueError(
-                f"cannot expand along {dim} because of existing non-dimensional "
-                f"coordinate {dim}. Consider dropping this coordinate."
-            )
+        coords = self.coords.copy()
+        if dim in coords:
+            if coords[dim].isscalar():
+                coords[dim] = [coords[dim].values]
+            else:
+                raise ValueError(
+                    f"cannot expand along {dim} because of existing non-dimensional "
+                    f"coordinate {dim}. Consider dropping this coordinate."
+                )
         data = np.expand_dims(self.data, axis)
         dims = self.dims[:axis] + (dim,) + self.dims[axis:]
-        return self.__class__(data, self.coords, dims, self.name, self.attrs)
+        return self.__class__(data, coords, dims, self.name, self.attrs)
 
     def to_xarray(self):
         """

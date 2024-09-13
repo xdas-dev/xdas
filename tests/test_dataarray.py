@@ -333,6 +333,12 @@ class TestDataArray:
         assert result.dims == ("y", "x")
         assert result.shape == (1, 3)
 
+        da = DataArray([1.0, 2.0, 3.0], {"x": [0, 1, 2], "y": 0}, dims=("x",))
+        result = da.expand_dims("y")
+        assert result.dims == ("y", "x")
+        assert result.shape == (1, 3)
+        assert result["y"].equals(xdas.Coordinate([0], dim="y"))
+
     def test_io(self):
         # both coords interpolated
         da = wavelet_wavefronts()
