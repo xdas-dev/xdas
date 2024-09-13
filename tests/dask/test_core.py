@@ -5,8 +5,9 @@ from tempfile import TemporaryDirectory
 import dask
 import numpy as np
 
-from xdas.dask.core import from_dict, fuse, iskey, to_dict
 from xdas.dask import dumps, loads
+from xdas.dask.core import from_dict, fuse, iskey, to_dict
+
 
 class TestIsKey:
     def test_valid(self):

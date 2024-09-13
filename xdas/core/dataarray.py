@@ -4,15 +4,15 @@ import re
 import warnings
 from functools import partial
 
-import dask
 import h5netcdf
 import h5py
 import hdf5plugin
 import numpy as np
 import xarray as xr
+from dask.array import Array as DaskArray
 from numpy.lib.mixins import NDArrayOperatorsMixin
 
-from ..dask.core import from_dict, to_dict
+from ..dask.core import dumps, from_dict, loads, to_dict
 from ..virtual import VirtualArray, VirtualSource, _to_human
 from .coordinates import Coordinate, Coordinates, get_sampling_interval
 
@@ -104,7 +104,7 @@ class DataArray(NDArrayOperatorsMixin):
             data_repr = np.array2string(
                 self.data, precision=precision, threshold=0, edgeitems=edgeitems
             )
-        elif isinstance(self.data, dask.array.Array):
+        elif isinstance(self.data, DaskArray):
             data_repr = f"DaskArray: {_to_human(self.data.nbytes)} ({self.data.dtype})"
         else:
             data_repr = repr(self.data)
@@ -867,7 +867,7 @@ class DataArray(NDArrayOperatorsMixin):
 
         """
         if virtual is None:
-            virtual = isinstance(self.data, VirtualArray)
+            virtual = isinstance(self.data, (VirtualArray, DaskArray))
         ds = xr.Dataset(attrs={"Conventions": "CF-1.9"})
         mappings = []
         for name, coord in self.coords.items():
@@ -893,7 +893,8 @@ class DataArray(NDArrayOperatorsMixin):
             else:
                 ds = ds.assign_coords({name: (coord.dim, coord.values)})
         mapping = " ".join(mappings)
-        attrs = {"coordinate_interpolation": mapping} if mapping else None
+        attrs = {} if self.attrs is None else self.attrs
+        attrs |= {"coordinate_interpolation": mapping} if mapping else attrs
         name = "__values__" if self.name is None else self.name
         with h5netcdf.File(fname, mode=mode) as file:
             if group is not None and group not in file:
@@ -909,22 +910,32 @@ class DataArray(NDArrayOperatorsMixin):
                     data=self.values,
                     **encoding,
                 )
-            elif virtual and isinstance(self.data, VirtualArray):
+            else:
                 if encoding is not None:
                     raise ValueError("cannot use `encoding` with in virtual mode")
-                self.data.to_dataset(file._h5group, name)
-                variable = file._variable_cls(file, name, self.dims)
-                file._variables[name] = variable
-                variable._attach_dim_scales()
-                variable._attach_coords()
-                variable._ensure_dim_id()
-            else:
-                raise ValueError(
-                    "can only use `virtual=True` with a virtual array as data"
-                )
-            if attrs is not None:
+                if isinstance(self.data, VirtualArray):
+                    self.data.to_dataset(file._h5group, name)
+                    variable = file._variable_cls(file, name, self.dims)
+                    file._variables[name] = variable
+                    variable._attach_dim_scales()
+                    variable._attach_coords()
+                    variable._ensure_dim_id()
+                elif isinstance(self.data, DaskArray):
+                    variable = file.create_variable(
+                        name,
+                        self.dims,
+                        self.dtype,
+                    )
+                    variable.attrs.update(
+                        {"__dask_array__": np.frombuffer(dumps(self.data), "uint8")}
+                    )
+                else:
+                    raise ValueError(
+                        "can only use `virtual=True` with a virtual array as data"
+                    )
+            if attrs:
                 variable.attrs.update(attrs)
-            ds.to_netcdf(fname, mode="a", group=group, engine="h5netcdf")
+        ds.to_netcdf(fname, mode="a", group=group, engine="h5netcdf")
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
@@ -993,7 +1004,11 @@ class DataArray(NDArrayOperatorsMixin):
             if group:
                 file = file[group]
             name = "__values__" if da.name is None else da.name
-            data = VirtualSource(file[name])
+            variable = file[name]
+            if "__dask_array__" in variable.attrs:
+                data = loads(da.attrs.pop("__dask_array__"))
+            else:
+                data = VirtualSource(file[name])
         return cls(data, coords, da.dims, da.name, None if da.attrs == {} else da.attrs)
 
     def to_dict(self):
@@ -1002,7 +1017,7 @@ class DataArray(NDArrayOperatorsMixin):
             raise NotImplementedError("cannot convert a virtual array to a dictionary")
         elif isinstance(self.data, np.ndarray):
             data = self.data.tolist()
-        elif isinstance(self.data, dask.array.Array):
+        elif isinstance(self.data, DaskArray):
             data = to_dict(self.data)
         return {
             "data": data,

@@ -1,6 +1,8 @@
 import os
+from glob import glob
 from tempfile import TemporaryDirectory
 
+import dask
 import hdf5plugin
 import numpy as np
 import pytest
@@ -377,36 +379,34 @@ class TestDataArray:
             assert np.abs(da - _da).max().values < 0.001
 
     def test_io_dask(self):
-        import types
-        from glob import glob
-
-        import dask
-
-        import xdas.io
-
-        def read_data(path):
-            return np.load(path)
-
-        xdas.io.numpy = types.ModuleType("numpy")
-        xdas.io.numpy.read_data = read_data
-        xdas.io.numpy.read_data.__module__ = "xdas.io.numpy"
-
         with TemporaryDirectory() as tmpdir:
             values = np.random.rand(3, 10)
             chunks = np.split(values, 5, axis=1)
             for idx, chunk in enumerate(chunks):
                 np.save(os.path.join(tmpdir, f"chunk_{idx}.npy"), chunk)
             paths = glob(os.path.join(tmpdir, "*.npy"))
-            chunks = [dask.delayed(xdas.io.numpy.read_data)(path) for path in paths]
+            chunks = [dask.delayed(np.load)(path) for path in paths]
             chunks = [
                 dask.array.from_delayed(chunk, shape=(3, 2), dtype=values.dtype)
                 for chunk in chunks
             ]
             data = dask.array.concatenate(chunks, axis=1)
-            da = DataArray(
-                data, coords={"time": np.arange(3), "distance": np.arange(10)}
+            expected = DataArray(
+                data,
+                coords={"time": np.arange(3), "distance": np.arange(10)},
+                attrs={"version": "1.0"},
+                name="data",
             )
-            # TODO: test writing dask array to netcdf
+            fname = os.path.join(tmpdir, "tmp.nc")
+            expected.to_netcdf(fname)
+            result = xdas.open_dataarray(fname)
+            assert isinstance(result.data, dask.array.Array)
+            assert np.array_equal(expected.values, result.values)
+            assert expected.dtype == result.dtype
+            assert expected.coords.equals(result.coords)
+            assert expected.dims == result.dims
+            assert expected.name == result.name
+            assert expected.attrs == result.attrs
 
     def test_ufunc(self):
         da = wavelet_wavefronts()
