@@ -1,14 +1,12 @@
 import os
-import types
 from glob import glob
 from tempfile import TemporaryDirectory
 
 import dask
 import numpy as np
 
-import xdas.io
-from xdas.dask.core import dumps, from_dict, fuse, iskey, loads, to_dict
-
+from xdas.dask.core import from_dict, fuse, iskey, to_dict
+from xdas.dask import dumps, loads
 
 class TestIsKey:
     def test_valid(self):
