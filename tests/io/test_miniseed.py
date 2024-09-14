@@ -1,9 +1,10 @@
 from glob import glob
 from tempfile import TemporaryDirectory
 
-import xdas as xd
-import obspy
 import numpy as np
+import obspy
+
+import xdas as xd
 
 
 def make_network(dirpath):

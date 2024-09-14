@@ -1,8 +1,9 @@
 import numpy as np
 import pytest
-from xdas.core.routines import Bag, CompatibilityError
-from xdas.core.dataarray import DataArray
+
 from xdas.core.coordinates import Coordinates
+from xdas.core.dataarray import DataArray
+from xdas.core.routines import Bag, CompatibilityError
 
 
 class TestBag:
