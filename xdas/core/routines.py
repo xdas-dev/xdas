@@ -524,6 +524,7 @@ def combine_by_coords(
             bags.append(bag)
             bag = Bag(dim)
             bag.append(da)
+    bags.append(bag)
 
     # concatenate each bag
     collection = DataCollection(
