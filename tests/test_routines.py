@@ -161,7 +161,7 @@ class TestCombineByCoords:
         assert len(dc) == 2
         assert dc[0].equals(da1)
         assert dc[1].equals(da2)
-    
+
     def test_incompatible_sampling_interval(self):
         da1 = DataArray(
             np.random.rand(10, 5),

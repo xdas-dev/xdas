@@ -293,7 +293,8 @@ def open_mfdataarray(
             "The maximum number of file that can be opened at once is for now limited "
             "to 100 000."
         )
-    with ProcessPoolExecutor() as executor:
+    max_workers = 1 if engine == "miniseed" else None  # TODO: dirty fix
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = [
             executor.submit(open_dataarray, path, engine=engine) for path in paths
         ]

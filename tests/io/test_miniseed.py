@@ -65,3 +65,17 @@ def test_miniseed():
         assert da.coords["network"].values == "DX"
         assert da.coords["location"].values == "00"
         assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
+
+        # automatically open multiple files
+        da = xd.open_mfdataarray(f"{dirpath}/*.mseed", dim="station", engine="miniseed")
+        assert da.shape == (10, 3, 100)
+        assert da.dims == ("station", "channel", "time")
+        assert da.coords["station"].values.tolist() == [
+            f"CH{i:03d}" for i in range(1, 11)
+        ]
+        assert da.coords["time"].isinterp()
+        assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
+        assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:00:00.990")
+        assert da.coords["network"].values == "DX"
+        assert da.coords["location"].values == "00"
+        assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
