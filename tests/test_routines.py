@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from xdas.core.routines import Bag, SplitError
+from xdas.core.routines import Bag, CompatibilityError
 from xdas.core.dataarray import DataArray
 from xdas.core.coordinates import Coordinates
 
@@ -49,7 +49,7 @@ class TestBag:
         da2 = DataArray(np.random.rand(10, 5), dims=("space", "time"))
         bag = Bag(dim="time")
         bag.append(da1)
-        with pytest.raises(SplitError):
+        with pytest.raises(CompatibilityError):
             bag.append(da2)
 
     def test_bag_append_incompatible_shape(self):
@@ -57,7 +57,7 @@ class TestBag:
         da2 = DataArray(np.random.rand(10, 6), dims=("time", "space"))
         bag = Bag(dim="time")
         bag.append(da1)
-        with pytest.raises(SplitError):
+        with pytest.raises(CompatibilityError):
             bag.append(da2)
 
     def test_bag_append_incompatible_dtype(self):
@@ -65,7 +65,7 @@ class TestBag:
         da2 = DataArray(np.random.randint(0, 10, size=(10, 5)), dims=("time", "space"))
         bag = Bag(dim="time")
         bag.append(da1)
-        with pytest.raises(SplitError):
+        with pytest.raises(CompatibilityError):
             bag.append(da2)
 
     def test_bag_append_incompatible_coords(self):
@@ -81,7 +81,7 @@ class TestBag:
         )
         bag = Bag(dim="time")
         bag.append(da1)
-        with pytest.raises(SplitError):
+        with pytest.raises(CompatibilityError):
             bag.append(da2)
 
     def test_bag_append_incompatible_sampling_interval(self):
@@ -97,5 +97,5 @@ class TestBag:
         )
         bag = Bag(dim="time")
         bag.append(da1)
-        with pytest.raises(SplitError):
+        with pytest.raises(CompatibilityError):
             bag.append(da2)

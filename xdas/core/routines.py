@@ -520,7 +520,7 @@ def combine_by_coords(
     for da in objs:
         try:
             bag.append(da)
-        except SplitError:
+        except CompatibilityError:
             bags.append(bag)
             bag = Bag(dim)
             bag.append(da)
@@ -537,7 +537,7 @@ def combine_by_coords(
         return collection
 
 
-class SplitError(Exception):
+class CompatibilityError(Exception):
     """Custom exception to signal required splitting."""
 
     def __init__(self, message):
@@ -582,16 +582,16 @@ class Bag:
 
     def check_dims(self, da):
         if not self.dims == da.dims:
-            raise SplitError("dimensions are not compatible")
+            raise CompatibilityError("dimensions are not compatible")
 
     def check_shape(self, da):
         subshape = tuple(size for dim, size in da.sizes.items() if not dim == self.dim)
         if not self.subshape == subshape:
-            raise SplitError("shapes are not compatible")
+            raise CompatibilityError("shapes are not compatible")
 
     def check_dtype(self, da):
         if not self.dtype == da.dtype:
-            raise SplitError("data types are not compatible")
+            raise CompatibilityError("data types are not compatible")
 
     def check_coords(self, da):
         subcoords = (
@@ -600,7 +600,7 @@ class Bag:
             else da.coords.drop_coords(self.dim)
         )
         if not self.subcoords.equals(subcoords):
-            raise SplitError("coordinates are not compatible")
+            raise CompatibilityError("coordinates are not compatible")
 
     def check_sampling_interval(self, da):
         if self.delta is None:
@@ -608,7 +608,7 @@ class Bag:
         else:
             delta = get_sampling_interval(da, self.dim)
             if not np.isclose(delta, self.delta):
-                raise SplitError("sampling intervals are not compatible")
+                raise CompatibilityError("sampling intervals are not compatible")
 
 
 def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
