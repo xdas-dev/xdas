@@ -976,6 +976,10 @@ def get_sampling_interval(da, dim, cast=True):
     float
         The sample spacing.
     """
+    if da.sizes[dim] < 2:
+        raise ValueError(
+            "cannot compute sample spacing on a dimension with less than 2 points"
+        )
     coord = da[dim]
     if isinstance(coord, InterpCoordinate):
         num = np.diff(coord.tie_values)

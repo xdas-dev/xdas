@@ -501,29 +501,114 @@ def combine_by_coords(
     DataSequence or DataArray
         The combined data arrays.
     """
-    objs = sorted(objs, key=lambda da: da[dim][0].values)
-    out = []
-    bag = []
+    # parse dim
+    if dim == "first":
+        dim = objs[0].dims[0]
+    if dim == "last":
+        dim = objs[0].dims[-1]
+
+    # sort objs by dim
+    if dim in objs[0].coords:
+        objs = sorted(
+            objs,
+            key=lambda da: da[dim].values if da[dim].isscalar() else da[dim][0].values,
+        )
+
+    # combine objs
+    bags = []
+    bag = Bag(dim)
     for da in objs:
-        if not bag:
-            bag = [da]
-        elif (
-            da.coords.drop_dims(dim).equals(bag[-1].coords.drop_dims(dim))
-            and (get_sampling_interval(da, dim) == get_sampling_interval(bag[-1], dim))
-            and (da.dtype == bag[-1].dtype)
-        ):
+        try:
             bag.append(da)
-        else:
-            out.append(bag)
-            bag = [da]
-    out.append(bag)
+        except SplitError:
+            bags.append(bag)
+            bag = Bag(dim)
+            bag.append(da)
+
+    # concatenate each bag
     collection = DataCollection(
-        [concatenate(bag, dim, tolerance, virtual, verbose) for bag in out]
+        [concatenate(bag, dim, tolerance, virtual, verbose) for bag in bags]
     )
+
+    # squeeze if possible
     if squeeze and len(collection) == 1:
         return collection[0]
     else:
         return collection
+
+
+class SplitError(Exception):
+    """Custom exception to signal required splitting."""
+
+    def __init__(self, message):
+        super().__init__(message)
+
+
+class Bag:
+    def __init__(self, dim):
+        self.objs = []
+        self.dim = dim
+
+    def __iter__(self):
+        return iter(self.objs)
+
+    def initialize(self, da):
+        self.objs = [da]
+        self.dims = da.dims
+        self.subshape = tuple(
+            size for dim, size in da.sizes.items() if not dim == self.dim
+        )
+        self.subcoords = (
+            da.coords.drop_dims(self.dim)
+            if self.dim in self.dims
+            else da.coords.drop_coords(self.dim)
+        )
+        try:
+            self.delta = get_sampling_interval(da, self.dim)
+        except (ValueError, KeyError):
+            self.delta = None
+        self.dtype = da.dtype
+
+    def append(self, da):
+        if not self.objs:
+            self.initialize(da)
+        else:
+            self.check_dims(da)
+            self.check_shape(da)
+            self.check_coords(da)
+            self.check_sampling_interval(da)
+            self.check_dtype(da)
+            self.objs.append(da)
+
+    def check_dims(self, da):
+        if not self.dims == da.dims:
+            raise SplitError("dimensions are not compatible")
+
+    def check_shape(self, da):
+        subshape = tuple(size for dim, size in da.sizes.items() if not dim == self.dim)
+        if not self.subshape == subshape:
+            raise SplitError("shapes are not compatible")
+
+    def check_dtype(self, da):
+        if not self.dtype == da.dtype:
+            raise SplitError("data types are not compatible")
+
+    def check_coords(self, da):
+        subcoords = (
+            da.coords.drop_dims(self.dim)
+            if self.dim in self.dims
+            else da.coords.drop_coords(self.dim)
+        )
+        if not self.subcoords.equals(subcoords):
+            raise SplitError("coordinates are not compatible")
+
+    def check_sampling_interval(self, da):
+        if self.delta is None:
+            pass
+        else:
+            delta = get_sampling_interval(da, self.dim)
+            if not np.isclose(delta, self.delta):
+                raise SplitError("sampling intervals are not compatible")
 
 
 def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
