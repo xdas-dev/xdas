@@ -1,1 +1,1 @@
-from . import asn, febus, mseed, optasense, silixa, sintela
+from . import asn, febus, miniseed, optasense, silixa, sintela
