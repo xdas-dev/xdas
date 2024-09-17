@@ -229,6 +229,16 @@ class TestZMQSubscriber:
             result = next(sub)
             assert result.equals(chunk)
 
+    def test_iter(self):
+        address = get_free_address()
+        pub = ZMQPublisher(address)
+        chunks = xd.split(da_float32, 5)
+        threading.Thread(target=self.publish, args=(pub, chunks)).start()
+        sub = ZMQSubscriber(address)
+        sub = (chunk for _, chunk in zip(range(5), sub))
+        result = xd.concatenate([chunk for chunk in sub])
+        assert result.equals(da_float32)
+
     def publish(self, pub, chunks):
         for chunk in chunks:
             time.sleep(0.001)
