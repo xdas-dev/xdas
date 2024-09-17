@@ -315,12 +315,28 @@ class ZMQPublisher:
     >>> import xdas as xd
     >>> from xdas.processing import ZMQPublisher
 
-    >>> address = f"tcp://localhost:{xd.io.get_free_port()}"
-    >>> publisher = ZMQPublisher(address)
+    First we generate some data and split it into packets
+
     >>> packets = xd.split(xd.synthetics.dummy(), 10)
 
-    >>> for n, da in enumerate(packets, start=1):
-    ...     publisher.write(da)
+    We initialize the publisher at a given address
+
+    >>> address = f"tcp://localhost:{xd.io.get_free_port()}"
+    >>> publisher = ZMQPublisher(address)
+
+    We can then publish the packets
+
+    >>> for da in packets:
+    ...     publisher.submit(da)
+
+    To reduce the size of the packets, we can also specify an encoding
+
+    >>> import hdf5plugin
+
+    >>> encoding = {"chunks": (10, 10), **hdf5plugin.Zfp(accuracy=1e-6)}
+    >>> for da in packets:
+    ...     publisher.submit(da, encoding=encoding)
+
     """
 
     def __init__(self, address):
@@ -330,7 +346,7 @@ class ZMQPublisher:
         self.socket = self.context.socket(zmq.PUB)
         self.socket.bind(address)
 
-    def submit(self, da):
+    def submit(self, da, encoding=None):
         """
         Send a DataArray over ZeroMQ.
 
@@ -340,10 +356,10 @@ class ZMQPublisher:
             The DataArray to be sent.
 
         """
-        self.socket.send(tobytes(da))
+        self.socket.send(tobytes(da, encoding))
 
-    def write(self, da):
-        self.submit(da)
+    def write(self, da, encoding=None):
+        self.submit(da, encoding)
 
     def result():
         return None
@@ -358,6 +374,11 @@ class ZMQSubscriber:
     address : str
         The address to connect the subscriber to.
 
+    Methods
+    -------
+    submit(da, encoding=None)
+        Send a DataArray over ZeroMQ.
+
     Examples
     --------
     >>> import threading
@@ -366,7 +387,7 @@ class ZMQSubscriber:
     >>> from xdas.processing import ZMQSubscriber
 
     First we generate some data and split it into packets
-    
+
     >>> da = xd.synthetics.dummy()
     >>> packets = xd.split(da, 10)
 
@@ -382,7 +403,7 @@ class ZMQSubscriber:
     >>> threading.Thread(target=publish).start()
 
     Now let's receive the packets
-    
+
     >>> subscriber = ZMQSubscriber(address)
     >>> packets = []
     >>> for n, da in enumerate(subscriber, start=1):
@@ -407,10 +428,10 @@ class ZMQSubscriber:
         return frombuffer(message)
 
 
-def tobytes(da):
+def tobytes(da, encoding=None):
     with TemporaryDirectory() as tmpdir:
         path = os.path.join(tmpdir, "tmp.nc")
-        da.to_netcdf(path, virtual=False)
+        da.to_netcdf(path, virtual=False, encoding=encoding)
         with open(path, "rb") as file:
             return file.read()
 

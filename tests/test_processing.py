@@ -1,6 +1,10 @@
 import os
 import tempfile
+import threading
+import time
 
+import hdf5plugin
+import numpy as np
 import pandas as pd
 import scipy.signal as sp
 
@@ -10,6 +14,8 @@ from xdas.processing.core import (
     DataArrayLoader,
     DataArrayWriter,
     DataFrameWriter,
+    ZMQPublisher,
+    ZMQSubscriber,
     process,
 )
 from xdas.signal import sosfilt
@@ -160,3 +166,42 @@ class TestDataFrameWriter:
             # Check if the output file contains the correct data
             output_df = pd.read_csv(writer.path)
             assert output_df.equals(expected_result)
+
+
+class TestZMQ:
+    def _publish_and_subscribe(self, packets, address, encoding=None):
+        publisher = ZMQPublisher(address)
+
+        def publish():
+            for packet in packets:
+                time.sleep(0.001)
+                publisher.submit(packet, encoding=encoding)
+
+        threading.Thread(target=publish).start()
+
+        subscriber = ZMQSubscriber(address)
+        result = []
+        for n, packet in enumerate(subscriber, start=1):
+            result.append(packet)
+            if n == len(packets):
+                break
+        return xdas.concatenate(result)
+
+    def test_publish_and_subscribe(self):
+        expected = xdas.synthetics.dummy()
+        packets = xdas.split(expected, 10)
+        address = f"tcp://localhost:{xdas.io.get_free_port()}"
+
+        result = self._publish_and_subscribe(packets, address)
+        assert result.equals(expected)
+
+    def test_encoding(self):
+        expected = xdas.synthetics.dummy()
+        packets = xdas.split(expected, 10)
+        address = f"tcp://localhost:{xdas.io.get_free_port()}"
+        encoding = {"chunks": (10, 10), **hdf5plugin.Zfp(accuracy=1e-6)}
+
+        result = self._publish_and_subscribe(packets, address, encoding=encoding)
+        assert np.allclose(result.values, expected.values, atol=1e-6)
+        result.data = expected.data
+        assert result.equals(expected)
