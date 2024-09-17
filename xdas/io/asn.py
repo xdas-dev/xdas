@@ -5,6 +5,8 @@ import h5py
 import numpy as np
 import zmq
 
+from xdas.core.coordinates import get_sampling_interval
+
 from ..core.dataarray import DataArray
 from ..virtual import VirtualSource
 
@@ -134,7 +136,7 @@ class ZMQSubscriber:
             self.update_header(message)
             return self.__next__()
         else:
-            return self.stream_packet(message)
+            return self.unpack(message)
 
     def connect(self, address):
         context = zmq.Context()
@@ -154,11 +156,7 @@ class ZMQSubscriber:
 
         self.packet_size = 8 + header["bytesPerPackage"] * header["nPackagesPerMessage"]
         self.shape = (header["nPackagesPerMessage"], header["nChannels"])
-
-        self.format = "%d%s" % (
-            header["nChannels"] * header["nPackagesPerMessage"],
-            "f" if header["dataType"] == "float" else "h",
-        )
+        self.dtype = np.float32 if header["dataType"] == "float" else np.int16
 
         roiTable = header["roiTable"][0]
         di = roiTable["roiStart"] * header["dx"]
@@ -171,14 +169,78 @@ class ZMQSubscriber:
         self.dt = float_to_timedelta(header["dt"], header["dtUnit"])
         self.nt = header["nPackagesPerMessage"]
 
-    def stream_packet(self, message):
-        t0 = np.datetime64(struct.unpack("<Q", message[:8])[0], "ns")
-        data = np.array(struct.unpack(self.format, message[8:])).reshape(self.shape)
+    def unpack(self, message):
+        t0 = np.frombuffer(message[:8], "datetime64[ns]")
+        data = np.frombuffer(message[8:], self.dtype).reshape(self.shape)
         time = {
             "tie_indices": [0, self.shape[0] - 1],
             "tie_values": [t0, t0 + (self.shape[0] - 1) * self.dt],
         }
         return DataArray(data, {"time": time, "distance": self.distance})
+
+
+class ZMQPublisher:
+    def __init__(self, address):
+        self.connect(address)
+        self._header = None
+
+    @property
+    def header(self):
+        return self._header
+
+    @header.setter
+    def header(self, header):
+        self._header = header
+        self.socket.setsockopt(zmq.XPUB_WELCOME_MSG, json.dumps(header).encode("utf-8"))
+
+    def submit(self, da):
+        self.send(da)
+
+    def write(self, da):
+        self.send(da)
+
+    def connect(self, address):
+        context = zmq.Context()
+        socket = context.socket(zmq.XPUB)
+        socket.bind(address)
+        self.socket = socket
+
+    @staticmethod
+    def get_header(da):
+        header = {
+            "bytesPerPackage": da.dtype.itemsize * da.shape[1],
+            "nPackagesPerMessage": da.shape[0],
+            "nChannels": da.shape[1],
+            "dataType": "float" if da.dtype == np.float32 else "short",
+            "dx": get_sampling_interval(da, "distance"),
+            "dt": get_sampling_interval(da, "time"),
+            "dtUnit": "s",
+            "dxUnit": "m",
+            "roiTable": [{"roiStart": 0, "roiEnd": da.shape[1] - 1, "roiDec": 1}],
+        }
+        return header
+
+    def send(self, da):
+        header = self.get_header(da)
+        if self.header is None:
+            self.header = header
+        if not header == self.header:
+            self.header = header
+            self.send_header()
+        self.send_data(da)
+
+    def send_header(self):
+        message = json.dumps(self.header).encode("utf-8")
+        self.send_message(message)
+
+    def send_data(self, da):
+        t0 = da["time"][0].values.astype("datetime64[ns]")
+        data = da.values
+        message = t0.tobytes() + data.tobytes()
+        self.send_message(message)
+
+    def send_message(self, message):
+        self.socket.send(message)
 
 
 def float_to_timedelta(value, unit):
