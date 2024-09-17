@@ -23,6 +23,15 @@ def read(fname):
     return DataArray(data, {"time": time, "distance": distance})
 
 
+type_map = {
+    "short": np.int16,
+    "int": np.int32,
+    "long": np.int64,
+    "float": np.float32,
+    "double": np.float64,
+}
+
+
 class ZMQSubscriber:
     def __init__(self, address):
         """
@@ -32,6 +41,32 @@ class ZMQSubscriber:
         ----------
         address : str
             The address to connect to.
+
+        Examples
+        --------
+        >>> import time
+        >>> import threading
+
+        >>> import xdas as xd
+        >>> from xdas.io.asn import ZMQSubscriber
+
+        >>> port = xd.io.get_free_port()
+        >>> address = f"tcp://localhost:{port}"
+        >>> publisher = ZMQPublisher(address)
+        >>> da = xd.synthetics.randn_wavefronts()
+        >>> chunks = xd.split(da, 10)
+
+        >>> def publish():
+        ...     for chunk in chunks:
+        ...         publisher.submit(chunk)
+        ...         time.sleep(0.001)  # so that the subscriber can connect in time
+        >>> threading.Thread(target=publish).start()
+
+        >>> subscriber = ZMQSubscriber(address)
+        >>> for nchunk in range(10):
+        ...     chunk = next(subscriber)
+        ...     # do something with the chunk
+
         """
         self.address = address
         self._connect(self.address)
@@ -66,7 +101,7 @@ class ZMQSubscriber:
         header = json.loads(message.decode("utf-8"))
         self.packet_size = 8 + header["bytesPerPackage"] * header["nPackagesPerMessage"]
         self.shape = (header["nPackagesPerMessage"], header["nChannels"])
-        self.dtype = np.float32 if header["dataType"] == "float" else np.int16
+        self.dtype = type_map[header["dataType"]]
         roiTable = header["roiTable"][0]
         di = roiTable["roiStart"] * header["dx"]
         de = roiTable["roiEnd"] * header["dx"]
@@ -155,7 +190,7 @@ class ZMQPublisher:
             "bytesPerPackage": da.dtype.itemsize * da.shape[1],
             "nPackagesPerMessage": da.shape[0],
             "nChannels": da.shape[1],
-            "dataType": "float" if da.dtype == np.float32 else "short",
+            "dataType": next((k for k, v in type_map.items() if v == da.dtype), None),
             "dx": get_sampling_interval(da, "distance"),
             "dt": get_sampling_interval(da, "time"),
             "dtUnit": "s",
