@@ -79,10 +79,15 @@ class TestZMQPublisher:
         pub.submit(da_float32)
         socket = self.get_socket(address)
         pub.submit(da_float32)  # a packet must be sent once subscriber is connected
-        socket.recv()
+        socket.recv()  # header
         message = socket.recv()
         assert message[:8] == da_float32["time"][0].values.astype("M8[ns]").tobytes()
         assert message[8:] == da_float32.data.tobytes()
+        pub.submit(da_int16)
+        socket.recv()  # header
+        message = socket.recv()
+        assert message[:8] == da_int16["time"][0].values.astype("M8[ns]").tobytes()
+        assert message[8:] == da_int16.data.tobytes()
 
     def test_send_chunks(self):
         address = get_free_address()
