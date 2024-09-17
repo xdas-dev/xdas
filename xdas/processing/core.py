@@ -170,6 +170,8 @@ class DataArrayWriter:
     dirpath : str or path
         The directory to store the output of a processing pipeline. The directory needs
         to exist and be empty.
+    encoding : dict
+        The encoding to use when dumping the DataArrays to bytes.
 
     Examples
     --------
@@ -309,11 +311,13 @@ class ZMQPublisher:
     ----------
     address : str
         The address to bind the publisher to.
+    encoding : dict
+        The encoding to use when dumping the DataArrays to bytes.
 
     Examples
     --------
     >>> import xdas as xd
-    >>> from xdas.processing import ZMQPublisher
+    >>> from xdas.processing import ZMQPublisher, ZMQSubscriber
 
     First we generate some data and split it into packets
 
@@ -333,20 +337,22 @@ class ZMQPublisher:
 
     >>> import hdf5plugin
 
+    >>> address = f"tcp://localhost:{xd.io.get_free_port()}"
     >>> encoding = {"chunks": (10, 10), **hdf5plugin.Zfp(accuracy=1e-6)}
+    >>> publisher = ZMQPublisher(address, encoding)
     >>> for da in packets:
-    ...     publisher.submit(da, encoding=encoding)
+    ...     publisher.submit(da)
 
     """
 
-    def __init__(self, address):
-        import zmq
+    def __init__(self, address, encoding=None):
+        self.address = address
+        self.encoding = encoding
+        self._context = zmq.Context()
+        self._socket = self._context.socket(zmq.PUB)
+        self._socket.bind(self.address)
 
-        self.context = zmq.Context()
-        self.socket = self.context.socket(zmq.PUB)
-        self.socket.bind(address)
-
-    def submit(self, da, encoding=None):
+    def submit(self, da):
         """
         Send a DataArray over ZeroMQ.
 
@@ -356,10 +362,10 @@ class ZMQPublisher:
             The DataArray to be sent.
 
         """
-        self.socket.send(tobytes(da, encoding))
+        self._socket.send(tobytes(da, self.encoding))
 
-    def write(self, da, encoding=None):
-        self.submit(da, encoding)
+    def write(self, da):
+        self.submit(da)
 
     def result():
         return None
@@ -376,7 +382,7 @@ class ZMQSubscriber:
 
     Methods
     -------
-    submit(da, encoding=None)
+    submit(da)
         Send a DataArray over ZeroMQ.
 
     Examples
@@ -415,16 +421,17 @@ class ZMQSubscriber:
     """
 
     def __init__(self, address):
-        self.context = zmq.Context()
-        self.socket = self.context.socket(zmq.SUB)
-        self.socket.connect(address)
-        self.socket.setsockopt_string(zmq.SUBSCRIBE, "")
+        self.address = address
+        self._context = zmq.Context()
+        self._socket = self._context.socket(zmq.SUB)
+        self._socket.connect(address)
+        self._socket.setsockopt_string(zmq.SUBSCRIBE, "")
 
     def __iter__(self):
         return self
 
     def __next__(self):
-        message = self.socket.recv()
+        message = self._socket.recv()
         return frombuffer(message)
 
 

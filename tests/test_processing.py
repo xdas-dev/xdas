@@ -170,12 +170,12 @@ class TestDataFrameWriter:
 
 class TestZMQ:
     def _publish_and_subscribe(self, packets, address, encoding=None):
-        publisher = ZMQPublisher(address)
+        publisher = ZMQPublisher(address, encoding)
 
         def publish():
             for packet in packets:
                 time.sleep(0.001)
-                publisher.submit(packet, encoding=encoding)
+                publisher.submit(packet)
 
         threading.Thread(target=publish).start()
 
