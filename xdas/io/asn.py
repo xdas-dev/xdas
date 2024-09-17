@@ -1,5 +1,4 @@
 import json
-import struct
 
 import h5py
 import numpy as np
@@ -25,93 +24,6 @@ def read(fname):
 
 
 class ZMQSubscriber:
-    """
-    A class used to subscribe to a ZeroMQ stream.
-
-    Parameters
-    ----------
-    address : str
-        The address to connect to.
-
-    Attributes
-    ----------
-    socket : zmq.Socket
-        The ZeroMQ socket used for communication.
-    packet_size : int
-        The size of each packet in bytes.
-    shape : tuple
-        The shape of the data array.
-    dtype : numpy.dtype
-        The data type of the array.
-    distance : dict
-        The distance information.
-    delta : numpy.timedelta64
-        The sampling time interval.
-
-    Methods
-    -------
-    connect(address)
-        Connects to the specified address.
-    get_message()
-        Receives a message from the socket.
-    is_packet(message)
-        Checks if the message is a valid packet.
-    update_header(message)
-        Updates the header information based on the received message.
-    stream_packet(message)
-        Processes a packet and returns a DataArray object.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> import xdas as xd
-    >>> from xdas.io.asn import ZMQStream
-    >>> import holoviews as hv
-    >>> from holoviews.streams import Pipe
-    >>> hv.extension("bokeh")
-
-    >>> stream = ZMQStream("tcp://pisco.unice.fr:3333")
-
-    >>> nbuffer = 100
-    >>> buffer = np.zeros((nbuffer, stream.shape[1]))
-    >>> pipe = Pipe(data=buffer)
-
-    >>> bounds = (
-    ...     stream.distance["tie_values"][0],
-    ...     0,
-    ...     stream.distance["tie_values"][1],
-    ...     (nbuffer * stream.dt) / np.timedelta64(1, "s"),
-    ... )
-
-    >>> def image(data):
-    ...     return hv.Image(data, bounds=bounds)
-
-    >>> dmap = hv.DynamicMap(image, streams=[pipe])
-    >>> dmap.opts(
-    ...     xlabel="distance",
-    ...     ylabel="time",
-    ...     invert_yaxis=True,
-    ...     clim=(-1, 1),
-    ...     cmap="viridis",
-    ...     width=800,
-    ...     height=400,
-    ... )
-    >>> dmap
-
-    >>> atom = xd.atoms.Sequential(
-    ...     [
-    ...         xd.signal.integrate(..., dim="distance"),
-    ...         xd.signal.sliding_mean_removal(..., wlen=1000.0, dim="distance"),
-    ...     ]
-    ... )
-    >>> for da in stream:
-    ...     da = atom(da) / 100.0
-    ...     buffer = np.concatenate([buffer, da.values], axis=0)
-    ...     buffer = buffer[-nbuffer:None]
-    ...     pipe.send(buffer)
-
-    """
-
     def __init__(self, address):
         """
         Initializes a ZMQStream object.
@@ -121,35 +33,36 @@ class ZMQSubscriber:
         address : str
             The address to connect to.
         """
-        self.connect(address)
-        message = self.get_message()
-        self.update_header(message)
+        self.address = address
+        self._connect(self.address)
+        message = self._get_message()
+        self._update_header(message)
 
     def __iter__(self):
         return self
 
     def __next__(self):
-        message = self.get_message()
-        if not self.is_packet(message):
-            self.update_header(message)
+        message = self._get_message()
+        if not self._is_packet(message):
+            self._update_header(message)
             return self.__next__()
         else:
-            return self.unpack(message)
+            return self._unpack(message)
 
-    def connect(self, address):
+    def _connect(self, address):
         context = zmq.Context()
         socket = context.socket(zmq.SUB)
         socket.connect(address)
         socket.setsockopt_string(zmq.SUBSCRIBE, "")
-        self.socket = socket
+        self._socket = socket
 
-    def get_message(self):
-        return self.socket.recv()
+    def _get_message(self):
+        return self._socket.recv()
 
-    def is_packet(self, message):
+    def _is_packet(self, message):
         return len(message) == self.packet_size
 
-    def update_header(self, message):
+    def _update_header(self, message):
         header = json.loads(message.decode("utf-8"))
         self.packet_size = 8 + header["bytesPerPackage"] * header["nPackagesPerMessage"]
         self.shape = (header["nPackagesPerMessage"], header["nChannels"])
@@ -163,7 +76,7 @@ class ZMQSubscriber:
         }
         self.delta = float_to_timedelta(header["dt"], header["dtUnit"])
 
-    def unpack(self, message):
+    def _unpack(self, message):
         t0 = np.frombuffer(message[:8], "datetime64[ns]").reshape(())
         data = np.frombuffer(message[8:], self.dtype).reshape(self.shape)
         time = {
@@ -174,8 +87,43 @@ class ZMQSubscriber:
 
 
 class ZMQPublisher:
+    """
+    A class to stream data using ZeroMQ.
+
+    Parameters
+    ----------
+    address : str
+        The address to bind the ZeroMQ socket.
+
+    Attributes
+    ----------
+    address : str
+        The address where the ZeroMQ is bound to.
+
+    Methods
+    -------
+    submit(da)
+        Submits the data array for publishing.
+
+    Examples
+    --------
+    >>> import xdas as xd
+    >>> from xdas.io.asn import ZMQPublisher
+
+    >>> da = xd.synthetics.randn_wavefronts()
+
+    >>> port = xd.io.get_free_port()
+    >>> address = f"tcp://localhost:{port}"
+    >>> publisher = ZMQPublisher(address)
+    >>> chunks = xd.split(da, 10)
+    >>> for chunk in chunks:
+    ...     publisher.submit(chunk)
+
+    """
+
     def __init__(self, address):
-        self.connect(address)
+        self.address = address
+        self._connect(address)
         self._header = None
 
     @property
@@ -188,12 +136,12 @@ class ZMQPublisher:
         self.socket.setsockopt(zmq.XPUB_WELCOME_MSG, json.dumps(header).encode("utf-8"))
 
     def submit(self, da):
-        self.send(da)
+        self._send(da)
 
     def write(self, da):
-        self.send(da)
+        self._send(da)
 
-    def connect(self, address):
+    def _connect(self, address):
         context = zmq.Context()
         socket = context.socket(zmq.XPUB)
         socket.setsockopt(zmq.XPUB_VERBOSE, True)
@@ -201,7 +149,7 @@ class ZMQPublisher:
         self.socket = socket
 
     @staticmethod
-    def get_header(da):
+    def _get_header(da):
         da = da.transpose("time", "distance")
         header = {
             "bytesPerPackage": da.dtype.itemsize * da.shape[1],
@@ -216,28 +164,28 @@ class ZMQPublisher:
         }
         return header
 
-    def send(self, da):
+    def _send(self, da):
         da = da.transpose("time", "distance")
-        header = self.get_header(da)
+        header = self._get_header(da)
         if self.header is None:
             self.header = header
         if not header == self.header:
             self.header = header
-            self.send_header()
-        self.send_data(da)
+            self._send_header()
+        self._send_data(da)
 
-    def send_header(self):
+    def _send_header(self):
         message = json.dumps(self.header).encode("utf-8")
-        self.send_message(message)
+        self._send_message(message)
 
-    def send_data(self, da):
+    def _send_data(self, da):
         da = da.transpose("time", "distance")
         t0 = da["time"][0].values.astype("datetime64[ns]")
         data = da.values
         message = t0.tobytes() + data.tobytes()
-        self.send_message(message)
+        self._send_message(message)
 
-    def send_message(self, message):
+    def _send_message(self, message):
         self.socket.send(message)
 
 

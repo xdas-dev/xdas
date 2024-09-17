@@ -2,7 +2,6 @@ import json
 import socket
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import zmq
@@ -10,15 +9,10 @@ import zmq
 import xdas as xd
 from xdas.io.asn import ZMQPublisher, ZMQSubscriber
 
-executor = ThreadPoolExecutor()
 
-
-def get_free_address():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
-        port = s.getsockname()[1]
-    address = f"tcp://localhost:{port}"
-    return address
+def get_free_local_address():
+    port = xd.io.get_free_port()
+    return f"tcp://localhost:{port}"
 
 
 coords = {
@@ -45,7 +39,7 @@ da_int16 = xd.DataArray(
 
 class TestZMQPublisher:
     def test_get_header(self):
-        header = ZMQPublisher.get_header(da_float32)
+        header = ZMQPublisher._get_header(da_float32)
         assert header["bytesPerPackage"] == 40
         assert header["nPackagesPerMessage"] == 100
         assert header["nChannels"] == 10
@@ -55,17 +49,17 @@ class TestZMQPublisher:
         assert header["dtUnit"] == "s"
         assert header["dxUnit"] == "m"
         assert header["roiTable"] == [{"roiStart": 0, "roiEnd": 9, "roiDec": 1}]
-        header = ZMQPublisher.get_header(da_int16)
+        header = ZMQPublisher._get_header(da_int16)
         assert header["dataType"] == "short"
 
     def test_init_conect_set_header(self):
-        address = get_free_address()
+        address = get_free_local_address()
         pub = ZMQPublisher(address)
         pub.submit(da_float32)
-        assert pub.header == ZMQPublisher.get_header(da_float32)
+        assert pub.header == ZMQPublisher._get_header(da_float32)
 
     def test_send_header(self):
-        address = get_free_address()
+        address = get_free_local_address()
         pub = ZMQPublisher(address)
         pub.submit(da_float32)
         socket = self.get_socket(address)
@@ -73,7 +67,7 @@ class TestZMQPublisher:
         assert socket.recv() == json.dumps(pub.header).encode("utf-8")
 
     def test_send_data(self):
-        address = get_free_address()
+        address = get_free_local_address()
         pub = ZMQPublisher(address)
         pub.submit(da_float32)
         socket = self.get_socket(address)
@@ -89,7 +83,7 @@ class TestZMQPublisher:
         assert message[8:] == da_int16.data.tobytes()
 
     def test_send_chunks(self):
-        address = get_free_address()
+        address = get_free_local_address()
         pub = ZMQPublisher(address)
         chunks = xd.split(da_float32, 10)
         pub.submit(chunks[0])
@@ -105,7 +99,7 @@ class TestZMQPublisher:
             assert message[8:] == chunk.data.tobytes()
 
     def test_several_subscribers(self):
-        address = get_free_address()
+        address = get_free_local_address()
         pub = ZMQPublisher(address)
         chunks = xd.split(da_float32, 10)
         pub.submit(chunks[0])
@@ -130,7 +124,7 @@ class TestZMQPublisher:
             assert message[8:] == chunk.data.tobytes()
 
     def test_change_header(self):
-        address = get_free_address()
+        address = get_free_local_address()
         pub = ZMQPublisher(address)
         chunks = xd.split(da_float32, 10)
         pub.submit(chunks[0])
@@ -165,11 +159,12 @@ class TestZMQPublisher:
 
 class TestZMQSubscriber:
     def test_one_chunk(self):
-        address = get_free_address()
+        address = get_free_local_address()
         pub = ZMQPublisher(address)
         chunks = [da_float32]
         threading.Thread(target=self.publish, args=(pub, chunks)).start()
         sub = ZMQSubscriber(address)
+        assert sub.address == address
         assert sub.packet_size == 4008
         assert sub.shape == (100, 10)
         assert sub.dtype == np.float32
@@ -185,7 +180,7 @@ class TestZMQSubscriber:
         assert result.equals(da_int16)
 
     def test_several_chunks(self):
-        address = get_free_address()
+        address = get_free_local_address()
         pub = ZMQPublisher(address)
         chunks = xd.split(da_float32, 5)
         threading.Thread(target=self.publish, args=(pub, chunks)).start()
@@ -200,7 +195,7 @@ class TestZMQSubscriber:
             assert result.equals(chunk)
 
     def test_several_subscribers(self):
-        address = get_free_address()
+        address = get_free_local_address()
         pub = ZMQPublisher(address)
         chunks = xd.split(da_float32, 5)
         thread = threading.Thread(target=self.publish, args=(pub, chunks[:2]))
@@ -219,7 +214,7 @@ class TestZMQSubscriber:
             assert result.equals(chunk)
 
     def test_change_header(self):
-        address = get_free_address()
+        address = get_free_local_address()
         pub = ZMQPublisher(address)
         chunks = xd.split(da_float32, 5)
         chunks = [chunk.isel(distance=slice(0, 5)) for chunk in chunks[:2]] + chunks[2:]
@@ -230,7 +225,7 @@ class TestZMQSubscriber:
             assert result.equals(chunk)
 
     def test_iter(self):
-        address = get_free_address()
+        address = get_free_local_address()
         pub = ZMQPublisher(address)
         chunks = xd.split(da_float32, 5)
         threading.Thread(target=self.publish, args=(pub, chunks)).start()
