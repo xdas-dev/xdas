@@ -29,6 +29,7 @@ Here below the list of formats that are currently implemented. All HDF5 based fo
 | OPTASENSE         | `"optasense"`     | ✅︎ |
 | SILIXA            | `"silixa"`        | ❌ |
 | SINTELA           | `"sintela"`       | ✅︎ |
+| TERRA15           | `"terra15"`       | ✅︎ |
 
 ```{warning}
 File formats that do not support virtualization will be loaded in memory. We are working on a solution for non-HDF5 based file formats.
