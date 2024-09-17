@@ -4,11 +4,12 @@
 :maxdepth: 1
 
 xdas
+atoms
+io
 fft
-signal
-processing
 parallel
+processing
+signal
 synthetics
 virtual
-atoms
 ```
