@@ -141,3 +141,17 @@ def randn_wavefronts():
         },
     )
     return da
+
+
+def dummy(shape=(1000, 100)):
+    starttime = np.datetime64("2024-01-01T00:00:00")
+    endtime = starttime + shape[0] * np.timedelta64(100, "ms")
+    time = {"tie_indices": [0, shape[0] - 1], "tie_values": [starttime, endtime]}
+    distance = {"tie_indices": [0, shape[1] - 1], "tie_values": [0.0, 1000.0]}
+    return DataArray(
+        data=np.random.randn(*shape),
+        coords={
+            "time": time,
+            "distance": distance,
+        },
+    )

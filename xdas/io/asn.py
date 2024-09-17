@@ -53,13 +53,14 @@ class ZMQSubscriber:
         >>> port = xd.io.get_free_port()
         >>> address = f"tcp://localhost:{port}"
         >>> publisher = ZMQPublisher(address)
-        >>> da = xd.synthetics.randn_wavefronts()
+
+        >>> da = xd.synthetics.dummy()
         >>> chunks = xd.split(da, 10)
 
         >>> def publish():
         ...     for chunk in chunks:
-        ...         publisher.submit(chunk)
         ...         time.sleep(0.001)  # so that the subscriber can connect in time
+        ...         publisher.submit(chunk)
         >>> threading.Thread(target=publish).start()
 
         >>> subscriber = ZMQSubscriber(address)
@@ -145,7 +146,7 @@ class ZMQPublisher:
     >>> import xdas as xd
     >>> from xdas.io.asn import ZMQPublisher
 
-    >>> da = xd.synthetics.randn_wavefronts()
+    >>> da = xd.synthetics.dummy()
 
     >>> port = xd.io.get_free_port()
     >>> address = f"tcp://localhost:{port}"

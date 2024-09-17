@@ -315,11 +315,11 @@ class ZMQPublisher:
     >>> import xdas as xd
     >>> from xdas.processing import ZMQPublisher
 
-    >>> publisher = ZMQPublisher("tcp://*:5556")
-    >>> packets = xd.split(xd.synthetics.randn_wavefronts(), 10)
+    >>> address = f"tcp://localhost:{xd.io.get_free_port()}"
+    >>> publisher = ZMQPublisher(address)
+    >>> packets = xd.split(xd.synthetics.dummy(), 10)
 
     >>> for n, da in enumerate(packets, start=1):
-    ...     print(f"Sending packet {n}")
     ...     publisher.write(da)
     """
 
@@ -330,7 +330,7 @@ class ZMQPublisher:
         self.socket = self.context.socket(zmq.PUB)
         self.socket.bind(address)
 
-    def write(self, da):
+    def submit(self, da):
         """
         Send a DataArray over ZeroMQ.
 
@@ -341,6 +341,9 @@ class ZMQPublisher:
 
         """
         self.socket.send(tobytes(da))
+
+    def write(self, da):
+        self.submit(da)
 
     def result():
         return None
@@ -357,21 +360,37 @@ class ZMQSubscriber:
 
     Examples
     --------
+    >>> import threading
+
     >>> import xdas as xd
     >>> from xdas.processing import ZMQSubscriber
 
-    >>> subscriber = ZMQSubscriber("tcp://localhost:5556")
+    First we generate some data and split it into packets
+    
+    >>> da = xd.synthetics.dummy()
+    >>> packets = xd.split(da, 10)
 
+    We then publish the packets asynchronously
+
+    >>> address = f"tcp://localhost:{xd.io.get_free_port()}"
+    >>> publisher = ZMQPublisher(address)
+
+    >>> def publish():
+    ...     for packet in packets:
+    ...         publisher.submit(packet)
+
+    >>> threading.Thread(target=publish).start()
+
+    Now let's receive the packets
+    
+    >>> subscriber = ZMQSubscriber(address)
     >>> packets = []
     >>> for n, da in enumerate(subscriber, start=1):
-    ...     print(f"Received packet {n}")
     ...     packets.append(da)
     ...     if n == 10:
     ...         break
-
     >>> da = xd.concatenate(packets)
-
-    >>> assert da.equals(xd.synthetics.randn_wavefronts())
+    >>> assert da.equals(da)
     """
 
     def __init__(self, address):
