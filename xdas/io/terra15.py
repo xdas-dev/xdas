@@ -7,13 +7,13 @@ from ..core.dataarray import DataArray
 from ..virtual import VirtualSource
 
 
-def read(fname):
+def read(fname,tz=timezone.utc):
     with h5py.File(fname, "r") as file:
         ti = np.datetime64(
-            datetime.fromtimestamp(file["data_product"]["gps_time"][0]), timezone.utc
+            datetime.fromtimestamp(file["data_product"]["gps_time"][0],tz=tz)
         ).astype("datetime64[ms]")
         tf = np.datetime64(
-            datetime.fromtimestamp(file["data_product"]["gps_time"][-1]), timezone.utc
+            datetime.fromtimestamp(file["data_product"]["gps_time"][-1],tz=tz)
         ).astype("datetime64[ms]")
         d0 = file.attrs["sensing_range_start"]
         dx = file.attrs["dx"]
