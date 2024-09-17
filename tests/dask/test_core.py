@@ -59,7 +59,7 @@ class TestIO:
         chunks = np.split(expected, 5, axis=1)
         for idx, chunk in enumerate(chunks):
             np.save(os.path.join(tmpdir, f"chunk_{idx}.npy"), chunk)
-        paths = glob(os.path.join(tmpdir, "*.npy"))
+        paths = sorted(glob(os.path.join(tmpdir, "*.npy")))
         chunks = [dask.delayed(np.load)(path) for path in paths]
         chunks = [
             dask.array.from_delayed(chunk, shape=(3, 2), dtype=expected.dtype)
