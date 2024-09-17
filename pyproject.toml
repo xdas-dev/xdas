@@ -23,6 +23,7 @@ dependencies = [
     "watchdog",
     "xarray",
     "xinterp",
+    "pyzmq",
 ]
 
 [project.optional-dependencies]
