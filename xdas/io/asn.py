@@ -207,6 +207,7 @@ class ZMQPublisher:
 
     @staticmethod
     def get_header(da):
+        da = da.transpose("time", "distance")
         header = {
             "bytesPerPackage": da.dtype.itemsize * da.shape[1],
             "nPackagesPerMessage": da.shape[0],
@@ -221,6 +222,7 @@ class ZMQPublisher:
         return header
 
     def send(self, da):
+        da = da.transpose("time", "distance")
         header = self.get_header(da)
         if self.header is None:
             self.header = header
@@ -234,6 +236,7 @@ class ZMQPublisher:
         self.send_message(message)
 
     def send_data(self, da):
+        da = da.transpose("time", "distance")
         t0 = da["time"][0].values.astype("datetime64[ns]")
         data = da.values
         message = t0.tobytes() + data.tobytes()
