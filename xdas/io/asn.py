@@ -41,14 +41,12 @@ class ZMQSubscriber:
         The size of each packet in bytes.
     shape : tuple
         The shape of the data array.
-    format : str
-        The format string used for unpacking the data.
+    dtype : numpy.dtype
+        The data type of the array.
     distance : dict
         The distance information.
-    dt : numpy.timedelta64
+    delta : numpy.timedelta64
         The sampling time interval.
-    nt : int
-        The number of time samples per message.
 
     Methods
     -------
@@ -153,11 +151,9 @@ class ZMQSubscriber:
 
     def update_header(self, message):
         header = json.loads(message.decode("utf-8"))
-
         self.packet_size = 8 + header["bytesPerPackage"] * header["nPackagesPerMessage"]
         self.shape = (header["nPackagesPerMessage"], header["nChannels"])
         self.dtype = np.float32 if header["dataType"] == "float" else np.int16
-
         roiTable = header["roiTable"][0]
         di = roiTable["roiStart"] * header["dx"]
         de = roiTable["roiEnd"] * header["dx"]
@@ -165,16 +161,14 @@ class ZMQSubscriber:
             "tie_indices": [0, header["nChannels"] - 1],
             "tie_values": [di, de],
         }
-
-        self.dt = float_to_timedelta(header["dt"], header["dtUnit"])
-        self.nt = header["nPackagesPerMessage"]
+        self.delta = float_to_timedelta(header["dt"], header["dtUnit"])
 
     def unpack(self, message):
-        t0 = np.frombuffer(message[:8], "datetime64[ns]")
+        t0 = np.frombuffer(message[:8], "datetime64[ns]").reshape(())
         data = np.frombuffer(message[8:], self.dtype).reshape(self.shape)
         time = {
             "tie_indices": [0, self.shape[0] - 1],
-            "tie_values": [t0, t0 + (self.shape[0] - 1) * self.dt],
+            "tie_values": [t0, t0 + (self.shape[0] - 1) * self.delta],
         }
         return DataArray(data, {"time": time, "distance": self.distance})
 
@@ -202,6 +196,7 @@ class ZMQPublisher:
     def connect(self, address):
         context = zmq.Context()
         socket = context.socket(zmq.XPUB)
+        socket.setsockopt(zmq.XPUB_VERBOSE, True)
         socket.bind(address)
         self.socket = socket
 

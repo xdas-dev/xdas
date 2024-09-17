@@ -1,15 +1,14 @@
+import json
+import socket
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
+import zmq
 
 import xdas as xd
 from xdas.io.asn import ZMQPublisher, ZMQSubscriber
-import socket
-import json
-import zmq
-
-import threading
-
-from concurrent.futures import ThreadPoolExecutor
 
 executor = ThreadPoolExecutor()
 
@@ -164,16 +163,62 @@ class TestZMQPublisher:
         return socket
 
 
-# class TestZMQSubscriber:
-#     def test_init_connect_update_header(self):
-#         address = get_free_address()
-#         pub = ZMQPublisher(address)
-#         pub.submit(da_float32)
-#         sub = ZMQSubscriber(address)
-#         assert sub.packet_size == 40
-#         assert sub.shape == (100, 10)
-#         assert sub.format == "1000f"
-#         assert sub.distance == {"tie_indices": [0, 9], "tie_values": [0.0, 90.0]}
-#         assert sub.dt == 0.1
-#         assert sub.nt == 100
-#         pub.socket.close()
+class TestZMQSubscriber:
+    def test_one_chunk(self):
+        address = get_free_address()
+        pub = ZMQPublisher(address)
+        chunks = [da_float32]
+        threading.Thread(target=self.publish, args=(pub, chunks)).start()
+        sub = ZMQSubscriber(address)
+        assert sub.packet_size == 4008
+        assert sub.shape == (100, 10)
+        assert sub.dtype == np.float32
+        assert sub.distance == {"tie_indices": [0, 9], "tie_values": [0.0, 90.0]}
+        assert sub.delta == np.timedelta64(100, "ms")
+        result = next(sub)
+        assert result.equals(da_float32)
+        chunks = [da_int16]
+        threading.Thread(target=self.publish, args=(pub, chunks)).start()
+        result = next(sub)
+        assert sub.packet_size == 2008
+        assert sub.dtype == np.int16
+        assert result.equals(da_int16)
+
+    def test_several_chunks(self):
+        address = get_free_address()
+        pub = ZMQPublisher(address)
+        chunks = xd.split(da_float32, 5)
+        threading.Thread(target=self.publish, args=(pub, chunks)).start()
+        sub = ZMQSubscriber(address)
+        assert sub.packet_size == 808
+        assert sub.shape == (20, 10)
+        assert sub.dtype == np.float32
+        assert sub.distance == {"tie_indices": [0, 9], "tie_values": [0.0, 90.0]}
+        assert sub.delta == np.timedelta64(100, "ms")
+        for chunk in chunks:
+            result = next(sub)
+            assert result.equals(chunk)
+
+    def test_several_subscribers(self):
+        address = get_free_address()
+        pub = ZMQPublisher(address)
+        chunks = xd.split(da_float32, 5)
+        thread = threading.Thread(target=self.publish, args=(pub, chunks[:2]))
+        thread.start()
+        sub1 = ZMQSubscriber(address)
+        thread.join()
+        thread = threading.Thread(target=self.publish, args=(pub, chunks[2:]))
+        thread.start()
+        sub2 = ZMQSubscriber(address)
+
+        for chunk in chunks:
+            result = next(sub1)
+            assert result.equals(chunk)
+        for chunk in chunks[2:]:
+            result = next(sub2)
+            assert result.equals(chunk)
+
+    def publish(self, pub, chunks):
+        for chunk in chunks:
+            time.sleep(0.001)
+            pub.submit(chunk)
