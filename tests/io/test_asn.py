@@ -218,6 +218,17 @@ class TestZMQSubscriber:
             result = next(sub2)
             assert result.equals(chunk)
 
+    def test_change_header(self):
+        address = get_free_address()
+        pub = ZMQPublisher(address)
+        chunks = xd.split(da_float32, 5)
+        chunks = [chunk.isel(distance=slice(0, 5)) for chunk in chunks[:2]] + chunks[2:]
+        threading.Thread(target=self.publish, args=(pub, chunks)).start()
+        sub = ZMQSubscriber(address)
+        for chunk in chunks:
+            result = next(sub)
+            assert result.equals(chunk)
+
     def publish(self, pub, chunks):
         for chunk in chunks:
             time.sleep(0.001)
