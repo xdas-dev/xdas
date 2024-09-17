@@ -22,9 +22,9 @@ def read(fname):
     return DataArray(data, {"time": time, "distance": distance})
 
 
-class ZMQStream:
+class ZMQSubscriber:
     """
-    A class representing a ZeroMQ stream.
+    A class used to subscribe to a ZeroMQ stream.
 
     Parameters
     ----------
