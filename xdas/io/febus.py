@@ -1,6 +1,7 @@
+import warnings
+
 import h5py
 import numpy as np
-import warnings
 
 from ..core.dataarray import DataArray
 from ..core.routines import concatenate
@@ -44,13 +45,12 @@ def read(fname, overlaps=None, offset=None):
         source = file[device_name]["Source1"]
         times = np.asarray(source["time"])
         zone = source["Zone1"]
-        # block_overlap = zone.attrs["BlockOverlap"] if "BlockOverlap" in zone.attrs else None
         if "BlockRate" in zone.attrs:
             blockrate = zone.attrs["BlockRate"][0] / 1000.0
         elif "FreqRes" in zone.attrs:
             blockrate = zone.attrs["FreqRes"][0] / 1000.0
         else:
-            raise ValueError("Unknown blockrate, check h5 headers")
+            raise KeyError("Could not find the block size, please check file header")
         (name,) = list(zone.keys())
         chunks = VirtualSource(zone[name])
         delta = (zone.attrs["Spacing"][1] / 1000.0, zone.attrs["Spacing"][0])
@@ -69,7 +69,7 @@ def read(fname, overlaps=None, offset=None):
             pass
         case _:
             raise ValueError("overlaps must be a integer or a tuple of two integers")
-        
+
     match offset:
         case None:
             warnings.warn(
@@ -80,7 +80,7 @@ def read(fname, overlaps=None, offset=None):
             pass
         case _:
             raise ValueError("offset must be an integer")
-        
+
     chunks = chunks[:, overlaps[0] : -overlaps[-1], :]
     times = times + (overlaps[0] - offset) * delta[0]
 
