@@ -167,7 +167,8 @@ def open_mfdatatree(
     regex = regex.replace(".", r"\.")
     for placeholder in placeholders:
         if placeholder.startswith("{") and placeholder.endswith("}"):
-            regex = regex.replace(placeholder, f"(?P<{placeholder[1:-1]}>.+)")
+            regex = regex.replace(placeholder, f"(?P<{placeholder[1:-1]}>.+)", 1)
+            regex = regex.replace(placeholder, f"(?P={placeholder[1:-1]})")
         else:
             regex = regex.replace(placeholder, r".*")
     regex = re.compile(regex)
