@@ -1,5 +1,9 @@
 # Release notes
 
+## 0.2
+
+TODO
+
 ## 0.1.2
 
 - Add ZeroMQ streaming capabilities (@atrabattoni)
