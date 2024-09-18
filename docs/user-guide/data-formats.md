@@ -32,7 +32,7 @@ The formats that are currently implemented are: ASN, FEBUS, OPTASENSE, SINTELA a
 
 ```{warning}
 Due to poor documentation of the various version of the Febus format, it is recommended to manually provide the required trimming and the position of the timestamps within each block. For example to trim 100 samples on both side of each block and to set the timestamp location at the center of the block for a block of 2000 samples:
- `xdas.open_dataarray("path.h5", engine="febus", overlaps=(100, 100), offset=1000)`
+`xdas.open_dataarray("path.h5", engine="febus", overlaps=(100, 100), offset=1000)`
 ```
 
 ## Extending *xdas* with your file format
