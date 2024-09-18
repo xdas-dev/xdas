@@ -1,5 +1,4 @@
 import json
-import socket
 import threading
 import time
 
@@ -19,8 +18,8 @@ coords = {
     "time": {
         "tie_indices": [0, 99],
         "tie_values": [
-            np.datetime64("2020-01-01T00:00:00.000"),
-            np.datetime64("2020-01-01T00:00:09.900"),
+            np.datetime64("2020-01-01T00:00:00.000000000"),
+            np.datetime64("2020-01-01T00:00:09.900000000"),
         ],
     },
     "distance": {"tie_indices": [0, 9], "tie_values": [0.0, 90.0]},

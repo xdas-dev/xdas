@@ -175,7 +175,8 @@ def open_mfdatatree(
     regex = regex.replace(".", r"\.")
     for placeholder in placeholders:
         if placeholder.startswith("{") and placeholder.endswith("}"):
-            regex = regex.replace(placeholder, f"(?P<{placeholder[1:-1]}>.+)")
+            regex = regex.replace(placeholder, f"(?P<{placeholder[1:-1]}>.+)", 1)
+            regex = regex.replace(placeholder, f"(?P={placeholder[1:-1]})")
         else:
             regex = regex.replace(placeholder, r".*")
     regex = re.compile(regex)
@@ -320,7 +321,8 @@ def open_mfdataarray(
             "The maximum number of file that can be opened at once is for now limited "
             "to 100 000."
         )
-    with ProcessPoolExecutor() as executor:
+    max_workers = 1 if engine == "miniseed" else None  # TODO: dirty fix
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = [
             executor.submit(open_dataarray, path, engine=engine, **kwargs)
             for path in paths
@@ -334,7 +336,7 @@ def open_mfdataarray(
         else:
             iterator = as_completed(futures)
         objs = [future.result() for future in iterator]
-    return combine_by_coords(objs, dim, tolerance, squeeze, True, verbose)
+    return combine_by_coords(objs, dim, tolerance, squeeze, None, verbose)
 
 
 def open_dataarray(fname, group=None, engine=None, **kwargs):
@@ -531,29 +533,115 @@ def combine_by_coords(
     DataSequence or DataArray
         The combined data arrays.
     """
-    objs = sorted(objs, key=lambda da: da[dim][0].values)
-    out = []
-    bag = []
+    # parse dim
+    if dim == "first":
+        dim = objs[0].dims[0]
+    if dim == "last":
+        dim = objs[0].dims[-1]
+
+    # sort objs by dim
+    if dim in objs[0].coords:
+        objs = sorted(
+            objs,
+            key=lambda da: da[dim].values if da[dim].isscalar() else da[dim][0].values,
+        )
+
+    # combine objs
+    bags = []
+    bag = Bag(dim)
     for da in objs:
-        if not bag:
-            bag = [da]
-        elif (
-            da.coords.drop_dims(dim).equals(bag[-1].coords.drop_dims(dim))
-            and (get_sampling_interval(da, dim) == get_sampling_interval(bag[-1], dim))
-            and (da.dtype == bag[-1].dtype)
-        ):
+        try:
             bag.append(da)
-        else:
-            out.append(bag)
-            bag = [da]
-    out.append(bag)
+        except CompatibilityError:
+            bags.append(bag)
+            bag = Bag(dim)
+            bag.append(da)
+    bags.append(bag)
+
+    # concatenate each bag
     collection = DataCollection(
-        [concatenate(bag, dim, tolerance, virtual, verbose) for bag in out]
+        [concatenate(bag, dim, tolerance, virtual, verbose) for bag in bags]
     )
+
+    # squeeze if possible
     if squeeze and len(collection) == 1:
         return collection[0]
     else:
         return collection
+
+
+class CompatibilityError(Exception):
+    """Custom exception to signal required splitting."""
+
+    def __init__(self, message):
+        super().__init__(message)
+
+
+class Bag:
+    def __init__(self, dim):
+        self.objs = []
+        self.dim = dim
+
+    def __iter__(self):
+        return iter(self.objs)
+
+    def initialize(self, da):
+        self.objs = [da]
+        self.dims = da.dims
+        self.subshape = tuple(
+            size for dim, size in da.sizes.items() if not dim == self.dim
+        )
+        self.subcoords = (
+            da.coords.drop_dims(self.dim)
+            if self.dim in self.dims
+            else da.coords.drop_coords(self.dim)
+        )
+        try:
+            self.delta = get_sampling_interval(da, self.dim)
+        except (ValueError, KeyError):
+            self.delta = None
+        self.dtype = da.dtype
+
+    def append(self, da):
+        if not self.objs:
+            self.initialize(da)
+        else:
+            self.check_dims(da)
+            self.check_shape(da)
+            self.check_coords(da)
+            self.check_sampling_interval(da)
+            self.check_dtype(da)
+            self.objs.append(da)
+
+    def check_dims(self, da):
+        if not self.dims == da.dims:
+            raise CompatibilityError("dimensions are not compatible")
+
+    def check_shape(self, da):
+        subshape = tuple(size for dim, size in da.sizes.items() if not dim == self.dim)
+        if not self.subshape == subshape:
+            raise CompatibilityError("shapes are not compatible")
+
+    def check_dtype(self, da):
+        if not self.dtype == da.dtype:
+            raise CompatibilityError("data types are not compatible")
+
+    def check_coords(self, da):
+        subcoords = (
+            da.coords.drop_dims(self.dim)
+            if self.dim in self.dims
+            else da.coords.drop_coords(self.dim)
+        )
+        if not self.subcoords.equals(subcoords):
+            raise CompatibilityError("coordinates are not compatible")
+
+    def check_sampling_interval(self, da):
+        if self.delta is None:
+            pass
+        else:
+            delta = get_sampling_interval(da, self.dim)
+            if not np.isclose(delta, self.delta):
+                raise CompatibilityError("sampling intervals are not compatible")
 
 
 def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
@@ -586,23 +674,27 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
     if virtual is None:
         virtual = all(isinstance(da.data, (VirtualSource, VirtualStack)) for da in objs)
 
-    if not all(isinstance(da[dim], InterpCoordinate) for da in objs):
-        raise NotImplementedError("can only concatenate along interpolated coordinate")
+    if dim in objs[0].dims + ("first", "last"):
+        axis = objs[0].get_axis_num(dim)
+        dim = objs[0].dims[axis]  # ensure not "first" or "last"
+        dims = objs[0].dims
+    else:
+        axis = 0
+        dims = (dim, *objs[0].dims)
+        objs = [da.expand_dims(dim) for da in objs]
 
-    obj = objs[0]
-    axis = obj.get_axis_num(dim)
-    dim = obj.dims[axis]
-    coords = obj.coords.copy()
-    dims = obj.dims
-    name = obj.name
-    attrs = obj.attrs
+    coords = objs[0].coords.copy()
+    name = objs[0].name
+    attrs = objs[0].attrs
 
-    objs = sorted(objs, key=lambda da: da[dim][0].values)
+    dim_has_coords = dim in coords
+
+    if dim_has_coords:
+        objs = sorted(objs, key=lambda da: da[dim][0].values)
+        coord = coords[dim].__class__(data=None, dim=dim, dtype=coords[dim].dtype)
+
     iterator = tqdm(objs, desc="Linking dataarray") if verbose else objs
     data = []
-    tie_indices = []
-    tie_values = []
-    idx = 0
     for da in iterator:
         if isinstance(da.data, VirtualStack):
             for source in da.data.sources:
@@ -610,18 +702,22 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         else:
             data.append(da.data)
 
-        tie_indices.extend(idx + da[dim].tie_indices)
-        tie_values.extend(da[dim].tie_values)
-        idx += da.shape[axis]
+        if dim in coords:
+            coord = coord.append(da[dim])
 
     if virtual:
         data = VirtualStack(data, axis)
     else:
         data = np.concatenate(data, axis)
-
-    coords[dim] = InterpCoordinate(
-        {"tie_indices": tie_indices, "tie_values": tie_values}, dim
-    ).simplify(tolerance)
+    if dim_has_coords:
+        if tolerance is not None:
+            if hasattr(coord, "simplify"):
+                coord = coord.simplify(tolerance)
+            else:
+                raise TypeError(
+                    "tolerance can only be used with interpolated coordinates"
+                )
+        coords[dim] = coord
 
     return DataArray(data, coords, dims, name, attrs)
 
@@ -867,6 +963,11 @@ def plot_availability(obj, dim="first", **kwargs):
     **kwargs
         Additional keyword arguments to be passed to the `px.timeline` function.
 
+    Returns
+    -------
+    fig : plotly.graph_objects.Figure
+        The timeline
+        
     Notes
     -----
     This function uses the `px.timeline` function from the `plotly.express` library.
@@ -890,7 +991,7 @@ def plot_availability(obj, dim="first", **kwargs):
     for elem in fig.data:
         elem["marker"]["line_color"] = color_discrete_map[elem["legendgroup"]]
     fig.update_yaxes(title_text="")
-    fig.show()
+    return fig
 
 
 def _get_timeline_dataframe(obj, dim="first", name=None):

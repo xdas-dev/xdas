@@ -1,6 +1,8 @@
 import os
+from glob import glob
 from tempfile import TemporaryDirectory
 
+import dask
 import hdf5plugin
 import numpy as np
 import pytest
@@ -190,6 +192,10 @@ class TestDataArray:
 
     def test_stream(self):
         da = wavelet_wavefronts()
+        da["time"] = {
+            "tie_indices": da["time"].tie_indices,
+            "tie_values": da["time"].tie_values.astype("datetime64[us]"),
+        }
         st = da.to_stream(dim={"distance": "time"})
         assert st[0].id == "NET.DAS00001.00.BN1"
         assert len(st) == da.sizes["distance"]
@@ -327,6 +333,12 @@ class TestDataArray:
         assert result.dims == ("y", "x")
         assert result.shape == (1, 3)
 
+        da = DataArray([1.0, 2.0, 3.0], {"x": [0, 1, 2], "y": 0}, dims=("x",))
+        result = da.expand_dims("y")
+        assert result.dims == ("y", "x")
+        assert result.shape == (1, 3)
+        assert result["y"].equals(xdas.Coordinate([0], dim="y"))
+
     def test_io(self):
         # both coords interpolated
         da = wavelet_wavefronts()
@@ -371,6 +383,44 @@ class TestDataArray:
             assert compressed_size < chunk_compressed_size
             _da = DataArray.from_netcdf(tmpfile_compressed)
             assert np.abs(da - _da).max().values < 0.001
+
+    def test_io_dask(self):
+        with TemporaryDirectory() as tmpdir:
+            values = np.random.rand(3, 10)
+            chunks = np.split(values, 5, axis=1)
+            for idx, chunk in enumerate(chunks):
+                np.save(os.path.join(tmpdir, f"chunk_{idx}.npy"), chunk)
+            paths = glob(os.path.join(tmpdir, "*.npy"))
+            chunks = [dask.delayed(np.load)(path) for path in paths]
+            chunks = [
+                dask.array.from_delayed(chunk, shape=(3, 2), dtype=values.dtype)
+                for chunk in chunks
+            ]
+            data = dask.array.concatenate(chunks, axis=1)
+            expected = DataArray(
+                data,
+                coords={"time": np.arange(3), "distance": np.arange(10)},
+                attrs={"version": "1.0"},
+                name="data",
+            )
+            fname = os.path.join(tmpdir, "tmp.nc")
+            expected.to_netcdf(fname)
+            result = xdas.open_dataarray(fname)
+            assert isinstance(result.data, dask.array.Array)
+            assert np.array_equal(expected.values, result.values)
+            assert expected.dtype == result.dtype
+            assert expected.coords.equals(result.coords)
+            assert expected.dims == result.dims
+            assert expected.name == result.name
+            assert expected.attrs == result.attrs
+
+    def test_io_non_dimensional(self):
+        expected = DataArray(coords={"dim": 0}, dims=())
+        with TemporaryDirectory() as dirpath:
+            path = os.path.join(dirpath, "tmp.nc")
+            expected.to_netcdf(path)
+            result = DataArray.from_netcdf(path)
+            assert expected.equals(result)
 
     def test_ufunc(self):
         da = wavelet_wavefronts()
