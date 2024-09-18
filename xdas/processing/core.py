@@ -1,9 +1,11 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
+from tempfile import TemporaryDirectory
 
 import numpy as np
 import pandas as pd
+import zmq
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
@@ -168,6 +170,8 @@ class DataArrayWriter:
     dirpath : str or path
         The directory to store the output of a processing pipeline. The directory needs
         to exist and be empty.
+    encoding : dict
+        The encoding to use when dumping the DataArrays to bytes.
 
     Examples
     --------
@@ -182,8 +186,9 @@ class DataArrayWriter:
 
     """
 
-    def __init__(self, dirpath):
+    def __init__(self, dirpath, encoding=None):
         self.dirpath = dirpath
+        self.encoding = encoding
         self.queue = Queue(maxsize=1)
         self.results = []
         self.executor = ThreadPoolExecutor(1)
@@ -201,7 +206,7 @@ class DataArrayWriter:
             if os.path.exists(path):
                 raise OSError(f"the file '{path}' already exists.")
             else:
-                da.to_netcdf(path)
+                da.to_netcdf(path, encoding=self.encoding)
             self.results.append(open_dataarray(path))
 
     def get_path(self, da):
@@ -296,3 +301,151 @@ class DataFrameWriter:
         except pd.errors.EmptyDataError:
             out = pd.DataFrame()
         return out
+
+
+class ZMQPublisher:
+    """
+    A class for publishing DataArray chunks over ZeroMQ.
+
+    Parameters
+    ----------
+    address : str
+        The address to bind the publisher to.
+    encoding : dict
+        The encoding to use when dumping the DataArrays to bytes.
+
+    Examples
+    --------
+    >>> import xdas as xd
+    >>> from xdas.processing import ZMQPublisher, ZMQSubscriber
+
+    First we generate some data and split it into packets
+
+    >>> packets = xd.split(xd.synthetics.dummy(), 10)
+
+    We initialize the publisher at a given address
+
+    >>> address = f"tcp://localhost:{xd.io.get_free_port()}"
+    >>> publisher = ZMQPublisher(address)
+
+    We can then publish the packets
+
+    >>> for da in packets:
+    ...     publisher.submit(da)
+
+    To reduce the size of the packets, we can also specify an encoding
+
+    >>> import hdf5plugin
+
+    >>> address = f"tcp://localhost:{xd.io.get_free_port()}"
+    >>> encoding = {"chunks": (10, 10), **hdf5plugin.Zfp(accuracy=1e-6)}
+    >>> publisher = ZMQPublisher(address, encoding)
+    >>> for da in packets:
+    ...     publisher.submit(da)
+
+    """
+
+    def __init__(self, address, encoding=None):
+        self.address = address
+        self.encoding = encoding
+        self._context = zmq.Context()
+        self._socket = self._context.socket(zmq.PUB)
+        self._socket.bind(self.address)
+
+    def submit(self, da):
+        """
+        Send a DataArray over ZeroMQ.
+
+        Parameters
+        ----------
+        da : DataArray
+            The DataArray to be sent.
+
+        """
+        self._socket.send(tobytes(da, self.encoding))
+
+    def write(self, da):
+        self.submit(da)
+
+    def result():
+        return None
+
+
+class ZMQSubscriber:
+    """
+    A class for subscribing to DataArray chunks over ZeroMQ.
+
+    Parameters
+    ----------
+    address : str
+        The address to connect the subscriber to.
+
+    Methods
+    -------
+    submit(da)
+        Send a DataArray over ZeroMQ.
+
+    Examples
+    --------
+    >>> import threading
+
+    >>> import xdas as xd
+    >>> from xdas.processing import ZMQSubscriber
+
+    First we generate some data and split it into packets
+
+    >>> da = xd.synthetics.dummy()
+    >>> packets = xd.split(da, 10)
+
+    We then publish the packets asynchronously
+
+    >>> address = f"tcp://localhost:{xd.io.get_free_port()}"
+    >>> publisher = ZMQPublisher(address)
+
+    >>> def publish():
+    ...     for packet in packets:
+    ...         publisher.submit(packet)
+
+    >>> threading.Thread(target=publish).start()
+
+    Now let's receive the packets
+
+    >>> subscriber = ZMQSubscriber(address)
+    >>> packets = []
+    >>> for n, da in enumerate(subscriber, start=1):
+    ...     packets.append(da)
+    ...     if n == 10:
+    ...         break
+    >>> da = xd.concatenate(packets)
+    >>> assert da.equals(da)
+    """
+
+    def __init__(self, address):
+        self.address = address
+        self._context = zmq.Context()
+        self._socket = self._context.socket(zmq.SUB)
+        self._socket.connect(address)
+        self._socket.setsockopt_string(zmq.SUBSCRIBE, "")
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        message = self._socket.recv()
+        return frombuffer(message)
+
+
+def tobytes(da, encoding=None):
+    with TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "tmp.nc")
+        da.to_netcdf(path, virtual=False, encoding=encoding)
+        with open(path, "rb") as file:
+            return file.read()
+
+
+def frombuffer(da):
+    with TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "tmp.nc")
+        with open(path, "wb") as file:
+            file.write(da)
+        return open_dataarray(path).load()

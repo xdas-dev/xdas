@@ -130,6 +130,23 @@ da = da.load()  # optional
 da
 ```
 
+### Write the data to disk with compression
+
+In some case, it can be interesting to write down to disk the data with some compression. In this example, we use the Zfp compression from the *hdf5plugin* library which is a lossy compression that is particularly suited for floating point numbers. The recommended compression scheme is the *fixed accuracy mode* which ensure that your data is not altered by the compression above that threshold in absolute value. Be careful to choose a value which is much lower than your instrumental noise. Compression ratio of around 3-4 can usually be achieved in such a way. For big files, compressing by chunks can be useful to enhance slicing through the data (otherwise the entire data must be decompressed each time some part must be accessed).
+
+```{code-cell}
+import hdf5plugin
+encoding = {"chunks": (10, 10), **hdf5plugin.Zfp(accuracy=1e-6)}
+
+da.to_netcdf("chunked_and_compressed.nc", encoding=encoding)
+```
+
+Reading compressed data is completely transparent, you do not need to specify anything.
+
+```{code-cell}
+xdas.open_dataarray("chunked_and_compressed.nc")
+```
+
 Note that you do not necessarily need to load it manually. Any step that requires to modify the data will automatically trigger the data importation.
 
 ### Visualization

@@ -12,4 +12,6 @@
    DataArrayLoader
    RealTimeLoader
    DataArrayWriter
+   ZMQPublisher
+   ZMQSubscriber
 ```

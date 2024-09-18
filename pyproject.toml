@@ -4,16 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xdas"
-version = "0.1"
+version = "0.1.1"
 requires-python = ">= 3.10"
 authors = [
     { name = "Alister Trabattoni", email = "alister.trabattoni@gmail.com" },
 ]
 dependencies = [
-    "dask",
     "h5netcdf",
     "h5py",
-    "netcdf4",
+    "hdf5plugin",
     "numba",
     "numpy",
     "obspy",
@@ -21,9 +20,10 @@ dependencies = [
     "plotly",
     "scipy",
     "tqdm",
+    "watchdog",
     "xarray",
     "xinterp",
-    "watchdog",
+    "pyzmq",
 ]
 
 [project.optional-dependencies]
