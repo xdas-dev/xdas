@@ -20,7 +20,7 @@ os.chdir("../_data")
 
 ## Implemented file formats
 
-The formats that are currently implemented are: ASN, FEBUS, OPTASENSE and SINTELA. To read them you have to specifiy which one you want in the `engine` argument in {py:func}`xdas.open_dataarray` for a single file or {py:func}`xdas.open_mfdataarray` for multiple files:
+The formats that are currently implemented are: ASN, FEBUS, OPTASENSE, SINTELA and TERRA15. To read them you have to specifiy which one you want in the `engine` argument in {py:func}`xdas.open_dataarray` for a single file or {py:func}`xdas.open_mfdataarray` for multiple files:
 
 | DAS constructor   | `engine` argument |
 |:-----------------:|:-----------------:|
@@ -28,6 +28,12 @@ The formats that are currently implemented are: ASN, FEBUS, OPTASENSE and SINTEL
 | FEBUS             | `"febus"`         |
 | OPTASENSE         | `"optasense"`     |
 | SINTELA           | `"sintela"`       |
+| TERRA15           | `"terra15"`       |
+
+```{warning}
+Due to poor documentation of the various version of the Febus format, it is recommended to manually provide the required trimming and the position of the timestamps within each block. For example to trim 100 samples on both side of each block and to set the timestamp location at the center of the block for a block of 2000 samples:
+`xdas.open_dataarray("path.h5", engine="febus", overlaps=(100, 100), offset=1000)`
+```
 
 ## Extending *xdas* with your file format
 

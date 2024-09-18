@@ -1,5 +1,11 @@
 # Release notes
 
+## 0.1.2
+
+- Add ZeroMQ streaming capabilities (@atrabattoni)
+- Add support of Terra15 format (@chauvetige).
+- Fix Febus engine (@ClaudioStrumia)
+
 ## 0.1.1
 
 - Add support for `hdf5plugin` compression schemes.

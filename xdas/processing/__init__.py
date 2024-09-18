@@ -4,5 +4,7 @@ from .core import (
     DataArrayWriter,
     DataFrameWriter,
     RealTimeLoader,
+    ZMQPublisher,
+    ZMQSubscriber,
     process,
 )

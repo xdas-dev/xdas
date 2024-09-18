@@ -32,7 +32,7 @@ import xdas.signal as xp
 
 strain = xp.integrate(strain_rate, dim="time")
 deformation = xp.integrate(strain, dim="distance")
-displacement = xp.sliding_mean_removal(deformation, wlen=2000.0)
+displacement = xp.sliding_mean_removal(deformation, wlen=2000.0, dim="distance")
 displacement.plot(yincrease=False, vmin=-0.5, vmax=0.5);
 ```
 
