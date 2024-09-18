@@ -26,8 +26,7 @@ def read(fname, overlaps=None, offset=None):
         The filename of the Febus file to read.
     overlaps : tuple of int, optional
         A tuple specifying the overlap in number of sample to trim on both side of each
-        chunk of the data. If as scalar is provided, the same overlap will be applied
-        to both sides. If not provided, the function will attempt to determine the
+        chunk of the data. If not provided, the function will attempt to determine the
         correct overlap at your own risk.
     offset : int, optional
         The location of the timestamp within each block given as the number of samples
@@ -45,6 +44,13 @@ def read(fname, overlaps=None, offset=None):
         source = file[device_name]["Source1"]
         times = np.asarray(source["time"])
         zone = source["Zone1"]
+        # block_overlap = zone.attrs["BlockOverlap"] if "BlockOverlap" in zone.attrs else None
+        if "BlockRate" in zone.attrs:
+            blockrate = zone.attrs["BlockRate"][0] / 1000.0
+        elif "FreqRes" in zone.attrs:
+            blockrate = zone.attrs["FreqRes"][0] / 1000.0
+        else:
+            raise ValueError("Unknown blockrate, check h5 headers")
         (name,) = list(zone.keys())
         chunks = VirtualSource(zone[name])
         delta = (zone.attrs["Spacing"][1] / 1000.0, zone.attrs["Spacing"][0])
@@ -55,29 +61,26 @@ def read(fname, overlaps=None, offset=None):
             warnings.warn(
                 "No overlap specified, Xdas will try its best to find the correct trimming"
             )
-            if "BlockOverlap" in zone.attrs:
-                overlap = zone.attrs["BlockOverlap"][0]
-            else:
-                overlap = chunks.shape[1] // 4
-            overlaps = (overlap, overlap)
-        case int(overlap):
-            overlaps = (overlap, overlap)
+            noverlap = chunks.shape[1] - round((1 / blockrate) / delta[0])
+            before = noverlap // 2
+            after = noverlap - before
+            overlaps = (before, after)
         case (int(), int()):
             pass
         case _:
             raise ValueError("overlaps must be a integer or a tuple of two integers")
-
+        
     match offset:
         case None:
             warnings.warn(
                 "No offset specified, Xdas will try its best to place the timestamps"
             )
-            offset = overlaps[0]
+            offset = chunks.shape[1] // 2
         case int():
             pass
         case _:
             raise ValueError("offset must be an integer")
-
+        
     chunks = chunks[:, overlaps[0] : -overlaps[-1], :]
     times = times + (overlaps[0] - offset) * delta[0]
 
