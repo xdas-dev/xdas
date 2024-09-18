@@ -83,7 +83,13 @@ def open_mfdatacollection(
 
 
 def open_mfdatatree(
-    paths, dim="first", tolerance=None, squeeze=False, engine=None, verbose=False
+    paths,
+    dim="first",
+    tolerance=None,
+    squeeze=False,
+    engine=None,
+    verbose=False,
+    **kwargs,
 ):
     """
     Open a directory tree structure as a data collection.
@@ -118,6 +124,8 @@ def open_mfdatatree(
         The type of file to open or a read function. Default to xdas netcdf format.
     verbose: bool
         Whether to display a progress bar. Default to False.
+    **kwargs
+        Additional keyword arguments to be passed to the read function.
 
     Returns
     -------
@@ -180,11 +188,18 @@ def open_mfdatatree(
             bag = bag[match.group(field)]
         bag.append(fname)
 
-    return collect(tree, fields, dim, tolerance, squeeze, engine, verbose)
+    return collect(tree, fields, dim, tolerance, squeeze, engine, verbose, **kwargs)
 
 
 def collect(
-    tree, fields, dim="first", tolerance=None, squeeze=False, engine=None, verbose=False
+    tree,
+    fields,
+    dim="first",
+    tolerance=None,
+    squeeze=False,
+    engine=None,
+    verbose=False,
+    **kwargs,
 ):
     """
     Collects the data from a tree of paths using `fields` as level names.
@@ -207,6 +222,8 @@ def collect(
         The type of file to open or a read function. Default to xdas netcdf format.
     verbose: bool
         Whether to display a progress bar. Default to False.
+    **kwargs
+        Additional keyword arguments to be passed to the read function.
 
 
     Returns
@@ -219,7 +236,9 @@ def collect(
     collection = DataCollection({}, name=name)
     for key, value in tree.items():
         if isinstance(value, list):
-            dc = open_mfdataarray(value, dim, tolerance, squeeze, engine, verbose)
+            dc = open_mfdataarray(
+                value, dim, tolerance, squeeze, engine, verbose, **kwargs
+            )
             dc.name = fields[0]
             collection[key] = dc
         else:
@@ -238,14 +257,20 @@ def defaulttree(depth):
 
 
 def open_mfdataarray(
-    paths, dim="first", tolerance=None, squeeze=True, engine=None, verbose=False
+    paths,
+    dim="first",
+    tolerance=None,
+    squeeze=True,
+    engine=None,
+    verbose=False,
+    **kwargs,
 ):
     """
     Open a multiple file dataset.
 
     Each file described by `path` will be opened as a data array. The data arrays are
     then combined along the `dim` dimension using `combine_by_coords`. If the
-    cooridnates of the data arrays are not compatible, the resulting object will be
+    coordinates of the data arrays are not compatible, the resulting object will be
     split into a sequence of data arrays.
 
     Parameters
@@ -264,11 +289,13 @@ def open_mfdataarray(
         The type of file to open or a read function. Default to xdas netcdf format.
     verbose: bool
         Whether to display a progress bar. Default to False.
+    **kwargs
+        Additional keyword arguments to be passed to the read function.
 
     Returns
     -------
     DataArray or DataSequence
-        The dataarray containing all files data. If different acquisitions are found,
+        The data array containing all files data. If different acquisitions are found,
         a DataSequence is returned.
 
     Raises
@@ -295,7 +322,8 @@ def open_mfdataarray(
         )
     with ProcessPoolExecutor() as executor:
         futures = [
-            executor.submit(open_dataarray, path, engine=engine) for path in paths
+            executor.submit(open_dataarray, path, engine=engine, **kwargs)
+            for path in paths
         ]
         if verbose:
             iterator = tqdm(
@@ -322,6 +350,8 @@ def open_dataarray(fname, group=None, engine=None, **kwargs):
         to the root of the file.
     engine: str of callable, optional
         The type of file to open or a read function. Default to xdas netcdf format.
+    **kwargs
+        Additional keyword arguments to be passed to the read function.
 
     Returns
     -------
@@ -341,14 +371,14 @@ def open_dataarray(fname, group=None, engine=None, **kwargs):
     if not os.path.exists(fname):
         raise FileNotFoundError("no file to open")
     if engine is None:
-        return DataArray.from_netcdf(fname, group=group, **kwargs)
+        return DataArray.from_netcdf(fname, group=group)
     elif callable(engine):
-        return engine(fname)
+        return engine(fname, **kwargs)
     elif isinstance(engine, str):
         from .. import io
 
         module = getattr(io, engine)
-        return module.read(fname)
+        return module.read(fname, **kwargs)
     else:
         raise ValueError("engine not recognized")
 
