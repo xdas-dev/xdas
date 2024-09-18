@@ -932,6 +932,11 @@ def plot_availability(obj, dim="first", **kwargs):
     **kwargs
         Additional keyword arguments to be passed to the `px.timeline` function.
 
+    Returns
+    -------
+    fig : plotly.graph_objects.Figure
+        The timeline
+        
     Notes
     -----
     This function uses the `px.timeline` function from the `plotly.express` library.
@@ -955,7 +960,7 @@ def plot_availability(obj, dim="first", **kwargs):
     for elem in fig.data:
         elem["marker"]["line_color"] = color_discrete_map[elem["legendgroup"]]
     fig.update_yaxes(title_text="")
-    fig.show()
+    return fig
 
 
 def _get_timeline_dataframe(obj, dim="first", name=None):
