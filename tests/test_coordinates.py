@@ -82,6 +82,15 @@ class TestScalarCoordinate:
         assert not ScalarCoordinate(1).isdense()
         assert not ScalarCoordinate(1).isinterp()
 
+    def test_to_from_dict(self):
+        for data in self.valid:
+            coord = ScalarCoordinate(data)
+            assert ScalarCoordinate.from_dict(coord.to_dict()).equals(coord)
+
+    def test_empty(self):
+        with pytest.raises(TypeError, match="cannot be empty"):
+            ScalarCoordinate()
+
 
 class TestDenseCoordinate:
     valid = [
@@ -187,6 +196,32 @@ class TestDenseCoordinate:
         assert np.array_equiv(
             DenseCoordinate([1, 2, 3]).to_index(slice(2, None)), slice(1, 3)
         )
+
+    def test_to_from_dict(self):
+        for data in self.valid:
+            coord = DenseCoordinate(data)
+            assert DenseCoordinate.from_dict(coord.to_dict()).equals(coord)
+
+    def test_empty(self):
+        coord = DenseCoordinate()
+        assert coord.empty
+
+    def test_append(self):
+        coord0 = DenseCoordinate()
+        coord1 = DenseCoordinate([1, 2, 3])
+        coord2 = DenseCoordinate([4, 5, 6])
+
+        result = coord1.append(coord2)
+        expected = DenseCoordinate([1, 2, 3, 4, 5, 6])
+        assert result.equals(expected)
+
+        result = coord2.append(coord1)
+        expected = DenseCoordinate([4, 5, 6, 1, 2, 3])
+        assert result.equals(expected)
+
+        assert coord0.append(coord0).empty
+        assert coord0.append(coord1).equals(coord1)
+        assert coord1.append(coord0).equals(coord1)
 
 
 class TestInterpCoordinate:
@@ -472,6 +507,30 @@ class TestInterpCoordinate:
         coord = InterpCoordinate({"tie_indices": [0], "tie_values": [1.0]})
         assert coord[0].values == 1.0
 
+    def test_to_from_dict(self):
+        for data in self.valid:
+            coord = InterpCoordinate(data)
+            assert InterpCoordinate.from_dict(coord.to_dict()).equals(coord)
+
+    def test_append(self):
+        coord0 = InterpCoordinate()
+        coord1 = InterpCoordinate({"tie_indices": [0, 2], "tie_values": [0, 20]})
+        coord2 = InterpCoordinate({"tie_indices": [0, 2], "tie_values": [30, 50]})
+
+        result = coord1.append(coord2)
+        expected = InterpCoordinate({"tie_indices": [0, 5], "tie_values": [0, 50]})
+        assert result.equals(expected)
+
+        result = coord2.append(coord1)
+        expected = InterpCoordinate(
+            {"tie_indices": [0, 2, 3, 5], "tie_values": [30, 50, 0, 20]}
+        )
+        assert result.equals(expected)
+
+        assert coord0.append(coord0).empty
+        assert coord0.append(coord1).equals(coord1)
+        assert coord1.append(coord0).equals(coord1)
+
 
 class TestCoordinate:
     def test_new(self):
@@ -487,6 +546,10 @@ class TestCoordinate:
         result = coord.to_dataarray()
         expected = xdas.DataArray([1, 2, 3], {"dim": [1, 2, 3]}, name="dim")
         assert result.equals(expected)
+
+    def test_empty(self):
+        with pytest.raises(TypeError, match="cannot infer coordinate type"):
+            xdas.Coordinate()
 
 
 class TestCoordinates:
@@ -543,3 +606,15 @@ class TestCoordinates:
         assert coords.dims == ("dim_0", "dim_1", "dim_2")
         with pytest.raises(TypeError, match="must be of type str"):
             coords[0] = ...
+
+    def test_to_from_dict(self):
+        starttime = np.datetime64("2020-01-01T00:00:00.000")
+        endtime = np.datetime64("2020-01-01T00:00:10.000")
+        coords = {
+            "time": {"tie_indices": [0, 999], "tie_values": [starttime, endtime]},
+            "distance": np.linspace(0, 1000, 3),
+            "channel": ("distance", ["DAS01", "DAS02", "DAS03"]),
+            "interrogator": (None, "SRN"),
+        }
+        coords = xdas.Coordinates(coords)
+        assert xdas.Coordinates.from_dict(coords.to_dict()).equals(coords)

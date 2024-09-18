@@ -156,6 +156,44 @@ class TestCore:
             },
         )
         assert xdas.concatenate((da1, da2), dim="time").equals(expected)
+        # concat dense coordinates
+        da1 = xdas.DataArray(
+            data=np.zeros((5, 4, 3)),
+            coords={
+                "phase": ["A", "B", "C"],
+                "time": [0, 1, 2, 3, 4],
+                "distance": [0.0, 1.0, 2.0, 3.0],
+            },
+            dims=("time", "distance", "phase"),
+        )
+        da2 = xdas.DataArray(
+            data=np.ones((7, 4, 3)),
+            coords={
+                "phase": ["A", "B", "C"],
+                "time": [5, 6, 7, 8, 9, 10, 11],
+                "distance": [0.0, 1.0, 2.0, 3.0],
+            },
+            dims=("time", "distance", "phase"),
+        )
+        expected = xdas.DataArray(
+            data=np.concatenate((np.zeros((5, 4, 3)), np.ones((7, 4, 3))), axis=0),
+            coords={
+                "phase": ["A", "B", "C"],
+                "time": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+                "distance": [0.0, 1.0, 2.0, 3.0],
+            },
+            dims=("time", "distance", "phase"),
+        )
+        assert xdas.concatenate((da1, da2), dim="time").equals(expected)
+        # stack
+        da = wavelet_wavefronts()
+        objs = [obj for obj in da]
+        result = xdas.concatenate(objs, dim="time")
+        result["time"] = xdas.InterpCoordinate.from_array(result["time"].values)
+        assert result.equals(da)
+        objs = [obj.drop_coords("time") for obj in da]
+        result = xdas.concatenate(objs, dim="time")
+        assert result.equals(da.drop_coords("time"))
 
     def test_open_dataarray(self):
         with pytest.raises(FileNotFoundError):

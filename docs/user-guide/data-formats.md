@@ -20,15 +20,25 @@ os.chdir("../_data")
 
 ## Implemented file formats
 
-The formats that are currently implemented are: ASN, FEBUS, OPTASENSE, SINTELA and TERRA15. To read them you have to specifiy which one you want in the `engine` argument in {py:func}`xdas.open_dataarray` for a single file or {py:func}`xdas.open_mfdataarray` for multiple files:
+Here below the list of formats that are currently implemented. All HDF5 based formats support native virtualization. Other formats support Dask virtualization. Please refer to the [](virtual-datasets) section. To read a them you have to specify which one you want in the `engine` argument in {py:func}`xdas.open_dataarray` for a single file or {py:func}`xdas.open_mfdataarray` for multiple files.
 
-| DAS constructor   | `engine` argument |
-|:-----------------:|:-----------------:|
-| ASN               | `"asn"`           |
-| FEBUS             | `"febus"`         |
-| OPTASENSE         | `"optasense"`     |
-| SINTELA           | `"sintela"`       |
-| TERRA15           | `"terra15"`       |
+Xdas support the following DAS formats:
+
+| Constructor       | Instrument        | `engine` argument | Virtualization    |
+|:-----------------:|:-----------------:|:-----------------:|:-----------------:|
+| ASN               | OptoDAS           | `"asn"`           | HDF5              |
+| FEBUS             | A1                | `"febus"`         | HDF5              |
+| OptaSense         | OLA, ODH*, ...    | `"optasense"`     | HDF5              |
+| Silixa            | iDAS              | `"silixa"`        | Dask              |
+| SINTELA           | ONYX              | `"sintela"`       | HDF5              |
+| Terra15           | Treble            | `"terra15"`       | HDF5              |
+
+It also implements its own format and support miniSEED:
+
+| Format            | `engine` argument | Virtualization    |   
+|:-----------------:|:-----------------:|:-----------------:|           
+| Xdas              | `None`            | HDF5              |
+| miniSEED          | `"miniseed"`      | Dask              |
 
 ```{warning}
 Due to poor documentation of the various version of the Febus format, it is recommended to manually provide the required trimming and the position of the timestamps within each block. For example to trim 100 samples on both side of each block and to set the timestamp location at the center of the block for a block of 2000 samples:
