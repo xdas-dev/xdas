@@ -7,6 +7,7 @@ data-structure/index
 data-formats
 virtual-datasets
 interpolated-coordinates
+miniseed
 convert-displacement
 atoms
 processing
