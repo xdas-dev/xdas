@@ -20,20 +20,25 @@ os.chdir("../_data")
 
 ## Implemented file formats
 
-Here below the list of formats that are currently implemented. All HDF5 based formats actually support virtualization, meaning that format that does not support it will load data in memory when reading files. To read them you have to specifiy which one you want in the `engine` argument in {py:func}`xdas.open_dataarray` for a single file or {py:func}`xdas.open_mfdataarray` for multiple files:
+Here below the list of formats that are currently implemented. All HDF5 based formats support native virtualization. Other formats support Dask virtualization. Please refer to the [](virtual-datasets) section. To read a them you have to specify which one you want in the `engine` argument in {py:func}`xdas.open_dataarray` for a single file or {py:func}`xdas.open_mfdataarray` for multiple files.
 
-| DAS constructor   | `engine` argument | Virtualization |
-|:-----------------:|:-----------------:|:-:|
-| ASN               | `"asn"`           | ✅︎ |
-| FEBUS             | `"febus"`         | ✅︎ |
-| OPTASENSE         | `"optasense"`     | ✅︎ |
-| SILIXA            | `"silixa"`        | ❌ |
-| SINTELA           | `"sintela"`       | ✅︎ |
-| TERRA15           | `"terra15"`       | ✅︎ |
+Xdas support the following DAS formats:
 
-```{warning}
-File formats that do not support virtualization will be loaded in memory. We are working on a solution for non-HDF5 based file formats.
-```
+| Constructor       | Instrument        | `engine` argument | Virtualization    |
+|:-----------------:|:-----------------:|:-----------------:|:-----------------:|
+| ASN               | OptoDAS           | `"asn"`           | HDF5              |
+| FEBUS             | A1                | `"febus"`         | HDF5              |
+| OptaSense         | OLA, ODH*, ...    | `"optasense"`     | HDF5              |
+| Silixa            | iDAS              | `"silixa"`        | Dask              |
+| SINTELA           | ONYX              | `"sintela"`       | HDF5              |
+| Terra15           | Treble            | `"terra15"`       | HDF5              |
+
+It also implements its own format and support miniSEED:
+
+| Format            | `engine` argument | Virtualization    |   
+|:-----------------:|:-----------------:|:-----------------:|           
+| Xdas              | `None`            | HDF5              |
+| miniSEED          | `"miniseed"`      | Dask              |
 
 ## Extending *xdas* with your file format
 
