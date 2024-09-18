@@ -30,6 +30,11 @@ The formats that are currently implemented are: ASN, FEBUS, OPTASENSE, SINTELA a
 | SINTELA           | `"sintela"`       |
 | TERRA15           | `"terra15"`       |
 
+```{warning}
+Due to poor documentation of the various version of the Febus format, it is recommended to manually provide the required trimming and the position of the timestamps within each block. For example to trim 100 samples on both side of each block and to set the timestamp location at the center of the block for a block of 2000 samples:
+ `xdas.open_dataarray("path.h5", engine="febus", overlaps=(100, 100), offset=1000)`
+```
+
 ## Extending *xdas* with your file format
 
 *xdas* insists on its extensibility, the power is in the hands of the users. Extending *xdas* usually consists of writing few-line-of-code-long functions. The process consists in dealing with the two main aspects of a {py:class}`xarray.DataArray`: unpacking the data and coordinates objects, eventually processing them and packing them back into a Database object. 
