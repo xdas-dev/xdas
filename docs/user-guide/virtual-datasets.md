@@ -41,13 +41,15 @@ When opening a virtual dataset, this later will appear as a {py:class}`VirtualSo
 
 To handle individual files, multiple files, and virtual datasets, *xdas* offers the following routines:
 
-- {py:func}`xdas.open_dataarray`: open a single (virtual) data file, and create a {py:class}`~xdas.DataArray` object out of it.
-- {py:func}`xdas.open_mfdataarray`: open multiple (virtual) data files at once, creating a single {py:class}`~xdas.DataArray` object that can be written to disk as a single virtual data file.
-- {py:func}`xdas.open_datacollection`: open a single (virtual) data collection hence returning a {py:class}`~xdas.DataCollection` object.
-- {py:func}`xdas.open_mfdatacollection`: open multiple (virtual) data files at once, grouping non compatible files into a {py:class}`~xdas.DataCollection` object.
-- {py:func}`xdas.open_mfdatatree`: open a file tree with several directories and to organize everything within a {py:class}`~xdas.DataCollection` object.
+| Function                             | Output                           | Description                                                                 |
+|--------------------------------------|----------------------------------|-----------------------------------------------------------------------------|
+| {py:func}`xdas.open_dataarray`       | {py:class}`~xdas.DataArray`      | Open a (virtual) file.                                               |
+| {py:func}`xdas.open_mfdataarray`     | {py:class}`~xdas.DataArray`      | Open multiple (virtual) files and concatenate them.                         |
+| {py:func}`xdas.open_mfdatacollection`| {py:class}`~xdas.DataCollection` | Open multiple (virtual) files, grouping and concatenating compatible files. |
+| {py:func}`xdas.open_mfdatatree`      | {py:class}`~xdas.DataCollection` | Open a directory tree of files, organizing data in a data collection.       |
+| {py:func}`xdas.open_datacollection`  | {py:class}`~xdas.DataCollection` | Open a (virtual) collection.                                         |
 
-Please refer to the [](data-structure/datacollection.md) section for the functions that return a datacollection.
+Please refer to the [](data-structure/datacollection.md) section for the functions that return a data collection.
 
 ## Linking multi-file datasets
 
