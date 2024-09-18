@@ -2,13 +2,15 @@
 
 ## 0.2
 
-TODO
+- Add Dask virtualization backend for non-HDF5 formats (@atrabattoni).
+- Add support for miniSEED format (@atrabattoni, @chauvetige). 
+- Add support for Silixa (TDMS) format (@atrabattoni, @Stutzmann). 
 
 ## 0.1.2
 
-- Add ZeroMQ streaming capabilities (@atrabattoni)
+- Add ZeroMQ streaming capabilities (@atrabattoni).
 - Add support of Terra15 format (@chauvetige).
-- Fix Febus engine (@ClaudioStrumia)
+- Fix Febus engine (@ClaudioStrumia).
 
 ## 0.1.1
 
@@ -18,4 +20,4 @@ TODO
 
 ## 0.1
 
-Initial stable version
+Initial stable version.
