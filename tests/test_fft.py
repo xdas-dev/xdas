@@ -6,4 +6,4 @@ class TestRFFT:
     def test_with_non_dimensional(self):
         da = xd.synthetics.wavelet_wavefronts()
         da["latitude"] = ("distance", np.arange(da.sizes["distance"]))
-        xfft.rfft(da, dim={"time": "frequency"})
+        xfft.rfft(da)
