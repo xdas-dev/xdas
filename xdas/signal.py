@@ -102,9 +102,9 @@ def filter(da, freq, btype, corners=4, zerophase=False, dim="last", parallel=Non
     fs = 1.0 / get_sampling_interval(da, dim)
     sos = sp.iirfilter(corners, freq, btype=btype, ftype="butter", output="sos", fs=fs)
     if zerophase:
-        func = parallelize((None, across), across, parallel)(sp.sosfilt)
-    else:
         func = parallelize((None, across), across, parallel)(sp.sosfiltfilt)
+    else:
+        func = parallelize((None, across), across, parallel)(sp.sosfilt)
     data = func(sos, da.values, axis=axis)
     return da.copy(data=data)
 
