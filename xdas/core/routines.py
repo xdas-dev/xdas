@@ -967,7 +967,7 @@ def plot_availability(obj, dim="first", **kwargs):
     -------
     fig : plotly.graph_objects.Figure
         The timeline
-        
+
     Notes
     -----
     This function uses the `px.timeline` function from the `plotly.express` library.
