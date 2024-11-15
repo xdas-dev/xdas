@@ -26,6 +26,7 @@ Xdas support the following DAS formats:
 
 | Constructor       | Instrument        | `engine` argument | Virtualization    |
 |:-----------------:|:-----------------:|:-----------------:|:-----------------:|
+| AP Sensing        | DAS N5*           | `"apsensing"`     | HDF5              |
 | ASN               | OptoDAS           | `"asn"`           | HDF5              |
 | FEBUS             | A1                | `"febus"`         | HDF5              |
 | OptaSense         | OLA, ODH*, ...    | `"optasense"`     | HDF5              |
