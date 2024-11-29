@@ -1,3 +1,6 @@
+import os
+import tempfile
+
 import numpy as np
 import scipy.signal as sp
 import xarray as xr
@@ -5,8 +8,6 @@ import xarray as xr
 import xdas
 import xdas.signal as xp
 from xdas.synthetics import wavelet_wavefronts
-import tempfile
-import os
 
 
 class TestSignal:

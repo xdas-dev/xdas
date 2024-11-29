@@ -55,7 +55,8 @@ def fft(da, n=None, dim={"last": "spectrum"}, norm=None, parallel=None):
     data = func(da.values)
     coords = {
         newdim if name == olddim else name: f if name == olddim else da.coords[name]
-        for name in da.coords if (da[name].dim != olddim or name == olddim)
+        for name in da.coords
+        if (da[name].dim != olddim or name == olddim)
     }
     dims = tuple(newdim if dim == olddim else dim for dim in da.dims)
     return DataArray(data, coords, dims, da.name, da.attrs)
@@ -110,7 +111,8 @@ def rfft(da, n=None, dim={"last": "frequency"}, norm=None, parallel=None):
     data = func(da.values, n, axis, norm)
     coords = {
         newdim if name == olddim else name: f if name == olddim else da.coords[name]
-        for name in da.coords if (da[name].dim != olddim or name == olddim)
+        for name in da.coords
+        if (da[name].dim != olddim or name == olddim)
     }
     dims = tuple(newdim if dim == olddim else dim for dim in da.dims)
     return DataArray(data, coords, dims, da.name, da.attrs)
