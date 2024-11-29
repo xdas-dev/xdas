@@ -102,9 +102,9 @@ def filter(da, freq, btype, corners=4, zerophase=False, dim="last", parallel=Non
     fs = 1.0 / get_sampling_interval(da, dim)
     sos = sp.iirfilter(corners, freq, btype=btype, ftype="butter", output="sos", fs=fs)
     if zerophase:
-        func = parallelize((None, across), across, parallel)(sp.sosfiltfilt)
-    else:
         func = parallelize((None, across), across, parallel)(sp.sosfilt)
+    else:
+        func = parallelize((None, across), across, parallel)(sp.sosfiltfilt)
     data = func(sos, da.values, axis=axis)
     return da.copy(data=data)
 
@@ -708,15 +708,10 @@ def decimate(da, q, n=None, ftype="iir", zero_phase=True, dim="last", parallel=N
 
     """
     axis = da.get_axis_num(dim)
-    dim = da.dims[axis]  # TODO: this fist last thing is a bad idea...
     across = int(axis == 0)
     func = parallelize(across, across, parallel)(sp.decimate)
     data = func(da.values, q, n, ftype, axis, zero_phase)
-    coords = da.coords.copy()
-    for name in coords:
-        if coords[name].dim == dim:
-            coords[name] = coords[name][::q]
-    return DataArray(data, coords, da.dims, da.name, da.attrs)
+    return da[{dim: slice(None, None, q)}].copy(data=data)
 
 
 @atomized

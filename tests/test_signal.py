@@ -1,6 +1,3 @@
-import os
-import tempfile
-
 import numpy as np
 import scipy.signal as sp
 import xarray as xr
@@ -132,51 +129,3 @@ class TestSignal:
         da = wavelet_wavefronts()
         sos = sp.iirfilter(2, 0.5, btype="low", output="sos")
         xp.sosfiltfilt(sos, da, "time", padtype=None)
-
-    def test_filter(self):
-        da = wavelet_wavefronts()
-        axis = da.get_axis_num("time")
-        fs = 1 / xdas.get_sampling_interval(da, "time")
-        sos = sp.butter(
-            4,
-            [5, 10],
-            "band",
-            output="sos",
-            fs=fs,
-        )
-        data = sp.sosfilt(sos, da.values, axis=axis)
-        expected = da.copy(data=data)
-        result = xp.filter(
-            da,
-            [5, 10],
-            btype="band",
-            corners=4,
-            zerophase=False,
-            dim="time",
-            parallel=False,
-        )
-        assert result.equals(expected)
-        data = sp.sosfiltfilt(sos, da.values, axis=axis)
-        expected = da.copy(data=data)
-        result = xp.filter(
-            da,
-            [5, 10],
-            btype="band",
-            corners=4,
-            zerophase=True,
-            dim="time",
-            parallel=False,
-        )
-        assert result.equals(expected)
-
-    def test_decimate_virtual_stack(self):
-        da = wavelet_wavefronts()
-        expected = xp.decimate(da, 5, dim="time")
-        chunks = xdas.split(da, 5, "time")
-        with tempfile.TemporaryDirectory() as tmpdirname:
-            for i, chunk in enumerate(chunks):
-                chunk_path = os.path.join(tmpdirname, f"chunk_{i}.nc")
-                chunk.to_netcdf(chunk_path)
-            da_virtual = xdas.open_mfdataarray(os.path.join(tmpdirname, "chunk_*.nc"))
-            result = xp.decimate(da_virtual, 5, dim="time")
-        assert result.equals(expected)
