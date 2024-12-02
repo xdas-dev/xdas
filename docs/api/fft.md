@@ -13,4 +13,5 @@
    fft
    ifft
    rfft
+   irfft
 ```
