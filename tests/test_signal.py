@@ -130,28 +130,6 @@ class TestSignal:
         sos = sp.iirfilter(2, 0.5, btype="low", output="sos")
         xp.sosfiltfilt(sos, da, "time", padtype=None)
 
-
-class TestSTFT:
-    def test_stft(self):
-        from xdas.spectral import stft
-
-        starttime = np.datetime64("2023-01-01T00:00:00")
-        endtime = starttime + 9999 * np.timedelta64(10, "ms")
-        da = xdas.DataArray(
-            data=np.zeros((10000, 11)),
-            coords={
-                "time": {"tie_indices": [0, 9999], "tie_values": [starttime, endtime]},
-                "distance": {"tie_indices": [0, 10], "tie_values": [0.0, 1.0]},
-            },
-        )
-        result = stft(
-            da,
-            nperseg=100,
-            noverlap=50,
-            window="hamming",
-            dim={"time": "frequency"},
-        )
-
     def test_filter(self):
         da = wavelet_wavefronts()
         axis = da.get_axis_num("time")
@@ -187,3 +165,25 @@ class TestSTFT:
             parallel=False,
         )
         assert result.equals(expected)
+
+
+class TestSTFT:
+    def test_stft(self):
+        from xdas.spectral import stft
+
+        starttime = np.datetime64("2023-01-01T00:00:00")
+        endtime = starttime + 9999 * np.timedelta64(10, "ms")
+        da = xdas.DataArray(
+            data=np.zeros((10000, 11)),
+            coords={
+                "time": {"tie_indices": [0, 9999], "tie_values": [starttime, endtime]},
+                "distance": {"tie_indices": [0, 10], "tie_values": [0.0, 1.0]},
+            },
+        )
+        result = stft(
+            da,
+            nperseg=100,
+            noverlap=50,
+            window="hamming",
+            dim={"time": "frequency"},
+        )

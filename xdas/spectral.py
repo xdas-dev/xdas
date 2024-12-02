@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.fft import fft, fftfreq, rfft, rfftfreq
+from scipy.fft import fft, fftfreq, fftshift, rfft, rfftfreq
 from scipy.signal import get_window
 
 from . import DataArray, get_sampling_interval
@@ -34,8 +34,8 @@ def stft(
     if return_onesided:
         freqs = rfftfreq(nfft, dt)
     else:
-        freqs = fftfreq(nfft, dt)
-    freqs = {"tie_indices": [0, nfft - 1], "tie_values": [freqs[0], freqs[-1]]}
+        freqs = fftshift(fftfreq(nfft, dt))
+    freqs = {"tie_indices": [0, len(freqs) - 1], "tie_values": [freqs[0], freqs[-1]]}
 
     def func(x):
         if nperseg == 1 and noverlap == 0:
@@ -61,14 +61,14 @@ def stft(
     dt = get_sampling_interval(da, input_dim, cast=False)
     t0 = da.coords[input_dim].values[0]
     starttime = t0 + (nperseg / 2) * dt
-    endtime = t0 + (da.shape[-1] - nperseg / 2) * dt
-    time = {"tie_indices": [0, da.shape[-1] - 1], "tie_values": [starttime, endtime]}
+    endtime = t0 + (data.shape[axis] - nperseg / 2) * dt
+    time = {
+        "tie_indices": [0, data.shape[axis] - 1],
+        "tie_values": [starttime, endtime],
+    }
 
     coords = da.coords.copy()
     coords[input_dim] = time
     coords[output_dim] = freqs
 
-    result = DataArray(data, coords)
-
-    dims = dim + (output_dim,)
-    return result.transpose(*dims)
+    return DataArray(data, coords)
