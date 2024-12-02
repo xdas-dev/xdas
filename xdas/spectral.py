@@ -72,4 +72,6 @@ def stft(
     coords[input_dim] = time
     coords[output_dim] = freqs
 
-    return DataArray(data, coords)
+    dims = da.dims + (output_dim,)
+
+    return DataArray(data, coords, dims)
