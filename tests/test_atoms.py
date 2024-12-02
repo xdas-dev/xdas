@@ -3,7 +3,7 @@ import scipy.signal as sp
 
 import xdas
 import xdas as xd
-import xdas.signal as xp
+import xdas.signal as xs
 from xdas.atoms import (
     DownSample,
     FIRFilter,
@@ -22,8 +22,8 @@ class TestPartialAtom:
     def test_init(self):
         Sequential(
             [
-                Partial(xp.taper, dim="time"),
-                Partial(xp.taper, dim="distance"),
+                Partial(xs.taper, dim="time"),
+                Partial(xs.taper, dim="distance"),
                 Partial(np.abs),
                 Partial(np.square),
             ]
@@ -176,7 +176,7 @@ class TestFilters:
         da = wavelet_wavefronts()
         chunks = xdas.split(da, 6, "time")
         taps = sp.firwin(11, 0.4, pass_zero="lowpass")
-        expected = xp.lfilter(taps, 1.0, da, "time")
+        expected = xs.lfilter(taps, 1.0, da, "time")
         expected["time"] -= np.timedelta64(20, "ms") * 5
         atom = FIRFilter(11, 10.0, "lowpass", dim="time")
         result = atom(da)
@@ -194,7 +194,7 @@ class TestFilters:
         da = wavelet_wavefronts()
         chunks = xdas.split(da, 6, "time")
 
-        expected = xp.resample_poly(da, 5, 2, "time")
+        expected = xs.resample_poly(da, 5, 2, "time")
         atom = ResamplePoly(125, maxfactor=10, dim="time")
         result = atom(da)
         result_chunked = xdas.concatenate(

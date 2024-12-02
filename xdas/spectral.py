@@ -2,7 +2,8 @@ import numpy as np
 from scipy.fft import fft, fftfreq, fftshift, rfft, rfftfreq
 from scipy.signal import get_window
 
-from . import DataArray, get_sampling_interval
+from .core.coordinates import get_sampling_interval
+from .core.dataarray import DataArray
 
 
 def stft(
