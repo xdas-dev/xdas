@@ -11,5 +11,6 @@
    :toctree: ../_autosummary
 
    fft
+   ifft
    rfft
 ```
