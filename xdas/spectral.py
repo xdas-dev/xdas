@@ -26,12 +26,12 @@ def stft(
     input_dim, output_dim = next(iter(dim.items()))
     axis = da.get_axis_num(input_dim)
     dt = get_sampling_interval(da, input_dim)
-    if scaling == "density":
-        scale = 1.0 / ((win * win).sum() / dt)
-    elif scaling == "spectrum":
+    if scaling == "spectrum":
         scale = 1.0 / win.sum() ** 2
+    elif scaling == "psd":
+        scale = 1.0 / ((win * win).sum() / dt)
     else:
-        raise ValueError("Scaling must be 'density' or 'spectrum'")
+        raise ValueError("Scaling must be 'spectrum' or 'psd'")
     scale = np.sqrt(scale)
     if return_onesided:
         freqs = rfftfreq(nfft, dt)
@@ -54,7 +54,7 @@ def stft(
         if return_onesided:
             result = rfft(result, n=nfft)
         else:
-            result = fft(result, n=nfft)
+            result = fftshift(fft(result, n=nfft), axes=-1)
         result *= scale
         return result
 
@@ -65,7 +65,7 @@ def stft(
     dt = get_sampling_interval(da, input_dim, cast=False)
     t0 = da.coords[input_dim].values[0]
     starttime = t0 + (nperseg / 2) * dt
-    endtime = t0 + (data.shape[axis] - nperseg / 2) * dt
+    endtime = starttime + (data.shape[axis] - 1) * (nperseg - noverlap) * dt
     time = {
         "tie_indices": [0, data.shape[axis] - 1],
         "tie_values": [starttime, endtime],

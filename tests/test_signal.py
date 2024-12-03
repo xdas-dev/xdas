@@ -182,25 +182,55 @@ class TestSignal:
         assert result.equals(expected)
 
 
-
 class TestSTFT:
-    def test_stft(self):
+    def test_compare_with_scipy(self):
         starttime = np.datetime64("2023-01-01T00:00:00")
         endtime = starttime + 9999 * np.timedelta64(10, "ms")
         da = xdas.DataArray(
-            data=np.zeros((10000, 11)),
+            data=np.random.rand(10000, 11),
             coords={
                 "time": {"tie_indices": [0, 9999], "tie_values": [starttime, endtime]},
                 "distance": {"tie_indices": [0, 10], "tie_values": [0.0, 1.0]},
             },
         )
-        xs.stft(
-            da,
-            nperseg=100,
-            noverlap=50,
-            window="hamming",
-            dim={"time": "frequency"},
-        )
+        for scaling in ["spectrum", "psd"]:
+            for return_onesided in [True, False]:
+                for nfft in [None, 128]:
+                    result = xs.stft(
+                        da,
+                        window="hamming",
+                        nperseg=100,
+                        noverlap=50,
+                        nfft=nfft,
+                        return_onesided=return_onesided,
+                        dim={"time": "frequency"},
+                        scaling=scaling,
+                    )
+                    f, t, Zxx = sp.stft(
+                        da.values,
+                        fs=1 / xs.get_sampling_interval(da, "time"),
+                        window="hamming",
+                        nperseg=100,
+                        noverlap=50,
+                        nfft=nfft,
+                        return_onesided=return_onesided,
+                        boundary=None,
+                        axis=0,
+                        scaling=scaling,
+                    )
+                    if return_onesided:
+                        assert np.allclose(result.values, np.transpose(Zxx, (2, 1, 0)))
+                    else:
+                        assert np.allclose(
+                            result.values,
+                            np.fft.fftshift(np.transpose(Zxx, (2, 1, 0)), axes=-1),
+                        )
+                    assert np.allclose(result["frequency"].values, np.sort(f))
+                    assert np.allclose(
+                        (result["time"].values - da["time"][0].values)
+                        / np.timedelta64(1, "s"),
+                        t,
+                    )
 
     def test_signal(self):
         fs = 10e3
