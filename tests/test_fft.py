@@ -11,7 +11,7 @@ class TestRFFT:
         xfft.rfft(da)
 
 
-class TestIncerse:
+class TestInverseTransforms:
     def test_standard(self):
         expected = xd.synthetics.wavelet_wavefronts()
         result = xfft.ifft(
