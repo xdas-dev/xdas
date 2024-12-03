@@ -18,6 +18,57 @@ def stft(
     scaling="spectrum",
     parallel=None,
 ):
+    """
+    Compute the Short-Time Fourier Transform (STFT) of a data array.
+
+    Parameters
+    ----------
+    da : DataArray
+        Input data array.
+    window : str or tuple or array_like, optional
+        Desired window to use. If a string or tuple, it is passed to
+        `scipy.signal.get_window` to generate the window values, which are
+        DFT-even by default. See `scipy.signal.get_window` for a list of
+        windows and required parameters. If an array, it will be used
+        directly as the window and its length must be `nperseg`.
+    nperseg : int, optional
+        Length of each segment. Defaults to 256.
+    noverlap : int, optional
+        Number of points to overlap between segments. If None, `noverlap`
+        defaults to `nperseg // 2`. Defaults to None.
+    nfft : int, optional
+        Length of the FFT used, if a zero padded FFT is desired. If None,
+        the FFT length is `nperseg`. Defaults to None.
+    return_onesided : bool, optional
+        If True, return a one-sided spectrum for real data. If False return
+        a two-sided spectrum. Defaults to True.
+    dim : dict, optional
+        Dictionary specifying the input and output dimensions. Defaults to
+        {"last": "spectrum"}.
+    scaling : {'spectrum', 'psd'}, optional
+        Selects between computing the power spectral density ('psd') where
+        `scale` is 1 / (sum of window squared) and computing the spectrum
+        ('spectrum') where `scale` is 1 / (sum of window). Defaults to
+        'spectrum'.
+    parallel : optional
+        Parallelization option. Defaults to None.
+
+    Returns
+    -------
+    DataArray
+        STFT of `da`.
+
+    Notes
+    -----
+    The STFT represents a signal in the time-frequency domain by computing
+    discrete Fourier transforms (DFT) over short overlapping segments of
+    the signal.
+
+    See Also
+    --------
+    scipy.signal.stft : Compute the Short-Time Fourier Transform (STFT).
+
+    """
     if noverlap is None:
         noverlap = nperseg // 2
     if nfft is None:
