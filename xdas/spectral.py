@@ -4,6 +4,7 @@ from scipy.signal import get_window
 
 from .core.coordinates import get_sampling_interval
 from .core.dataarray import DataArray
+from .parallel import parallelize
 
 
 def stft(
@@ -15,7 +16,7 @@ def stft(
     return_onesided=True,
     dim={"last": "sprectrum"},
     scaling="spectrum",
-    # parallel=None,
+    parallel=None,
 ):
     if noverlap is None:
         noverlap = nperseg // 2
@@ -57,6 +58,8 @@ def stft(
         result *= scale
         return result
 
+    across = int(axis == 0)
+    func = parallelize(across, across, parallel)(func)
     data = func(da.values)
 
     dt = get_sampling_interval(da, input_dim, cast=False)

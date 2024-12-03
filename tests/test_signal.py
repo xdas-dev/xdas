@@ -202,3 +202,31 @@ class TestSTFT:
         )
         idx = int(np.abs(np.square(result)).mean("time").argmax("frequency").values)
         assert result["frequency"][idx].values == fc
+
+    def test_parrallel(self):
+        starttime = np.datetime64("2023-01-01T00:00:00")
+        endtime = starttime + 9999 * np.timedelta64(10, "ms")
+        da = xdas.DataArray(
+            data=np.random.rand(10000, 11),
+            coords={
+                "time": {"tie_indices": [0, 9999], "tie_values": [starttime, endtime]},
+                "distance": {"tie_indices": [0, 10], "tie_values": [0.0, 1.0]},
+            },
+        )
+        serial = xs.stft(
+            da,
+            nperseg=100,
+            noverlap=50,
+            window="hamming",
+            dim={"time": "frequency"},
+            parallel=False,
+        )
+        parallel = xs.stft(
+            da,
+            nperseg=100,
+            noverlap=50,
+            window="hamming",
+            dim={"time": "frequency"},
+            parallel=True,
+        )
+        assert serial.equals(parallel)
