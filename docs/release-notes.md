@@ -1,5 +1,13 @@
 # Release notes
 
+## 0.2.1
+- Add `xdas.signal.stft`. 
+- Add inverse fourrier transforms `xdas.fft.ifft` and `xdas.fft.irfft`.
+- Add support for APSensing format.
+- Fix decimation of freshly openned multi-file datasets.
+- Fix zerophase kwarg for `xdas.signal.filter`.
+- Fix applying fft functions in presence of non-dimensional coordinates.
+
 ## 0.2
 
 - Add Dask virtualization backend for non-HDF5 formats (@atrabattoni).
