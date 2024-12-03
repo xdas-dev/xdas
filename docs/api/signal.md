@@ -35,3 +35,12 @@
    sosfiltfilt
    medfilt
 ```
+
+## Spectral analysisi
+
+```{eval-rst}
+.. autosummary::
+  :toctree: ../_autosummary
+
+  stft
+```

@@ -194,15 +194,15 @@ class Sequential(Atom, list):
     Examples
     --------
     >>> from xdas.atoms import Partial, Sequential
-    >>> import xdas.signal as xp
+    >>> import xdas.signal as xs
     >>> import numpy as np
 
     Basic usage:
 
     >>> seq = Sequential(
     ...     [
-    ...         Partial(xp.taper, dim="time"),
-    ...         Partial(xp.lfilter, [1.0], [0.5], ..., dim="time", zi=...),
+    ...         Partial(xs.taper, dim="time"),
+    ...         Partial(xs.lfilter, [1.0], [0.5], ..., dim="time", zi=...),
     ...         Partial(np.square),
     ...     ],
     ...     name="Low frequency energy",
@@ -217,7 +217,7 @@ class Sequential(Atom, list):
 
     >>> seq = Sequential(
     ...     [
-    ...         Partial(xp.decimate, 16, dim="distance"),
+    ...         Partial(xs.decimate, 16, dim="distance"),
     ...         seq,
     ...     ]
     ... )
@@ -330,12 +330,12 @@ class Partial(Atom):
     --------
     >>> import numpy as np
     >>> import scipy.signal as sp
-    >>> import xdas.signal as xp
+    >>> import xdas.signal as xs
     >>> from xdas.atoms import Partial
 
     Examples of a stateless atom:
 
-    >>> Partial(xp.decimate, 2, dim="time")
+    >>> Partial(xs.decimate, 2, dim="time")
     decimate(..., 2, dim=time)
 
     >>> Partial(np.square)
@@ -344,7 +344,7 @@ class Partial(Atom):
     Examples of a stateful atom with input data as second argument:
 
     >>> sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
-    >>> Partial(xp.sosfilt, sos, ..., dim="time", zi=...)
+    >>> Partial(xs.sosfilt, sos, ..., dim="time", zi=...)
     sosfilt(<ndarray>, ..., dim=time)  [stateful]
 
     """

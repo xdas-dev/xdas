@@ -23,12 +23,12 @@ There are three "flavours" declaring the atoms that can be used to compose a seq
 ```{code-cell} 
 import numpy as np
 import xdas
-import xdas.signal as xp
+import xdas.signal as xs
 from xdas.atoms import Partial, Sequential, IIRFilter
 
 sequence = Sequential(
     [
-      xp.taper(..., dim="time"),
+      xs.taper(..., dim="time"),
       Partial(np.square),
       IIRFilter(order=4, cutoff=1.5, btype="highpass", dim="time"),
     ]
