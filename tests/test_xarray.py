@@ -1,6 +1,6 @@
 import numpy as np
 
-import xdas.core.methods as xp
+import xdas.core.methods as xm
 from xdas.core.dataarray import DataArray
 from xdas.synthetics import wavelet_wavefronts
 
@@ -8,7 +8,7 @@ from xdas.synthetics import wavelet_wavefronts
 class TestXarray:
     def test_returns_dataarray(self):
         da = wavelet_wavefronts()
-        for name, func in xp.HANDLED_METHODS.items():
+        for name, func in xm.HANDLED_METHODS.items():
             if callable(func):
                 if name in [
                     "percentile",
@@ -31,7 +31,7 @@ class TestXarray:
 
     def test_mean(self):
         da = wavelet_wavefronts()
-        result = xp.mean(da, "time")
+        result = xm.mean(da, "time")
         result_method = da.mean("time")
         expected = np.mean(da, 0)
         assert result.equals(expected)
