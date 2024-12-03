@@ -126,8 +126,6 @@ def stft(
     for name in da.coords:
         if name == input_dim:
             coords[input_dim] = time
-        elif name == output_dim:
-            coords[output_dim] = freqs
         elif da[name].dim != input_dim:  # TODO: keep non-dimensional coordinates
             coords[name] = da.coords[name]
     coords[output_dim] = freqs
