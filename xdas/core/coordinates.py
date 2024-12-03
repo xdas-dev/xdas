@@ -769,7 +769,20 @@ class InterpCoordinate(Coordinate):
             value = np.datetime64(value)
         else:
             value = np.asarray(value)
-        return inverse(value, self.tie_indices, self.tie_values, method)
+        try:
+            indexer = inverse(value, self.tie_indices, self.tie_values, method)
+        except ValueError as e:
+            if str(e) == "fp must be strictly increasing":
+                raise ValueError(
+                    "overlaps were found in the coordinate. If this is due to some "
+                    "jitter in the tie values, consider smoothing the coordinate by "
+                    "including some tolerance. This can be done by "
+                    "`da[dim] = da[dim].simplify(tolerance)`, or by specifying a "
+                    "tolerance when opening multiple files."
+                )
+            else:
+                raise e
+        return indexer
 
     def slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
         if start is not None:

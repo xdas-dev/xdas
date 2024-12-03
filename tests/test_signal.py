@@ -1,3 +1,6 @@
+import os
+import tempfile
+
 import numpy as np
 import scipy.signal as sp
 import xarray as xr
@@ -165,6 +168,19 @@ class TestSignal:
             parallel=False,
         )
         assert result.equals(expected)
+
+    def test_decimate_virtual_stack(self):
+        da = wavelet_wavefronts()
+        expected = xp.decimate(da, 5, dim="time")
+        chunks = xdas.split(da, 5, "time")
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            for i, chunk in enumerate(chunks):
+                chunk_path = os.path.join(tmpdirname, f"chunk_{i}.nc")
+                chunk.to_netcdf(chunk_path)
+            da_virtual = xdas.open_mfdataarray(os.path.join(tmpdirname, "chunk_*.nc"))
+            result = xp.decimate(da_virtual, 5, dim="time")
+        assert result.equals(expected)
+
 
 
 class TestSTFT:

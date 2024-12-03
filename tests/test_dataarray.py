@@ -159,6 +159,20 @@ class TestDataArray:
         result = da.sel(distance=0, method="nearest", drop=True)
         assert "distance" not in result.coords
 
+    def test_better_error_when_sel_with_overlaps(self):
+        da = DataArray(
+            np.arange(80).reshape(20, 4),
+            {
+                "time": {
+                    "tie_values": [0.0, 0.5, 0.4, 1.0],
+                    "tie_indices": [0, 9, 10, 19],
+                },
+                "distance": [0.0, 10.0, 20.0, 30.0],
+            },
+        )
+        with pytest.raises(ValueError, match="overlaps were found"):
+            da.sel(time=slice(0.1, 0.6))
+
     def test_isel(self):
         da = wavelet_wavefronts()
         result = da.isel(first=0)
