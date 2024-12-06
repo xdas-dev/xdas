@@ -16,7 +16,7 @@ dependencies = [
     "hdf5plugin",
     "msgpack",
     "numba",
-    "numpy",
+    "numpy<2",
     "obspy",
     "pandas",
     "plotly",
