@@ -299,9 +299,11 @@ class TestInterpCoordinate:
         )
         assert len(InterpCoordinate(dict(tie_indices=[], tie_values=[]))) == 0
 
-    def test_repr(self):
-        # TODO
-        pass
+    @pytest.mark.parametrize("valid_input", valid)
+    def test_repr(self, valid_input):
+        coord = InterpCoordinate(data=valid_input)
+        my_coord = repr(coord)
+        assert isinstance(my_coord, str)
 
     def test_equals(self):
         coord1 = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})

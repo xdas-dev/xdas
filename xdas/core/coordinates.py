@@ -620,6 +620,8 @@ class InterpCoordinate(Coordinate):
                 start = format_datetime(self.tie_values[0])
                 end = format_datetime(self.tie_values[-1])
                 return f"{start} to {end}"
+            else:
+                return f"{self.tie_values[0]} to {self.tie_values[-1]}"
 
     def __getitem__(self, item):
         if isinstance(item, slice):
