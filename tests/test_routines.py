@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+import xdas as xd
 from xdas.core.coordinates import Coordinates
 from xdas.core.dataarray import DataArray
 from xdas.core.routines import Bag, CompatibilityError, combine_by_coords
@@ -193,3 +194,23 @@ class TestCombineByCoords:
         assert dc.shape == (2, 10)
         assert dc.dims == ("space", "time")
         assert dc.coords["space"].values.tolist() == [0, 1]
+
+
+class TestOpenMFDataArray:
+    def test_warn_on_corrupted_files(self, tmp_path):
+        expected = DataArray(
+            np.random.rand(10, 5),
+            coords={
+                "time": np.arange(10),
+                "space": np.arange(5),
+            },  # TODO: should work without coords
+        )
+        for index, chunk in enumerate(xd.split(expected, 3, "time"), start=1):
+            chunk.to_netcdf(tmp_path / f"chunk_{index}.nc")
+        result = xd.open_mfdataarray(str(tmp_path / "*.nc"))  # TODO: should accept Path
+        assert result.equals(expected)
+        with (tmp_path / "corrupted.nc").open("wb") as f:
+            f.write(b"corrupted")
+        with pytest.warns(RuntimeWarning):
+            result = xd.open_mfdataarray(str(tmp_path / "*.nc"))
+        assert result.equals(expected)
