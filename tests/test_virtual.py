@@ -51,6 +51,28 @@ class TestFunctional:  # TODO: move elsewhere
             )
             assert da1.equals(da2)
 
+    def test_dtypes(self, tmp_path):
+        dtypes = (
+            np.uint8,
+            np.uint16,
+            np.uint32,
+            np.uint64,
+            np.int8,
+            np.int16,
+            np.int32,
+            np.int64,
+            np.float16,
+            np.float32,
+            np.float64,
+            np.complex64,
+            np.complex128,
+        )
+        for dtype in dtypes:
+            expected = xdas.DataArray(np.zeros((3, 5), dtype=dtype))
+            expected.to_netcdf(tmp_path / "data.nc")
+            result = xdas.open_dataarray(tmp_path / "data.nc")
+            assert result.equals(expected)
+
 
 def array_identical(x, y):
     return (
