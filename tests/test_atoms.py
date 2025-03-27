@@ -45,6 +45,8 @@ class TestPartialAtom:
         assert result.args == atom.args
         assert result.kwargs == atom.kwargs
         assert result.name == atom.name
+        assert result._state == atom._state
+        assert result.state == atom.state
 
 
 class TestProcessing:
