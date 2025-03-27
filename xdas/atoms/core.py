@@ -1,3 +1,4 @@
+import importlib
 from collections.abc import Callable
 from functools import wraps
 from typing import Any
@@ -403,6 +404,20 @@ class Partial(Atom):
             kwargs.append(f"{key}={value}")
         params = ", ".join(args + kwargs)
         return f"{func}({params})" + ("  [stateful]" if self.stateful else "")
+
+    def __getstate__(self):
+        return {
+            "func": {"module": self.func.__module__, "name": self.func.__name__},
+            "args": self.args,
+            "kwargs": self.kwargs,
+            "name": self.name,
+        }
+
+    def __setstate__(self, state):
+        state["func"] = getattr(
+            importlib.import_module(state["func"]["module"]), state["func"]["name"]
+        )
+        self.__dict__.update(state)
 
 
 def atomized(func):

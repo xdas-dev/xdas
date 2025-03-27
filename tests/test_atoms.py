@@ -38,8 +38,13 @@ class TestPartialAtom:
             tmpfile_path = f"{tmpdir}/tempfile.pkl"
             with open(tmpfile_path, "wb") as tmpfile:
                 pickle.dump(atom, tmpfile)
+            with open(tmpfile_path, "rb") as tmpfile:
                 result = pickle.load(tmpfile)
-        assert result.dim == atom.dim
+        assert result.func.__module__ == atom.func.__module__
+        assert result.func.__name__ == atom.func.__name__
+        assert result.args == atom.args
+        assert result.kwargs == atom.kwargs
+        assert result.name == atom.name
 
 
 class TestProcessing:
