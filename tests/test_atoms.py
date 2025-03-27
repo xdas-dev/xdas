@@ -190,7 +190,9 @@ class TestFilters:
         assert result.attrs == expected.attrs
         assert result.name == expected.name
 
-    def test_resample_poly(self):
+
+class TestResamplePoly:
+    def test_up_down(self):
         da = wavelet_wavefronts()
         chunks = xdas.split(da, 6, "time")
 
@@ -214,6 +216,13 @@ class TestFilters:
         assert result.coords.equals(expected.coords)
         assert result.attrs == expected.attrs
         assert result.name == expected.name
+
+    def test_nothing_to_do(self):
+        da = wavelet_wavefronts()
+        fs = 1 / xd.get_sampling_interval(da, "time")
+        atom = ResamplePoly(fs, maxfactor=10, dim="time")
+        result = atom(da)
+        assert result.equals(da)
 
 
 class TestMLPicker:
