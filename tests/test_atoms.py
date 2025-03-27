@@ -1,3 +1,6 @@
+import pickle
+import tempfile
+
 import numpy as np
 import scipy.signal as sp
 
@@ -28,6 +31,15 @@ class TestPartialAtom:
                 Partial(np.square),
             ]
         )
+
+    def test_pickable(self):
+        atom = xs.integrate(..., dim="dim")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpfile_path = f"{tmpdir}/tempfile.pkl"
+            with open(tmpfile_path, "wb") as tmpfile:
+                pickle.dump(atom, tmpfile)
+                result = pickle.load(tmpfile)
+        assert result.dim == atom.dim
 
 
 class TestProcessing:
