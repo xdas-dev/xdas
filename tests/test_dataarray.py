@@ -437,22 +437,23 @@ class TestDataArray:
             assert expected.equals(result)
 
     def test_io_attrs(self):
+        attrs = {"description": "test"}
         da = DataArray(
             np.arange(3),
             coords={"time": np.array([3, 4, 5])},
-            attrs={"description": "test"},
+            attrs=attrs,
         )
         with TemporaryDirectory() as dirpath:
             path = os.path.join(dirpath, "tmp.nc")
             da.to_netcdf(path)
             result = DataArray.from_netcdf(path)
-            assert result.attrs == da.attrs
+            assert result.attrs == attrs
             assert result.equals(da)
             da = xdas.open_dataarray(path)
             path = os.path.join(dirpath, "vds.nc")
             da.to_netcdf(path)
             result = xdas.open_dataarray(path)
-            assert result.attrs == da.attrs
+            assert result.attrs == attrs
             assert result.equals(da)
 
     def test_ufunc(self):
