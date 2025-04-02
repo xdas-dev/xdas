@@ -506,4 +506,4 @@ class UpSample(Atom):
             },
             self.dim,
         )
-        return DataArray(data, coords, name=da.name, attrs=da.attrs)
+        return DataArray(data, coords, da.dims, da.name, da.attrs)
