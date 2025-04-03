@@ -5,10 +5,9 @@ import obspy
 from ..core.coordinates import Coordinates
 from ..core.dataarray import DataArray
 
-
 def read(fname):
-    shape, dtype, coords = read_header(fname)
-    data = dask.array.from_delayed(dask.delayed(read_data)(fname), shape, dtype)
+    shape, dtype, coords, method = read_header(fname)
+    data = dask.array.from_delayed(dask.delayed(read_data)(fname, method), shape, dtype)
     return DataArray(data, coords)
 
 
