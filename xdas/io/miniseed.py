@@ -18,9 +18,18 @@ def read_header(path):
     if not isinstance(dtype, np.dtype):
         raise ValueError("All traces must have the same dtype")
 
-    time = get_time_coord(st[0])
-    if not all(get_time_coord(tr) == time for tr in st):
-        raise ValueError("All traces must be synchronized")
+    channels = [tr.stats.channel for tr in st]
+    if len(st) > 1 and len(np.unique(channels)) == 1:
+        method = "unsynchronized"
+        time = get_time_coord(st[0])
+        for tr in st[1:]:
+            time.append(get_time_coord(tr))
+    else:
+        method = "synchronized"
+        time = get_time_coord(st[0])
+
+        if not all(get_time_coord(tr).equals(time) for tr in st):
+            raise ValueError("All traces must be synchronized")
 
     network = uniquifiy(tr.stats.network for tr in st)
     stations = uniquifiy(tr.stats.station for tr in st)
@@ -38,7 +47,7 @@ def read_header(path):
     )
 
     shape = tuple(len(coord) for coord in coords.values() if not coord.isscalar())
-    return shape, dtype, coords
+    return shape, dtype, coords, method
 
 
 def read_data(path):
