@@ -50,9 +50,15 @@ def read_header(path):
     return shape, dtype, coords, method
 
 
-def read_data(path):
+def read_data(path, method):
     st = obspy.read(path)
-    return np.array(st)
+    for tr in st:
+        tr.data = tr.data[:-1]
+    if method == "synchronized":
+        return np.array(st[0])
+    else:
+        data = [tr.data for tr in st]
+        return np.concatenate((data), axis=1)
 
 
 def get_time_coord(tr):
