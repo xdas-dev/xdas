@@ -2,7 +2,7 @@ import dask
 import numpy as np
 import obspy
 
-from ..core.coordinates import Coordinates
+from ..core.coordinates import Coordinates, Coordinate
 from ..core.dataarray import DataArray
 
 def read(fname):
@@ -62,13 +62,15 @@ def read_data(path, method):
 
 
 def get_time_coord(tr):
-    return {
-        "tie_indices": [0, tr.stats.npts - 1],
+    if [0, tr.stats.npts - 2][-1] == -1:
+        print(tr)
+    return Coordinate({
+        "tie_indices": [0, tr.stats.npts - 2],
         "tie_values": [
             np.datetime64(tr.stats.starttime),
-            np.datetime64(tr.stats.endtime),
+            np.datetime64(tr.stats.endtime - tr.stats.delta),
         ],
-    }
+    })
 
 
 def uniquifiy(seq):
