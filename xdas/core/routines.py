@@ -499,7 +499,14 @@ def combine_by_field(
         keys = sorted(set.union(*[set(dc.keys()) for dc in nodes]))
         return DataCollection(
             {
-                key: combine_by_field([dc[key] for dc in objs if key in dc])
+                key: combine_by_field(
+                    [dc[key] for dc in objs if key in dc],
+                    dim,
+                    tolerance,
+                    squeeze,
+                    virtual,
+                    verbose,
+                )
                 for key in keys
             },
             name,
