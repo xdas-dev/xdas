@@ -62,8 +62,6 @@ def read_data(path, method):
 
 
 def get_time_coord(tr):
-    if [0, tr.stats.npts - 2][-1] == -1:
-        print(tr)
     return Coordinate({
         "tie_indices": [0, tr.stats.npts - 2],
         "tie_values": [
