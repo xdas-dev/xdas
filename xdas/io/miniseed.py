@@ -5,9 +5,9 @@ import obspy
 from ..core.coordinates import Coordinates, Coordinate
 from ..core.dataarray import DataArray
 
-def read(fname):
+def read(fname, ignore_last_sample=False):
     shape, dtype, coords, method = read_header(fname)
-    data = dask.array.from_delayed(dask.delayed(read_data)(fname, method), shape, dtype)
+    data = dask.array.from_delayed(dask.delayed(read_data)(fname, method, ignore_last_sample), shape, dtype)
     return DataArray(data, coords)
 
 
@@ -50,10 +50,11 @@ def read_header(path):
     return shape, dtype, coords, method
 
 
-def read_data(path, method):
+def read_data(path, method, ignore_last_sample):
     st = obspy.read(path)
-    for tr in st:
-        tr.data = tr.data[:-1]
+    if ignore_last_sample:
+        for tr in st:
+            tr.data = tr.data[:-1]
     if method == "synchronized":
         return np.array(st[0])
     else:
