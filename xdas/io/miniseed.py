@@ -76,7 +76,7 @@ def get_time_coord(tr, ignore_last_sample):
             "tie_indices": [0, tr.stats.npts - 1],
             "tie_values": [
                 np.datetime64(tr.stats.starttime),
-                np.datetime64(tr.stats.endtime - tr.stats.delta),
+                np.datetime64(tr.stats.endtime),
             ],
         })
 
