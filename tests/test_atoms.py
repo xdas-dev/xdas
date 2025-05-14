@@ -1,3 +1,6 @@
+import pickle
+import tempfile
+
 import numpy as np
 import scipy.signal as sp
 
@@ -28,6 +31,22 @@ class TestPartialAtom:
                 Partial(np.square),
             ]
         )
+
+    def test_pickable(self):
+        atom = xs.integrate(..., dim="dim")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpfile_path = f"{tmpdir}/tempfile.pkl"
+            with open(tmpfile_path, "wb") as tmpfile:
+                pickle.dump(atom, tmpfile)
+            with open(tmpfile_path, "rb") as tmpfile:
+                result = pickle.load(tmpfile)
+        assert result.func.__module__ == atom.func.__module__
+        assert result.func.__name__ == atom.func.__name__
+        assert result.args == atom.args
+        assert result.kwargs == atom.kwargs
+        assert result.name == atom.name
+        assert result._state == atom._state
+        assert result.state == atom.state
 
 
 class TestProcessing:
@@ -190,7 +209,9 @@ class TestFilters:
         assert result.attrs == expected.attrs
         assert result.name == expected.name
 
-    def test_resample_poly(self):
+
+class TestResamplePoly:
+    def test_up_down(self):
         da = wavelet_wavefronts()
         chunks = xdas.split(da, 6, "time")
 
@@ -214,6 +235,13 @@ class TestFilters:
         assert result.coords.equals(expected.coords)
         assert result.attrs == expected.attrs
         assert result.name == expected.name
+
+    def test_nothing_to_do(self):
+        da = wavelet_wavefronts()
+        fs = 1 / xd.get_sampling_interval(da, "time")
+        atom = ResamplePoly(fs, maxfactor=10, dim="time")
+        result = atom(da)
+        assert result.equals(da)
 
 
 class TestMLPicker:

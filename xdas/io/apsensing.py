@@ -8,7 +8,7 @@ from ..virtual import VirtualSource
 def read(fname):
     with h5py.File(fname, "r") as file:
         t0 = file["Metadata"]["Timestamp"][()].item().decode()
-        fs = file["DAQ"]["SamplingRate"][()].item()
+        fs = file["DAQ"]["RepetitionFrequency"][()].item()
         dx = file["ProcessingServer"]["SpatialSampling"][()].item()
         data = VirtualSource(file["DAS"])
     if t0.endswith("Z"):

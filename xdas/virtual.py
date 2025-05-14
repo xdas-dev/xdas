@@ -251,9 +251,7 @@ class VirtualLayout(VirtualArray):
         with TemporaryDirectory() as tmpdirname:
             fname = os.path.join(tmpdirname, "vds.h5")
             with h5py.File(fname, "w") as file:
-                dataset = file.create_virtual_dataset(
-                    "__values__", self._layout, fillvalue=np.nan
-                )
+                dataset = self.to_dataset(file, "__values__")
             with h5py.File(fname, "r") as file:
                 dataset = file["__values__"]
                 out = np.asarray(dataset[self._sel.get_indexer()])
@@ -288,6 +286,8 @@ class VirtualLayout(VirtualArray):
             fillvalue = np.iinfo(self.dtype).min
         elif np.issubdtype(self.dtype, np.floating):
             fillvalue = np.nan
+        elif np.issubdtype(self.dtype, np.complexfloating):
+            fillvalue = np.nan + 1j * np.nan
         else:
             fillvalue = None
         return file_or_group.create_virtual_dataset(

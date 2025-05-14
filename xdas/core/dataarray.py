@@ -262,6 +262,8 @@ class DataArray(NDArrayOperatorsMixin):
 
     def equals(self, other):
         if isinstance(other, self.__class__):
+            if not self.dtype == other.dtype:
+                return False
             if not np.array_equal(self.values, other.values, equal_nan=True):
                 return False
             if not self.coords.equals(other.coords):

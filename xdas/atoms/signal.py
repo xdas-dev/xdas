@@ -110,6 +110,8 @@ class ResamplePoly(Atom):
         self.downsampling.factor = down
 
     def call(self, da, **flags):
+        if self.upsampling.factor == 1 and self.downsampling.factor == 1:
+            return da
         da = self.upsampling(da, **flags)
         da = self.firfilter(da, **flags)
         da = self.downsampling(da, **flags)
@@ -458,6 +460,8 @@ class DownSample(Atom):
             self.buffer = State(None)
 
     def call(self, da, **flags):
+        if self.factor == 1:
+            return da
         if self.buffer is not None:
             da = concatenate([self.buffer, da], self.dim)
             divpoint = da.sizes[self.dim] - da.sizes[self.dim] % self.factor
@@ -474,6 +478,8 @@ class UpSample(Atom):
         self.dim = dim
 
     def call(self, da, **flags):
+        if self.factor == 1:
+            return da
         shape = tuple(
             self.factor * size if dim == self.dim else size
             for dim, size in da.sizes.items()
@@ -500,4 +506,4 @@ class UpSample(Atom):
             },
             self.dim,
         )
-        return DataArray(data, coords, name=da.name, attrs=da.attrs)
+        return DataArray(data, coords, da.dims, da.name, da.attrs)
