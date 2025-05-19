@@ -10,7 +10,7 @@ authors = [
     { name = "Alister Trabattoni", email = "alister.trabattoni@gmail.com" },
 ]
 dependencies = [
-    "dask",
+    "dask<2025.4.0",
     "h5netcdf",
     "h5py",
     "hdf5plugin",
