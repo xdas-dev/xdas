@@ -1,5 +1,9 @@
 # Release notes
 
+## 0.2.2
+- Add support for python 3.13
+- Fix bugs and dependencies issues
+
 ## 0.2.1
 - Add `xdas.signal.stft`.
 - Add inverse Fourier transforms `xdas.fft.ifft` and `xdas.fft.irfft`.
