@@ -245,7 +245,7 @@ def float_to_timedelta(value, unit):
     Example
     -------
     >>> float_to_timedelta(1.5, 'ms')
-    numpy.timedelta64(1500000,'ns')
+    np.timedelta64(1500000,'ns')
     """
     conversion_factors = {
         "ns": 1e0,
