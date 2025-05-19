@@ -55,6 +55,9 @@ class TestFunc:
                 result = numpy_function(da, -1, 1)
                 assert isinstance(result, DataArray)
             elif numpy_function in ignore:
+                if np.lib.NumpyVersion(np.__version__) >= '2.0.0b1':
+                    if numpy_function == np.trapz:
+                        numpy_function = np.trapezoid
                 result = numpy_function(da)
                 assert isinstance(result, np.ndarray)
             elif numpy_function in [
