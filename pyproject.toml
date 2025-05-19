@@ -4,19 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xdas"
-version = "0.2.1"
-requires-python = ">= 3.10,<3.13"
+version = "0.2.2"
+requires-python = ">= 3.10"
 authors = [
     { name = "Alister Trabattoni", email = "alister.trabattoni@gmail.com" },
 ]
 dependencies = [
-    "dask",
+    "dask<2025.4.0",
     "h5netcdf",
     "h5py",
     "hdf5plugin",
     "msgpack",
     "numba",
-    "numpy<2",
+    "numpy",
     "obspy",
     "pandas",
     "plotly",
@@ -29,7 +29,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["black", "isort", "twine"]
+dev = ["black", "build", "isort", "twine"]
 docs = [
     "ipykernel",
     "matplotlib",
