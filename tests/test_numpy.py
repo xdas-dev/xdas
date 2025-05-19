@@ -48,16 +48,16 @@ class TestFunc:
     def test_returns_dataarray(self):
         da = wavelet_wavefronts()
         for numpy_function in HANDLED_NUMPY_FUNCTIONS:
-            ignore = [np.diff, np.ediff1d, np.trapz]
-            if np.lib.NumpyVersion(np.__version__) >= '2.0.0b1':
-                ignore += [np.trapezoid]
             if numpy_function == np.clip:
                 result = numpy_function(da, -1, 1)
                 assert isinstance(result, DataArray)
-            elif numpy_function in ignore:
+            elif numpy_function == np.trapz:
                 if np.lib.NumpyVersion(np.__version__) >= '2.0.0b1':
-                    if numpy_function == np.trapz:
-                        numpy_function = np.trapezoid
+                     pass # TODO: this function is deprecated, let it go...
+                else:
+                    result = numpy_function(da)
+                    assert isinstance(result, np.ndarray)
+            elif numpy_function in [np.diff, np.ediff1d]:
                 result = numpy_function(da)
                 assert isinstance(result, np.ndarray)
             elif numpy_function in [
