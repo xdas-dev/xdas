@@ -52,8 +52,8 @@ class TestFunc:
                 result = numpy_function(da, -1, 1)
                 assert isinstance(result, DataArray)
             elif numpy_function == np.trapz:
-                if np.lib.NumpyVersion(np.__version__) >= '2.0.0b1':
-                     pass # TODO: this function is deprecated, let it go...
+                if np.lib.NumpyVersion(np.__version__) >= "2.0.0b1":
+                    pass  # TODO: this function is deprecated, let it go...
                 else:
                     result = numpy_function(da)
                     assert isinstance(result, np.ndarray)
@@ -82,7 +82,7 @@ class TestFunc:
         result = np.sum(da, axis=1)
         assert result.dims == ("time",)
         assert result.coords["time"].equals(da.coords["time"])
-        if np.lib.NumpyVersion(np.__version__) >= '2.0.0b1':
+        if np.lib.NumpyVersion(np.__version__) >= "2.0.0b1":
             from numpy.exceptions import AxisError
         else:
             from numpy import AxisError
