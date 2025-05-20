@@ -2,13 +2,12 @@ import dask
 import numpy as np
 import obspy
 
-from ..core.coordinates import Coordinates
+from ..core.coordinates import Coordinates, Coordinate
 from ..core.dataarray import DataArray
 
-
-def read(fname):
-    shape, dtype, coords = read_header(fname)
-    data = dask.array.from_delayed(dask.delayed(read_data)(fname), shape, dtype)
+def read(fname, ignore_last_sample=False):
+    shape, dtype, coords, method = read_header(fname)
+    data = dask.array.from_delayed(dask.delayed(read_data)(fname, method, ignore_last_sample), shape, dtype)
     return DataArray(data, coords)
 
 
@@ -19,9 +18,18 @@ def read_header(path):
     if not isinstance(dtype, np.dtype):
         raise ValueError("All traces must have the same dtype")
 
-    time = get_time_coord(st[0])
-    if not all(get_time_coord(tr) == time for tr in st):
-        raise ValueError("All traces must be synchronized")
+    channels = [tr.stats.channel for tr in st]
+    if len(st) > 1 and len(np.unique(channels)) == 1:
+        method = "unsynchronized"
+        time = get_time_coord(st[0])
+        for tr in st[1:]:
+            time.append(get_time_coord(tr))
+    else:
+        method = "synchronized"
+        time = get_time_coord(st[0])
+
+        if not all(get_time_coord(tr).equals(time) for tr in st):
+            raise ValueError("All traces must be synchronized")
 
     network = uniquifiy(tr.stats.network for tr in st)
     stations = uniquifiy(tr.stats.station for tr in st)
@@ -39,22 +47,29 @@ def read_header(path):
     )
 
     shape = tuple(len(coord) for coord in coords.values() if not coord.isscalar())
-    return shape, dtype, coords
+    return shape, dtype, coords, method
 
 
-def read_data(path):
+def read_data(path, method, ignore_last_sample):
     st = obspy.read(path)
-    return np.array(st)
+    if ignore_last_sample:
+        for tr in st:
+            tr.data = tr.data[:-1]
+    if method == "synchronized":
+        return np.array(st[0])
+    else:
+        data = [tr.data for tr in st]
+        return np.concatenate((data), axis=1)
 
 
 def get_time_coord(tr):
-    return {
-        "tie_indices": [0, tr.stats.npts - 1],
+    return Coordinate({
+        "tie_indices": [0, tr.stats.npts - 2],
         "tie_values": [
             np.datetime64(tr.stats.starttime),
-            np.datetime64(tr.stats.endtime),
+            np.datetime64(tr.stats.endtime - tr.stats.delta),
         ],
-    }
+    })
 
 
 def uniquifiy(seq):

@@ -1,4 +1,6 @@
 import os
+import obspy
+from glob import glob
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 from tempfile import TemporaryDirectory
@@ -300,6 +302,159 @@ class DataFrameWriter:
             out = pd.read_csv(self.path, parse_dates=self.parse_dates)
         except pd.errors.EmptyDataError:
             out = pd.DataFrame()
+        return out
+    
+
+class StreamWriter:
+    """
+    A class for writing obspy Streams to miniseed files asynchronously.
+
+    Parameters
+    ----------
+    path : str
+        The path of the miniseed file or the folder name where the miniseed files will be written.
+
+    Attributes
+    ----------
+    path : str
+        The path of the miniseed file or the folder name where the miniseed files will be written.
+    dataquality : str
+        Data quality of the waveforms following the .
+    kw_merge : dict
+        Keyword arguments for merging the Streams following the arguments of the obspy.core.stream.Stream.merge function.
+    kw_write : dict
+        Keyword arguments for writing the Streams following the arguments of the obspy.core.stream.Stream.write function.
+    output_format : str
+        The output format of the miniseed files. Can be "flat" or "SDS".
+        If "flat", the miniseed files will be written in a single file.
+        If "SDS", the miniseed files will be written in the SDS file structure.
+        For more informations about SDS see https://www.seiscomp.de/seiscomp3/doc/applications/slarchive/SDS.html
+    queue : Queue
+        A queue to hold the Streams to be written.
+    executor : ThreadPoolExecutor
+        A thread pool executor for asynchronous writing.
+    future : Future
+        A future object representing the result of the asynchronous task.
+
+    Methods
+    -------
+    to_SDS(st)
+        Writes the Stream to the SDS file structure.
+    to_flat(st)
+        Writes the Stream to a single miniseed file.
+    write(st)
+        Writes a Stream to the queue for asynchronous writing.
+    task()
+        The asynchronous task that writes the Streams to temporary miniseed files.
+    result()
+        Waits for the asynchronous task to complete, format the data into the chosen format, delete the temporary files 
+        and returns the one single merged Stream read from the temporary files.
+    """
+
+    def __init__(self, path, dataquality, kw_merge={}, kw_write={}, output_format="SDS"):
+        self.path = path
+        self.dataquality = dataquality
+        self.kw_merge = kw_merge
+        self.kw_write = kw_write
+        self.output_format = output_format
+        self.queue = Queue(maxsize=1)
+        self.executor = ThreadPoolExecutor(1)
+        self.future = self.executor.submit(self.task)
+
+    def to_SDS(self, st):
+        """
+        Convert and write the Stream to the SDS file structure.
+        """
+        newpath = self.path.split('/')[:-1]
+        newpath = '/'.join(newpath)
+        for n, tr in enumerate(st):
+            new_st = obspy.Stream()
+            new_st += tr
+            new_st = new_st[0].split()
+            for new_tr in new_st:
+                if isinstance(new_tr.data, np.ma.masked_array):
+                    new_tr.data = new_tr.data.filled()
+            new_st[0].stats.mseed['dataquality'] = self.dataquality
+            year = new_st[0].stats.starttime.year
+            network = new_st[0].stats.network
+            station = new_st[0].stats.station
+            channel = new_st[0].stats.channel
+            location = new_st[0].stats.location
+            julday = new_st[0].stats.starttime.julday
+            if n == 0:
+                if not os.path.exists(f"{newpath}/{year}"):
+                    os.mkdir(f"{newpath}/{year}")
+                if not os.path.exists(f"{newpath}/{year}/{network}"):
+                    os.mkdir(f"{newpath}/{year}/{network}")
+            if not os.path.exists(f"{newpath}/{year}/{network}/{station}"):
+                os.mkdir(f"{newpath}/{year}/{network}/{station}")
+            if not os.path.exists(f"{newpath}/{year}/{network}/{station}/{channel}.D"):
+                os.mkdir(f"{newpath}/{year}/{network}/{station}/{channel}.D")
+            sds_path = f"{newpath}/{year}/{network}/{station}/{channel}.D/{network}.{station}.{location}.{channel}.D.{year}.{julday:03d}"
+            new_st.write(sds_path, format="MSEED", **self.kw_write)
+
+    def to_flat(self, st):
+        """
+        Convert and write the Stream to a single miniseed file.
+        """
+        new_st = obspy.Stream()
+        for tr in st:
+            tmp_st = obspy.Stream()
+            tmp_st += tr
+            tmp_st = tmp_st[0].split()
+            for new_tr in tmp_st:
+                if isinstance(new_tr.data, np.ma.masked_array):
+                    new_tr.data = new_tr.data.filled()
+                new_st += new_tr
+        if ".mseed" in self.path:
+            new_st.write(self.path, **self.kw_write)
+        else:
+            new_st.write(f"{self.path}.mseed", **self.kw_write)
+
+    def write(self, st):
+        """
+        Writes a Stream to the queue for asynchronous writing.
+
+        Parameters
+        ----------
+        st : obspy.Stream
+            The Stream to be written.
+        """
+        self.queue.put(st)
+
+    def task(self):
+        """
+        The asynchronous task that writes the Stream to a temporary miniseed file.
+        """
+        while True:
+            st = self.queue.get()
+            if st is None:
+                break
+            folderpath = self.path.split('.mseed')[0]
+            st.write(f"{folderpath}_{st[0].stats.starttime}_tmp.mseed", **self.kw_write)
+                
+    def result(self):
+        """
+        Waits for the asynchronous task to complete, format the data into the chosen format, delete the temporary files 
+        and returns the one single merged Stream read from the temporary files.
+
+        Returns
+        -------
+        obspy.Stream
+            Returns one single merged Stream read from the temporary files.
+        """
+        self.queue.put(None)
+        self.future.result()
+        folderpath = self.path.split('.mseed')[0]
+        out = obspy.read(f"{folderpath}*_tmp.mseed")
+        out = out.merge(**self.kw_merge)
+        if self.output_format == "flat":
+            self.to_flat(out)
+        elif self.output_format == "SDS":
+            self.to_SDS(out)
+        files_to_remove = glob(f"{folderpath}*_tmp.mseed")
+        for file in files_to_remove:
+            os.remove(file)
         return out
 
 
