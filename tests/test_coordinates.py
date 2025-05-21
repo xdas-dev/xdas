@@ -519,11 +519,11 @@ class TestInterpCoordinate:
         coord1 = InterpCoordinate({"tie_indices": [0, 2], "tie_values": [0, 20]})
         coord2 = InterpCoordinate({"tie_indices": [0, 2], "tie_values": [30, 50]})
 
-        result = coord1.append(coord2)
+        result = coord1.append(coord2).simplify()
         expected = InterpCoordinate({"tie_indices": [0, 5], "tie_values": [0, 50]})
         assert result.equals(expected)
 
-        result = coord2.append(coord1)
+        result = coord2.append(coord1).simplify()
         expected = InterpCoordinate(
             {"tie_indices": [0, 2, 3, 5], "tie_values": [30, 50, 0, 20]}
         )

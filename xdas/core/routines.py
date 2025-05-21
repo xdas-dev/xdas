@@ -725,15 +725,19 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         data = VirtualStack(data, axis)
     else:
         data = np.concatenate(data, axis)
-    if dim_has_coords:
-        if tolerance is not None:
+    if tolerance is not False:
+        if dim_has_coords:
             if hasattr(coord, "simplify"):
                 coord = coord.simplify(tolerance)
             else:
-                raise TypeError(
-                    "tolerance can only be used with interpolated coordinates"
-                )
-        coords[dim] = coord
+                if tolerance is not None:
+                    raise TypeError(
+                        "tolerance can only be used with interpolated coordinates"
+                    )
+            coords[dim] = coord
+        else:
+            if tolerance is not None:
+                raise TypeError("cannot use tolerance on non-existing coordinates")
 
     return DataArray(data, coords, dims, name, attrs)
 
