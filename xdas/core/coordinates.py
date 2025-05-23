@@ -832,7 +832,6 @@ class InterpCoordinate(Coordinate):
             },
             self.dim,
         )
-        coord = coord.simplify()
         return coord
 
     def decimate(self, q):
