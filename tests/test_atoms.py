@@ -251,6 +251,7 @@ class TestMLPicker:
         model = PhaseNet.from_pretrained("diting")
         picker = MLPicker(model, "time", device="cpu")
         da = randn_wavefronts()
+        # da = da.isel(time=slice(0, 5000)) TODO: why not faster ?
         expected = picker(da)
         chunks = xd.split(da, 4, "time")
         result = xd.concatenate([picker(chunk, chunk_dim="time") for chunk in chunks])
