@@ -150,13 +150,18 @@ class MLPicker(Atom):
         buffer[..., : self.noverlap] = buffer[..., self.step :]
         buffer[..., self.noverlap :] = values
 
-    @staticmethod
-    def _normalize(x, out=None):
+    def _normalize(self, x, out=None):
         if out is None:
             out = torch.empty_like(x)
-        std, mean = torch.std_mean(x, dim=-1, keepdim=True)
-        torch.sub(x, mean, out=out)
-        torch.div(out, std, out=out)
+        if self.model.norm == "std":
+            std, mean = torch.std_mean(x, dim=-1, keepdim=True)
+            torch.sub(x, mean, out=out)
+            torch.div(out, std, out=out)
+        elif self.model.norm == "peak":
+            mean = torch.mean(x, dim=-1, keepdim=True)
+            torch.sub(x, mean, out=out)
+            peak = torch.max(torch.abs(out), dim=-1, keepdim=True)[0]
+            torch.div(out, peak, out=out)
         return out
 
     def _run_model(self):
