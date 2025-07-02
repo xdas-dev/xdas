@@ -91,9 +91,9 @@ def read(fname, overlaps=None, offset=None):
     for t0, chunk in zip(times, chunks):
         time = {
             "tie_indices": [0, nt - 1],
-            "tie_values": np.rint(1e9 * np.array([t0, t0 + (nt - 1) * dt])).astype(
-                "M8[ns]"
-            ),
+            "tie_values": np.rint(1e6 * np.array([t0, t0 + (nt - 1) * dt]))
+            .astype("M8[us]")
+            .astype("M8[ns]"),
         }
         distance = {"tie_indices": [0, nx - 1], "tie_values": [0.0, (nx - 1) * dx]}
         da = DataArray(chunk, {"time": time, "distance": distance}, name=name)
