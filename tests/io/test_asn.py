@@ -222,7 +222,30 @@ class TestZMQSubscriber:
         for chunk in chunks:
             result = next(sub)
             assert result.equals(chunk)
+            
+    def test_update_header(self):
+        print("test_up")
+        address = get_free_local_address()
+        pub = ZMQPublisher(address)
+        chunks = [da_float32]
+        threading.Thread(target=self.publish, args=(pub, chunks)).start()
+        sub = ZMQSubscriber(address)
+        message = b'{\n    "bytesPerPackage": 64008,\n    "dataScale": 1,\n    "dataType": "float",\n    "dt": 0.01,\n    "dtUnit": "s",\n    "dx": 10.213001907746815,\n    "dxUnit": "m",\n    "experiment": "monaco-das-lig2024",\n    "gaugeLength": 20.42600381549363,\n    "gaugeLengthUnit": "m",\n    "instrument": "fsic036.fsi.lan",\n    "measurement": "monaco-longterm2025",\n    "measurementStartTime": "2025-07-08T12:08:31.709Z",\n    "muxPositions": [\n        {\n            "rx": 0,\n            "tx": 0\n        }\n    ],\n    "nChannels": 16002,\n    "nPackagesPerMessage": 10,\n    "roiTable": [\n        {\n            "roiDec": 10,\n            "roiEnd": 160010,\n            "roiStart": 0\n        }\n    ],\n    "sensitivities": [\n        {\n            "factor": 9112677.961649183,\n            "unit": "rad/(strain*m)"\n        }\n    ],\n    "sensorType": "D",\n    "spatialUnwrapRange": 615.21435546875,\n    "sweepLength": 0.0001,\n    "sweepLengthUnit": "s",\n    "switchChannel": 0,\n    "triggeredMeasurement": false,\n    "trustedTimeSource": false,\n    "unit": "rad/(s*m)",\n    "version": 2\n}\n'
+        sub._update_header(message)
+        assert sub.shape == (10,16002)
 
+    def test_roiDec(self):
+        address = get_free_local_address()
+        pub = ZMQPublisher(address)
+        chunks = [da_float32]
+        threading.Thread(target=self.publish, args=(pub, chunks)).start()
+        sub = ZMQSubscriber(address)
+        message = b'{\n    "bytesPerPackage": 64008,\n    "dataScale": 1,\n    "dataType": "float",\n    "dt": 0.01,\n    "dtUnit": "s",\n    "dx": 10,\n    "dxUnit": "m",\n    "experiment": "monaco-das-lig2024",\n    "gaugeLength": 20,\n    "gaugeLengthUnit": "m",\n    "instrument": "fsic036.fsi.lan",\n    "measurement": "monaco-longterm2025",\n    "measurementStartTime": "2025-07-08T12:08:31.709Z",\n    "muxPositions": [\n        {\n            "rx": 0,\n            "tx": 0\n        }\n    ],\n    "nChannels": 91,\n    "nPackagesPerMessage": 10,\n    "roiTable": [\n        {\n            "roiDec": 10,\n            "roiEnd": 90,\n            "roiStart": 0\n        }\n    ],\n    "sensitivities": [\n        {\n            "factor": 9112677.961649183,\n            "unit": "rad/(strain*m)"\n        }\n    ],\n    "sensorType": "D",\n    "spatialUnwrapRange": 615.21435546875,\n    "sweepLength": 0.0001,\n    "sweepLengthUnit": "s",\n    "switchChannel": 0,\n    "triggeredMeasurement": false,\n    "trustedTimeSource": false,\n    "unit": "rad/(s*m)",\n    "version": 2\n}\n'
+        print(message)
+        sub._update_header(message)
+        print(sub.distance)
+        assert sub.distance == {"tie_indices": [0, 9], "tie_values": [0, 90]}
+    
     def test_iter(self):
         address = get_free_local_address()
         pub = ZMQPublisher(address)
