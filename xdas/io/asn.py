@@ -107,7 +107,7 @@ class ZMQSubscriber:
         di = (roiTable["roiStart"] // roiTable["roiDec"]) * header["dx"]
         de = (roiTable["roiEnd"] // roiTable["roiDec"]) * header["dx"]
         self.distance = {
-            "tie_indices": [0, (header["nChannels"] - 1) // roiTable["roiDec"]],
+            "tie_indices": [0, header["nChannels"] - 1],
             "tie_values": [di, de],
         }
         self.delta = float_to_timedelta(header["dt"], header["dtUnit"])
