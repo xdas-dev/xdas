@@ -765,12 +765,12 @@ class InterpCoordinate(Coordinate):
             index_slice.step,
         )
         if stop_index - start_index <= 0:
-            return self.__class__(dict(tie_indices=[], tie_values=[], dim=self.dim))
+            return self.__class__(dict(tie_indices=[], tie_values=[]), dim=self.dim)
         elif (stop_index - start_index) <= step_index:
             tie_indices = [0]
             tie_values = [self.get_value(start_index)]
             return self.__class__(
-                dict(tie_indices=tie_indices, tie_values=tie_values, dim=self.dim)
+                dict(tie_indices=tie_indices, tie_values=tie_values), dim=self.dim
             )
         else:
             end_index = stop_index - 1
