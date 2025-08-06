@@ -345,6 +345,58 @@ class Coordinate:
     def from_dict(cls, dct):
         return cls(**dct)
 
+    def format_index(self, idx, bounds="raise"):
+        idx = np.asarray(idx)
+        if not np.issubdtype(idx.dtype, np.integer):
+            raise IndexError("only integer are valid index")
+        idx = idx + (idx < 0) * len(self)
+        if bounds == "raise":
+            if np.any(idx < 0) or np.any(idx >= len(self)):
+                raise IndexError("index is out of bounds")
+        elif bounds == "clip":
+            idx = np.clip(idx, 0, len(self))
+        return idx
+
+    def format_index_slice(self, slc):
+        start = slc.start
+        stop = slc.stop
+        step = slc.step
+        if start is None:
+            start = 0
+        if stop is None:
+            stop = len(self)
+        if step is None:
+            step = 1
+        start = self.format_index(start, bounds="clip")
+        stop = self.format_index(stop, bounds="clip")
+        return slice(start, stop, step)
+
+    def slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
+        if start is not None:
+            try:
+                start_index = self.get_indexer(start, method="bfill")
+            except KeyError:
+                start_index = len(self)
+        else:
+            start_index = None
+        if stop is not None:
+            try:
+                end_index = self.get_indexer(stop, method="ffill")
+                stop_index = end_index + 1
+            except KeyError:
+                stop_index = 0
+        else:
+            stop_index = None
+        if step is not None:
+            raise NotImplementedError("cannot use step yet")
+        if (
+            (not endpoint)
+            and (stop is not None)
+            and (self[stop_index - 1].values == stop)
+        ):
+            stop_index -= 1
+        return slice(start_index, stop_index)
+
 
 class ScalarCoordinate(Coordinate):
     def __new__(cls, *args, **kwargs):
@@ -705,18 +757,6 @@ class InterpCoordinate(Coordinate):
         index = self.format_index(index)
         return forward(index, self.tie_indices, self.tie_values)
 
-    def format_index(self, idx, bounds="raise"):
-        idx = np.asarray(idx)
-        if not np.issubdtype(idx.dtype, np.integer):
-            raise IndexError("only integer are valid index")
-        idx = idx + (idx < 0) * len(self)
-        if bounds == "raise":
-            if np.any(idx < 0) or np.any(idx >= len(self)):
-                raise IndexError("index is out of bounds")
-        elif bounds == "clip":
-            idx = np.clip(idx, 0, len(self))
-        return idx
-
     def slice_index(self, index_slice):
         index_slice = self.format_index_slice(index_slice)
         start_index, stop_index, step_index = (
@@ -725,11 +765,13 @@ class InterpCoordinate(Coordinate):
             index_slice.step,
         )
         if stop_index - start_index <= 0:
-            return self.__class__(dict(tie_indices=[], tie_values=[]))
+            return self.__class__(dict(tie_indices=[], tie_values=[], dim=self.dim))
         elif (stop_index - start_index) <= step_index:
             tie_indices = [0]
             tie_values = [self.get_value(start_index)]
-            return self.__class__(dict(tie_indices=tie_indices, tie_values=tie_values))
+            return self.__class__(
+                dict(tie_indices=tie_indices, tie_values=tie_values, dim=self.dim)
+            )
         else:
             end_index = stop_index - 1
             start_value = self.get_value(start_index)
@@ -752,20 +794,6 @@ class InterpCoordinate(Coordinate):
                 coord = coord.decimate(step_index)
             return coord
 
-    def format_index_slice(self, slc):
-        start = slc.start
-        stop = slc.stop
-        step = slc.step
-        if start is None:
-            start = 0
-        if stop is None:
-            stop = len(self)
-        if step is None:
-            step = 1
-        start = self.format_index(start, bounds="clip")
-        stop = self.format_index(stop, bounds="clip")
-        return slice(start, stop, step)
-
     def get_indexer(self, value, method=None):
         if isinstance(value, str):
             value = np.datetime64(value)
@@ -785,32 +813,6 @@ class InterpCoordinate(Coordinate):
             else:
                 raise e
         return indexer
-
-    def slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
-        if start is not None:
-            try:
-                start_index = self.get_indexer(start, method="bfill")
-            except KeyError:
-                start_index = len(self)
-        else:
-            start_index = None
-        if stop is not None:
-            try:
-                end_index = self.get_indexer(stop, method="ffill")
-                stop_index = end_index + 1
-            except KeyError:
-                stop_index = 0
-        else:
-            stop_index = None
-        if step is not None:
-            raise NotImplementedError("cannot use step yet")
-        if (
-            (not endpoint)
-            and (stop is not None)
-            and (self[stop_index - 1].values == stop)
-        ):
-            stop_index -= 1
-        return slice(start_index, stop_index)
 
     def append(self, other):
         if not isinstance(other, self.__class__):
@@ -955,6 +957,349 @@ class InterpCoordinate(Coordinate):
         data = {
             "tie_indices": tie_indices.tolist(),
             "tie_values": tie_values.tolist(),
+        }
+        return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
+
+
+class SampledCoordinate(Coordinate):
+    """
+    A coordinate that is sampled at regular intervals.
+
+    Parameters
+    ----------
+    data : dict-like
+        The data of the coordinate.
+    dim : str, optional
+        The dimension name of the coordinate, by default None.
+    dtype : str or numpy.dtype, optional
+        The data type of the coordinate, by default None.
+    """
+
+    def __new__(cls, *args, **kwargs):
+        return object.__new__(cls)
+
+    def __init__(self, data=None, dim=None, dtype=None):
+        if data is None:
+            data = {"tie_values": [], "tie_samples": [], "sampling_interval": None}
+        data, dim = parse(data, dim)
+        if not self.__class__.isvalid(data):
+            raise TypeError("`data` must be dict-like")
+        if not set(data) == {"tie_values", "tie_samples", "sampling_interval"}:
+            raise ValueError(
+                "keys `tie_values`, `tie_samples`, and `sampling_interval` must be provided"
+            )
+        tie_values = np.asarray(data["tie_values"], dtype=dtype)
+        tie_samples = np.asarray(data["tie_samples"])
+        sampling_interval = np.asarray(data["sampling_interval"])
+        if not tie_values.ndim == 1:
+            raise ValueError("`tie_values` must be 1D")
+        if not tie_samples.ndim == 1:
+            raise ValueError("`tie_samples` must be 1D")
+        if not len(tie_values) == len(tie_samples):
+            raise ValueError("`tie_values` and `tie_samples` must have the same length")
+        if not (
+            np.issubdtype(tie_values.dtype, np.number)
+            or np.issubdtype(tie_values.dtype, np.datetime64)
+        ):
+            raise ValueError("`tie_values` must have either numeric or datetime dtype")
+        if not self.empty:
+            if not np.issubdtype(tie_samples.dtype, np.integer):
+                raise ValueError("`tie_samples` must be integer-like")
+            if not np.all(tie_samples > 0):
+                raise ValueError("`tie_samples` must be positive integers")
+            if not np.isscalar(sampling_interval):
+                raise ValueError("`sampling_interval` must be a scalar value")
+            if np.issubdtype(sampling_interval.dtype, np.datetime64):
+                sampling_interval = sampling_interval.astype("timedelta64[ns]")
+            else:
+                sampling_interval = np.asarray(sampling_interval).astype(dtype)
+        tie_samples = tie_samples.astype(int)
+        self.data = dict(
+            tie_values=tie_values,
+            tie_samples=tie_samples,
+            sampling_interval=sampling_interval,
+        )
+        self.dim = dim
+
+    @staticmethod
+    def isvalid(data):
+        match data:
+            case {
+                "tie_values": _,
+                "tie_samples": _,
+                "sampling_interval": _,
+            }:
+                return True
+            case _:
+                return False
+
+    def __len__(self):
+        if self.empty:
+            return 0
+        else:
+            return sum(self.tie_samples)
+
+    def __repr__(self):
+        if self.empty:
+            return "empty coordinate"
+        elif len(self) == 1:
+            return f"{self.tie_values[0]}"
+        else:
+            if np.issubdtype(self.dtype, np.floating):
+                return f"{self.start:.3f} to {self.end:.3f}"
+            elif np.issubdtype(self.dtype, np.datetime64):
+                self.start = format_datetime(self.start)
+                self.end = format_datetime(self.end)
+                return f"{self.start} to {self.end}"
+            else:
+                return f"{self.start} to {self.end}"
+
+    def __getitem__(self, item):
+        if isinstance(item, slice):
+            return self.slice_index(item)
+        elif np.isscalar(item):
+            return ScalarCoordinate(self.get_value(item), None)
+        else:
+            return DenseCoordinate(self.get_value(item), self.dim)
+
+    def __add__(self, other):
+        return self.__class__(
+            {
+                "tie_values": self.tie_values + other,
+                "tie_samples": self.tie_samples,
+                "sampling_interval": self.sampling_interval,
+            },
+            self.dim,
+        )
+
+    def __sub__(self, other):
+        return self.__class__(
+            {
+                "tie_values": self.tie_values - other,
+                "tie_samples": self.tie_samples,
+                "sampling_interval": self.sampling_interval,
+            },
+            self.dim,
+        )
+
+    def __array__(self, dtype=None):
+        out = self.values
+        if dtype is not None:
+            out = out.__array__(dtype)
+        return out
+
+    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        raise NotImplementedError
+
+    def __array_function__(self, func, types, args, kwargs):
+        raise NotImplementedError
+
+    @property
+    def tie_values(self):
+        return self.data["tie_values"]
+
+    @property
+    def tie_samples(self):
+        return self.data["tie_samples"]
+
+    @property
+    def sampling_interval(self):
+        return self.data["sampling_interval"]
+
+    @property
+    def tie_indices(self):
+        return np.concatenate(([0], np.cumsum(self.tie_samples[:-1])))
+
+    @property
+    def empty(self):
+        return self.tie_values.shape == (0,)
+
+    @property
+    def dtype(self):
+        return self.tie_values.dtype
+
+    @property
+    def ndim(self):
+        return self.tie_values.ndim
+
+    @property
+    def shape(self):
+        return (len(self),)
+
+    @property
+    def indices(self):
+        if self.empty:
+            return np.array([], dtype="int")
+        else:
+            return np.arange(len(self))
+
+    @property
+    def values(self):
+        if self.empty:
+            return np.array([], dtype=self.dtype)
+        else:
+            return self.get_value(self.indices)
+
+    @property
+    def start(self):
+        return self.tie_values[0]
+
+    @property
+    def end(self):
+        return self.tie_values[-1] + self.sampling_interval * self.tie_samples[-1]
+
+    def equals(self, other):
+        return (
+            np.array_equal(self.tie_values, other.tie_values)
+            and np.array_equal(self.tie_samples, other.tie_samples)
+            and self.sampling_interval == other.sampling_interval
+            and self.dim == other.dim
+            and self.dtype == other.dtype
+        )
+
+    def get_value(self, index):
+        index = self.format_index(index)
+        if np.any(index < 0) or np.any(index >= len(self)):
+            raise IndexError("index is out of bounds")
+        reference = np.searchsorted(self.tie_indices, index)
+        return self.tie_values[reference] + (
+            (index - self.tie_indices[reference]) * self.sampling_interval
+        )
+
+    def slice_index(self, index_slice):
+        index_slice = self.format_index_slice(index_slice)
+        start_index, stop_index, step_index = (
+            index_slice.start,
+            index_slice.stop,
+            index_slice.step,
+        )
+        if stop_index - start_index <= 0:
+            return self.__class__(
+                dict(
+                    tie_values=[],
+                    tie_samples=[],
+                    sampling_interval=self.sampling_interval,
+                ),
+                self.dim,
+            )
+        elif (stop_index - start_index) <= step_index:
+            tie_values = [self.get_value(start_index)]
+            tie_samples = [stop_index - start_index]
+            return self.__class__(
+                dict(
+                    tie_values=tie_values,
+                    tie_samples=tie_samples,
+                    sampling_interval=self.sampling_interval,
+                ),
+                self.dim,
+            )
+        else:
+            # keep tie values, number of samples and related tie indices contained in the slice
+            mask = (start_index < self.tie_indices) & (self.tie_indices <= stop_index)
+            tie_values = self.tie_values[mask]
+            tie_samples = self.tie_samples[mask]
+            tie_indices = self.tie_indices[mask]
+
+            # insert the missing start value
+            start_value = self.get_value(start_index)
+            tie_values = np.concatenate([[start_value], self.tie_values[mask]])
+
+            # insert the missing start number of samples and adjust the end one
+            tie_samples = np.concatenate(
+                [[start_index - tie_indices[0]], tie_samples[mask]]
+            )
+            tie_samples[-1] = stop_index - tie_indices[-1]
+
+            # repack data and decimate if needed
+            data = {
+                "tie_values": tie_values,
+                "tie_samples": tie_samples,
+                "sampling_interval": self.sampling_interval,
+            }
+            coord = self.__class__(data, self.dim)
+            if step_index != 1:
+                coord = coord.decimate(step_index)
+            return coord
+
+    def get_indexer(self, value, method=None):
+        if isinstance(value, str):
+            value = np.datetime64(value)
+        else:
+            value = np.asarray(value)
+        # Check that value lies within the coordinate value range (vectorized)
+        if np.any(value < self.start) or np.any(value > self.end):
+            raise KeyError("index not found")
+        if not is_strictly_increasing(self.tie_values):
+            raise ValueError("tie_values must be strictly increasing")
+        reference = np.searchsorted(self.tie_values, value)
+        offset = (value - self.tie_values[reference]) / self.sampling_interval
+        if method == "nearest":
+            offset = np.round(offset).astype(int)
+        elif method == "ffill":
+            offset = np.floor(offset).astype(int)
+        elif method == "bfill":
+            offset = np.ceil(offset).astype(int)
+        else:
+            raise ValueError("method must be one of 'nearest', 'ffill', or 'bfill'")
+        return self.tie_indices[reference] + offset
+
+    def append(self, other):
+        if not isinstance(other, self.__class__):
+            raise TypeError(f"cannot append {type(other)} to {self.__class__}")
+        if not self.dim == other.dim:
+            raise ValueError("cannot append coordinate with different dimension")
+        if self.empty:
+            return other
+        if other.empty:
+            return self
+        if not self.dtype == other.dtype:
+            raise ValueError("cannot append coordinate with different dtype")
+        if not self.sampling_interval == other.sampling_interval:
+            raise ValueError(
+                "cannot append coordinate with different sampling intervals"
+            )
+        tie_values = np.concatenate([self.tie_values, other.tie_values])
+        tie_samples = np.concatenate([self.tie_samples, other.tie_samples + len(self)])
+        return self.__class__(
+            {
+                "tie_values": tie_values,
+                "tie_samples": tie_samples,
+                "sampling_interval": self.sampling_interval,
+            },
+            self.dim,
+        )
+
+    def decimate(self, q):
+        raise NotImplementedError("decimation is not implemented for SampledCoordinate")
+
+    def simplify(self, tolerance=None):
+        raise NotImplementedError(
+            "simplification is not implemented for SampledCoordinate"
+        )
+
+    def get_discontinuities(self):
+        raise NotImplementedError(
+            "get_discontinuities is not implemented for SampledCoordinate"
+        )
+
+    def get_availabilities(self):
+        raise NotImplementedError(
+            "get_availabilities is not implemented for SampledCoordinate"
+        )
+
+    @classmethod
+    def from_array(cls, arr, dim=None, sampling_interval=None):
+        raise NotImplementedError("from_array is not implemented for SampledCoordinate")
+
+    def to_dict(self):
+        tie_values = self.data["tie_values"]
+        tie_samples = self.data["tie_samples"]
+        if np.issubdtype(tie_values.dtype, np.datetime64):
+            tie_values = tie_values.astype(str)
+        data = {
+            "tie_values": tie_values.tolist(),
+            "tie_samples": tie_samples.tolist(),
+            "sampling_interval": self.sampling_interval,
         }
         return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
 
