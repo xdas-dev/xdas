@@ -389,7 +389,7 @@ class StreamWriter:
             for new_tr in new_st:
                 if isinstance(new_tr.data, np.ma.masked_array):
                     new_tr.data = new_tr.data.filled()
-            new_st[0].stats.mseed["dataquality"] = self.dataquality
+                    new_tr.stats.mseed["dataquality"] = self.dataquality
             year = new_st[0].stats.starttime.year
             network = new_st[0].stats.network
             station = new_st[0].stats.station
