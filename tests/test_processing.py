@@ -212,9 +212,11 @@ class TestZMQ:
 
 
 class TestStreamWriter:
-    def test(self):
+    def test_without_gap(self):
         with tempfile.TemporaryDirectory() as tempdir:
-            data = np.zeros((1000, 10))
+            data = np.random.randint(
+                low=-1000, high=1000, size=(1000, 10), dtype=np.int32
+            )
             starttime = np.datetime64("2023-01-01T00:00:00")
             endtime = starttime + np.timedelta64(10, "ms") * (data.shape[0] - 1)
             distance = 5.0 * np.arange(data.shape[1])
@@ -229,6 +231,7 @@ class TestStreamWriter:
                     "distance": distance,
                 },
             )
+
             atom = lambda da, **kwargs: da.to_stream(
                 network="NT",
                 station="ST{:03}",
@@ -257,14 +260,83 @@ class TestStreamWriter:
             assert tr.stats.npts == 1000
             assert np.array_equal(tr.data, data[:, 0])
             assert tr.stats.starttime == obspy.UTCDateTime(str(starttime))
-            assert os.path.exists(
-                os.path.join(
-                    tempdir,
-                    "2023",
-                    "NT",
-                    "ST001",
-                    "HN1.D",
-                    "NT.ST001.00.HN1.D.2023.001",
-                )
+            path = os.path.join(
+                tempdir,
+                "2023",
+                "NT",
+                "ST001",
+                "HN1.D",
+                "NT.ST001.00.HN1.D.2023.001",
             )
+            assert os.path.exists(path)
+            st = obspy.read(path)
+            assert len(st) == 1
+            assert len(glob(os.path.join(tempdir, "**", "*.001"), recursive=True)) == 10
+
+    def test_with_gap(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            da = xdas.DataArray(
+                data=np.random.randint(
+                    low=-1000, high=1000, size=(900, 10), dtype=np.int32
+                ),
+                coords={
+                    "time": {
+                        "tie_indices": [0, 399, 400, 899],
+                        "tie_values": np.array(
+                            [
+                                "2023-01-01T00:00:00.000",
+                                "2023-01-01T00:00:03.990",
+                                "2023-01-01T00:00:05.000",
+                                "2023-01-01T00:00:09.990",
+                            ],
+                            dtype="datetime64[ms]",
+                        ),
+                    },
+                    "distance": 5.0 * np.arange(10),
+                },
+            )
+            atom = lambda da, **kwargs: da.to_stream(
+                network="NT",
+                station="ST{:03}",
+                channel="HN1",
+                location="00",
+                dim={"distance": "time"},
+            )
+
+            data_loader = DataArrayLoader(da, chunks={"time": 100})
+
+            kw_merge = {"method": 1}
+            kw_write = {"reclen": 4096}
+            data_writer = StreamWriter(
+                tempdir, "M", kw_merge, kw_write, output_format="SDS"
+            )
+
+            st = xp.process(atom, data_loader, data_writer)
+
+            assert isinstance(st, obspy.Stream)
+            assert len(st) == 10
+            tr = st[0]
+            assert isinstance(tr.data, np.ma.masked_array)
+            assert tr.stats.network == "NT"
+            assert tr.stats.station == "ST001"
+            assert tr.stats.channel == "HN1"
+            assert tr.stats.location == "00"
+            tr1, tr2 = tr.split()
+            assert tr1.stats.npts == 400
+            assert tr2.stats.npts == 500
+            assert np.array_equal(tr1.data, da.values[0:400, 0])
+            assert np.array_equal(tr2.data, da.values[400:900, 0])
+            assert tr1.stats.starttime == obspy.UTCDateTime("2023-01-01T00:00:00.000")
+            assert tr2.stats.starttime == obspy.UTCDateTime("2023-01-01T00:00:05.000")
+            path = os.path.join(
+                tempdir,
+                "2023",
+                "NT",
+                "ST001",
+                "HN1.D",
+                "NT.ST001.00.HN1.D.2023.001",
+            )
+            assert os.path.exists(path)
+            st = obspy.read(path)
+            assert len(st) == 2
             assert len(glob(os.path.join(tempdir, "**", "*.001"), recursive=True)) == 10
