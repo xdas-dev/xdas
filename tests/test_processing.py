@@ -5,6 +5,7 @@ import time
 
 import hdf5plugin
 import numpy as np
+import obspy
 import pandas as pd
 import scipy.signal as sp
 
@@ -212,7 +213,7 @@ class TestZMQ:
 class TestStreamWriter:
     def test(self):
         with tempfile.TemporaryDirectory() as tempdir:
-            data = np.zeros((6000, 10))
+            data = np.zeros((1000, 10))
             starttime = np.datetime64("2023-01-01T00:00:00")
             endtime = starttime + np.timedelta64(10, "ms") * (data.shape[0] - 1)
             distance = 5.0 * np.arange(data.shape[1])
@@ -228,7 +229,7 @@ class TestStreamWriter:
                 },
             )
             atom = lambda da, **kwargs: da.to_stream(
-                network="NT", station="ST{:03}", dim={"distance": "time"}
+                network="NT", station="ST{:03}", channel="HN1", dim={"distance": "time"}
             )
 
             data_loader = DataArrayLoader(da, chunks={"time": 100})
@@ -239,4 +240,14 @@ class TestStreamWriter:
                 tempdir, "M", kw_merge, kw_write, output_format="SDS"
             )
 
-            result = xp.process(atom, data_loader, data_writer)
+            st = xp.process(atom, data_loader, data_writer)
+
+            assert isinstance(st, obspy.Stream)
+            assert len(st) == 10
+            tr = st[0]
+            assert tr.stats.network == "NT"
+            assert tr.stats.station == "ST001"
+            assert tr.stats.channel == "HN1"
+            assert tr.stats.npts == 1000
+            assert np.array_equal(tr.data, data[:, 0])
+            assert tr.stats.starttime == obspy.UTCDateTime(str(starttime))
