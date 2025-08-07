@@ -151,7 +151,7 @@ def ifft(da, n=None, dim={"last": "time"}, norm=None, parallel=None):
 
     Notes
     -----
-    - To perform a multidimensional inverse fourrier transform, repeat this function on
+    To perform a multidimensional inverse fourrier transform, repeat this function on
     the desired dimensions.
 
     """
