@@ -1,4 +1,5 @@
 import os
+from glob import glob
 import tempfile
 import threading
 import time
@@ -229,7 +230,11 @@ class TestStreamWriter:
                 },
             )
             atom = lambda da, **kwargs: da.to_stream(
-                network="NT", station="ST{:03}", channel="HN1", dim={"distance": "time"}
+                network="NT",
+                station="ST{:03}",
+                channel="HN1",
+                location="00",
+                dim={"distance": "time"},
             )
 
             data_loader = DataArrayLoader(da, chunks={"time": 100})
@@ -248,6 +253,18 @@ class TestStreamWriter:
             assert tr.stats.network == "NT"
             assert tr.stats.station == "ST001"
             assert tr.stats.channel == "HN1"
+            assert tr.stats.location == "00"
             assert tr.stats.npts == 1000
             assert np.array_equal(tr.data, data[:, 0])
             assert tr.stats.starttime == obspy.UTCDateTime(str(starttime))
+            assert os.path.exists(
+                os.path.join(
+                    tempdir,
+                    "2023",
+                    "NT",
+                    "ST001",
+                    "HN1.D",
+                    "NT.ST001.00.HN1.D.2023.001",
+                )
+            )
+            assert len(glob(os.path.join(tempdir, "**", "*.001"), recursive=True)) == 10
