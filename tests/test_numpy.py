@@ -51,7 +51,13 @@ class TestFunc:
             if numpy_function == np.clip:
                 result = numpy_function(da, -1, 1)
                 assert isinstance(result, DataArray)
-            elif numpy_function in [np.diff, np.ediff1d, np.trapz]:
+            elif numpy_function == np.trapz:
+                if np.lib.NumpyVersion(np.__version__) >= "2.0.0b1":
+                    pass  # TODO: this function is deprecated, let it go...
+                else:
+                    result = numpy_function(da)
+                    assert isinstance(result, np.ndarray)
+            elif numpy_function in [np.diff, np.ediff1d]:
                 result = numpy_function(da)
                 assert isinstance(result, np.ndarray)
             elif numpy_function in [
@@ -76,7 +82,11 @@ class TestFunc:
         result = np.sum(da, axis=1)
         assert result.dims == ("time",)
         assert result.coords["time"].equals(da.coords["time"])
-        with pytest.raises(np.AxisError):
+        if np.lib.NumpyVersion(np.__version__) >= "2.0.0b1":
+            from numpy.exceptions import AxisError
+        else:
+            from numpy import AxisError
+        with pytest.raises(AxisError):
             np.sum(da, axis=2)
 
     def test_out(self):

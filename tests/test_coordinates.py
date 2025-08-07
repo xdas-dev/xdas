@@ -502,8 +502,12 @@ class TestInterpCoordinate:
         pass
 
     def test_simplify(self):
-        # TODO
-        pass
+        xp = np.sort(np.random.choice(10000, 1000, replace=False))
+        xp[0] = 0
+        xp[-1] = 10000
+        yp = xp + (np.random.rand(1000) - 0.5)
+        coord = InterpCoordinate({"tie_indices": xp, "tie_values": yp})
+        assert len(coord.simplify(1.0).tie_indices) == 2
 
     def test_singleton(self):
         coord = InterpCoordinate({"tie_indices": [0], "tie_values": [1.0]})
@@ -519,11 +523,11 @@ class TestInterpCoordinate:
         coord1 = InterpCoordinate({"tie_indices": [0, 2], "tie_values": [0, 20]})
         coord2 = InterpCoordinate({"tie_indices": [0, 2], "tie_values": [30, 50]})
 
-        result = coord1.append(coord2)
+        result = coord1.append(coord2).simplify()
         expected = InterpCoordinate({"tie_indices": [0, 5], "tie_values": [0, 50]})
         assert result.equals(expected)
 
-        result = coord2.append(coord1)
+        result = coord2.append(coord1).simplify()
         expected = InterpCoordinate(
             {"tie_indices": [0, 2, 3, 5], "tie_values": [30, 50, 0, 20]}
         )

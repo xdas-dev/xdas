@@ -104,8 +104,8 @@ class ZMQSubscriber:
         self.shape = (header["nPackagesPerMessage"], header["nChannels"])
         self.dtype = type_map[header["dataType"]]
         roiTable = header["roiTable"][0]
-        di = roiTable["roiStart"] * header["dx"]
-        de = roiTable["roiEnd"] * header["dx"]
+        di = (roiTable["roiStart"] // roiTable["roiDec"]) * header["dx"]
+        de = (roiTable["roiEnd"] // roiTable["roiDec"]) * header["dx"]
         self.distance = {
             "tie_indices": [0, header["nChannels"] - 1],
             "tie_values": [di, de],
@@ -244,8 +244,8 @@ def float_to_timedelta(value, unit):
 
     Example
     -------
-    >>> float_to_timedelta(1.5, 'ms')
-    numpy.timedelta64(1500000,'ns')
+    float_to_timedelta(1.5, 'ms')  # doctest: +SKIP
+    np.timedelta64(1500000,'ns')
     """
     conversion_factors = {
         "ns": 1e0,

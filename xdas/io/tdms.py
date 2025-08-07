@@ -16,7 +16,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 $Rev:: 26283                                                                  $
 $Date:: 2018-03-27 13:14:05 +0100 (Tue, 27 Mar 2018)                          $
 
-Ref:    [1] TDMS_Adv_Read.m 
+Ref:    [1] TDMS_Adv_Read.m
         [2] http://www.ni.com/white-paper/5696/en#toc2
 
 """
