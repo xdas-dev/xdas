@@ -303,7 +303,7 @@ class DataFrameWriter:
         except pd.errors.EmptyDataError:
             out = pd.DataFrame()
         return out
-    
+
 
 class StreamWriter:
     """
@@ -347,11 +347,13 @@ class StreamWriter:
     task()
         The asynchronous task that writes the Streams to temporary miniseed files.
     result()
-        Waits for the asynchronous task to complete, format the data into the chosen format, delete the temporary files 
+        Waits for the asynchronous task to complete, format the data into the chosen format, delete the temporary files
         and returns the one single merged Stream read from the temporary files.
     """
 
-    def __init__(self, path, dataquality, kw_merge={}, kw_write={}, output_format="SDS"):
+    def __init__(
+        self, path, dataquality, kw_merge={}, kw_write={}, output_format="SDS"
+    ):
         self.path = path
         self.dataquality = dataquality
         self.kw_merge = kw_merge
@@ -365,8 +367,8 @@ class StreamWriter:
         """
         Convert and write the Stream to the SDS file structure.
         """
-        newpath = self.path.split('/')[:-1]
-        newpath = '/'.join(newpath)
+        newpath = self.path.split("/")[:-1]
+        newpath = "/".join(newpath)
         for n, tr in enumerate(st):
             new_st = obspy.Stream()
             new_st += tr
@@ -374,7 +376,7 @@ class StreamWriter:
             for new_tr in new_st:
                 if isinstance(new_tr.data, np.ma.masked_array):
                     new_tr.data = new_tr.data.filled()
-            new_st[0].stats.mseed['dataquality'] = self.dataquality
+            new_st[0].stats.mseed["dataquality"] = self.dataquality
             year = new_st[0].stats.starttime.year
             network = new_st[0].stats.network
             station = new_st[0].stats.station
@@ -430,12 +432,12 @@ class StreamWriter:
             st = self.queue.get()
             if st is None:
                 break
-            folderpath = self.path.split('.mseed')[0]
+            folderpath = self.path.split(".mseed")[0]
             st.write(f"{folderpath}_{st[0].stats.starttime}_tmp.mseed", **self.kw_write)
-                
+
     def result(self):
         """
-        Waits for the asynchronous task to complete, format the data into the chosen format, delete the temporary files 
+        Waits for the asynchronous task to complete, format the data into the chosen format, delete the temporary files
         and returns the one single merged Stream read from the temporary files.
 
         Returns
@@ -445,7 +447,7 @@ class StreamWriter:
         """
         self.queue.put(None)
         self.future.result()
-        folderpath = self.path.split('.mseed')[0]
+        folderpath = self.path.split(".mseed")[0]
         out = obspy.read(f"{folderpath}*_tmp.mseed")
         out = out.merge(**self.kw_merge)
         if self.output_format == "flat":

@@ -5,9 +5,12 @@ import obspy
 from ..core.coordinates import Coordinates, Coordinate
 from ..core.dataarray import DataArray
 
+
 def read(fname, ignore_last_sample=False):
     shape, dtype, coords, method = read_header(fname, ignore_last_sample)
-    data = dask.array.from_delayed(dask.delayed(read_data)(fname, method, ignore_last_sample), shape, dtype)
+    data = dask.array.from_delayed(
+        dask.delayed(read_data)(fname, method, ignore_last_sample), shape, dtype
+    )
     return DataArray(data, coords)
 
 
@@ -18,12 +21,23 @@ def read_header(path, ignore_last_sample):
     if not isinstance(dtype, np.dtype):
         raise ValueError("All traces must have the same dtype")
 
+    stations = [tr.stats.station for tr in st]
     channels = [tr.stats.channel for tr in st]
-    if len(st) > 1 and len(np.unique(channels)) == 1:
+    starttimes = [tr.stats.starttime for tr in st]
+    cond1 = (len(np.unique(stations)) == 1) & (len(st) > len(np.unique(channels)))
+    cond2 = (len(np.unique(stations)) == 1) & (
+        all(element == starttimes[0] for element in starttimes) == False
+    )
+    if cond1 or cond2:
         method = "unsynchronized"
-        time = get_time_coord(st[0], ignore_last_sample)
-        for tr in st[1:]:
-            time.append(get_time_coord(tr, ignore_last_sample))
+        tmp_st = st.select(channel=channels[0])
+        for n, tr in enumerate(tmp_st):
+            if n == 0:
+                time = get_time_coord(tr, ignore_last_sample=False)
+            elif n == len(tmp_st) - 1:
+                time = time.append(get_time_coord(tr, ignore_last_sample))
+            else:
+                time = time.append(get_time_coord(tr, ignore_last_sample=False))
     else:
         method = "synchronized"
         time = get_time_coord(st[0], ignore_last_sample)
@@ -52,33 +66,46 @@ def read_header(path, ignore_last_sample):
 
 def read_data(path, method, ignore_last_sample):
     st = obspy.read(path)
-    if ignore_last_sample:
-        for tr in st:
-            tr.data = tr.data[:-1]
     if method == "synchronized":
-        return np.array(st[0])
+        if ignore_last_sample:
+            for tr in st:
+                tr.data = tr.data[:-1]
+        return np.array(st)
     else:
-        data = [tr.data for tr in st]
-        return np.concatenate((data), axis=1)
+        channels = [tr.stats.channel for tr in st]
+        data = []
+        for channel in np.unique(channels):
+            tmp_st = st.select(channel=channel)
+            channel_data = []
+            for n, tr in enumerate(tmp_st):
+                if ignore_last_sample and n == len(tmp_st) - 1:
+                    tr.data = tr.data[:-1]
+                channel_data.append(tr.data)
+            data.append(np.concatenate(channel_data))
+        return np.array(data)
 
 
 def get_time_coord(tr, ignore_last_sample):
     if ignore_last_sample:
-        return Coordinate({
-            "tie_indices": [0, tr.stats.npts - 2],
-            "tie_values": [
-                np.datetime64(tr.stats.starttime),
-                np.datetime64(tr.stats.endtime - tr.stats.delta),
-            ],
-        })
+        return Coordinate(
+            {
+                "tie_indices": [0, tr.stats.npts - 2],
+                "tie_values": [
+                    np.datetime64(tr.stats.starttime),
+                    np.datetime64(tr.stats.endtime - tr.stats.delta),
+                ],
+            }
+        )
     else:
-        return Coordinate({
-            "tie_indices": [0, tr.stats.npts - 1],
-            "tie_values": [
-                np.datetime64(tr.stats.starttime),
-                np.datetime64(tr.stats.endtime),
-            ],
-        })
+        return Coordinate(
+            {
+                "tie_indices": [0, tr.stats.npts - 1],
+                "tie_values": [
+                    np.datetime64(tr.stats.starttime),
+                    np.datetime64(tr.stats.endtime),
+                ],
+            }
+        )
 
 
 def uniquifiy(seq):
