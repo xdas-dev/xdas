@@ -1,8 +1,8 @@
 import os
-from glob import glob
 import tempfile
 import threading
 import time
+from glob import glob
 
 import hdf5plugin
 import numpy as np
@@ -11,6 +11,7 @@ import pandas as pd
 import scipy.signal as sp
 
 import xdas
+import xdas.processing as xp
 from xdas.atoms import Partial, Sequential
 from xdas.processing.core import (
     DataArrayLoader,
@@ -21,7 +22,6 @@ from xdas.processing.core import (
     ZMQSubscriber,
     process,
 )
-import xdas.processing as xp
 from xdas.signal import sosfilt
 from xdas.synthetics import wavelet_wavefronts
 

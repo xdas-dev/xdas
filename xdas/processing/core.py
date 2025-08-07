@@ -1,11 +1,11 @@
 import os
-import obspy
-from glob import glob
 from concurrent.futures import ThreadPoolExecutor
+from glob import glob
 from queue import Queue
 from tempfile import TemporaryDirectory
 
 import numpy as np
+import obspy
 import pandas as pd
 import zmq
 from watchdog.events import FileSystemEventHandler
@@ -384,9 +384,9 @@ class StreamWriter:
     Clean up:
 
     >>> import shutil
-    >>> shutil.rmtree("some_directory") 
+    >>> shutil.rmtree("some_directory")
 
-    """  
+    """
 
     def __init__(
         self, path, dataquality, kw_merge={}, kw_write={}, output_format="SDS"
