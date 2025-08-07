@@ -423,7 +423,7 @@ class StreamWriter:
                 if isinstance(new_tr.data, np.ma.masked_array):
                     new_tr.data = new_tr.data.filled()
                 new_st += new_tr
-        new_st.write(os.join(self.dirpath, self.fname), **self.kw_write)
+        new_st.write(os.path.join(self.dirpath, self.fname), **self.kw_write)
 
     def write(self, st):
         """
