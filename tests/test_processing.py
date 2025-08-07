@@ -340,3 +340,56 @@ class TestStreamWriter:
             st = obspy.read(path)
             assert len(st) == 2
             assert len(glob(os.path.join(tempdir, "**", "*.001"), recursive=True)) == 10
+
+    def test_flat(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            data = np.random.randint(
+                low=-1000, high=1000, size=(1000, 10), dtype=np.int32
+            )
+            starttime = np.datetime64("2023-01-01T00:00:00")
+            endtime = starttime + np.timedelta64(10, "ms") * (data.shape[0] - 1)
+            distance = 5.0 * np.arange(data.shape[1])
+
+            da = xdas.DataArray(
+                data=data,
+                coords={
+                    "time": {
+                        "tie_indices": [0, data.shape[0] - 1],
+                        "tie_values": [starttime, endtime],
+                    },
+                    "distance": distance,
+                },
+            )
+
+            atom = lambda da, **kwargs: da.to_stream(
+                network="NT",
+                station="ST{:03}",
+                channel="HN1",
+                location="00",
+                dim={"distance": "time"},
+            )
+
+            data_loader = DataArrayLoader(da, chunks={"time": 100})
+
+            path = os.path.join(tempdir, "flat_output.mseed")
+            kw_merge = {"method": 1}
+            kw_write = {"reclen": 4096}
+            data_writer = StreamWriter(
+                path, "M", kw_merge, kw_write, output_format="flat"
+            )
+
+            st = xp.process(atom, data_loader, data_writer)
+
+            assert isinstance(st, obspy.Stream)
+            assert len(st) == 10
+            tr = st[0]
+            assert tr.stats.network == "NT"
+            assert tr.stats.station == "ST001"
+            assert tr.stats.channel == "HN1"
+            assert tr.stats.location == "00"
+            assert tr.stats.npts == 1000
+            assert np.array_equal(tr.data, data[:, 0])
+            assert tr.stats.starttime == obspy.UTCDateTime(str(starttime))
+            assert os.path.exists(path)
+            st = obspy.read(path)
+            assert len(st) == 10
