@@ -313,44 +313,80 @@ class StreamWriter:
     Parameters
     ----------
     path : str
-        The path of the miniseed file or the folder name where the miniseed files will be written.
-
-    Attributes
-    ----------
-    path : str
-        The path of the miniseed file or the folder name where the miniseed files will be written.
+        The path of the miniseed file or the folder name where the miniseed files will
+        be written.
     dataquality : str
-        Data quality of the waveforms following the .
+        Data quality of the waveforms.
     kw_merge : dict
-        Keyword arguments for merging the Streams following the arguments of the obspy.core.stream.Stream.merge function.
+        Keyword arguments for merging the Streams, following the arguments of the
+        obspy.core.stream.Stream.merge function.
     kw_write : dict
-        Keyword arguments for writing the Streams following the arguments of the obspy.core.stream.Stream.write function.
+        Keyword arguments for writing the Streams, following the arguments of the
+        obspy.core.stream.Stream.write function.
     output_format : str
         The output format of the miniseed files. Can be "flat" or "SDS".
         If "flat", the miniseed files will be written in a single file.
         If "SDS", the miniseed files will be written in the SDS file structure.
-        For more informations about SDS see https://www.seiscomp.de/seiscomp3/doc/applications/slarchive/SDS.html
-    queue : Queue
-        A queue to hold the Streams to be written.
-    executor : ThreadPoolExecutor
-        A thread pool executor for asynchronous writing.
-    future : Future
-        A future object representing the result of the asynchronous task.
+        For more information about SDS see:
+        https://www.seiscomp.de/seiscomp3/doc/applications/slarchive/SDS.html
 
-    Methods
-    -------
-    to_SDS(st)
-        Writes the Stream to the SDS file structure.
-    to_flat(st)
-        Writes the Stream to a single miniseed file.
-    write(st)
-        Writes a Stream to the queue for asynchronous writing.
-    task()
-        The asynchronous task that writes the Streams to temporary miniseed files.
-    result()
-        Waits for the asynchronous task to complete, format the data into the chosen format, delete the temporary files
-        and returns the one single merged Stream read from the temporary files.
-    """
+    Examples
+    --------
+    >>> import obspy
+    >>> import numpy as np
+    >>> import xdas
+    >>> import xdas.processing as xp
+
+    Generate some DataArray:
+
+    >>> data = np.random.randint(
+    ...     low=-1000, high=1000, size=(1000, 10), dtype=np.int32
+    ... )
+    >>> starttime = np.datetime64("2023-01-01T00:00:00")
+    >>> endtime = starttime + np.timedelta64(10, "ms") * (data.shape[0] - 1)
+    >>> distance = 5.0 * np.arange(data.shape[1])
+    >>> da = xdas.DataArray(
+    ...     data=data,
+    ...     coords={
+    ...         "time": {
+    ...             "tie_indices": [0, data.shape[0] - 1],
+    ...             "tie_values": [starttime, endtime],
+    ...         },
+    ...         "distance": distance,
+    ...     },
+    ... )
+
+    SteamWriter works great with the `DataArray.to_stream` method that can be used as
+    an atom like this:
+
+    >>> atom = lambda da, **kwargs: da.to_stream(
+    ...     network="NT",
+    ...     station="ST{:03}",
+    ...     channel="HN1",
+    ...     location="00",
+    ...     dim={"distance": "time"},
+    ... )
+    >>> data_loader = xp.DataArrayLoader(da, chunks={"time": 100})
+
+    This is how a StreamWriter can be used to write the data to a miniseed file:
+
+    >>> kw_merge = {"method": 1}
+    >>> kw_write = {"reclen": 4096}
+    >>> data_writer = xp.StreamWriter(
+    ...     "some_directory", "M", kw_merge, kw_write, output_format="SDS"
+    ... )
+    >>> result = xp.process(atom, data_loader, data_writer)
+
+    The data will be written to the SDS file structure in the specified directory.
+
+    >>> st = obspy.read("some_directory/2023/NT/*/HN1.D/NT.*.00.HN1.D.2023.001")
+
+    Clean up:
+
+    >>> import shutil
+    >>> shutil.rmtree("some_directory") 
+
+    """  
 
     def __init__(
         self, path, dataquality, kw_merge={}, kw_write={}, output_format="SDS"
