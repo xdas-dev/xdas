@@ -14,10 +14,12 @@ from xdas.processing.core import (
     DataArrayLoader,
     DataArrayWriter,
     DataFrameWriter,
+    StreamWriter,
     ZMQPublisher,
     ZMQSubscriber,
     process,
 )
+import xdas.processing as xp
 from xdas.signal import sosfilt
 from xdas.synthetics import wavelet_wavefronts
 
@@ -205,3 +207,36 @@ class TestZMQ:
         assert np.allclose(result.values, expected.values, atol=1e-6)
         result.data = expected.data
         assert result.equals(expected)
+
+
+class TestStreamWriter:
+    def test(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            data = np.zeros((6000, 10))
+            starttime = np.datetime64("2023-01-01T00:00:00")
+            endtime = starttime + np.timedelta64(10, "ms") * (data.shape[0] - 1)
+            distance = 5.0 * np.arange(data.shape[1])
+
+            da = xdas.DataArray(
+                data=data,
+                coords={
+                    "time": {
+                        "tie_indices": [0, data.shape[0] - 1],
+                        "tie_values": [starttime, endtime],
+                    },
+                    "distance": distance,
+                },
+            )
+            atom = lambda da, **kwargs: da.to_stream(
+                network="NT", station="ST{:03}", dim={"distance": "time"}
+            )
+
+            data_loader = DataArrayLoader(da, chunks={"time": 100})
+
+            kw_merge = {"method": 1}
+            kw_write = {"reclen": 4096}
+            data_writer = StreamWriter(
+                tempdir, "M", kw_merge, kw_write, output_format="SDS"
+            )
+
+            result = xp.process(atom, data_loader, data_writer)

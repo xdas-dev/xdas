@@ -42,7 +42,8 @@ def process(atom, data_loader, data_writer):
     The progress of the processing is monitored using a `Monitor` object.
 
     """
-    atom.reset()
+    if hasattr(atom, "reset"):
+        atom.reset()
     if hasattr(data_loader, "nbytes"):
         total = data_loader.nbytes
     else:
@@ -354,7 +355,21 @@ class StreamWriter:
     def __init__(
         self, path, dataquality, kw_merge={}, kw_write={}, output_format="SDS"
     ):
-        self.path = path
+        if output_format == "SDS":
+            os.makedirs(path, exist_ok=True)
+            self.dirpath = path
+            self.fname = None
+        elif output_format == "flat":
+            head, tail = os.path.split(path)
+            if not os.path.exists(head):
+                raise OSError(f"The directory {head} does not exist.")
+            self.dirpath = head
+            self.fname = tail
+        else:
+            raise ValueError(
+                "output_format must be either 'SDS' or 'flat'. "
+                f"Got {output_format} instead."
+            )
         self.dataquality = dataquality
         self.kw_merge = kw_merge
         self.kw_write = kw_write
@@ -367,8 +382,6 @@ class StreamWriter:
         """
         Convert and write the Stream to the SDS file structure.
         """
-        newpath = self.path.split("/")[:-1]
-        newpath = "/".join(newpath)
         for n, tr in enumerate(st):
             new_st = obspy.Stream()
             new_st += tr
@@ -384,15 +397,17 @@ class StreamWriter:
             location = new_st[0].stats.location
             julday = new_st[0].stats.starttime.julday
             if n == 0:
-                if not os.path.exists(f"{newpath}/{year}"):
-                    os.mkdir(f"{newpath}/{year}")
-                if not os.path.exists(f"{newpath}/{year}/{network}"):
-                    os.mkdir(f"{newpath}/{year}/{network}")
-            if not os.path.exists(f"{newpath}/{year}/{network}/{station}"):
-                os.mkdir(f"{newpath}/{year}/{network}/{station}")
-            if not os.path.exists(f"{newpath}/{year}/{network}/{station}/{channel}.D"):
-                os.mkdir(f"{newpath}/{year}/{network}/{station}/{channel}.D")
-            sds_path = f"{newpath}/{year}/{network}/{station}/{channel}.D/{network}.{station}.{location}.{channel}.D.{year}.{julday:03d}"
+                if not os.path.exists(f"{self.dirpath}/{year}"):
+                    os.mkdir(f"{self.dirpath}/{year}")
+                if not os.path.exists(f"{self.dirpath}/{year}/{network}"):
+                    os.mkdir(f"{self.dirpath}/{year}/{network}")
+            if not os.path.exists(f"{self.dirpath}/{year}/{network}/{station}"):
+                os.mkdir(f"{self.dirpath}/{year}/{network}/{station}")
+            if not os.path.exists(
+                f"{self.dirpath}/{year}/{network}/{station}/{channel}.D"
+            ):
+                os.mkdir(f"{self.dirpath}/{year}/{network}/{station}/{channel}.D")
+            sds_path = f"{self.dirpath}/{year}/{network}/{station}/{channel}.D/{network}.{station}.{location}.{channel}.D.{year}.{julday:03d}"
             new_st.write(sds_path, format="MSEED", **self.kw_write)
 
     def to_flat(self, st):
@@ -408,10 +423,7 @@ class StreamWriter:
                 if isinstance(new_tr.data, np.ma.masked_array):
                     new_tr.data = new_tr.data.filled()
                 new_st += new_tr
-        if ".mseed" in self.path:
-            new_st.write(self.path, **self.kw_write)
-        else:
-            new_st.write(f"{self.path}.mseed", **self.kw_write)
+        new_st.write(os.join(self.dirpath, self.fname), **self.kw_write)
 
     def write(self, st):
         """
@@ -432,8 +444,9 @@ class StreamWriter:
             st = self.queue.get()
             if st is None:
                 break
-            folderpath = self.path.split(".mseed")[0]
-            st.write(f"{folderpath}_{st[0].stats.starttime}_tmp.mseed", **self.kw_write)
+            st.write(
+                f"{self.dirpath}/{st[0].stats.starttime}_tmp.mseed", **self.kw_write
+            )
 
     def result(self):
         """
@@ -447,14 +460,14 @@ class StreamWriter:
         """
         self.queue.put(None)
         self.future.result()
-        folderpath = self.path.split(".mseed")[0]
-        out = obspy.read(f"{folderpath}*_tmp.mseed")
+        pattern = f"{self.dirpath}/*_tmp.mseed"
+        out = obspy.read(pattern)
         out = out.merge(**self.kw_merge)
         if self.output_format == "flat":
             self.to_flat(out)
         elif self.output_format == "SDS":
             self.to_SDS(out)
-        files_to_remove = glob(f"{folderpath}*_tmp.mseed")
+        files_to_remove = glob(pattern)
         for file in files_to_remove:
             os.remove(file)
         return out
