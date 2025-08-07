@@ -396,18 +396,12 @@ class StreamWriter:
             channel = new_st[0].stats.channel
             location = new_st[0].stats.location
             julday = new_st[0].stats.starttime.julday
-            if n == 0:
-                if not os.path.exists(f"{self.dirpath}/{year}"):
-                    os.mkdir(f"{self.dirpath}/{year}")
-                if not os.path.exists(f"{self.dirpath}/{year}/{network}"):
-                    os.mkdir(f"{self.dirpath}/{year}/{network}")
-            if not os.path.exists(f"{self.dirpath}/{year}/{network}/{station}"):
-                os.mkdir(f"{self.dirpath}/{year}/{network}/{station}")
-            if not os.path.exists(
-                f"{self.dirpath}/{year}/{network}/{station}/{channel}.D"
-            ):
-                os.mkdir(f"{self.dirpath}/{year}/{network}/{station}/{channel}.D")
-            sds_path = f"{self.dirpath}/{year}/{network}/{station}/{channel}.D/{network}.{station}.{location}.{channel}.D.{year}.{julday:03d}"
+            dirpath = os.path.join(
+                self.dirpath, str(year), network, station, channel + ".D"
+            )
+            os.makedirs(dirpath, exist_ok=True)
+            fname = f"{network}.{station}.{location}.{channel}.D.{year}.{julday:03d}"
+            sds_path = os.path.join(dirpath, fname)
             new_st.write(sds_path, format="MSEED", **self.kw_write)
 
     def to_flat(self, st):
