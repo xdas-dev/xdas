@@ -13,7 +13,7 @@ def read(fname):
         tstart = np.datetime64(rawdata.attrs["PartStartTime"][:-1])
         tend = np.datetime64(rawdata.attrs["PartEndTime"][:-1])
         data = VirtualSource(rawdata)
-    nt, nd = data.shape
+    nd, nt = data.shape
     time = {"tie_indices": [0, nt - 1], "tie_values": [tstart, tend]}
     distance = {"tie_indices": [0, nd - 1], "tie_values": [0.0, (nd - 1) * dx]}
-    return DataArray(data, {"time": time, "distance": distance})
+    return DataArray(data, {"distance": distance, "time": time})
