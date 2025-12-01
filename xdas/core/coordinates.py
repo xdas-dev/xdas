@@ -922,23 +922,38 @@ class InterpCoordinate(Coordinate):
                 The type of the discontinuity, always "data".
 
         """
-        (indices,) = np.nonzero(np.diff(self.tie_indices) == 1)
-        indices = np.insert(indices, [0, len(indices)], [0, len(self.tie_indices) - 1])
+        if self.empty:
+            return pd.DataFrame(
+                columns=[
+                    "start_index",
+                    "end_index",
+                    "start_value",
+                    "end_value",
+                    "delta",
+                    "type",
+                ]
+            )
+        (cut_pos,) = np.nonzero(np.diff(self.tie_indices) == 1)
+        # start each segment after the previous cut (or at 0)
+        starts = np.concatenate(([0], cut_pos + 1))
+        # end each segment at the cut position (or at n-1 for the last)
+        ends = np.concatenate((cut_pos, [len(self.tie_indices) - 1]))
         records = []
-        for start, end in zip(indices[:-1], indices[1:]):
-            start_index = self.tie_indices[start]
-            end_index = self.tie_indices[end]
-            start_value = self.tie_values[start]
-            end_value = self.tie_values[end]
-            record = {
-                "start_index": start_index,
-                "end_index": end_index,
-                "start_value": start_value,
-                "end_value": end_value,
-                "delta": end_value - start_value,
-                "type": "data",
-            }
-            records.append(record)
+        for s, e in zip(starts, ends):
+            start_index = self.tie_indices[s]
+            end_index = self.tie_indices[e]
+            start_value = self.tie_values[s]
+            end_value = self.tie_values[e]
+            records.append(
+                {
+                    "start_index": start_index,
+                    "end_index": end_index,
+                    "start_value": start_value,
+                    "end_value": end_value,
+                    "delta": end_value - start_value,
+                    "type": "data",
+                }
+            )
         return pd.DataFrame.from_records(records)
 
     @classmethod
