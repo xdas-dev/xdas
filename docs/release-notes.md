@@ -1,5 +1,12 @@
 # Release notes
 
+## 0.2.4
+- Add StreamWriter to write long time series to miniSEED (@marbail).
+- Fix OptaSense engine wrong axis attribution (@smouellet).
+- Fix ASN (OptoDAS) engine: handling of roiDec (@AndresLaurine)
+- Fix nan handling for several methods (@ClaudioStrumia)
+- Fix InterpCoordinate.get_availabilities (@AMordret)
+
 ## 0.2.3
 - Fix Febus engine (round timestamps to closest us).
 - Faster `xdas.concatenate` (faster linking for efficient reading of Febus files).
