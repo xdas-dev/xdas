@@ -60,6 +60,10 @@ def tapered_selection(da, start, end, window=None, size=None, dim="last"):
     mask = np.isfinite(start) & np.isfinite(end)
     selection = np.nonzero(mask)[0]
 
+    # check selection
+    if selection.size == 0:
+        raise ValueError("No valid start/end pairs found")
+
     # get selection indices
     startindex = da[dim].get_indexer(start[selection], method="bfill")
     endindex = da[dim].get_indexer(end[selection], method="ffill")

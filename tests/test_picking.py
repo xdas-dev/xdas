@@ -216,3 +216,13 @@ class TestTaperedSelection:
         )
 
         assert result.equals(expected)
+
+    def test_no_valid_selections(self):
+        da = self.generate()
+
+        start = [np.datetime64("NaT")] * 5
+        end = [np.datetime64("NaT")] * 5
+        window = [0.5, 1.0, 0.5]
+
+        with pytest.raises(ValueError, match="No valid start/end pairs found"):
+            tapered_selection(da, start, end, window, dim="time")
