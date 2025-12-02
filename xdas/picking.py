@@ -30,7 +30,7 @@ def tapered_selection(da, start, end, window=None, size=None, dim="last"):
         Size of the output data along `dim`. If None, it is determined by the next
         fast length of the maximum selected window.
     dim : str, optional
-        Dimension along which to perform the selection and tapering. Default is'last'.
+        Dimension along which to perform the selection and tapering. Default is 'last'.
     window : array-like, optional
         Tapering window to apply to the selected data.
 
