@@ -3,10 +3,12 @@ import numpy as np
 import xdas as xd
 from xdas.picking import tapered_selection
 
+import pytest
+
 
 class TestTaperedSelection:
-    def test_basic_functionality(self):
-        da = xd.DataArray(
+    def generate(self):
+        return xd.DataArray(
             data=np.arange(5 * 10).reshape(5, 10).astype(float),
             coords={
                 "distance": {
@@ -22,6 +24,9 @@ class TestTaperedSelection:
                 },
             },
         )
+
+    def test_basic_functionality(self):
+        da = self.generate()
 
         start = xd.DataArray(
             data=np.array(
@@ -50,6 +55,57 @@ class TestTaperedSelection:
                 "time": {
                     "tie_indices": [0, 4],
                     "tie_values": [0.0, 4.0],
+                },
+            },
+        )
+
+        assert result.equals(expected)
+
+    def test_window_size_error(self):
+        da = self.generate()
+
+        start = xd.DataArray(
+            data=np.array(
+                [np.datetime64("NaT")]
+                + [np.datetime64("2023-01-01T00:00:08")] * 2
+                + [np.datetime64("NaT")] * 2
+            ),
+            coords={"distance": da["distance"]},
+        )
+        end = (
+            [np.datetime64("NaT")]
+            + [np.datetime64("2023-01-01T00:00:09")] * 2
+            + [np.datetime64("NaT")] * 2
+        )
+        window = [0.5, 1.0, 0.5]
+
+        with pytest.raises(
+            ValueError, match="some selected windows are smaller than the window size"
+        ):
+            tapered_selection(da, start, end, window, dim="time")
+
+    def test_other_dim(self):
+        da = self.generate()
+
+        start = [np.nan] + [100.0] * 2 + [np.nan] * 7
+        end = [np.nan] + [300.0] * 2 + [np.nan] * 7
+        window = [0.5, 1.0, 0.5]
+
+        result = tapered_selection(da, start, end, window, dim="distance")
+
+        expected = xd.DataArray(
+            data=[
+                [5.5, 21.0, 15.5],
+                [6.0, 22.0, 16.0],
+            ],
+            coords={
+                "time": [
+                    np.datetime64("2023-01-01T00:00:01"),
+                    np.datetime64("2023-01-01T00:00:02"),
+                ],
+                "distance": {
+                    "tie_indices": [0, 2],
+                    "tie_values": [0.0, 200.0],
                 },
             },
         )

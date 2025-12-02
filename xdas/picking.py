@@ -43,8 +43,11 @@ def tapered_selection(da, start, end, window, size=None, dim="last"):
         d * (size - 1), where d is the sampling interval along `dim`.
 
     """
+    # transpose so `dim` is last
+    da = da.transpose(..., dim)
+
     # convert to numpy
-    data = np.asarray(da.transpose(..., dim))
+    data = np.asarray(da)
     start = np.asarray(start)
     end = np.asarray(end)
     window = np.asarray(window)
@@ -52,11 +55,6 @@ def tapered_selection(da, start, end, window, size=None, dim="last"):
     # check shapes
     if not data.shape[:-1] == start.shape == end.shape:
         raise ValueError("shape mismatch between `da`, `start`, and `end`")
-
-    # make window even-sized (central value should be 1 so can be skipped)
-    if window.size % 2 != 0:
-        half_size = window.size // 2
-        window = np.concatenate((window[:half_size], window[-half_size:]))
 
     # select valid start/end
     mask = np.isfinite(start) & np.isfinite(end)
@@ -74,6 +72,11 @@ def tapered_selection(da, start, end, window, size=None, dim="last"):
     # check window size
     if min(stopindex - startindex) < window.size:
         raise ValueError("some selected windows are smaller than the window size")
+
+    # make window even-sized (central value should be 1 so can be skipped)
+    if window.size % 2 != 0:
+        half_size = window.size // 2
+        window = np.concatenate((window[:half_size], window[-half_size:]))
 
     # perform tapered selection
     data = _tapered_selection(
@@ -99,8 +102,9 @@ def tapered_selection(da, start, end, window, size=None, dim="last"):
         else:
             coords[name] = da[name][selection]
 
+
     # return output DataArray
-    return xd.DataArray(data, coords=coords)
+    return xd.DataArray(data, coords=coords, dims=da.dims)
 
 
 @njit(parallel=True)
