@@ -22,10 +22,10 @@ def tapered_selection(da, start, end, window=None, size=None, dim="last"):
         dimensions.
     start : array-like
         Start values along the other dimension than `dim` (must be 1D and have the
-        same size) NaN or NaT values indicate coordinates to ignored.
+        same size) NaN or NaT values indicate coordinates to be ignored.
     end : array-like
         End values along the other dimension than `dim` (must be 1D and have the
-        same size) NaN or NaT values indicate coordinates to ignored.
+        same size) NaN or NaT values indicate coordinates to be ignored.
     size : int, optional
         Size of the output data along `dim`. If None, it is determined by the next
         fast length of the maximum selected window.
