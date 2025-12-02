@@ -2,7 +2,7 @@
 .. currentmodule:: xdas.picking
 ```
 
-# xdas.parallel
+# xdas.picking
 
 ```{eval-rst}
 .. autosummary::
