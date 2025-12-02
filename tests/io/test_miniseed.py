@@ -56,7 +56,7 @@ def make_header(idx, component, starttime):
 
 def test_miniseed():
     with TemporaryDirectory() as dirpath:
-        st = make_network(dirpath, samples=100)
+        make_network(dirpath, samples=100)
         paths = sorted(glob(f"{dirpath}/*.mseed"))
 
         # read one file
@@ -84,7 +84,7 @@ def test_miniseed():
         assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
 
         # read one file with gaps
-        st = make_network(dirpath, gap=True, samples=100)
+        make_network(dirpath, gap=True, samples=100)
         paths = sorted(glob(f"{dirpath}/*_gap.mseed"))
         da = xd.open_dataarray(paths[0], engine="miniseed")
         assert da.shape == (3, 90)

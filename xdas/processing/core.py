@@ -356,7 +356,7 @@ class StreamWriter:
     ...     },
     ... )
 
-    SteamWriter works great with the `DataArray.to_stream` method that can be used as
+    StreamWriter works great with the `DataArray.to_stream` method that can be used as
     an atom like this:
 
     >>> atom = lambda da, **kwargs: da.to_stream(
@@ -389,7 +389,7 @@ class StreamWriter:
     """
 
     def __init__(
-        self, path, dataquality, kw_merge={}, kw_write={}, output_format="SDS"
+        self, path, dataquality, kw_merge=None, kw_write=None, output_format="SDS"
     ):
         if output_format == "SDS":
             os.makedirs(path, exist_ok=True)
@@ -407,8 +407,8 @@ class StreamWriter:
                 f"Got {output_format} instead."
             )
         self.dataquality = dataquality
-        self.kw_merge = kw_merge
-        self.kw_write = kw_write
+        self.kw_merge = kw_merge if kw_merge is not None else {}
+        self.kw_write = kw_write if kw_write is not None else {}
         self.output_format = output_format
         self.queue = Queue(maxsize=1)
         self.executor = ThreadPoolExecutor(1)
@@ -418,14 +418,14 @@ class StreamWriter:
         """
         Convert and write the Stream to the SDS file structure.
         """
-        for n, tr in enumerate(st):
+        for tr in st:
             new_st = obspy.Stream()
             new_st += tr
             new_st = new_st[0].split()
             for new_tr in new_st:
                 if isinstance(new_tr.data, np.ma.masked_array):
                     new_tr.data = new_tr.data.filled()
-                    new_tr.stats.mseed["dataquality"] = self.dataquality
+                new_tr.stats.mseed["dataquality"] = self.dataquality
             year = new_st[0].stats.starttime.year
             network = new_st[0].stats.network
             station = new_st[0].stats.station

@@ -26,7 +26,7 @@ def read_header(path, ignore_last_sample):
     starttimes = [tr.stats.starttime for tr in st]
     cond1 = (len(np.unique(stations)) == 1) & (len(st) > len(np.unique(channels)))
     cond2 = (len(np.unique(stations)) == 1) & (
-        all(element == starttimes[0] for element in starttimes) == False
+        not all(element == starttimes[0] for element in starttimes)
     )
     if cond1 or cond2:
         method = "unsynchronized"
