@@ -1,9 +1,8 @@
 import numpy as np
+import pytest
 
 import xdas as xd
 from xdas.picking import tapered_selection
-
-import pytest
 
 
 class TestTaperedSelection:
@@ -83,6 +82,112 @@ class TestTaperedSelection:
             ValueError, match="some selected windows are smaller than the window size"
         ):
             tapered_selection(da, start, end, window, dim="time")
+
+    def test_no_window(self):
+        da = self.generate()
+
+        start = xd.DataArray(
+            data=np.array(
+                [np.datetime64("NaT")]
+                + [np.datetime64("2023-01-01T00:00:03")] * 2
+                + [np.datetime64("NaT")] * 2
+            ),
+            coords={"distance": da["distance"]},
+        )
+        end = (
+            [np.datetime64("NaT")]
+            + [np.datetime64("2023-01-01T00:00:07")] * 2
+            + [np.datetime64("NaT")] * 2
+        )
+
+        result = tapered_selection(da, start, end, dim="time")
+
+        expected = xd.DataArray(
+            data=[
+                [13.0, 14.0, 15.0, 16.0, 17.0],
+                [23.0, 24.0, 25.0, 26.0, 27.0],
+            ],
+            coords={
+                "distance": [100.0, 200.0],
+                "time": {
+                    "tie_indices": [0, 4],
+                    "tie_values": [0.0, 4.0],
+                },
+            },
+        )
+
+        assert result.equals(expected)
+
+    def test_with_size(self):
+        da = self.generate()
+
+        start = xd.DataArray(
+            data=np.array(
+                [np.datetime64("NaT")]
+                + [np.datetime64("2023-01-01T00:00:03")] * 2
+                + [np.datetime64("NaT")] * 2
+            ),
+            coords={"distance": da["distance"]},
+        )
+        end = (
+            [np.datetime64("NaT")]
+            + [np.datetime64("2023-01-01T00:00:07")] * 2
+            + [np.datetime64("NaT")] * 2
+        )
+
+        result = tapered_selection(da, start, end, size=8, dim="time")
+
+        expected = xd.DataArray(
+            data=[
+                [13.0, 14.0, 15.0, 16.0, 17.0, 0.0, 0.0, 0.0],
+                [23.0, 24.0, 25.0, 26.0, 27.0, 0.0, 0.0, 0.0],
+            ],
+            coords={
+                "distance": [100.0, 200.0],
+                "time": {
+                    "tie_indices": [0, 7],
+                    "tie_values": [0.0, 7.0],
+                },
+            },
+        )
+
+        assert result.equals(expected)
+
+    def test_different_selection_lengths(self):
+        da = self.generate()
+
+        start = xd.DataArray(
+            data=np.array(
+                [np.datetime64("NaT")]
+                + [np.datetime64("2023-01-01T00:00:03")]
+                + [np.datetime64("2023-01-01T00:00:04")]
+                + [np.datetime64("NaT")] * 2
+            ),
+            coords={"distance": da["distance"]},
+        )
+        end = (
+            [np.datetime64("NaT")]
+            + [np.datetime64("2023-01-01T00:00:07")] * 2
+            + [np.datetime64("NaT")] * 2
+        )
+
+        result = tapered_selection(da, start, end, dim="time")
+
+        expected = xd.DataArray(
+            data=[
+                [13.0, 14.0, 15.0, 16.0, 17.0],
+                [24.0, 25.0, 26.0, 27.0, 0.0],
+            ],
+            coords={
+                "distance": [100.0, 200.0],
+                "time": {
+                    "tie_indices": [0, 4],
+                    "tie_values": [0.0, 4.0],
+                },
+            },
+        )
+
+        assert result.equals(expected)
 
     def test_other_dim(self):
         da = self.generate()

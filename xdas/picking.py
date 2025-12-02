@@ -5,7 +5,7 @@ from scipy.fft import next_fast_len
 import xdas as xd
 
 
-def tapered_selection(da, start, end, window, size=None, dim="last"):
+def tapered_selection(da, start, end, window=None, size=None, dim="last"):
     """
     Selects and tapers a DataArray based on `start` and `end` values.
 
@@ -31,7 +31,7 @@ def tapered_selection(da, start, end, window, size=None, dim="last"):
         fast length of the maximum selected window.
     dim : str, optional
         Dimension along which to perform the selection and tapering. Default is'last'.
-    window : array-like
+    window : array-like, optional
         Tapering window to apply to the selected data.
 
     Returns
@@ -50,7 +50,7 @@ def tapered_selection(da, start, end, window, size=None, dim="last"):
     data = np.asarray(da)
     start = np.asarray(start)
     end = np.asarray(end)
-    window = np.asarray(window)
+    window = np.asarray(window if window is not None else [])
 
     # check shapes
     if not data.shape[:-1] == start.shape == end.shape:
@@ -101,7 +101,6 @@ def tapered_selection(da, start, end, window, size=None, dim="last"):
                 pass  # skip non-dimensional coords for `dim`
         else:
             coords[name] = da[name][selection]
-
 
     # return output DataArray
     return xd.DataArray(data, coords=coords, dims=da.dims)
