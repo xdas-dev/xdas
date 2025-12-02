@@ -5,7 +5,7 @@ import numpy as np
 import scipy.signal as sp
 import xarray as xr
 
-import xdas
+import xdas as xd
 import xdas.signal as xs
 from xdas.synthetics import wavelet_wavefronts
 
@@ -15,7 +15,7 @@ class TestSignal:
         shape = (6000, 1000)
         resolution = (np.timedelta64(8, "ms"), 5.0)
         starttime = np.datetime64("2023-01-01T00:00:00")
-        da = xdas.DataArray(
+        da = xd.DataArray(
             data=np.random.randn(*shape).astype("float32"),
             coords={
                 "time": {
@@ -39,7 +39,7 @@ class TestSignal:
         d = 5.0
         s = d * np.arange(n)
         da = xr.DataArray(np.arange(n), {"time": s})
-        da = xdas.DataArray.from_xarray(da)
+        da = xd.DataArray.from_xarray(da)
         da = xs.detrend(da)
         assert np.allclose(da.values, np.zeros(n))
 
@@ -48,7 +48,7 @@ class TestSignal:
         d = 5.0
         s = (d / 2) + d * np.arange(n)
         da = xr.DataArray(np.ones(n), {"distance": s})
-        da = xdas.DataArray.from_xarray(da)
+        da = xd.DataArray.from_xarray(da)
         da = xs.differentiate(da, midpoints=True)
         assert np.allclose(da.values, np.zeros(n - 1))
 
@@ -57,7 +57,7 @@ class TestSignal:
         d = 5.0
         s = (d / 2) + d * np.arange(n)
         da = xr.DataArray(np.ones(n), {"distance": s})
-        da = xdas.DataArray.from_xarray(da)
+        da = xd.DataArray.from_xarray(da)
         da = xs.integrate(da, midpoints=True)
         assert np.allclose(da.values, da["distance"].values)
 
@@ -71,7 +71,7 @@ class TestSignal:
         da = xr.DataArray(data, {"distance": s})
         da.loc[{"distance": slice(limits[0], limits[1])}] = 1.0
         da.loc[{"distance": slice(limits[1], limits[2])}] = 2.0
-        da = xdas.DataArray.from_xarray(da)
+        da = xd.DataArray.from_xarray(da)
         da = xs.segment_mean_removal(da, limits)
         assert np.allclose(da.values, 0)
 
@@ -82,7 +82,7 @@ class TestSignal:
         s = np.linspace(0, 1000, n)
         data = np.ones(n)
         da = xr.DataArray(data, {"distance": s})
-        da = xdas.DataArray.from_xarray(da)
+        da = xd.DataArray.from_xarray(da)
         da = xs.sliding_mean_removal(da, 0.1 * n * d)
         assert np.allclose(da.values, 0)
 
@@ -136,7 +136,7 @@ class TestSignal:
     def test_filter(self):
         da = wavelet_wavefronts()
         axis = da.get_axis_num("time")
-        fs = 1 / xdas.get_sampling_interval(da, "time")
+        fs = 1 / xd.get_sampling_interval(da, "time")
         sos = sp.butter(
             4,
             [5, 10],
@@ -172,12 +172,12 @@ class TestSignal:
     def test_decimate_virtual_stack(self):
         da = wavelet_wavefronts()
         expected = xs.decimate(da, 5, dim="time")
-        chunks = xdas.split(da, 5, "time")
+        chunks = xd.split(da, 5, "time")
         with tempfile.TemporaryDirectory() as tmpdirname:
             for i, chunk in enumerate(chunks):
                 chunk_path = os.path.join(tmpdirname, f"chunk_{i}.nc")
                 chunk.to_netcdf(chunk_path)
-            da_virtual = xdas.open_mfdataarray(os.path.join(tmpdirname, "chunk_*.nc"))
+            da_virtual = xd.open_mfdataarray(os.path.join(tmpdirname, "chunk_*.nc"))
             result = xs.decimate(da_virtual, 5, dim="time")
         assert result.equals(expected)
 
@@ -186,7 +186,7 @@ class TestSTFT:
     def test_compare_with_scipy(self):
         starttime = np.datetime64("2023-01-01T00:00:00")
         endtime = starttime + 9999 * np.timedelta64(10, "ms")
-        da = xdas.DataArray(
+        da = xd.DataArray(
             data=np.random.rand(10000, 11),
             coords={
                 "time": {"tie_indices": [0, 9999], "tie_values": [starttime, endtime]},
@@ -241,7 +241,7 @@ class TestSTFT:
         amp = 2 * np.sqrt(2)
         time = np.arange(N) / float(fs)
         data = amp * np.sin(2 * np.pi * fc * time)
-        da = xdas.DataArray(
+        da = xd.DataArray(
             data=data,
             coords={"time": time},
         )
@@ -254,7 +254,7 @@ class TestSTFT:
     def test_parrallel(self):
         starttime = np.datetime64("2023-01-01T00:00:00")
         endtime = starttime + 9999 * np.timedelta64(10, "ms")
-        da = xdas.DataArray(
+        da = xd.DataArray(
             data=np.random.rand(10000, 11),
             coords={
                 "time": {"tie_indices": [0, 9999], "tie_values": [starttime, endtime]},
@@ -282,7 +282,7 @@ class TestSTFT:
     def test_last_dimension_with_non_dimensional_coordinates(self):
         starttime = np.datetime64("2023-01-01T00:00:00")
         endtime = starttime + 99 * np.timedelta64(10, "ms")
-        da = xdas.DataArray(
+        da = xd.DataArray(
             data=np.random.rand(100, 1001),
             coords={
                 "time": {"tie_indices": [0, 99], "tie_values": [starttime, endtime]},
