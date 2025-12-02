@@ -786,7 +786,7 @@ class DataArray(NDArrayOperatorsMixin):
         return Stream(
             [
                 Trace(
-                    data=self.isel({dimdist: idx}).values,
+                    data=np.ascontiguousarray(self.isel({dimdist: idx}).values),
                     header=header | {"station": station.format(idx + 1)},
                 )
                 for idx in range(len(self[dimdist]))

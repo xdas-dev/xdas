@@ -104,8 +104,8 @@ class ZMQSubscriber:
         self.shape = (header["nPackagesPerMessage"], header["nChannels"])
         self.dtype = type_map[header["dataType"]]
         roiTable = header["roiTable"][0]
-        di = roiTable["roiStart"] * header["dx"]
-        de = roiTable["roiEnd"] * header["dx"]
+        di = (roiTable["roiStart"] // roiTable["roiDec"]) * header["dx"]
+        de = (roiTable["roiEnd"] // roiTable["roiDec"]) * header["dx"]
         self.distance = {
             "tie_indices": [0, header["nChannels"] - 1],
             "tie_values": [di, de],
