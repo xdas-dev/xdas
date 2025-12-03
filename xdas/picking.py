@@ -5,6 +5,56 @@ from scipy.fft import next_fast_len
 import xdas as xd
 
 
+class Horizon:
+    def __init__(self, distance, time):
+        time = np.asarray(time)
+        distance = np.asarray(distance)
+        if time.ndim != 1 or distance.ndim != 1:
+            raise ValueError("time and distance must be 1D arrays")
+        if time.size != distance.size:
+            raise ValueError("time and distance must have the same length")
+        if not np.all(np.diff(distance) > 0):
+            raise ValueError("distance array must be strictly increasing")
+        self.distance = distance
+        self.time = time
+
+
+class WaveFront(list):
+    def __init__(self, horizons, label):
+        if not all(isinstance(h, Horizon) for h in horizons):
+            raise ValueError("All elements must be Horizon instances")
+        horizons = sorted(horizons, key=lambda h: h.distance[0])
+        for i in range(len(horizons) - 1):
+            if horizons[i].distance[-1] > horizons[i + 1].distance[0]:
+                raise ValueError("Horizons are overlapping")
+        super().__init__(horizons)
+        self.label = label
+
+    def interp(self, distance):
+        distance = np.asarray(distance)
+        if distance.ndim != 1:
+            raise ValueError("distance must be a 1D array")
+        time = np.full(distance.shape, np.nan, dtype=float)
+        for horizon in self:
+            mask = (distance >= horizon.distance[0]) & (
+                distance <= horizon.distance[-1]
+            )
+            if np.any(mask):
+                time[mask] = np.interp(
+                    distance[mask],
+                    horizon.distance,
+                    horizon.time,
+                )
+        return xd.DataArray(time, coords={"distance": distance}, name=self.label)
+
+
+class WaveFrontCollection(dict):
+    def __init__(self, wavefronts):
+        if not all(isinstance(wf, WaveFront) for wf in wavefronts):
+            raise ValueError("All elements must be WaveFront instances")
+        super().__init__({wf.label: wf for wf in wavefronts})
+
+
 def tapered_selection(da, start, end, window=None, size=None, dim="last"):
     """
     Selects and tapers a DataArray based on `start` and `end` values.
