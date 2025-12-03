@@ -25,6 +25,53 @@ class TestWaveFront:
         assert wavefront[0].equals(horizons[0])
         assert wavefront[1].equals(horizons[1])
 
+    def test_init_errors(self):
+        horizons = [
+            xd.DataArray(
+                data=[[1.0, 2.0], [1.0, 2.0]],
+            ),
+        ]
+        with pytest.raises(ValueError, match="All horizons must be 1D"):
+            WaveFront(horizons)
+
+        horizons = [
+            xd.DataArray(
+                data=[1.0, 2.0, 1.0],
+                coords={"distance": [0.0, 1.0, 2.0]},
+            ),
+            xd.DataArray(
+                data=[2.0, 3.0, 2.0],
+                coords={"time": [4.0, 5.0, 6.0]},
+            ),
+        ]
+        with pytest.raises(ValueError, match="All horizons must have the same dimension"):
+            WaveFront(horizons)
+
+        horizons = [
+            xd.DataArray(
+                data=[1.0, 2.0, 1.0],
+                coords={"distance": [0.0, 1.0, 2.0]},
+            ),
+            xd.DataArray(
+                data=[2, 3, 2],
+                coords={"distance": [4.0, 5.0, 6.0]},
+            ),
+        ]
+        with pytest.raises(ValueError, match="All horizons must have the same dtype"):
+            WaveFront(horizons)
+
+        horizons = [
+            xd.DataArray(
+                data=[1.0, 2.0, 1.0],
+                coords={"distance": [0.0, 1.0, 2.0]},
+            ),
+            xd.DataArray(
+                data=[2.0, 3.0, 2.0],
+                coords={"distance": [1.0, 2.0, 3.0]},
+            ),
+        ]
+        with pytest.raises(ValueError, match="Horizons are overlapping"):
+            WaveFront(horizons)
 
 class TestTaperedSelection:
     def generate(self):
