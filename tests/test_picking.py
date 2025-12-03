@@ -160,6 +160,7 @@ class TestWaveFront:
         )
 
         assert result.equals(expected)
+        assert result.dtype == expected.dtype
 
 
 class TestWaveFrontCollection:
@@ -280,6 +281,51 @@ class TestWaveFrontCollection:
             ],
         }
         expected = WaveFrontCollection(wavefronts)
+        assert collection.equals(expected)
+
+    def test_from_picks_timedelta(self):
+        picks = pd.DataFrame(
+            {
+                "time": [
+                    np.datetime64("2023-01-01T00:00:01.000000000"),
+                    np.datetime64("2023-01-01T00:00:02.000000000"),
+                    np.datetime64("2023-01-01T00:00:01.000000000"),
+                    np.datetime64("2023-01-01T00:00:07.000000000"),
+                    np.datetime64("2023-01-01T00:00:08.000000000"),
+                    np.datetime64("2023-01-01T00:00:07.000000000"),
+                ],
+                "distance": [0.0, 1.0, 2.0, 4.0, 5.0, 6.0],
+                "phase": ["P", "P", "P", "S", "S", "S"],
+            }
+        )
+        collection = WaveFrontCollection.from_picks(picks, gap_threshold=1.0)
+        wavefronts = {
+            "P": [
+                xd.DataArray(
+                    data=[
+                        np.datetime64("2023-01-01T00:00:01.000000000"),
+                        np.datetime64("2023-01-01T00:00:02.000000000"),
+                        np.datetime64("2023-01-01T00:00:01.000000000"),
+                    ],
+                    coords={"distance": [0.0, 1.0, 2.0]},
+                ),
+            ],
+            "S": [
+                xd.DataArray(
+                    data=[
+                        np.datetime64("2023-01-01T00:00:07.000000000"),
+                        np.datetime64("2023-01-01T00:00:08.000000000"),
+                        np.datetime64("2023-01-01T00:00:07.000000000"),
+                    ],
+                    coords={"distance": [4.0, 5.0, 6.0]},
+                ),
+            ],
+        }
+        expected = WaveFrontCollection(wavefronts)
+        print(picks["time"].dtype)
+        print(wavefronts["P"][0])
+        print(collection["P"][0])
+        print(expected["P"][0])
         assert collection.equals(expected)
 
     def test_interp(self):

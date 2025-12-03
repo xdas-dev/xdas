@@ -64,9 +64,9 @@ class WaveFront(DataSequence):
 
     def _interp(self, coords, horizon):
         if np.issubdtype(self.dtype, np.datetime64):
-            fp = horizon.values.astype("M8[ns]").astype(float)
+            fp = horizon.values.astype(float)
             f = np.interp(coords, horizon[self.dim].values, fp)
-            return np.rint(f).astype("M8[ns]")
+            return np.rint(f).astype(self.dtype)
         else:
             return np.interp(coords, horizon[self.dim].values, horizon.values)
 
