@@ -1,58 +1,81 @@
+from itertools import pairwise
+
 import numpy as np
 from numba import njit, prange
 from scipy.fft import next_fast_len
 
-import xdas as xd
+from .core.coordinates import get_sampling_interval
+from .core.dataarray import DataArray
+from .core.datacollection import DataMapping, DataSequence
 
 
-class Horizon:
-    def __init__(self, distance, time):
-        time = np.asarray(time)
-        distance = np.asarray(distance)
-        if time.ndim != 1 or distance.ndim != 1:
-            raise ValueError("time and distance must be 1D arrays")
-        if time.size != distance.size:
-            raise ValueError("time and distance must have the same length")
-        if not np.all(np.diff(distance) > 0):
-            raise ValueError("distance array must be strictly increasing")
-        self.distance = distance
-        self.time = time
+class WaveFront(DataSequence):
+    def __init__(self, horizons, name=None):
+        if not all(horizon.ndim == 1 for horizon in horizons):
+            raise ValueError("All horizons must be 1D")
 
+        (dim,) = horizons[0].dims
+        if not all(horizon.dims == (dim,) for horizon in horizons):
+            raise ValueError("All horizons must have the same dimension")
 
-class WaveFront(list):
-    def __init__(self, horizons, label):
-        if not all(isinstance(h, Horizon) for h in horizons):
-            raise ValueError("All elements must be Horizon instances")
-        horizons = sorted(horizons, key=lambda h: h.distance[0])
-        for i in range(len(horizons) - 1):
-            if horizons[i].distance[-1] > horizons[i + 1].distance[0]:
+        dtype = horizons[0].dtype
+        if not all(horizon.dtype == dtype for horizon in horizons):
+            raise ValueError("All horizons must have the same dtype")
+
+        if name is None:
+            name = horizons[0].name
+            if not all(horizon.name == name for horizon in horizons):
+                name = None
+
+        horizons = sorted(horizons, key=lambda horizon: horizon[dim][0].values)
+        for a, b in pairwise(horizons):
+            if a[dim][-1].values > b[dim][0].values:
                 raise ValueError("Horizons are overlapping")
-        super().__init__(horizons)
-        self.label = label
 
-    def interp(self, distance):
-        distance = np.asarray(distance)
-        if distance.ndim != 1:
-            raise ValueError("distance must be a 1D array")
-        time = np.full(distance.shape, np.nan, dtype=float)
+        super().__init__(horizons, name)
+        self.dim = dim
+        self.dtype = dtype
+
+    def interp(self, coords):
+        coords = np.asarray(coords)
+        if coords.ndim != 1:
+            raise ValueError("`coords` must be an 1D array-like object")
+        values = np.full(coords.shape, np.nan, dtype=self.dtype)
         for horizon in self:
-            mask = (distance >= horizon.distance[0]) & (
-                distance <= horizon.distance[-1]
+            mask = (coords >= horizon[self.dim][0].values) & (
+                coords <= horizon[self.dim][-1].values
             )
             if np.any(mask):
-                time[mask] = np.interp(
-                    distance[mask],
-                    horizon.distance,
-                    horizon.time,
+                values[mask] = np.interp(
+                    coords[mask],
+                    horizon[self.dim].values,
+                    horizon.values,
                 )
-        return xd.DataArray(time, coords={"distance": distance}, name=self.label)
+        return DataArray(values, coords={self.dim: coords}, name=self.name)
+
+    def plot(self, ax=None, **kwargs):
+        for horizon in self:
+            horizon.plot(ax=ax, **kwargs)
 
 
-class WaveFrontCollection(dict):
+class WaveFrontCollection(DataMapping):
     def __init__(self, wavefronts):
-        if not all(isinstance(wf, WaveFront) for wf in wavefronts):
-            raise ValueError("All elements must be WaveFront instances")
-        super().__init__({wf.label: wf for wf in wavefronts})
+        dim = wavefronts[0].dim
+        if not all(wavefront.dim == dim for wavefront in wavefronts):
+            raise ValueError("All wavefronts must have the same dimension")
+
+        dtype = wavefronts[0].dtype
+        if not all(wavefront.dtype == dtype for wavefront in wavefronts):
+            raise ValueError("All wavefronts must have the same dtype")
+
+        super().__init__(wavefronts)
+        self.dim = dim
+        self.dtype = dtype
+
+    def interp(self, coords):
+        return DataMapping(
+            {name: wavefront.interp(coords) for name, wavefront in self.items()}
+        )
 
 
 def tapered_selection(da, start, end, window=None, size=None, dim="last"):
@@ -149,7 +172,7 @@ def tapered_selection(da, start, end, window=None, size=None, dim="last"):
             if name == dim:
                 coords[name] = {
                     "tie_indices": [0, size - 1],
-                    "tie_values": [0.0, (size - 1) * xd.get_sampling_interval(da, dim)],
+                    "tie_values": [0.0, (size - 1) * get_sampling_interval(da, dim)],
                 }
             else:
                 pass  # skip non-dimensional coords for `dim`
@@ -157,7 +180,7 @@ def tapered_selection(da, start, end, window=None, size=None, dim="last"):
             coords[name] = da[name][selection]
 
     # return output DataArray
-    return xd.DataArray(data, coords=coords, dims=da.dims)
+    return DataArray(data, coords=coords, dims=da.dims)
 
 
 @njit(parallel=True)
