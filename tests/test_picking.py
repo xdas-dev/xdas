@@ -44,7 +44,9 @@ class TestWaveFront:
                 coords={"time": [4.0, 5.0, 6.0]},
             ),
         ]
-        with pytest.raises(ValueError, match="All horizons must have the same dimension"):
+        with pytest.raises(
+            ValueError, match="All horizons must have the same dimension"
+        ):
             WaveFront(horizons)
 
         horizons = [
@@ -72,6 +74,31 @@ class TestWaveFront:
         ]
         with pytest.raises(ValueError, match="Horizons are overlapping"):
             WaveFront(horizons)
+
+    def test_interp(self):
+        horizons = [
+            xd.DataArray(
+                data=[1.0, 2.0, 1.0],
+                coords={"distance": [0.0, 1.0, 2.0]},
+            ),
+            xd.DataArray(
+                data=[2.0, 3.0, 2.0],
+                coords={"distance": [4.0, 5.0, 6.0]},
+            ),
+        ]
+        wavefront = WaveFront(horizons, "P")
+
+        coords = [-0.5, 0.5, 1.5, 3.0, 4.5, 5.5, 6.5]
+        result = wavefront.interp(coords)
+
+        expected = xd.DataArray(
+            data=[np.nan, 1.5, 1.5, np.nan, 2.5, 2.5, np.nan],
+            coords={"distance": coords},
+            name="P",
+        )
+
+        assert result.equals(expected)
+
 
 class TestTaperedSelection:
     def generate(self):
