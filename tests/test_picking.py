@@ -2,7 +2,28 @@ import numpy as np
 import pytest
 
 import xdas as xd
-from xdas.picking import tapered_selection
+from xdas.picking import WaveFront, WaveFrontCollection, tapered_selection
+
+
+class TestWaveFront:
+    def test_init(self):
+        horizons = [
+            xd.DataArray(
+                data=[1.0, 2.0, 1.0],
+                coords={"distance": [0.0, 1.0, 2.0]},
+            ),
+            xd.DataArray(
+                data=[2.0, 3.0, 2.0],
+                coords={"distance": [4.0, 5.0, 6.0]},
+            ),
+        ]
+        wavefront = WaveFront(horizons, "P")
+        assert wavefront.dim == "distance"
+        assert wavefront.dtype == np.dtype(float)
+        assert wavefront.name == "P"
+        assert len(wavefront) == 2
+        assert wavefront[0].equals(horizons[0])
+        assert wavefront[1].equals(horizons[1])
 
 
 class TestTaperedSelection:
