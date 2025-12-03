@@ -142,6 +142,63 @@ class TestWaveFront:
         assert result.equals(expected)
 
 
+class TestWaveFrontCollection:
+    def test_init(self):
+        wavefronts = [
+            WaveFront(
+                [
+                    xd.DataArray(
+                        data=[1.0, 2.0, 1.0],
+                        coords={"distance": [0.0, 1.0, 2.0]},
+                    ),
+                ],
+                name="P",
+            ),
+            WaveFront(
+                [
+                    xd.DataArray(
+                        data=[2.0, 3.0, 2.0],
+                        coords={"distance": [0.0, 1.0, 2.0]},
+                    ),
+                ],
+                name="S",
+            ),
+        ]
+        collection = WaveFrontCollection(wavefronts)
+        assert len(collection) == 2
+        assert "P" in collection
+        assert "S" in collection
+        assert collection["P"].equals(wavefronts[0])
+        assert collection["S"].equals(wavefronts[1])
+        assert collection.dim == "distance"
+
+        wavefronts = {
+            "P": WaveFront(
+                [
+                    xd.DataArray(
+                        data=[1.0, 2.0, 1.0],
+                        coords={"distance": [0.0, 1.0, 2.0]},
+                    ),
+                ],
+            ),
+            "S": WaveFront(
+                [
+                    xd.DataArray(
+                        data=[2.0, 3.0, 2.0],
+                        coords={"distance": [0.0, 1.0, 2.0]},
+                    ),
+                ],
+            ),
+        }
+        collection = WaveFrontCollection(wavefronts)
+        assert len(collection) == 2
+        assert "P" in collection
+        assert "S" in collection
+        assert collection["P"].equals(wavefronts["P"])
+        assert collection["S"].equals(wavefronts["S"])
+        assert collection.dim == "distance"
+
+
 class TestTaperedSelection:
     def generate(self):
         return xd.DataArray(

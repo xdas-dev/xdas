@@ -66,13 +66,23 @@ class WaveFront(DataSequence):
 
 class WaveFrontCollection(DataMapping):
     def __init__(self, wavefronts):
-        dim = wavefronts[0].dim
-        if not all(wavefront.dim == dim for wavefront in wavefronts):
-            raise ValueError("All wavefronts must have the same dimension")
+        if isinstance(wavefronts, list):
+            names = [wavefront.name for wavefront in wavefronts]
+            if any(name is None for name in names):
+                raise ValueError("All wavefronts must have a name")
+            if len(set(names)) != len(names):
+                raise ValueError("Wavefront names must be unique")
+            wavefronts = {wavefront.name: wavefront for wavefront in wavefronts}
 
-        dtype = wavefronts[0].dtype
-        if not all(wavefront.dtype == dtype for wavefront in wavefronts):
+        dims = set(wavefronts[name].dim for name in wavefronts)
+        if len(dims) != 1:
+            raise ValueError("All wavefronts must have the same dimension")
+        (dim,) = dims
+
+        dtype = set(wavefronts[name].dtype for name in wavefronts)
+        if len(dtype) != 1:
             raise ValueError("All wavefronts must have the same dtype")
+        (dtype,) = dtype
 
         super().__init__(wavefronts)
         self.dim = dim
