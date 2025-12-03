@@ -184,8 +184,6 @@ class TestWaveFrontCollection:
             ],
         }
         collection = WaveFrontCollection(wavefronts)
-        print(collection["P"])
-        print(wavefronts["P"])
 
         assert len(collection) == 2
         assert "P" in collection
@@ -195,73 +193,42 @@ class TestWaveFrontCollection:
         assert collection.dim == "distance"
         assert collection.dtype == np.dtype(float)
 
-    # def test_init_errors(self):
-    #     wavefronts = [
-    #         WaveFront(
-    #             [
-    #                 xd.DataArray(
-    #                     data=[1.0, 2.0, 1.0],
-    #                     coords={"distance": [0.0, 1.0, 2.0]},
-    #                 ),
-    #             ],
-    #         ),
-    #         WaveFront(
-    #             [
-    #                 xd.DataArray(
-    #                     data=[2.0, 3.0, 2.0],
-    #                     coords={"time": [0.0, 1.0, 2.0]},
-    #                 ),
-    #             ],
-    #         ),
-    #     ]
-    #     with pytest.raises(
-    #         ValueError, match="All wavefronts must have the same dimension"
-    #     ):
-    #         WaveFrontCollection(wavefronts)
+    def test_init_errors(self):
+        wavefronts = {
+            "P": [
+                xd.DataArray(
+                    data=[1.0, 2.0, 1.0],
+                    coords={"distance": [0.0, 1.0, 2.0]},
+                ),
+            ],
+            "S": [
+                xd.DataArray(
+                    data=[2.0, 3.0, 2.0],
+                    coords={"time": [0.0, 1.0, 2.0]},
+                ),
+            ],
+        }
+        with pytest.raises(
+            ValueError, match="All wavefronts must have the same dimension"
+        ):
+            WaveFrontCollection(wavefronts)
 
-    #     wavefronts = [
-    #         WaveFront(
-    #             [
-    #                 xd.DataArray(
-    #                     data=[1.0, 2.0, 1.0],
-    #                     coords={"distance": [0.0, 1.0, 2.0]},
-    #                 ),
-    #             ],
-    #         ),
-    #         WaveFront(
-    #             [
-    #                 xd.DataArray(
-    #                     data=[2.0, 3.0, 2.0],
-    #                     coords={"distance": [0.0, 1.0, 2.0]},
-    #                 ),
-    #             ],
-    #         ),
-    #     ]
-    #     with pytest.raises(ValueError, match="All wavefronts must have a name"):
-    #         WaveFrontCollection(wavefronts)
-
-    #     wavefronts = [
-    #         WaveFront(
-    #             [
-    #                 xd.DataArray(
-    #                     data=[1.0, 2.0, 1.0],
-    #                     coords={"distance": [0.0, 1.0, 2.0]},
-    #                 ),
-    #             ],
-    #             name="P",
-    #         ),
-    #         WaveFront(
-    #             [
-    #                 xd.DataArray(
-    #                     data=[2.0, 3.0, 2.0],
-    #                     coords={"time": [0.0, 1.0, 2.0]},
-    #                 ),
-    #             ],
-    #             name="P",
-    #         ),
-    #     ]
-    #     with pytest.raises(ValueError, match="Wavefront names must be unique"):
-    #         WaveFrontCollection(wavefronts)
+        wavefronts = {
+            "P": [
+                xd.DataArray(
+                    data=[1.0, 2.0, 1.0],
+                    coords={"distance": [0.0, 1.0, 2.0]},
+                ),
+            ],
+            "S": [
+                xd.DataArray(
+                    data=[2, 3, 2],
+                    coords={"distance": [0.0, 1.0, 2.0]},
+                ),
+            ],
+        }
+        with pytest.raises(ValueError, match="All wavefronts must have the same dtype"):
+            WaveFrontCollection(wavefronts)
 
     # def test_interp(self):
     #     wavefronts = [
