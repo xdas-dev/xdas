@@ -198,6 +198,76 @@ class TestWaveFrontCollection:
         assert collection["S"].equals(wavefronts["S"])
         assert collection.dim == "distance"
 
+    def test_init_errors(self):
+        wavefronts = [
+            WaveFront(
+                [
+                    xd.DataArray(
+                        data=[1.0, 2.0, 1.0],
+                        coords={"distance": [0.0, 1.0, 2.0]},
+                    ),
+                ],
+                name="P",
+            ),
+            WaveFront(
+                [
+                    xd.DataArray(
+                        data=[2.0, 3.0, 2.0],
+                        coords={"time": [0.0, 1.0, 2.0]},
+                    ),
+                ],
+                name="S",
+            ),
+        ]
+        with pytest.raises(
+            ValueError, match="All wavefronts must have the same dimension"
+        ):
+            WaveFrontCollection(wavefronts)
+
+        wavefronts = [
+            WaveFront(
+                [
+                    xd.DataArray(
+                        data=[1.0, 2.0, 1.0],
+                        coords={"distance": [0.0, 1.0, 2.0]},
+                    ),
+                ],
+            ),
+            WaveFront(
+                [
+                    xd.DataArray(
+                        data=[2.0, 3.0, 2.0],
+                        coords={"distance": [0.0, 1.0, 2.0]},
+                    ),
+                ],
+            ),
+        ]
+        with pytest.raises(ValueError, match="All wavefronts must have a name"):
+            WaveFrontCollection(wavefronts)
+
+        wavefronts = [
+            WaveFront(
+                [
+                    xd.DataArray(
+                        data=[1.0, 2.0, 1.0],
+                        coords={"distance": [0.0, 1.0, 2.0]},
+                    ),
+                ],
+                name="P",
+            ),
+            WaveFront(
+                [
+                    xd.DataArray(
+                        data=[2.0, 3.0, 2.0],
+                        coords={"time": [0.0, 1.0, 2.0]},
+                    ),
+                ],
+                name="P",
+            ),
+        ]
+        with pytest.raises(ValueError, match="Wavefront names must be unique"):
+            WaveFrontCollection(wavefronts)
+
 
 class TestTaperedSelection:
     def generate(self):
