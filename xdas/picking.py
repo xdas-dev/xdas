@@ -10,7 +10,7 @@ from .core.datacollection import DataMapping, DataSequence
 
 
 class WaveFront(DataSequence):
-    def __init__(self, horizons, name=None):
+    def __init__(self, horizons):
         if not all(horizon.ndim == 1 for horizon in horizons):
             raise ValueError("All horizons must be 1D")
 
@@ -22,17 +22,12 @@ class WaveFront(DataSequence):
         if not all(horizon.dtype == dtype for horizon in horizons):
             raise ValueError("All horizons must have the same dtype")
 
-        if name is None:
-            name = horizons[0].name
-            if not all(horizon.name == name for horizon in horizons):
-                name = None
-
         horizons = sorted(horizons, key=lambda horizon: horizon[dim][0].values)
         for a, b in pairwise(horizons):
             if a[dim][-1].values > b[dim][0].values:
                 raise ValueError("Horizons are overlapping")
 
-        super().__init__(horizons, name)
+        super().__init__(horizons, "horizon")
         self.dim = dim
         self.dtype = dtype
 
@@ -49,7 +44,7 @@ class WaveFront(DataSequence):
             )
             if np.any(mask):
                 values[mask] = self._interp(coords[mask], horizon)
-        return DataArray(values, coords={self.dim: coords}, name=self.name)
+        return DataArray(values, coords={self.dim: coords})
 
     def _interp(self, coords, horizon):
         if np.issubdtype(self.dtype, np.datetime64):
@@ -66,31 +61,32 @@ class WaveFront(DataSequence):
 
 class WaveFrontCollection(DataMapping):
     def __init__(self, wavefronts):
-        if isinstance(wavefronts, list):
-            names = [wavefront.name for wavefront in wavefronts]
-            if any(name is None for name in names):
-                raise ValueError("All wavefronts must have a name")
-            if len(set(names)) != len(names):
-                raise ValueError("Wavefront names must be unique")
-            wavefronts = {wavefront.name: wavefront for wavefront in wavefronts}
+        wavefronts = {
+            label: (
+                wavefronts[label]
+                if isinstance(wavefronts[label], WaveFront)
+                else WaveFront(wavefronts[label])
+            )
+            for label in wavefronts
+        }
 
-        dims = set(wavefronts[name].dim for name in wavefronts)
+        dims = set(wavefronts[label].dim for label in wavefronts)
         if len(dims) != 1:
             raise ValueError("All wavefronts must have the same dimension")
         (dim,) = dims
 
-        dtype = set(wavefronts[name].dtype for name in wavefronts)
+        dtype = set(wavefronts[label].dtype for label in wavefronts)
         if len(dtype) != 1:
             raise ValueError("All wavefronts must have the same dtype")
         (dtype,) = dtype
 
-        super().__init__(wavefronts)
+        super().__init__(wavefronts, "wavefront")
         self.dim = dim
         self.dtype = dtype
 
     def interp(self, coords):
         return DataMapping(
-            {name: wavefront.interp(coords) for name, wavefront in self.items()}
+            {label: wavefront.interp(coords) for label, wavefront in self.items()}
         )
 
 
