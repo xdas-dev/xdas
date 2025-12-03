@@ -230,47 +230,42 @@ class TestWaveFrontCollection:
         with pytest.raises(ValueError, match="All wavefronts must have the same dtype"):
             WaveFrontCollection(wavefronts)
 
-    # def test_interp(self):
-    #     wavefronts = [
-    #         WaveFront(
-    #             [
-    #                 xd.DataArray(
-    #                     data=[1.0, 2.0, 1.0],
-    #                     coords={"distance": [0.0, 1.0, 2.0]},
-    #                 ),
-    #             ],
-    #             name="P",
-    #         ),
-    #         WaveFront(
-    #             [
-    #                 xd.DataArray(
-    #                     data=[2.0, 3.0, 2.0],
-    #                     coords={"distance": [0.0, 1.0, 2.0]},
-    #                 ),
-    #             ],
-    #             name="S",
-    #         ),
-    #     ]
-    #     collection = WaveFrontCollection(wavefronts)
+    def test_interp(self):
+        wavefronts = {
+            "P": [
+                xd.DataArray(
+                    data=[1.0, 2.0, 1.0],
+                    coords={"distance": [0.0, 1.0, 2.0]},
+                ),
+            ],
+            "S": [
+                xd.DataArray(
+                    data=[2.0, 3.0, 2.0],
+                    coords={"distance": [0.0, 1.0, 2.0]},
+                ),
+            ],
+        }
+        collection = WaveFrontCollection(wavefronts)
 
-    #     coords = [-0.5, 0.5, 1.5, 2.5]
-    #     result = collection.interp(coords)
+        coords = [-0.5, 0.5, 1.5, 2.5]
+        result = collection.interp(coords)
 
-    #     expected = {
-    #         "P": xd.DataArray(
-    #             data=[np.nan, 1.5, 1.5, np.nan],
-    #             coords={"distance": coords},
-    #             name="P",
-    #         ),
-    #         "S": xd.DataArray(
-    #             data=[np.nan, 2.5, 2.5, np.nan],
-    #             coords={"distance": coords},
-    #             name="S",
-    #         ),
-    #     }
+        expected = xd.DataCollection(
+            {
+                "P": xd.DataArray(
+                    data=[np.nan, 1.5, 1.5, np.nan],
+                    coords={"distance": coords},
+                ),
+                "S": xd.DataArray(
+                    data=[np.nan, 2.5, 2.5, np.nan],
+                    coords={"distance": coords},
+                ),
+            },
+            "wavefront",
+        )
 
-    #     assert result["P"].equals(expected["P"])
-    #     assert result["S"].equals(expected["S"])
+        assert result["P"].equals(expected["P"])
+        assert result["S"].equals(expected["S"])
 
 
 class TestTaperedSelection:

@@ -86,7 +86,8 @@ class WaveFrontCollection(DataMapping):
 
     def interp(self, coords):
         return DataMapping(
-            {label: wavefront.interp(coords) for label, wavefront in self.items()}
+            {label: wavefront.interp(coords) for label, wavefront in self.items()},
+            "wavefront",
         )
 
 
