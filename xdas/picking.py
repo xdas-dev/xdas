@@ -40,18 +40,24 @@ class WaveFront(DataSequence):
         coords = np.asarray(coords)
         if coords.ndim != 1:
             raise ValueError("`coords` must be an 1D array-like object")
+        if np.issubdtype(coords.dtype, np.datetime64):
+            raise NotImplementedError("datetime64 coords are not supported yet")
         values = np.full(coords.shape, np.nan, dtype=self.dtype)
         for horizon in self:
             mask = (coords >= horizon[self.dim][0].values) & (
                 coords <= horizon[self.dim][-1].values
             )
             if np.any(mask):
-                values[mask] = np.interp(
-                    coords[mask],
-                    horizon[self.dim].values,
-                    horizon.values,
-                )
+                values[mask] = self._interp(coords[mask], horizon)
         return DataArray(values, coords={self.dim: coords}, name=self.name)
+
+    def _interp(self, coords, horizon):
+        if np.issubdtype(self.dtype, np.datetime64):
+            fp = horizon.values.astype("M8[ns]").astype(float)
+            f = np.interp(coords, horizon[self.dim].values, fp)
+            return np.rint(f).astype("M8[ns]")
+        else:
+            return np.interp(coords, horizon[self.dim].values, horizon.values)
 
     def plot(self, ax=None, **kwargs):
         for horizon in self:

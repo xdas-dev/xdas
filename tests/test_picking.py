@@ -99,6 +99,48 @@ class TestWaveFront:
 
         assert result.equals(expected)
 
+    def test_interp_errors(self):
+        horizons = [
+            xd.DataArray(
+                data=[1.0, 2.0, 1.0],
+                coords={"distance": [0.0, 1.0, 2.0]},
+            ),
+        ]
+        wavefront = WaveFront(horizons, "P")
+
+        coords = [[0.0, 1.0], [2.0, 3.0]]
+        with pytest.raises(
+            ValueError, match="`coords` must be an 1D array-like object"
+        ):
+            wavefront.interp(coords)
+
+    def test_timedelta(self):
+        horizons = [
+            xd.DataArray(
+                data=[
+                    np.datetime64("2023-01-01T00:00:01.0"),
+                    np.datetime64("2023-01-01T00:00:02.0"),
+                    np.datetime64("2023-01-01T00:00:03.0"),
+                ],
+                coords={"distance": [0.0, 1.0, 2.0]},
+            ),
+        ]
+        wavefront = WaveFront(horizons, "P")
+
+        coords = [0.5, 1.5]
+        result = wavefront.interp(coords)
+
+        expected = xd.DataArray(
+            data=[
+                np.datetime64("2023-01-01T00:00:01.5"),
+                np.datetime64("2023-01-01T00:00:02.5"),
+            ],
+            coords={"distance": coords},
+            name="P",
+        )
+
+        assert result.equals(expected)
+
 
 class TestTaperedSelection:
     def generate(self):
