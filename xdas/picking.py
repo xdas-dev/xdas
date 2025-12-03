@@ -31,6 +31,22 @@ class WaveFront(DataSequence):
         self.dim = dim
         self.dtype = dtype
 
+    @classmethod
+    def from_picks(cls, picks, gap_threshold):
+        value_column, dim_column = picks.columns
+        picks = picks.drop_duplicates()
+        picks = picks.sort_values(dim_column)
+        groups = picks[dim_column].diff().gt(gap_threshold).cumsum()
+        horizons = [
+            DataArray(
+                group[value_column].values,
+                coords={dim_column: group[dim_column].values},
+                dims=(dim_column,),
+            )
+            for _, group in picks.groupby(groups)
+        ]
+        return cls(horizons)
+
     def interp(self, coords):
         coords = np.asarray(coords)
         if coords.ndim != 1:
@@ -83,6 +99,17 @@ class WaveFrontCollection(DataMapping):
         super().__init__(wavefronts, "wavefront")
         self.dim = dim
         self.dtype = dtype
+
+    @classmethod
+    def from_picks(cls, picks, gap_threshold):
+        value_column, dim_column, label_column = picks.columns
+        wavefronts = {
+            label: WaveFront.from_picks(
+                group[[value_column, dim_column]], gap_threshold
+            )
+            for label, group in picks.groupby(label_column)
+        }
+        return cls(wavefronts)
 
     def interp(self, coords):
         return DataMapping(

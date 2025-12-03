@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import pytest
 
 import xdas as xd
@@ -75,6 +76,27 @@ class TestWaveFront:
         with pytest.raises(ValueError, match="Horizons are overlapping"):
             WaveFront(horizons)
 
+    def test_from_picks(self):
+        picks = pd.DataFrame(
+            {
+                "time": [1.0, 2.0, 1.0, 1.0, 2.0, 1.0, 7.0, 8.0, 7.0],
+                "distance": [0.0, 1.0, 2.0, 0.0, 1.0, 2.0, 4.0, 5.0, 6.0],
+            }
+        )
+        wavefront = WaveFront.from_picks(picks, gap_threshold=1.0)
+        horizons = [
+            xd.DataArray(
+                data=[1.0, 2.0, 1.0],
+                coords={"distance": [0.0, 1.0, 2.0]},
+            ),
+            xd.DataArray(
+                data=[7.0, 8.0, 7.0],
+                coords={"distance": [4.0, 5.0, 6.0]},
+            ),
+        ]
+        expected = WaveFront(horizons)
+        assert wavefront.equals(expected)
+
     def test_interp(self):
         horizons = [
             xd.DataArray(
@@ -113,7 +135,7 @@ class TestWaveFront:
         ):
             wavefront.interp(coords)
 
-    def test_timedelta(self):
+    def test_interp_timedelta(self):
         horizons = [
             xd.DataArray(
                 data=[
@@ -229,6 +251,36 @@ class TestWaveFrontCollection:
         }
         with pytest.raises(ValueError, match="All wavefronts must have the same dtype"):
             WaveFrontCollection(wavefronts)
+
+    def test_from_picks(self):
+        picks = pd.DataFrame(
+            {
+                "time": [1.0, 2.0, 1.0, 2.0, 3.0, 2.0, 7.0, 8.0, 7.0],
+                "distance": [0.0, 1.0, 2.0, 0.0, 1.0, 2.0, 4.0, 5.0, 6.0],
+                "phase": ["P", "P", "P", "S", "S", "S", "S", "S", "S"],
+            }
+        )
+        collection = WaveFrontCollection.from_picks(picks, gap_threshold=1.0)
+        wavefronts = {
+            "P": [
+                xd.DataArray(
+                    data=[1.0, 2.0, 1.0],
+                    coords={"distance": [0.0, 1.0, 2.0]},
+                ),
+            ],
+            "S": [
+                xd.DataArray(
+                    data=[2.0, 3.0, 2.0],
+                    coords={"distance": [0.0, 1.0, 2.0]},
+                ),
+                xd.DataArray(
+                    data=[7.0, 8.0, 7.0],
+                    coords={"distance": [4.0, 5.0, 6.0]},
+                ),
+            ],
+        }
+        expected = WaveFrontCollection(wavefronts)
+        assert collection.equals(expected)
 
     def test_interp(self):
         wavefronts = {
