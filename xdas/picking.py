@@ -37,6 +37,7 @@ class WaveFront(DataSequence):
         self.dim = dim
         self.dtype = dtype
 
+    @property
     def coords(self):
         return {
             self.dim: np.concatenate([horizon[self.dim].values for horizon in self])
