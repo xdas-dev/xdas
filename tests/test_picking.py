@@ -132,6 +132,25 @@ class TestWaveFront:
         expected = WaveFront(horizons)
         assert wavefront.equals(expected)
 
+    def test_coords(self):
+        horizons = [
+            xd.DataArray(
+                data=[1.0, 2.0, 1.0],
+                coords={"distance": [0.0, 1.0, 2.0]},
+            ),
+            xd.DataArray(
+                data=[2.0, 3.0, 2.0],
+                coords={"distance": [4.0, 5.0, 6.0]},
+            ),
+        ]
+        wavefront = WaveFront(horizons)
+        coords = wavefront.coords()
+        expected_coords = {
+            "distance": np.array([0.0, 1.0, 2.0, 4.0, 5.0, 6.0]),
+        }
+        for key in expected_coords:
+            np.testing.assert_array_equal(coords[key], expected_coords[key])
+
     def test_interp(self):
         horizons = [
             xd.DataArray(

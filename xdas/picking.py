@@ -37,6 +37,11 @@ class WaveFront(DataSequence):
         self.dim = dim
         self.dtype = dtype
 
+    def coords(self):
+        return {
+            self.dim: np.concatenate([horizon[self.dim].values for horizon in self])
+        }
+
     @classmethod
     def from_picks(cls, picks, gap_threshold, min_points=2):
         value_column, dim_column = picks.columns
