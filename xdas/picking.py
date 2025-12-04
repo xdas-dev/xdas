@@ -83,6 +83,36 @@ class WaveFront(DataSequence):
         else:
             return np.interp(coords, horizon[self.dim].values, horizon.values)
 
+    def diff(self, other):
+        # check input compatibility
+        if not isinstance(other, WaveFront):
+            raise TypeError("`other` must be a WaveFront instance")
+        if self.dim != other.dim:
+            raise ValueError("WaveFronts must have the same dimension to compute diff")
+        if self.dtype != other.dtype:
+            raise ValueError("WaveFronts must have the same dtype to compute diff")
+
+        # get union of coords and interpolate both wavefronts
+        coords = {
+            self.dim: np.unique(
+                np.concatenate([self.coords[self.dim], other.coords[other.dim]])
+            )
+        }
+        self_interp = self.interp(coords[self.dim])
+        other_interp = other.interp(coords[other.dim])
+        values = self_interp.values - other_interp.values
+
+        # drop NaN / NaT entries from the result
+        if np.issubdtype(self.dtype, np.datetime64):
+            valid = ~np.isnat(self_interp.values) & ~np.isnat(other_interp.values)
+        else:
+            valid = np.isfinite(self_interp.values) & np.isfinite(other_interp.values)
+        coords[self.dim] = coords[self.dim][valid]
+        values = values[valid]
+
+        # return result as DataArray
+        return DataArray(values, coords)
+
     def plot(self, ax=None, **kwargs):
         for horizon in self:
             horizon.plot(ax=ax, **kwargs)

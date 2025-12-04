@@ -216,6 +216,35 @@ class TestWaveFront:
         assert result.equals(expected)
         assert result.dtype == expected.dtype
 
+    def test_diff(self):
+        wavefront = WaveFront(
+            [
+                xd.DataArray(
+                    data=[1.0, 2.0, 1.0],
+                    coords={"distance": [0.0, 1.0, 2.0]},
+                ),
+                xd.DataArray(
+                    data=[2.0, 3.0, 2.0],
+                    coords={"distance": [4.0, 5.0, 6.0]},
+                ),
+            ]
+        )
+        other = WaveFront(
+            [
+                xd.DataArray(
+                    data=[1.0, 1.0, 1.0, 1.0],
+                    coords={"distance": [0.0, 1.5, 2.5, 4.5]},
+                ),
+            ]
+        )
+        result = wavefront.diff(other)
+
+        expected = xd.DataArray(
+            data=[0.0, 1.0, 0.5, 0.0, 1.0, 1.5],
+            coords={"distance": [0.0, 1.0, 1.5, 2.0, 4.0, 4.5]},
+        )
+        assert result.equals(expected)
+
 
 class TestWaveFrontCollection:
     def test_init(self):
