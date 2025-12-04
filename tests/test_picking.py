@@ -104,6 +104,34 @@ class TestWaveFront:
         expected = WaveFront(horizons)
         assert wavefront.equals(expected)
 
+    def test_from_picks_min_points(self):
+        picks = pd.DataFrame(
+            {
+                "time": [1.0, 2.0, 1.0, 7.0, 8.0],
+                "distance": [0.0, 1.0, 2.0, 4.0, 5.0],
+            }
+        )
+        wavefront = WaveFront.from_picks(picks, gap_threshold=1.0, min_points=3)
+        horizons = [
+            xd.DataArray(
+                data=[1.0, 2.0, 1.0],
+                coords={"distance": [0.0, 1.0, 2.0]},
+            ),
+        ]
+        expected = WaveFront(horizons)
+        assert wavefront.equals(expected)
+
+        picks = pd.DataFrame(
+            {
+                "time": [1.0, 2.0, 7.0, 8.0],
+                "distance": [0.0, 1.0, 4.0, 5.0],
+            }
+        )
+        wavefront = WaveFront.from_picks(picks, gap_threshold=1.0, min_points=3)
+        horizons = []
+        expected = WaveFront(horizons)
+        assert wavefront.equals(expected)
+
     def test_interp(self):
         horizons = [
             xd.DataArray(
@@ -329,10 +357,28 @@ class TestWaveFrontCollection:
             ],
         }
         expected = WaveFrontCollection(wavefronts)
-        print(picks["time"].dtype)
-        print(wavefronts["P"][0])
-        print(collection["P"][0])
-        print(expected["P"][0])
+        assert collection.equals(expected)
+
+    def test_from_picks_min_points(self):
+        picks = pd.DataFrame(
+            {
+                "time": [1.0, 2.0, 1.0, 7.0, 8.0],
+                "distance": [0.0, 1.0, 2.0, 4.0, 5.0],
+                "phase": ["P", "P", "P", "S", "S"],
+            }
+        )
+        collection = WaveFrontCollection.from_picks(
+            picks, gap_threshold=1.0, min_points=3
+        )
+        wavefronts = {
+            "P": [
+                xd.DataArray(
+                    data=[1.0, 2.0, 1.0],
+                    coords={"distance": [0.0, 1.0, 2.0]},
+                ),
+            ],
+        }
+        expected = WaveFrontCollection(wavefronts)
         assert collection.equals(expected)
 
     def test_interp(self):

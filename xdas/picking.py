@@ -38,7 +38,7 @@ class WaveFront(DataSequence):
         self.dtype = dtype
 
     @classmethod
-    def from_picks(cls, picks, gap_threshold):
+    def from_picks(cls, picks, gap_threshold, min_points=2):
         value_column, dim_column = picks.columns
         picks = picks.drop_duplicates()
         picks = picks.sort_values(dim_column)
@@ -50,6 +50,7 @@ class WaveFront(DataSequence):
                 dims=(dim_column,),
             )
             for _, group in picks.groupby(groups)
+            if len(group) >= min_points
         ]
         return cls(horizons)
 
@@ -107,14 +108,15 @@ class WaveFrontCollection(DataMapping):
         self.dtype = dtype
 
     @classmethod
-    def from_picks(cls, picks, gap_threshold):
+    def from_picks(cls, picks, gap_threshold, min_points=2):
         value_column, dim_column, label_column = picks.columns
-        wavefronts = {
-            label: WaveFront.from_picks(
-                group[[value_column, dim_column]], gap_threshold
+        wavefronts = {}
+        for label, group in picks.groupby(label_column):
+            wf = WaveFront.from_picks(
+                group[[value_column, dim_column]], gap_threshold, min_points=min_points
             )
-            for label, group in picks.groupby(label_column)
-        }
+            if len(wf) > 0:
+                wavefronts[label] = wf
         return cls(wavefronts)
 
     def interp(self, coords):
