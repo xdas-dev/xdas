@@ -11,6 +11,12 @@ from .core.datacollection import DataMapping, DataSequence
 
 class WaveFront(DataSequence):
     def __init__(self, horizons):
+        if len(horizons) == 0:
+            super().__init__(horizons, "horizon")
+            self.dim = None
+            self.dtype = None
+            return
+
         if not all(horizon.ndim == 1 for horizon in horizons):
             raise ValueError("All horizons must be 1D")
 

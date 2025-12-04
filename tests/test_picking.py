@@ -26,6 +26,13 @@ class TestWaveFront:
         assert wavefront[0].equals(horizons[0])
         assert wavefront[1].equals(horizons[1])
 
+    def test_empty_init(self):
+        wavefront = WaveFront([])
+        assert wavefront.dim is None
+        assert wavefront.dtype is None
+        assert wavefront.name == "horizon"
+        assert len(wavefront) == 0
+
     def test_init_errors(self):
         horizons = [
             xd.DataArray(
