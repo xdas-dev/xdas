@@ -3,7 +3,12 @@ import pandas as pd
 import pytest
 
 import xdas as xd
-from xdas.picking import WaveFront, WaveFrontCollection, tapered_selection
+from xdas.picking import (
+    WaveFront,
+    WaveFrontCollection,
+    square_trapezoid,
+    tapered_selection,
+)
 
 
 class TestWaveFront:
@@ -274,28 +279,39 @@ class TestWaveFront:
         expected = WaveFront([])
         assert result.equals(expected)
 
-    def test_rms(self):
-        horizons = [
-            xd.DataArray(
-                data=[1.0, 1.0],
-                coords={"distance": [0.0, 1.0]},
-            ),
-            xd.DataArray(
-                data=[2.0, 2.0, 2.0],
-                coords={"distance": [4.0, 5.0, 6.0]},
-            ),
-        ]
-        wavefront = WaveFront(horizons)
-        result = wavefront.rms()
+    def test_mean_var_std(self):
+        wavefront = WaveFront(
+            [
+                xd.DataArray(
+                    data=[1.0, 1.0],
+                    coords={"distance": [0.0, 1.0]},
+                ),
+                xd.DataArray(
+                    data=[2.0, 2.0, 2.0],
+                    coords={"distance": [4.0, 5.0, 6.0]},
+                ),
+            ]
+        )
 
-        expected = np.sqrt((np.square(1) * 1 + np.square(2) * 2) / (1 + 2))
+        mean = wavefront.mean()
+        expected = (1 * 1 + 2 * 2) / (1 + 2)
+        assert np.isclose(mean, expected)
 
-        assert np.isclose(result, expected)
+        var = wavefront.var()
+        expected = ((1 - mean) ** 2 * 1 + (2 - mean) ** 2 * 2) / (1 + 2)
+        assert np.isclose(var, expected)
 
-    def test_rms_empty(self):
-        wavefront = WaveFront([])
-        result = wavefront.rms()
-        assert np.isnan(result)
+        std = wavefront.std()
+        expected = np.sqrt(var)
+        assert np.isclose(std, expected)
+
+        var = wavefront.var(mean=0.0)
+        expected = (1**2 * 1 + 2**2 * 2) / (1 + 2)
+        assert np.isclose(var, expected)
+
+        std = wavefront.std(mean=0.0)
+        expected = np.sqrt(var)
+        assert np.isclose(std, expected)
 
 
 class TestWaveFrontCollection:
@@ -793,28 +809,28 @@ def test_integral_square_linear():
     x = np.linspace(0, 10, 5)
     y = np.full_like(x, 3.0)  # f = 3
     expected = 3**2 * (10 - 0)
-    assert np.isclose(square_trapezoid(x, y), expected)
+    assert np.isclose(square_trapezoid(y, x), expected)
 
     # ---- Case 2: linear function f(x)=x ----
     x = np.array([0, 1, 2])
     y = x.copy()
     # ∫₀² x² dx = 8/3
     expected = 8 / 3
-    assert np.isclose(square_trapezoid(x, y), expected)
+    assert np.isclose(square_trapezoid(y, x), expected)
 
     # ---- Case 3: triangular shape ----
     x = np.array([0, 1, 2])
     y = np.array([0, 1, 0])
     # ∫ (triangle)^2 dx = 2 * ∫₀¹ t² dt = 2 * 1/3 = 2/3
     expected = 2 / 3
-    assert np.isclose(square_trapezoid(x, y), expected)
+    assert np.isclose(square_trapezoid(y, x), expected)
 
     # ---- Case 4: numerical comparison (fine sampling) ----
     x = np.linspace(0, 5, 8)
     y = np.sin(x)
 
     # Exact calculation by our function
-    exact = square_trapezoid(x, y)
+    exact = square_trapezoid(y, x)
 
     # Approximation via dense resampling of the linear interpolated version
     xx = np.linspace(0, 5, 50000)
@@ -823,3 +839,10 @@ def test_integral_square_linear():
 
     # The error should be very small
     assert np.isclose(exact, approx, rtol=1e-3, atol=1e-5)
+
+    # ---- Case 5: 2 points linear function f(x)=x ----
+    x = np.array([0, 1])
+    y = x.copy()
+    # ∫₀¹ x² dx = 1/3
+    expected = 1 / 3
+    assert np.isclose(square_trapezoid(y, x), expected)

@@ -3,11 +3,11 @@ from itertools import pairwise
 import numpy as np
 from numba import njit, prange
 from scipy.fft import next_fast_len
+from scipy.integrate import trapezoid
 
 from .core.coordinates import get_sampling_interval
 from .core.dataarray import DataArray
 from .core.datacollection import DataMapping, DataSequence
-from scipy.integrate import trapezoid
 
 
 class WaveFront(DataSequence):
@@ -121,12 +121,30 @@ class WaveFront(DataSequence):
         ]
         return WaveFront(horizons)
 
-    def rms(self):
+    def mean(self):
         if len(self) == 0:
             return np.nan
 
         values = [
-            trapezoid(np.square(horizon.values), horizon[self.dim].values)
+            trapezoid(horizon.values, horizon[self.dim].values) for horizon in self
+        ]
+
+        lenghts = [
+            horizon[self.dim].values[-1] - horizon[self.dim].values[0]
+            for horizon in self
+        ]
+
+        return np.sum(values) / np.sum(lenghts)
+
+    def var(self, *, mean=None):
+        if len(self) == 0:
+            return np.nan
+
+        if mean is None:
+            mean = self.mean()
+
+        values = [
+            square_trapezoid(horizon.values - mean, horizon[self.dim].values)
             for horizon in self
         ]
 
@@ -135,11 +153,10 @@ class WaveFront(DataSequence):
             for horizon in self
         ]
 
-        return np.sqrt(np.sum(values) / np.sum(lenghts))
+        return np.sum(values) / np.sum(lenghts)
 
-    def plot(self, ax=None, **kwargs):
-        for horizon in self:
-            horizon.plot(ax=ax, **kwargs)
+    def std(self, *, mean=None):
+        return np.sqrt(self.var(mean=mean))
 
 
 class WaveFrontCollection(DataMapping):
@@ -333,7 +350,7 @@ def _tapered_selection(data, sel, start, stop, size, window):
     return out
 
 
-def square_trapezoid(x, y):
+def square_trapezoid(y, x):
     x = np.asarray(x)
     y = np.asarray(y)
     dx = x[1:] - x[:-1]
