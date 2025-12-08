@@ -131,36 +131,21 @@ class WaveFront(DataSequence):
     def mean(self):
         if len(self) == 0:
             return np.nan
-
         values = [
             trapezoid(horizon.values, horizon[self.dim].values) for horizon in self
         ]
-
-        lenghts = [
-            horizon[self.dim].values[-1] - horizon[self.dim].values[0]
-            for horizon in self
-        ]
-
-        return np.sum(values) / np.sum(lenghts)
+        return np.sum(values) / self.length
 
     def var(self, *, mean=None):
         if len(self) == 0:
             return np.nan
-
         if mean is None:
             mean = self.mean()
-
         values = [
             square_trapezoid(horizon.values - mean, horizon[self.dim].values)
             for horizon in self
         ]
-
-        lenghts = [
-            horizon[self.dim].values[-1] - horizon[self.dim].values[0]
-            for horizon in self
-        ]
-
-        return np.sum(values) / np.sum(lenghts)
+        return np.sum(values) / self.length
 
     def std(self, *, mean=None):
         return np.sqrt(self.var(mean=mean))
