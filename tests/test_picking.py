@@ -239,9 +239,17 @@ class TestWaveFront:
         )
         result = wavefront.diff(other)
 
-        expected = xd.DataArray(
-            data=[0.0, 1.0, 0.5, 0.0, 1.0, 1.5],
-            coords={"distance": [0.0, 1.0, 1.5, 2.0, 4.0, 4.5]},
+        expected = WaveFront(
+            [
+                xd.DataArray(
+                    data=[0.0, 1.0, 0.5, 0.0],
+                    coords={"distance": [0.0, 1.0, 1.5, 2.0]},
+                ),
+                xd.DataArray(
+                    data=[1.0, 1.5],
+                    coords={"distance": [4.0, 4.5]},
+                ),
+            ]
         )
         assert result.equals(expected)
 

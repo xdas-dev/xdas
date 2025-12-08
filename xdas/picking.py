@@ -102,16 +102,23 @@ class WaveFront(DataSequence):
         other_interp = other.interp(coords[other.dim])
         values = self_interp.values - other_interp.values
 
-        # drop NaN / NaT entries from the result
+        # split on NaN / NaT entries in the result
         if np.issubdtype(self.dtype, np.datetime64):
             valid = ~np.isnat(self_interp.values) & ~np.isnat(other_interp.values)
         else:
             valid = np.isfinite(self_interp.values) & np.isfinite(other_interp.values)
-        coords[self.dim] = coords[self.dim][valid]
-        values = values[valid]
 
-        # return result as DataArray
-        return DataArray(values, coords)
+        # create separate horizons for each contiguous valid segment
+        groups = np.cumsum(~valid)
+        horizons = [
+            DataArray(
+                values[groups == g][valid[groups == g]],
+                coords={self.dim: coords[self.dim][groups == g][valid[groups == g]]},
+                dims=(self.dim,),
+            )
+            for g in np.unique(groups[valid])
+        ]
+        return WaveFront(horizons)
 
     def plot(self, ax=None, **kwargs):
         for horizon in self:
