@@ -253,6 +253,24 @@ class TestWaveFront:
         )
         assert result.equals(expected)
 
+    def test_rms(self):
+        horizons = [
+            xd.DataArray(
+                data=[1.0, 1.0],
+                coords={"distance": [0.0, 1.0]},
+            ),
+            xd.DataArray(
+                data=[2.0, 2.0, 2.0],
+                coords={"distance": [4.0, 5.0, 6.0]},
+            ),
+        ]
+        wavefront = WaveFront(horizons)
+        result = wavefront.rms()
+
+        expected = np.sqrt((np.square(1) * 1 + np.square(2) * 2) / (1 + 2))
+
+        assert np.isclose(result, expected)
+
 
 class TestWaveFrontCollection:
     def test_init(self):

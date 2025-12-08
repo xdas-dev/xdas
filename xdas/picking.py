@@ -7,6 +7,7 @@ from scipy.fft import next_fast_len
 from .core.coordinates import get_sampling_interval
 from .core.dataarray import DataArray
 from .core.datacollection import DataMapping, DataSequence
+from scipy.integrate import trapezoid
 
 
 class WaveFront(DataSequence):
@@ -119,6 +120,19 @@ class WaveFront(DataSequence):
             for g in np.unique(groups[valid])
         ]
         return WaveFront(horizons)
+
+    def rms(self):
+        values = [
+            trapezoid(np.square(horizon.values), horizon[self.dim].values)
+            for horizon in self
+        ]
+
+        lenghts = [
+            horizon[self.dim].values[-1] - horizon[self.dim].values[0]
+            for horizon in self
+        ]
+
+        return np.sqrt(np.sum(values) / np.sum(lenghts))
 
     def plot(self, ax=None, **kwargs):
         for horizon in self:
