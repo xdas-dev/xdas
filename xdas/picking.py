@@ -4,6 +4,7 @@ import numpy as np
 from numba import njit, prange
 from scipy.fft import next_fast_len
 from scipy.integrate import trapezoid
+from scipy.interpolate import make_smoothing_spline
 
 from .core.coordinates import get_sampling_interval
 from .core.dataarray import DataArray
@@ -139,8 +140,61 @@ class WaveFront(DataSequence):
         ]
         return cls(horizons)
 
-    def smooth(self):
-        pass
+    def smooth(self, lam=None, nsigma=2.0):
+        """Smooth horizons using a smoothing spline with outlier rejection.
+
+        Each horizon is fit with a smoothing spline using
+        ``scipy.interpolate.make_smoothing_spline``. Outliers are identified
+        relative to the fit as points with residual magnitude greater
+        than ``nsigma`` times the residual standard deviation. Those points
+        are excluded and the spline is refit iteratively until the outlier
+        detection stabilizes.
+
+        Parameters
+        ----------
+        lam : float, optional
+            Smoothing parameter passed to
+            ``scipy.interpolate.make_smoothing_spline``. If ``None``, the
+            routine selects an automatic value.
+        nsigma : float, default=2.0
+            Threshold in units of residual standard deviation used to reject
+            outliers during iterative refinement.
+
+        Returns
+        -------
+        WaveFront
+            A new wavefront with smoothed horizons.
+
+        """
+        if len(self) == 0:
+            return WaveFront([])
+        horizons = []
+        for horizon in self:
+            x = horizon[self.dim].values
+            y = horizon.values
+
+            # initial fit
+            spl = make_smoothing_spline(x, y, lam=lam)
+            y_spl = spl(x)
+
+            # outlier rejection loop
+            mask = np.ones_like(y, dtype=bool)
+            while True:
+                residuals = y - y_spl
+                std = np.std(residuals[mask])
+                new_mask = np.abs(residuals) <= nsigma * std
+
+                if np.array_equal(mask, new_mask):
+                    break  # exit loop if no new outliers are found
+
+                mask = new_mask
+
+                # refit without outliers
+                spl = make_smoothing_spline(x[mask], y[mask], lam=lam)
+                y_spl = spl(x)
+
+            horizons.append(DataArray(y_spl, coords={self.dim: x}, dims=(self.dim,)))
+        return WaveFront(horizons)
 
     def simplify(self, tolerance, method="douglas-peucker"):
         """Simplify horizons using a specified simplification algorithm.

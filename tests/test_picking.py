@@ -171,6 +171,26 @@ class TestWaveFront:
         for key in expected_coords:
             np.testing.assert_array_equal(coords[key], expected_coords[key])
 
+    def test_smooth(self):
+        np.random.seed(0)
+        x = np.sort(np.random.uniform(0, 10, 100))
+        y_true = np.abs(x - 5)
+        y = y_true + 0.2 * np.random.randn(len(x))
+        indices = np.random.choice(len(x), size=10, replace=False)
+        y[indices] += 10
+        wavefront = WaveFront(
+            [
+                xd.DataArray(
+                    data=y,
+                    coords={"distance": x},
+                ),
+            ]
+        )
+        smoothed = wavefront.smooth()
+        y_pred = smoothed[0].values
+        assert np.std(y_pred - y_true) < np.std(y - y_true)
+        assert np.std(y_pred - y_true) < 0.2
+
     def test_simplify_v_shape(self):
         # Create a horizon with a V-shape that can be simplified
         wavefront = WaveFront(
