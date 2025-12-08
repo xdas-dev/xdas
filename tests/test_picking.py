@@ -88,6 +88,21 @@ class TestWaveFront:
         with pytest.raises(ValueError, match="Horizons are overlapping"):
             WaveFront(horizons)
 
+    def test_length(self):
+        wavefront = WaveFront(
+            [
+                xd.DataArray(
+                    data=[1.0, 2.0, 1.0],
+                    coords={"distance": [0.0, 1.0, 2.0]},
+                ),
+                xd.DataArray(
+                    data=[2.0, 3.0, 2.0],
+                    coords={"distance": [4.0, 5.0, 7.0]},
+                ),
+            ]
+        )
+        assert wavefront.length == 5.0
+
     def test_from_picks(self):
         picks = pd.DataFrame(
             {

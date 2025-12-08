@@ -44,6 +44,13 @@ class WaveFront(DataSequence):
             self.dim: np.concatenate([horizon[self.dim].values for horizon in self])
         }
 
+    @property
+    def length(self):
+        return sum(
+            horizon[self.dim][-1].values - horizon[self.dim][0].values
+            for horizon in self
+        )
+
     @classmethod
     def from_picks(cls, picks, gap_threshold, min_points=2):
         value_column, dim_column = picks.columns
