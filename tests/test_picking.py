@@ -292,6 +292,11 @@ class TestWaveFront:
 
         assert np.isclose(result, expected)
 
+    def test_rms_empty(self):
+        wavefront = WaveFront([])
+        result = wavefront.rms()
+        assert np.isnan(result)
+
 
 class TestWaveFrontCollection:
     def test_init(self):

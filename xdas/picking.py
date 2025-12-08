@@ -122,6 +122,9 @@ class WaveFront(DataSequence):
         return WaveFront(horizons)
 
     def rms(self):
+        if len(self) == 0:
+            return np.nan
+
         values = [
             trapezoid(np.square(horizon.values), horizon[self.dim].values)
             for horizon in self
