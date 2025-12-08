@@ -171,6 +171,90 @@ class TestWaveFront:
         for key in expected_coords:
             np.testing.assert_array_equal(coords[key], expected_coords[key])
 
+    def test_simplify_v_shape(self):
+        # Create a horizon with a V-shape that can be simplified
+        wavefront = WaveFront(
+            [
+                xd.DataArray(
+                    data=[0.0, 1.0, 2.0, 1.0, 0.0],
+                    coords={"distance": [0.0, 1.0, 2.0, 3.0, 4.0]},
+                ),
+            ]
+        )
+        simplified = wavefront.simplify(tolerance=0.1)
+        expected = WaveFront(
+            [
+                xd.DataArray(
+                    data=[0.0, 2.0, 0.0],
+                    coords={"distance": [0.0, 2.0, 4.0]},
+                ),
+            ]
+        )
+        assert simplified.equals(expected)
+
+    def test_simplify_v_shape_datetime(self):
+        # Create a horizon with a V-shape that can be simplified
+        wavefront = WaveFront(
+            [
+                xd.DataArray(
+                    data=[
+                        np.datetime64("2023-01-01T00:00:00.0"),
+                        np.datetime64("2023-01-01T00:00:01.0"),
+                        np.datetime64("2023-01-01T00:00:02.0"),
+                        np.datetime64("2023-01-01T00:00:01.0"),
+                        np.datetime64("2023-01-01T00:00:00.0"),
+                    ],
+                    coords={"distance": [0.0, 1.0, 2.0, 3.0, 4.0]},
+                ),
+            ]
+        )
+        simplified = wavefront.simplify(tolerance=np.timedelta64(100, "ms"))
+        expected = WaveFront(
+            [
+                xd.DataArray(
+                    data=[
+                        np.datetime64("2023-01-01T00:00:00.0"),
+                        np.datetime64("2023-01-01T00:00:02.0"),
+                        np.datetime64("2023-01-01T00:00:00.0"),
+                    ],
+                    coords={"distance": [0.0, 2.0, 4.0]},
+                ),
+            ]
+        )
+        assert simplified.equals(expected)
+
+    def test_simplify_empty(self):
+        wavefront = WaveFront([])
+        simplified = wavefront.simplify(tolerance=1.0)
+        assert len(simplified) == 0
+
+    def test_simplify_zero_tolerance_returns_original(self):
+        x = np.linspace(0, 10, 11)
+        y = np.sin(x)
+        wavefront = WaveFront(
+            [
+                xd.DataArray(y, coords={"distance": x}),
+            ]
+        )
+        simplified = wavefront.simplify(tolerance=0.0)
+        # With zero tolerance, Douglas–Peucker keeps all points
+        assert simplified.equals(wavefront)
+
+    def test_simplify_large_tolerance_to_endpoints(self):
+        x = np.linspace(0, 10, 21)
+        y = np.sin(x)
+        wf = WaveFront(
+            [
+                xd.DataArray(y, coords={"distance": x}),
+            ]
+        )
+        simplified = wf.simplify(tolerance=10.0)
+        # For large tolerance, we expect heavy simplification but at least endpoints
+        sx = simplified[0]["distance"].values
+        assert sx[0] == x[0]
+        assert sx[-1] == x[-1]
+        assert len(sx) >= 2
+
     def test_interp(self):
         horizons = [
             xd.DataArray(

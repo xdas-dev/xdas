@@ -139,6 +139,48 @@ class WaveFront(DataSequence):
         ]
         return cls(horizons)
 
+    def simplify(self, tolerance):
+        """Simplify horizons using an interp-based Douglas–Peucker algorithm.
+
+        Removes unnecessary points from each horizon so that the simplified
+        wavefront approximates the original within ``tolerance``. The
+        algorithm is applied independently to each horizon, using linear
+        interpolation between endpoints (via ``numpy.interp``) to estimate
+        the piecewise-linear approximation and recursively splitting segments
+        where the maximum deviation exceeds ``tolerance``. Endpoints are
+        always preserved.
+
+        Parameters
+        ----------
+        tolerance : float or numpy.timedelta64
+            Maximum allowed deviation between the original horizon and its
+            simplified version. If horizon values have ``datetime64`` dtype,
+            provide a ``numpy.timedelta64`` tolerance (e.g.,
+            ``np.timedelta64(50, 'ms')``). For numeric dtypes, provide a
+            float.
+
+        Returns
+        -------
+        WaveFront
+            A new wavefront with simplified horizons, preserving endpoints.
+
+        Notes
+        -----
+        - For ``datetime64`` values, interpolation uses internal conversion to
+          float nanoseconds for deviation checks, and results are cast back to
+          ``datetime64``. The provided ``tolerance`` should be a
+          ``numpy.timedelta64`` for consistent comparison.
+        """
+        if len(self) == 0:
+            return WaveFront([])
+        horizons = []
+        for horizon in self:
+            x = horizon[self.dim].values
+            y = horizon.values
+            xs, ys = _douglas_peucker(x, y, tolerance)
+            horizons.append(DataArray(ys, coords={self.dim: xs}, dims=(self.dim,)))
+        return WaveFront(horizons)
+
     def interp(self, coords):
         """Interpolate the wavefront at given coordinates.
 
@@ -599,6 +641,36 @@ def _tapered_selection(data, sel, start, stop, size, window):
             q += 1
             k += 1
     return out
+
+
+def _douglas_peucker(x, y, epsilon):
+    mask = np.ones(len(x), dtype=bool)
+    stack = [(0, len(x))]
+    while stack:
+        start, stop = stack.pop()
+        ysimple = _interp(
+            x[start:stop],
+            x[[start, stop - 1]],
+            y[[start, stop - 1]],
+        )
+        d = np.abs(y[start:stop] - ysimple)
+        index = np.argmax(d)
+        dmax = d[index]
+        index += start
+        if dmax > epsilon:
+            stack.append([start, index + 1])
+            stack.append([index, stop])
+        else:
+            mask[start + 1 : stop - 1] = False
+    return x[mask], y[mask]
+
+
+def _interp(x, xp, fp):
+    if np.issubdtype(fp.dtype, np.datetime64):
+        f = np.interp(x, xp, fp.astype(float))
+        return np.rint(f).astype(fp.dtype)
+    else:
+        return np.interp(x, xp, fp)
 
 
 def _square_trapezoid(y, x):
