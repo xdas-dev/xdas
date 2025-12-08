@@ -595,6 +595,36 @@ class TestWaveFrontCollection:
         )
         assert result.equals(expected)
 
+    def test_mean_var_std(self):
+        collection = WaveFrontCollection(
+            {
+                "P": [
+                    xd.DataArray(
+                        data=[0.0, 1.0, 0.0],
+                        coords={"distance": [0.0, 1.0, 2.0]},
+                    )
+                ],
+                "S": [
+                    xd.DataArray(
+                        data=[1.0, 2.0, 1.0],
+                        coords={"distance": [0.0, 1.0, 2.0]},
+                    )
+                ],
+            }
+        )
+
+        mean = collection.mean()
+        expected = 1.0
+        assert np.isclose(mean, expected)
+
+        var = collection.var()
+        expected = 1 / 3
+        assert np.isclose(var, expected)
+
+        std = collection.std()
+        expected = np.sqrt(var)
+        assert np.isclose(std, expected)
+
 
 class TestTaperedSelection:
     def generate(self):

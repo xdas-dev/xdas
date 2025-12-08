@@ -209,6 +209,20 @@ class WaveFrontCollection(DataMapping):
                 wavefronts[label] = diff
         return WaveFrontCollection(wavefronts)
 
+    def mean(self):
+        values = np.array([wavefront.mean() for wavefront in self.values()])
+        lengths = np.array([wavefront.length for wavefront in self.values()])
+        return np.sum(values * lengths) / np.sum(lengths)
+
+    def var(self):
+        mean = self.mean()
+        values = np.array([wavefront.var(mean=mean) for wavefront in self.values()])
+        lengths = np.array([wavefront.length for wavefront in self.values()])
+        return np.sum(values * lengths) / np.sum(lengths)
+
+    def std(self):
+        return np.sqrt(self.var())
+
 
 def tapered_selection(da, start, end, window=None, size=None, dim="last"):
     """
