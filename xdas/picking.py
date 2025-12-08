@@ -185,6 +185,21 @@ class WaveFrontCollection(DataMapping):
             "wavefront",
         )
 
+    def diff(self, other):
+        # check input compatibility
+        if not isinstance(other, WaveFrontCollection):
+            raise ValueError("`other` must be a WaveFrontCollection")
+        if self.dim != other.dim:
+            raise ValueError("WaveFronts must have the same dimension to compute diff")
+        if self.dtype != other.dtype:
+            raise ValueError("WaveFronts must have the same dtype to compute diff")
+        wavefronts = {}
+        for label, wavefront in self.items():
+            diff = wavefront.diff(other[label])
+            if len(diff) > 0:
+                wavefronts[label] = diff
+        return WaveFrontCollection(wavefronts)
+
 
 def tapered_selection(da, start, end, window=None, size=None, dim="last"):
     """

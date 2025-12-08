@@ -518,6 +518,52 @@ class TestWaveFrontCollection:
         assert result["P"].equals(expected["P"])
         assert result["S"].equals(expected["S"])
 
+    def test_diff(self):
+        collection = WaveFrontCollection(
+            {
+                "P": [
+                    xd.DataArray(
+                        data=[1.0, 2.0, 1.0],
+                        coords={"distance": [0.0, 1.0, 2.0]},
+                    ),
+                ],
+                "S": [
+                    xd.DataArray(
+                        data=[2.0, 3.0, 2.0],
+                        coords={"distance": [0.0, 1.0, 2.0]},
+                    ),
+                ],
+            }
+        )
+        other = WaveFrontCollection(
+            {
+                "P": [
+                    xd.DataArray(
+                        data=[1.0, 1.0],
+                        coords={"distance": [0.0, 1.0]},
+                    ),
+                ],
+                "S": [
+                    xd.DataArray(
+                        data=[2.0, 3.0, 2.0],
+                        coords={"distance": [4.0, 5.0, 6.0]},
+                    ),
+                ],
+            }
+        )
+        result = collection.diff(other)
+        expected = WaveFrontCollection(
+            {
+                "P": [
+                    xd.DataArray(
+                        data=[0.0, 1.0],
+                        coords={"distance": [0.0, 1.0]},
+                    )
+                ]
+            }
+        )
+        assert result.equals(expected)
+
 
 class TestTaperedSelection:
     def generate(self):
