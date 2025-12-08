@@ -181,7 +181,6 @@ class TestWaveFront:
                 ),
             ]
         )
-        simplified = wavefront.simplify(tolerance=0.1)
         expected = WaveFront(
             [
                 xd.DataArray(
@@ -190,6 +189,11 @@ class TestWaveFront:
                 ),
             ]
         )
+
+        simplified = wavefront.simplify(tolerance=0.1, method="douglas-peucker")
+        assert simplified.equals(expected)
+
+        simplified = wavefront.simplify(tolerance=0.1, method="visvalingam-whyatt")
         assert simplified.equals(expected)
 
     def test_simplify_v_shape_datetime(self):
@@ -208,7 +212,6 @@ class TestWaveFront:
                 ),
             ]
         )
-        simplified = wavefront.simplify(tolerance=np.timedelta64(100, "ms"))
         expected = WaveFront(
             [
                 xd.DataArray(
@@ -221,11 +224,22 @@ class TestWaveFront:
                 ),
             ]
         )
+
+        simplified = wavefront.simplify(
+            tolerance=np.timedelta64(100, "ms"), method="douglas-peucker"
+        )
+        assert simplified.equals(expected)
+
+        simplified = wavefront.simplify(
+            tolerance=np.timedelta64(100, "ms"), method="visvalingam-whyatt"
+        )
         assert simplified.equals(expected)
 
     def test_simplify_empty(self):
         wavefront = WaveFront([])
-        simplified = wavefront.simplify(tolerance=1.0)
+        simplified = wavefront.simplify(tolerance=1.0, method="douglas-peucker")
+        assert len(simplified) == 0
+        simplified = wavefront.simplify(tolerance=1.0, method="visvalingam-whyatt")
         assert len(simplified) == 0
 
     def test_simplify_zero_tolerance_returns_original(self):
@@ -236,8 +250,10 @@ class TestWaveFront:
                 xd.DataArray(y, coords={"distance": x}),
             ]
         )
-        simplified = wavefront.simplify(tolerance=0.0)
-        # With zero tolerance, Douglas–Peucker keeps all points
+        # With zero tolerance, both methods should keep all points
+        simplified = wavefront.simplify(tolerance=0.0, method="douglas-peucker")
+        assert simplified.equals(wavefront)
+        simplified = wavefront.simplify(tolerance=0.0, method="visvalingam-whyatt")
         assert simplified.equals(wavefront)
 
     def test_simplify_large_tolerance_to_endpoints(self):
@@ -248,8 +264,13 @@ class TestWaveFront:
                 xd.DataArray(y, coords={"distance": x}),
             ]
         )
-        simplified = wf.simplify(tolerance=10.0)
         # For large tolerance, we expect heavy simplification but at least endpoints
+        simplified = wf.simplify(tolerance=10.0, method="douglas-peucker")
+        sx = simplified[0]["distance"].values
+        assert sx[0] == x[0]
+        assert sx[-1] == x[-1]
+        assert len(sx) >= 2
+        simplified = wf.simplify(tolerance=10.0, method="visvalingam-whyatt")
         sx = simplified[0]["distance"].values
         assert sx[0] == x[0]
         assert sx[-1] == x[-1]

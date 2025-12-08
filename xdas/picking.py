@@ -139,16 +139,16 @@ class WaveFront(DataSequence):
         ]
         return cls(horizons)
 
-    def simplify(self, tolerance):
-        """Simplify horizons using an interp-based Douglas–Peucker algorithm.
+    def smooth(self):
+        pass
+
+    def simplify(self, tolerance, method="douglas-peucker"):
+        """Simplify horizons using a specified simplification algorithm.
 
         Removes unnecessary points from each horizon so that the simplified
         wavefront approximates the original within ``tolerance``. The
-        algorithm is applied independently to each horizon, using linear
-        interpolation between endpoints (via ``numpy.interp``) to estimate
-        the piecewise-linear approximation and recursively splitting segments
-        where the maximum deviation exceeds ``tolerance``. Endpoints are
-        always preserved.
+        algorithm is applied independently to each horizon, preserving
+        endpoints.
 
         Parameters
         ----------
@@ -158,26 +158,35 @@ class WaveFront(DataSequence):
             provide a ``numpy.timedelta64`` tolerance (e.g.,
             ``np.timedelta64(50, 'ms')``). For numeric dtypes, provide a
             float.
+        method : str, default="douglas-peucker"
+            Simplification algorithm to use. Options are:
+            - "douglas-peucker": Recursive line simplification based on
+              maximum perpendicular distance.
+            - "visvalingam-whyatt": Simplification based on triangular area.
 
         Returns
         -------
         WaveFront
             A new wavefront with simplified horizons, preserving endpoints.
 
-        Notes
-        -----
-        - For ``datetime64`` values, interpolation uses internal conversion to
-          float nanoseconds for deviation checks, and results are cast back to
-          ``datetime64``. The provided ``tolerance`` should be a
-          ``numpy.timedelta64`` for consistent comparison.
+        Raises
+        ------
+        ValueError
+            If ``method`` is not recognized.
         """
+        if method == "douglas-peucker":
+            simplifier = _douglas_peucker
+        elif method == "visvalingam-whyatt":
+            simplifier = _visvalingam_whyatt
+        else:
+            raise ValueError(f"Unknown simplification method: {method}")
         if len(self) == 0:
             return WaveFront([])
         horizons = []
         for horizon in self:
             x = horizon[self.dim].values
             y = horizon.values
-            xs, ys = _douglas_peucker(x, y, tolerance)
+            xs, ys = simplifier(x, y, tolerance)
             horizons.append(DataArray(ys, coords={self.dim: xs}, dims=(self.dim,)))
         return WaveFront(horizons)
 
@@ -663,6 +672,36 @@ def _douglas_peucker(x, y, epsilon):
         else:
             mask[start + 1 : stop - 1] = False
     return x[mask], y[mask]
+
+
+def _visvalingam_whyatt(x, y, epsilon):
+    mask = np.ones(len(x), dtype=bool)
+    while True:
+        if len(x[mask]) == 2:
+            break
+        area = _triangular_area(x[mask], y[mask])
+        mask_index = np.argmin(area) + 1
+        index = np.nonzero(mask)[0][mask_index]
+        dmax = np.abs(y[index] - triangular_interp(x[mask], y[mask], mask_index))
+        if dmax <= epsilon:
+            mask[index] = False
+        else:
+            break
+    return x[mask], y[mask]
+
+
+def triangular_interp(x, y, index):
+    return y[index - 1] + (y[index + 1] - y[index - 1]) * (x[index] - x[index - 1]) / (
+        x[index + 1] - x[index - 1]
+    )
+
+
+def _triangular_area(x, y):
+    dx1 = x[1:-1] - x[:-2]
+    dy1 = y[1:-1] - y[:-2]
+    dx2 = x[2:] - x[:-2]
+    dy2 = y[2:] - y[:-2]
+    return 0.5 * np.abs(dx1 * dy2 - dy1 * dx2)
 
 
 def _interp(x, xp, fp):
