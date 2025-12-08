@@ -331,3 +331,12 @@ def _tapered_selection(data, sel, start, stop, size, window):
             q += 1
             k += 1
     return out
+
+
+def square_trapezoid(x, y):
+    x = np.asarray(x)
+    y = np.asarray(y)
+    dx = x[1:] - x[:-1]
+    yi = y[:-1]
+    yj = y[1:]
+    return np.sum(dx * (yi * yi + yi * yj + yj * yj) / 3.0)

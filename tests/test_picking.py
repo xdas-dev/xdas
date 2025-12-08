@@ -786,3 +786,40 @@ class TestTaperedSelection:
 
         with pytest.raises(ValueError, match="No valid start/end pairs found"):
             tapered_selection(da, start, end, window, dim="time")
+
+
+def test_integral_square_linear():
+    # ---- Case 1: constant function f(x)=c ----
+    x = np.linspace(0, 10, 5)
+    y = np.full_like(x, 3.0)  # f = 3
+    expected = 3**2 * (10 - 0)
+    assert np.isclose(square_trapezoid(x, y), expected)
+
+    # ---- Case 2: linear function f(x)=x ----
+    x = np.array([0, 1, 2])
+    y = x.copy()
+    # ∫₀² x² dx = 8/3
+    expected = 8 / 3
+    assert np.isclose(square_trapezoid(x, y), expected)
+
+    # ---- Case 3: triangular shape ----
+    x = np.array([0, 1, 2])
+    y = np.array([0, 1, 0])
+    # ∫ (triangle)^2 dx = 2 * ∫₀¹ t² dt = 2 * 1/3 = 2/3
+    expected = 2 / 3
+    assert np.isclose(square_trapezoid(x, y), expected)
+
+    # ---- Case 4: numerical comparison (fine sampling) ----
+    x = np.linspace(0, 5, 8)
+    y = np.sin(x)
+
+    # Exact calculation by our function
+    exact = square_trapezoid(x, y)
+
+    # Approximation via dense resampling of the linear interpolated version
+    xx = np.linspace(0, 5, 50000)
+    yy = np.interp(xx, x, y)
+    approx = np.trapezoid(yy**2, xx)
+
+    # The error should be very small
+    assert np.isclose(exact, approx, rtol=1e-3, atol=1e-5)
