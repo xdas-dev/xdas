@@ -11,6 +11,38 @@ from .core.datacollection import DataMapping, DataSequence
 
 
 class WaveFront(DataSequence):
+    """Sequence of 1D horizon picks forming a wavefront.
+
+    A WaveFront is a collection of non-overlapping 1D ``DataArray`` horizons
+    sharing the same single dimension and dtype. Horizons are sorted by their
+    coordinate range and can be interpolated, differenced, and summarized
+    statistically.
+
+    Parameters
+    ----------
+    horizons : sequence of DataArray
+        Sequence of 1D horizons. Each element must be a ``DataArray`` with a
+        single dimension. All horizons must share the same dimension name and
+        dtype, and must not overlap in coordinate range.
+
+    Attributes
+    ----------
+    dim : str or None
+        The single dimension name shared by all horizons. ``None`` if empty.
+    dtype : numpy.dtype or None
+        The dtype of the horizon values. ``None`` if empty.
+    length : float
+        Total coordinate span across all horizons, computed as the sum of
+        ``end - start`` for each horizon.
+
+    Notes
+    -----
+    - Horizons are validated to be 1D, have identical ``dims`` and ``dtype``,
+      and be non-overlapping. Overlaps raise ``ValueError``.
+    - Coordinate dtype ``datetime64`` is supported for interpolation via
+      conversion to float internally when necessary.
+    """
+
     def __init__(self, horizons):
         if len(horizons) == 0:
             super().__init__(horizons, "horizon")
@@ -40,12 +72,27 @@ class WaveFront(DataSequence):
 
     @property
     def coords(self):
+        """Concatenate coordinates from all horizons.
+
+        Returns
+        -------
+        dict
+            Mapping ``{dim: numpy.ndarray}`` with concatenated coordinate
+            values from all horizons.
+        """
         return {
             self.dim: np.concatenate([horizon[self.dim].values for horizon in self])
         }
 
     @property
     def length(self):
+        """Total coordinate span across all horizons.
+
+        Returns
+        -------
+        float
+            Sum of ``end - start`` for each horizon.
+        """
         return sum(
             horizon[self.dim][-1].values - horizon[self.dim][0].values
             for horizon in self
@@ -53,6 +100,30 @@ class WaveFront(DataSequence):
 
     @classmethod
     def from_picks(cls, picks, gap_threshold, min_points=2):
+        """Build a wavefront from pick points grouped by gaps.
+
+        The input picks dataframe must have exactly two columns:
+        ``[value_column, dim_column]``. Picks are sorted by the coordinate
+        column and grouped into horizons where consecutive picks are separated
+        by less than or equal to ``gap_threshold``; larger gaps start new
+        horizons. Short horizons with fewer than ``min_points`` are discarded.
+
+        Parameters
+        ----------
+        picks : pandas.DataFrame
+            DataFrame with two columns: values and coordinates along a single
+            dimension. Duplicates are dropped before grouping.
+        gap_threshold : float
+            Threshold on coordinate differences to split groups into separate
+            horizons.
+        min_points : int, default=2
+            Minimum number of picks required to keep a horizon.
+
+        Returns
+        -------
+        WaveFront
+            WaveFront instance composed of the resulting horizons.
+        """
         value_column, dim_column = picks.columns
         picks = picks.drop_duplicates()
         picks = picks.sort_values(dim_column)
@@ -69,6 +140,22 @@ class WaveFront(DataSequence):
         return cls(horizons)
 
     def interp(self, coords):
+        """Interpolate the wavefront at given coordinates.
+
+        For each request coordinate, interpolation is performed within the
+        corresponding horizon if the coordinate falls inside its range;
+        otherwise ``NaN`` (or ``NaT`` for ``datetime64``) is returned.
+
+        Parameters
+        ----------
+        coords : array-like
+            1D array of coordinates along ``self.dim`` to sample.
+
+        Returns
+        -------
+        DataArray
+            Values sampled at ``coords`` with ``coords`` set on ``self.dim``.
+        """
         coords = np.asarray(coords)
         if coords.ndim != 1:
             raise ValueError("`coords` must be an 1D array-like object")
@@ -92,6 +179,31 @@ class WaveFront(DataSequence):
             return np.interp(coords, horizon[self.dim].values, horizon.values)
 
     def diff(self, other):
+        """Compute pointwise difference between two compatible wavefronts.
+
+        Both wavefronts must share the same dimension and dtype. The union of
+        their coordinates is formed, both are interpolated on this union, and
+        differences are computed. Contiguous valid segments (where both values
+        are finite/non-``NaT``) are returned as horizons in a new wavefront.
+
+        Parameters
+        ----------
+        other : WaveFront
+            Another wavefront to subtract from this one.
+
+        Returns
+        -------
+        WaveFront
+            Wavefront composed of horizons covering contiguous valid segments
+            of the difference.
+
+        Raises
+        ------
+        TypeError
+            If ``other`` is not a ``WaveFront``.
+        ValueError
+            If dimensions or dtypes differ.
+        """
         # check input compatibility
         if not isinstance(other, WaveFront):
             raise TypeError("`other` must be a WaveFront instance")
@@ -129,6 +241,16 @@ class WaveFront(DataSequence):
         return WaveFront(horizons)
 
     def mean(self):
+        """Length-weighted mean value of the wavefront.
+
+        The mean is computed by integrating each horizon via the trapezoidal
+        rule and dividing the sum by the total ``length``.
+
+        Returns
+        -------
+        float
+            Mean value or ``nan`` if empty.
+        """
         if len(self) == 0:
             return np.nan
         values = [
@@ -137,21 +259,65 @@ class WaveFront(DataSequence):
         return np.sum(values) / self.length
 
     def var(self, *, mean=None):
+        """Length-weighted variance of the wavefront.
+
+        Parameters
+        ----------
+        mean : float, optional
+            Precomputed mean value. If ``None``, it is computed via ``mean``.
+
+        Returns
+        -------
+        float
+            Variance value or ``nan`` if empty.
+        """
         if len(self) == 0:
             return np.nan
         if mean is None:
             mean = self.mean()
         values = [
-            square_trapezoid(horizon.values - mean, horizon[self.dim].values)
+            _square_trapezoid(horizon.values - mean, horizon[self.dim].values)
             for horizon in self
         ]
         return np.sum(values) / self.length
 
     def std(self, *, mean=None):
+        """Length-weighted standard deviation of the wavefront.
+
+        Parameters
+        ----------
+        mean : float, optional
+            Precomputed mean value. If ``None``, it is computed via ``mean``.
+
+        Returns
+        -------
+        float
+            Standard deviation.
+        """
         return np.sqrt(self.var(mean=mean))
 
 
 class WaveFrontCollection(DataMapping):
+    """Mapping from labels to compatible wavefronts.
+
+    A collection of labeled :class:`WaveFront` instances that all share the
+    same dimension and dtype. Provides interpolation, difference, and
+    aggregated statistics across the collection.
+
+    Parameters
+    ----------
+    wavefronts : dict[str, WaveFront | sequence of DataArray]
+        Mapping from labels to wavefronts or sequences of horizons that can be
+        converted into a :class:`WaveFront`.
+
+    Attributes
+    ----------
+    dim : str
+        Shared single dimension name across all wavefronts.
+    dtype : numpy.dtype
+        Shared dtype across all wavefront values.
+    """
+
     def __init__(self, wavefronts):
         wavefronts = {
             label: (
@@ -178,6 +344,27 @@ class WaveFrontCollection(DataMapping):
 
     @classmethod
     def from_picks(cls, picks, gap_threshold, min_points=2):
+        """Build a collection of wavefronts from labeled picks.
+
+        The input picks dataframe must have three columns
+        ``[value_column, dim_column, label_column]``. Each label forms a
+        separate wavefront via :meth:`WaveFront.from_picks`. Empty wavefronts
+        are dropped.
+
+        Parameters
+        ----------
+        picks : pandas.DataFrame
+            DataFrame with value, coordinate, and label columns.
+        gap_threshold : float
+            Threshold on coordinate differences to split groups into horizons.
+        min_points : int, default=2
+            Minimum number of picks required to keep a horizon.
+
+        Returns
+        -------
+        WaveFrontCollection
+            Collection of labeled, non-empty wavefronts.
+        """
         value_column, dim_column, label_column = picks.columns
         wavefronts = {}
         for label, group in picks.groupby(label_column):
@@ -189,12 +376,44 @@ class WaveFrontCollection(DataMapping):
         return cls(wavefronts)
 
     def interp(self, coords):
+        """Interpolate all wavefronts at given coordinates.
+
+        Parameters
+        ----------
+        coords : array-like
+            1D array of coordinates along ``self.dim`` to sample.
+
+        Returns
+        -------
+        DataMapping
+            Mapping from label to :class:`DataArray` of interpolated values.
+        """
         return DataMapping(
             {label: wavefront.interp(coords) for label, wavefront in self.items()},
             "wavefront",
         )
 
     def diff(self, other):
+        """Compute differences against another collection with same schema.
+
+        Each label in ``self`` is differenced against the corresponding label
+        in ``other`` via :meth:`WaveFront.diff`. Empty differences are dropped.
+
+        Parameters
+        ----------
+        other : WaveFrontCollection
+            Another collection to subtract from this one.
+
+        Returns
+        -------
+        WaveFrontCollection
+            Collection of non-empty difference wavefronts.
+
+        Raises
+        ------
+        ValueError
+            If type, dimension, or dtype compatibility fails.
+        """
         # check input compatibility
         if not isinstance(other, WaveFrontCollection):
             raise ValueError("`other` must be a WaveFrontCollection")
@@ -210,57 +429,83 @@ class WaveFrontCollection(DataMapping):
         return WaveFrontCollection(wavefronts)
 
     def mean(self):
+        """Length-weighted mean across all wavefronts.
+
+        Returns
+        -------
+        float
+            Aggregated mean weighted by each wavefront's ``length``.
+        """
         values = np.array([wavefront.mean() for wavefront in self.values()])
         lengths = np.array([wavefront.length for wavefront in self.values()])
         return np.sum(values * lengths) / np.sum(lengths)
 
     def var(self):
+        """Length-weighted variance across all wavefronts.
+
+        Returns
+        -------
+        float
+            Aggregated variance weighted by each wavefront's ``length``.
+        """
         mean = self.mean()
         values = np.array([wavefront.var(mean=mean) for wavefront in self.values()])
         lengths = np.array([wavefront.length for wavefront in self.values()])
         return np.sum(values * lengths) / np.sum(lengths)
 
     def std(self):
+        """Length-weighted standard deviation across all wavefronts.
+
+        Returns
+        -------
+        float
+            Aggregated standard deviation.
+        """
         return np.sqrt(self.var())
 
 
 def tapered_selection(da, start, end, window=None, size=None, dim="last"):
-    """
-    Selects and tapers a DataArray based on `start` and `end` values.
+    """Select and taper segments defined by start/end coordinates.
 
-    Coordinates with NaN or NaT `start` or `end` values are ignored. If no `size` is
-    provided, the length of the resulting data is determined by the next fast length
-    (for FFT) of the maximum distance between the start and end values. The tapering
-    window is split in half and applied to the start and end of the selected data. The
-    window size must be smaller than the smallest selected data window.
+    Coordinates with non-finite ``start`` or ``end`` values are ignored. If
+    ``size`` is not provided, the output length along ``dim`` is the
+    ``scipy.fft.next_fast_len`` of the largest selected window length. A
+    symmetric taper ``window`` is split in half and applied to both ends of
+    each selected segment. The ``window`` length must not exceed the smallest
+    selected window length.
 
     Parameters
     ----------
     da : DataArray
-        Input data array to select and taper. Must be 2D and have `dim` as one of its
-        dimensions.
+        Input 2D array. Must contain ``dim`` as one of its dimensions.
     start : array-like
-        Start values along the other dimension than `dim` (must be 1D and have the
-        same size) NaN or NaT values indicate coordinates to be ignored.
+        1D array of start coordinates along ``dim`` for each row (other
+        dimension). Non-finite values are ignored.
     end : array-like
-        End values along the other dimension than `dim` (must be 1D and have the
-        same size) NaN or NaT values indicate coordinates to be ignored.
-    size : int, optional
-        Size of the output data along `dim`. If None, it is determined by the next
-        fast length of the maximum selected window.
-    dim : str, optional
-        Dimension along which to perform the selection and tapering. Default is 'last'.
+        1D array of end coordinates along ``dim`` for each row (other
+        dimension). Non-finite values are ignored.
     window : array-like, optional
-        Tapering window to apply to the selected data.
+        Taper window values. If odd-length, the central value is removed to
+        make it even, resulting in symmetric halves applied to segment ends.
+    size : int, optional
+        Output length along ``dim``. If ``None``, determined via
+        ``next_fast_len`` of the maximum ``end - start`` over valid rows.
+    dim : str, default="last"
+        Dimension along which selection and tapering happen.
 
     Returns
     -------
     DataArray
-        A DataArray containing the selected and tapered data with sizes {other_dim: N,
-        `dim`: `size`}, where N is the number of valid start/end pairs. The `dim`
-        dimension becomes the last dimension and its coordinates run from 0 to
-        d * (size - 1), where d is the sampling interval along `dim`.
+        Selected and tapered data with shapes ``{other_dim: N, dim: size}``,
+        where ``N`` is the number of valid start/end pairs. The ``dim``
+        coordinate is updated to span ``0`` to ``d * (size - 1)``, where
+        ``d`` is the sampling interval along ``dim``.
 
+    Raises
+    ------
+    ValueError
+        If shapes mismatch, no valid pairs are found, or the taper ``window``
+        is longer than a selected window.
     """
     # transpose so `dim` is last
     da = da.transpose(..., dim)
@@ -356,7 +601,7 @@ def _tapered_selection(data, sel, start, stop, size, window):
     return out
 
 
-def square_trapezoid(y, x):
+def _square_trapezoid(y, x):
     x = np.asarray(x)
     y = np.asarray(y)
     dx = x[1:] - x[:-1]

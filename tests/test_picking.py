@@ -6,7 +6,7 @@ import xdas as xd
 from xdas.picking import (
     WaveFront,
     WaveFrontCollection,
-    square_trapezoid,
+    _square_trapezoid,
     tapered_selection,
 )
 
@@ -854,28 +854,28 @@ def test_integral_square_linear():
     x = np.linspace(0, 10, 5)
     y = np.full_like(x, 3.0)  # f = 3
     expected = 3**2 * (10 - 0)
-    assert np.isclose(square_trapezoid(y, x), expected)
+    assert np.isclose(_square_trapezoid(y, x), expected)
 
     # ---- Case 2: linear function f(x)=x ----
     x = np.array([0, 1, 2])
     y = x.copy()
     # ∫₀² x² dx = 8/3
     expected = 8 / 3
-    assert np.isclose(square_trapezoid(y, x), expected)
+    assert np.isclose(_square_trapezoid(y, x), expected)
 
     # ---- Case 3: triangular shape ----
     x = np.array([0, 1, 2])
     y = np.array([0, 1, 0])
     # ∫ (triangle)^2 dx = 2 * ∫₀¹ t² dt = 2 * 1/3 = 2/3
     expected = 2 / 3
-    assert np.isclose(square_trapezoid(y, x), expected)
+    assert np.isclose(_square_trapezoid(y, x), expected)
 
     # ---- Case 4: numerical comparison (fine sampling) ----
     x = np.linspace(0, 5, 8)
     y = np.sin(x)
 
     # Exact calculation by our function
-    exact = square_trapezoid(y, x)
+    exact = _square_trapezoid(y, x)
 
     # Approximation via dense resampling of the linear interpolated version
     xx = np.linspace(0, 5, 50000)
@@ -890,4 +890,4 @@ def test_integral_square_linear():
     y = x.copy()
     # ∫₀¹ x² dx = 1/3
     expected = 1 / 3
-    assert np.isclose(square_trapezoid(y, x), expected)
+    assert np.isclose(_square_trapezoid(y, x), expected)
