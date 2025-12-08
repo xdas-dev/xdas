@@ -253,6 +253,27 @@ class TestWaveFront:
         )
         assert result.equals(expected)
 
+    def test_diff_no_intersection(self):
+        wavefront = WaveFront(
+            [
+                xd.DataArray(
+                    data=[1.0, 2.0, 1.0],
+                    coords={"distance": [0.0, 1.0, 2.0]},
+                ),
+            ]
+        )
+        other = WaveFront(
+            [
+                xd.DataArray(
+                    data=[1.0, 2.0, 1.0],
+                    coords={"distance": [4.0, 5.0, 6.0]},
+                ),
+            ]
+        )
+        result = wavefront.diff(other)
+        expected = WaveFront([])
+        assert result.equals(expected)
+
     def test_rms(self):
         horizons = [
             xd.DataArray(
