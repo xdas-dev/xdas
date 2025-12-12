@@ -173,6 +173,9 @@ class WaveFront(DataSequence):
             x = horizon[self.dim].values
             y = horizon.values
 
+            if np.issubdtype(self.dtype, np.datetime64):
+                y = y.astype(float)
+
             # initial fit
             spl = make_smoothing_spline(x, y, lam=lam)
             y_spl = spl(x)
@@ -192,6 +195,10 @@ class WaveFront(DataSequence):
                 # refit without outliers
                 spl = make_smoothing_spline(x[mask], y[mask], lam=lam)
                 y_spl = spl(x)
+                break
+
+            if np.issubdtype(self.dtype, np.datetime64):
+                y_spl = np.rint(y_spl).astype(self.dtype)
 
             horizons.append(DataArray(y_spl, coords={self.dim: x}, dims=(self.dim,)))
         return WaveFront(horizons)
@@ -767,9 +774,16 @@ def _interp(x, xp, fp):
 
 
 def _square_trapezoid(y, x):
-    x = np.asarray(x)
-    y = np.asarray(y)
+    if np.issubdtype(y.dtype, np.datetime64) or np.issubdtype(y.dtype, np.timedelta64):
+        dtype = y.dtype
+        y = y.astype(float)
+    else:
+        dtype = None
     dx = x[1:] - x[:-1]
     yi = y[:-1]
     yj = y[1:]
-    return np.sum(dx * (yi * yi + yi * yj + yj * yj) / 3.0)
+    result = np.sum(dx * (yi * yi + yi * yj + yj * yj) / 3.0)
+    if dtype is not None:
+        return np.rint(result).astype(dtype)
+    else:
+        return result
