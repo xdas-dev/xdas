@@ -67,7 +67,10 @@ class TestDataArray:
     def test_raises_on_data_and_coords_mismatch(self):
         with pytest.raises(ValueError, match="different number of dimensions"):
             DataArray(np.zeros(3), dims=("time", "distance"))
-        with pytest.raises(ValueError, match="infered dimension number from `coords`"):
+        with pytest.raises(
+            ValueError,
+            match="inferred number of dimensions 2 from `coords` does not match `data` dimensionality of 1",
+        ):
             DataArray(np.zeros(3), coords={"time": [1], "distance": [1]})
         with pytest.raises(ValueError, match="conflicting sizes for dimension"):
             DataArray(np.zeros((2, 3)), coords={"time": [1, 2], "distance": [1, 2]})

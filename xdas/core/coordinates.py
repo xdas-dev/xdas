@@ -98,6 +98,7 @@ class Coordinates(dict):
                         f"conflicting sizes for dimension {coord.dim}: size {len(coord)} "
                         f"in `coords` and size {size} in `data`"
                     )
+        coord._parent = self
         return super().__setitem__(key, coord)
 
     def __repr__(self):
@@ -232,8 +233,8 @@ class Coordinates(dict):
     def _assign_parent(self, parent):
         if not len(self.dims) == parent.ndim:
             raise ValueError(
-                "infered dimension number from `coords` does not match "
-                "`data` dimensionality`"
+                f"inferred number of dimensions {len(self.dims)} from `coords` does "
+                f"not match `data` dimensionality of {parent.ndim}"
             )
         for dim, size in zip(self.dims, parent.shape):
             if (dim in self) and (not len(self[dim]) == size):
@@ -336,7 +337,27 @@ class Coordinate:
     def to_dataarray(self):
         from .dataarray import DataArray  # TODO: avoid defered import?
 
-        return DataArray(self.values, {self.dim: self}, name=self.dim)
+        if self.name is None:
+            raise ValueError("cannot convert unnamed coordinate to DataArray")
+
+        if self.parent is None:
+            return DataArray(
+                self.values,
+                {self.dim: self},
+                dims=[self.dim],
+                name=self.name,
+            )
+        else:
+            return DataArray(
+                self.values,
+                {
+                    name: coord
+                    for name, coord in self.parent.items()
+                    if coord.dim == self.dim
+                },
+                dims=[self.dim],
+                name=self.name,
+            )
 
     def to_dict(self):
         raise NotImplementedError
@@ -344,6 +365,25 @@ class Coordinate:
     @classmethod
     def from_dict(cls, dct):
         return cls(**dct)
+
+    def __reduce__(self):
+        return self.__class__, (self.data, self.dim), {"_parent": self.parent}
+
+    @property
+    def parent(self):
+        return getattr(self, "_parent", None)
+
+    @property
+    def name(self):
+        if self.parent is None:
+            return self.dim
+        return next((name for name in self.parent if self.parent[name] is self), None)
+
+    def isdim(self):
+        if self.parent is None or self.name is None:
+            return None
+        else:
+            return self.parent.isdim(self.name)
 
 
 class ScalarCoordinate(Coordinate):

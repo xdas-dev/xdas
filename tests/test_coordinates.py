@@ -557,6 +557,61 @@ class TestCoordinate:
         with pytest.raises(TypeError, match="cannot infer coordinate type"):
             xdas.Coordinate()
 
+    def test_isdim(self):
+        coord = xdas.Coordinate([1, 2, 3])
+        assert coord.isdim() is None
+        coord = xdas.Coordinate([1, 2, 3], "dim")
+        assert coord.isdim() is None
+        coords = xdas.Coordinates({"dim": coord})
+        assert coords["dim"].isdim()
+        coords = xdas.Coordinates({"other_dim": coord})
+        assert not coords["other_dim"].isdim()
+
+    def test_name(self):
+        coord = xdas.Coordinate([1, 2, 3])
+        assert coord.name is None
+        coord = xdas.Coordinate([1, 2, 3], "dim")
+        assert coord.name == "dim"
+        coords = xdas.Coordinates({"dim": coord})
+        assert coords["dim"].name == "dim"
+        coords = xdas.Coordinates({"other_dim": coord})
+        assert coords["other_dim"].name == "other_dim"
+
+    def test_to_dataarray(self):
+        coord = xdas.Coordinate([1, 2, 3])
+        with pytest.raises(ValueError, match="unnamed coordinate"):
+            coord.to_dataarray()
+        coord = xdas.Coordinate([1, 2, 3], "dim")
+        result = coord.to_dataarray()
+        expected = xdas.DataArray([1, 2, 3], {"dim": [1, 2, 3]}, name="dim")
+        assert result.equals(expected)
+        coords = xdas.Coordinates({"dim": coord})
+        result = coords["dim"].to_dataarray()
+        assert result.equals(expected)
+        coords = xdas.Coordinates({"other_dim": coord})
+        result = coords["other_dim"].to_dataarray()
+        expected = xdas.DataArray(
+            [1, 2, 3], coords={"other_dim": coord}, dims=["dim"], name="other_dim"
+        )
+        assert result.equals(expected)
+        coords["dim"] = [4, 5, 6]
+        result = coords["dim"].to_dataarray()
+        expected = xdas.DataArray(
+            [4, 5, 6],
+            coords={"dim": [4, 5, 6], "other_dim": ("dim", [1, 2, 3])},
+            dims=["dim"],
+            name="dim",
+        )
+        assert result.equals(expected)
+        result = coords["other_dim"].to_dataarray()
+        expected = xdas.DataArray(
+            [1, 2, 3],
+            coords={"dim": [4, 5, 6], "other_dim": ("dim", [1, 2, 3])},
+            dims=["dim"],
+            name="other_dim",
+        )
+        assert result.equals(expected)
+
 
 class TestCoordinates:
     def test_init(self):
