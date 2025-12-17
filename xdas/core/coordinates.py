@@ -1406,7 +1406,14 @@ class SampledCoordinate(Coordinate):
         )
 
     def decimate(self, q):
-        raise NotImplementedError("decimation is not implemented for SampledCoordinate")
+        return self.__class__(
+            {
+                "tie_values": self.tie_values,
+                "tie_lengths": (self.tie_lengths + q - 1) // q,
+                "sampling_interval": self.sampling_interval * q,
+            },
+            self.dim,
+        )
 
     def simplify(self, tolerance=None):
         raise NotImplementedError(
