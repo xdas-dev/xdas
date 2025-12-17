@@ -955,15 +955,15 @@ class DataArray(NDArrayOperatorsMixin):
 
             # identify the "main" data array
             if len(ds) == 1:
-                name, da = next(iter(ds.items()))
+                name = next(iter(ds.keys()))
             else:
                 data_vars = {
-                    name: var
-                    for name, var in ds.items()
+                    key: var
+                    for key, var in ds.items()
                     if any("coordinate" in attr for attr in var.attrs)
                 }
                 if len(data_vars) == 1:
-                    name, da = next(iter(data_vars.items()))
+                    name = next(iter(data_vars.keys()))
                 else:
                     raise ValueError("several possible data arrays detected")
 
@@ -971,16 +971,23 @@ class DataArray(NDArrayOperatorsMixin):
             coords = Coordinates.from_dataset(ds, name)
 
         # read data
-        with h5py.File(fname) as file:
-            if group:
-                file = file[group]
-            name = "__values__" if da.name is None else da.name
-            variable = file[name]
-            if "__dask_array__" in variable.attrs:
-                data = loads(da.attrs.pop("__dask_array__"))
-            else:
-                data = VirtualSource(file[name])
-        return cls(data, coords, da.dims, da.name, None if da.attrs == {} else da.attrs)
+        if "__dask_array__" in ds[name].attrs:
+            data = loads(ds[name].attrs.pop("__dask_array__"))
+        else:
+            with h5py.File(fname) as file:
+                if group:
+                    file = file[group]
+                variable = file["__values__" if name is None else name]
+                data = VirtualSource(variable)
+
+        # pack everything
+        return cls(
+            data,
+            coords,
+            ds[name].dims,
+            name,
+            None if ds[name].attrs == {} else ds[name].attrs,
+        )
 
     def to_dict(self):
         """Convert the DataArray to a dictionary."""
