@@ -876,13 +876,13 @@ class DataArray(NDArrayOperatorsMixin):
             virtual = isinstance(self.data, (VirtualArray, DaskArray))
 
         # initialize
-        ds = xr.Dataset(attrs={"Conventions": "CF-1.9"})
+        dataset = xr.Dataset(attrs={"Conventions": "CF-1.9"})
         variable_attrs = {} if self.attrs is None else self.attrs
         variable_name = "__values__" if self.name is None else self.name
 
         # prepare metadata
         for coord in self.coords.values():
-            ds, variable_attrs = coord.to_dataset(ds, variable_attrs)
+            dataset, variable_attrs = coord.to_dataset(dataset, variable_attrs)
 
         # write data
         with h5netcdf.File(fname, mode=mode) as file:
@@ -925,7 +925,7 @@ class DataArray(NDArrayOperatorsMixin):
                 variable.attrs.update(variable_attrs)
 
         # write metadata
-        ds.to_netcdf(fname, mode="a", group=group, engine="h5netcdf")
+        dataset.to_netcdf(fname, mode="a", group=group, engine="h5netcdf")
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
@@ -945,21 +945,23 @@ class DataArray(NDArrayOperatorsMixin):
             The openend data array.
         """
         # read metadata
-        with xr.open_dataset(fname, group=group, engine="h5netcdf") as ds:
+        with xr.open_dataset(fname, group=group, engine="h5netcdf") as dataset:
             # check file format
-            if not ("Conventions" in ds.attrs and "CF" in ds.attrs["Conventions"]):
+            if not (
+                "Conventions" in dataset.attrs and "CF" in dataset.attrs["Conventions"]
+            ):
                 raise TypeError(
                     "file format not recognized. please provide the file format "
                     "with the `engine` keyword argument"
                 )
 
             # identify the "main" data array
-            if len(ds) == 1:
-                name = next(iter(ds.keys()))
+            if len(dataset) == 1:
+                name = next(iter(dataset.keys()))
             else:
                 data_vars = {
                     key: var
-                    for key, var in ds.items()
+                    for key, var in dataset.items()
                     if any("coordinate" in attr for attr in var.attrs)
                 }
                 if len(data_vars) == 1:
@@ -968,11 +970,11 @@ class DataArray(NDArrayOperatorsMixin):
                     raise ValueError("several possible data arrays detected")
 
             # read coordinates
-            coords = Coordinates.from_dataset(ds, name)
+            coords = Coordinates.from_dataset(dataset, name)
 
         # read data
-        if "__dask_array__" in ds[name].attrs:
-            data = loads(ds[name].attrs.pop("__dask_array__"))
+        if "__dask_array__" in dataset[name].attrs:
+            data = loads(dataset[name].attrs.pop("__dask_array__"))
         else:
             with h5py.File(fname) as file:
                 if group:
@@ -984,9 +986,9 @@ class DataArray(NDArrayOperatorsMixin):
         return cls(
             data,
             coords,
-            ds[name].dims,
+            dataset[name].dims,
             name,
-            None if ds[name].attrs == {} else ds[name].attrs,
+            None if dataset[name].attrs == {} else dataset[name].attrs,
         )
 
     def to_dict(self):

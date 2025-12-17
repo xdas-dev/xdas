@@ -214,8 +214,8 @@ class Coordinates(dict):
         )
 
     @classmethod
-    def from_dataset(cls, ds, name):
-        return Coordinate.from_dataset(ds, name)
+    def from_dataset(cls, dataset, name):
+        return Coordinate.from_dataset(dataset, name)
 
     def copy(self, deep=True):
         if deep:
@@ -438,18 +438,18 @@ class Coordinate:
     def from_dict(cls, dct):
         return cls(**dct)
 
-    def to_dataset(self, ds, attrs):
-        ds = ds.assign_coords(
+    def to_dataset(self, dataset, attrs):
+        dataset = dataset.assign_coords(
             {self.name: (self.dim, self.values) if self.dim else self.values}
         )
-        return ds, attrs
+        return dataset, attrs
 
     @classmethod
-    def from_dataset(cls, ds, name):
+    def from_dataset(cls, dataset, name):
         coords = {}
         for subcls in cls.__subclasses__():
             if hasattr(subcls, "from_dataset"):
-                coords |= subcls.from_dataset(ds, name)
+                coords |= subcls.from_dataset(dataset, name)
         return coords
 
 
@@ -646,7 +646,7 @@ class DenseCoordinate(Coordinate):
         return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
 
     @classmethod
-    def from_dataset(cls, ds, name):
+    def from_dataset(cls, dataset, name):
         return {
             name: (
                 (
@@ -660,7 +660,7 @@ class DenseCoordinate(Coordinate):
                 if coord.dims
                 else coord.values
             )
-            for name, coord in ds[name].coords.items()
+            for name, coord in dataset[name].coords.items()
         }
 
 
@@ -1048,7 +1048,7 @@ class InterpCoordinate(Coordinate):
         }
         return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
 
-    def to_dataset(self, ds, attrs):
+    def to_dataset(self, dataset, attrs):
         mapping = f"{self.name}: {self.name}_indices {self.name}_values"
         if "coordinate_interpolation" in attrs:
             attrs["coordinate_interpolation"] += " " + mapping
@@ -1064,24 +1064,24 @@ class InterpCoordinate(Coordinate):
             "interpolation_name": "linear",
             "tie_points_mapping": f"{self.name}_points: {self.name}_indices {self.name}_values",
         }
-        ds.update(
+        dataset.update(
             {
                 f"{self.name}_interpolation": ((), np.nan, interp_attrs),
                 f"{self.name}_indices": (f"{self.name}_points", tie_indices),
                 f"{self.name}_values": (f"{self.name}_points", tie_values),
             }
         )
-        return ds, attrs
+        return dataset, attrs
 
     @classmethod
-    def from_dataset(cls, ds, name):
+    def from_dataset(cls, dataset, name):
         coords = {}
-        mapping = ds[name].attrs.pop("coordinate_interpolation", None)
+        mapping = dataset[name].attrs.pop("coordinate_interpolation", None)
         if mapping is not None:
             matches = re.findall(r"(\w+): (\w+) (\w+)", mapping)
             for match in matches:
                 dim, indices, values = match
-                data = {"tie_indices": ds[indices], "tie_values": ds[values]}
+                data = {"tie_indices": dataset[indices], "tie_values": dataset[values]}
                 coords[dim] = Coordinate(data, dim)
         return coords
 
@@ -1439,7 +1439,7 @@ class SampledCoordinate(Coordinate):
         }
         return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
 
-    def to_dataset(self, ds, attrs):
+    def to_dataset(self, dataset, attrs):
         mapping = f"{self.name}: {self.name}_values {self.name}_lengths"
         if "coordinate_sampling" in attrs:
             attrs["coordinate_sampling"] += " " + mapping
@@ -1455,14 +1455,14 @@ class SampledCoordinate(Coordinate):
             "sampling_interval": self.sampling_interval,
             "tie_points_mapping": f"{self.name}_points: {self.name}_values {self.name}_lengths",
         }
-        ds.update(
+        dataset.update(
             {
                 f"{self.name}_sampling": ((), np.nan, interp_attrs),
                 f"{self.name}_values": (f"{self.name}_points", tie_values),
                 f"{self.name}_lengths": (f"{self.name}_points", tie_lengths),
             }
         )
-        return ds, attrs
+        return dataset, attrs
 
     @classmethod
     def from_dataset(cls, dataset, name):
