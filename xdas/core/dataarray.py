@@ -12,7 +12,7 @@ import xarray as xr
 from dask.array import Array as DaskArray
 from numpy.lib.mixins import NDArrayOperatorsMixin
 
-from ..dask.core import dumps, from_dict, loads, to_dict
+from ..dask.core import create_variable, from_dict, loads, to_dict
 from ..virtual import VirtualArray, VirtualSource, _to_human
 from .coordinates import Coordinate, Coordinates, get_sampling_interval
 
@@ -886,10 +886,15 @@ class DataArray(NDArrayOperatorsMixin):
 
         # write data
         with h5netcdf.File(fname, mode=mode) as file:
+            # group
             if group is not None and group not in file:
                 file.create_group(group)
             file = file if group is None else file[group]
+
+            # dims
             file.dimensions.update(self.sizes)
+
+            # variable
             if not virtual:
                 encoding = {} if encoding is None else encoding
                 variable = file.create_variable(
@@ -903,29 +908,23 @@ class DataArray(NDArrayOperatorsMixin):
                 if encoding is not None:
                     raise ValueError("cannot use `encoding` with in virtual mode")
                 if isinstance(self.data, VirtualArray):
-                    self.data.to_dataset(file._h5group, variable_name)
-                    variable = file._variable_cls(file, variable_name, self.dims)
-                    file._variables[variable_name] = variable
-                    variable._attach_dim_scales()
-                    variable._attach_coords()
-                    variable._ensure_dim_id()
-                elif isinstance(self.data, DaskArray):
-                    variable = file.create_variable(
-                        variable_name,
-                        self.dims,
-                        self.dtype,
+                    variable = self.data.create_variable(
+                        file, variable_name, self.dims, self.dtype
                     )
-                    variable.attrs.update(
-                        {"__dask_array__": np.frombuffer(dumps(self.data), "uint8")}
+                elif isinstance(self.data, DaskArray):
+                    variable = create_variable(
+                        self.data, file, variable_name, self.dims, self.dtype
                     )
                 else:
                     raise ValueError(
                         "can only use `virtual=True` with a virtual array as data"
                     )
+
+            # attrs
             if variable_attrs:
                 variable.attrs.update(variable_attrs)
 
-        # add metadata
+        # write metadata
         ds.to_netcdf(fname, mode="a", group=group, engine="h5netcdf")
 
     @classmethod
