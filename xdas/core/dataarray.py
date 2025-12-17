@@ -882,7 +882,7 @@ class DataArray(NDArrayOperatorsMixin):
 
         # prepare metadata
         for coord in self.coords.values():
-            ds, variable_attrs = coord.to_netcdf(ds, variable_attrs)
+            ds, variable_attrs = coord.to_dataset(ds, variable_attrs)
 
         # write data
         with h5netcdf.File(fname, mode=mode) as file:
@@ -985,13 +985,9 @@ class DataArray(NDArrayOperatorsMixin):
             }
 
             # read advanced coordinates
-            mapping = da.attrs.pop("coordinate_interpolation", None)
-            if mapping is not None:
-                matches = re.findall(r"(\w+): (\w+) (\w+)", mapping)
-                for match in matches:
-                    dim, indices, values = match
-                    data = {"tie_indices": ds[indices], "tie_values": ds[values]}
-                    coords[dim] = Coordinate(data, dim)
+            coords |= Coordinates.from_dataset(ds, name)
+
+        # read data
         with h5py.File(fname) as file:
             if group:
                 file = file[group]

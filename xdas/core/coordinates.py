@@ -1,5 +1,6 @@
 from copy import copy, deepcopy
 from functools import wraps
+import re
 
 import numpy as np
 import pandas as pd
@@ -212,6 +213,10 @@ class Coordinates(dict):
             dct["dims"],
         )
 
+    @classmethod
+    def from_dataset(cls, ds, name):
+        return Coordinate.from_dataset(ds, name)
+
     def copy(self, deep=True):
         if deep:
             func = deepcopy
@@ -268,6 +273,9 @@ class Coordinate:
     def __repr__(self):
         return np.array2string(self.data, threshold=0, edgeitems=1)
 
+    def __reduce__(self):
+        return self.__class__, (self.data, self.dim), {"_parent": self.parent}
+
     def __add__(self, other):
         return self.__class__(self.data + other, self.dim)
 
@@ -310,6 +318,22 @@ class Coordinate:
     def empty(self):
         return len(self) == 0
 
+    @property
+    def parent(self):
+        return getattr(self, "_parent", None)
+
+    @property
+    def name(self):
+        if self.parent is None:
+            return self.dim
+        return next((name for name in self.parent if self.parent[name] is self), None)
+
+    def isdim(self):
+        if self.parent is None or self.name is None:
+            return None
+        else:
+            return self.parent.isdim(self.name)
+
     def equals(self, other): ...
 
     def to_index(self, item, method=None, endpoint=True):
@@ -317,56 +341,6 @@ class Coordinate:
             return self.slice_indexer(item.start, item.stop, item.step, endpoint)
         else:
             return self.get_indexer(item, method)
-
-    def isscalar(self):
-        return isinstance(self, ScalarCoordinate)
-
-    def isdense(self):
-        return isinstance(self, DenseCoordinate)
-
-    def isinterp(self):
-        return isinstance(self, InterpCoordinate)
-
-    def append(self, other):
-        raise NotImplementedError(f"append is not implemented for {self.__class__}")
-
-    def to_dataarray(self):
-        from .dataarray import DataArray  # TODO: avoid defered import?
-
-        if self.name is None:
-            raise ValueError("cannot convert unnamed coordinate to DataArray")
-
-        if self.parent is None:
-            return DataArray(
-                self.values,
-                {self.dim: self},
-                dims=[self.dim],
-                name=self.name,
-            )
-        else:
-            return DataArray(
-                self.values,
-                {
-                    name: coord
-                    for name, coord in self.parent.items()
-                    if coord.dim == self.dim
-                },
-                dims=[self.dim],
-                name=self.name,
-            )
-
-    def to_dict(self):
-        raise NotImplementedError
-
-    def to_netcdf(self, ds, attrs):
-        ds = ds.assign_coords(
-            {self.name: (self.dim, self.values) if self.dim else self.values}
-        )
-        return ds, attrs
-
-    @classmethod
-    def from_dict(cls, dct):
-        return cls(**dct)
 
     def format_index(self, idx, bounds="raise"):
         idx = np.asarray(idx)
@@ -420,24 +394,63 @@ class Coordinate:
             stop_index -= 1
         return slice(start_index, stop_index)
 
-    def __reduce__(self):
-        return self.__class__, (self.data, self.dim), {"_parent": self.parent}
+    def isscalar(self):
+        return isinstance(self, ScalarCoordinate)
 
-    @property
-    def parent(self):
-        return getattr(self, "_parent", None)
+    def isdense(self):
+        return isinstance(self, DenseCoordinate)
 
-    @property
-    def name(self):
+    def isinterp(self):
+        return isinstance(self, InterpCoordinate)
+
+    def append(self, other):
+        raise NotImplementedError(f"append is not implemented for {self.__class__}")
+
+    def to_dataarray(self):
+        from .dataarray import DataArray  # TODO: avoid defered import?
+
+        if self.name is None:
+            raise ValueError("cannot convert unnamed coordinate to DataArray")
+
         if self.parent is None:
-            return self.dim
-        return next((name for name in self.parent if self.parent[name] is self), None)
-
-    def isdim(self):
-        if self.parent is None or self.name is None:
-            return None
+            return DataArray(
+                self.values,
+                {self.dim: self},
+                dims=[self.dim],
+                name=self.name,
+            )
         else:
-            return self.parent.isdim(self.name)
+            return DataArray(
+                self.values,
+                {
+                    name: coord
+                    for name, coord in self.parent.items()
+                    if coord.dim == self.dim
+                },
+                dims=[self.dim],
+                name=self.name,
+            )
+
+    def to_dict(self):
+        raise NotImplementedError
+
+    @classmethod
+    def from_dict(cls, dct):
+        return cls(**dct)
+
+    def to_dataset(self, ds, attrs):
+        ds = ds.assign_coords(
+            {self.name: (self.dim, self.values) if self.dim else self.values}
+        )
+        return ds, attrs
+
+    @classmethod
+    def from_dataset(cls, ds, name):
+        coords = {}
+        for subcls in cls.__subclasses__():
+            if hasattr(subcls, "from_dataset"):
+                coords |= subcls.from_dataset(ds, name)
+        return coords
 
 
 class ScalarCoordinate(Coordinate):
@@ -1017,7 +1030,7 @@ class InterpCoordinate(Coordinate):
         }
         return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
 
-    def to_netcdf(self, ds, attrs):
+    def to_dataset(self, ds, attrs):
         mapping = f"{self.name}: {self.name}_indices {self.name}_values"
         if "coordinate_interpolation" in attrs:
             attrs["coordinate_interpolation"] += " " + mapping
@@ -1041,6 +1054,18 @@ class InterpCoordinate(Coordinate):
             }
         )
         return ds, attrs
+
+    @classmethod
+    def from_dataset(cls, ds, name):
+        coords = {}
+        mapping = ds[name].attrs.pop("coordinate_interpolation", None)
+        if mapping is not None:
+            matches = re.findall(r"(\w+): (\w+) (\w+)", mapping)
+            for match in matches:
+                dim, indices, values = match
+                data = {"tie_indices": ds[indices], "tie_values": ds[values]}
+                coords[dim] = Coordinate(data, dim)
+        return coords
 
 
 class SampledCoordinate(Coordinate):
@@ -1395,6 +1420,48 @@ class SampledCoordinate(Coordinate):
             "sampling_interval": self.sampling_interval,
         }
         return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
+
+    def to_dataset(self, ds, attrs):
+        mapping = f"{self.name}: {self.name}_values {self.name}_lengths"
+        if "coordinate_sampling" in attrs:
+            attrs["coordinate_sampling"] += " " + mapping
+        else:
+            attrs["coordinate_sampling"] = mapping
+        tie_values = (
+            self.tie_values.astype("M8[ns]")
+            if np.issubdtype(self.tie_values.dtype, np.datetime64)
+            else self.tie_values
+        )
+        tie_lengths = self.tie_lengths
+        interp_attrs = {
+            "sampling_interval": self.sampling_interval,
+            "tie_points_mapping": f"{self.name}_points: {self.name}_values {self.name}_lengths",
+        }
+        ds.update(
+            {
+                f"{self.name}_sampling": ((), np.nan, interp_attrs),
+                f"{self.name}_values": (f"{self.name}_points", tie_values),
+                f"{self.name}_lengths": (f"{self.name}_points", tie_lengths),
+            }
+        )
+        return ds, attrs
+
+    @classmethod
+    def from_dataset(cls, dataset, name):
+        coords = {}
+        mapping = dataset[name].attrs.pop("coordinate_sampling", None)
+        if mapping is not None:
+            matches = re.findall(r"(\w+): (\w+) (\w+)", mapping)
+            for match in matches:
+                dim, values, lengths = match
+                sampling_interval = ...
+                data = {
+                    "tie_values": dataset[values],
+                    "tie_lengths": dataset[lengths],
+                    "sampling_interval": sampling_interval,
+                }
+                coords[dim] = Coordinate(data, dim)
+        return coords
 
 
 def parse(data, dim=None):
