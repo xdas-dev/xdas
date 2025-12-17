@@ -1034,41 +1034,52 @@ class SampledCoordinate(Coordinate):
         return object.__new__(cls)
 
     def __init__(self, data=None, dim=None, dtype=None):
+        # empty
         if data is None:
             data = {"tie_values": [], "tie_lengths": [], "sampling_interval": None}
+            empty = True
+        else:
+            empty = False
+
+        # parse data
         data, dim = parse(data, dim)
         if not self.__class__.isvalid(data):
-            raise TypeError("`data` must be dict-like")
-        if not set(data) == {"tie_values", "tie_lengths", "sampling_interval"}:
-            raise ValueError(
-                "keys `tie_values`, `tie_lengths`, and `sampling_interval` must be provided"
+            raise TypeError(
+                "`data` must be dict-like and contain `tie_values`, `tie_lengths`, and "
+                "`sampling_interval`"
             )
         tie_values = np.asarray(data["tie_values"], dtype=dtype)
         tie_lengths = np.asarray(data["tie_lengths"])
         sampling_interval = np.asarray(data["sampling_interval"])
+
+        # check shapes
         if not tie_values.ndim == 1:
             raise ValueError("`tie_values` must be 1D")
         if not tie_lengths.ndim == 1:
             raise ValueError("`tie_lengths` must be 1D")
         if not len(tie_values) == len(tie_lengths):
             raise ValueError("`tie_values` and `tie_lengths` must have the same length")
-        if not (
-            np.issubdtype(tie_values.dtype, np.number)
-            or np.issubdtype(tie_values.dtype, np.datetime64)
-        ):
-            raise ValueError("`tie_values` must have either numeric or datetime dtype")
-        if not self.empty:
+
+        # check dtypes
+        if not empty:
+            if not (
+                np.issubdtype(tie_values.dtype, np.number)
+                or np.issubdtype(tie_values.dtype, np.datetime64)
+            ):
+                raise ValueError(
+                    "`tie_values` must have either numeric or datetime dtype"
+                )
             if not np.issubdtype(tie_lengths.dtype, np.integer):
                 raise ValueError("`tie_lengths` must be integer-like")
             if not np.all(tie_lengths > 0):
-                raise ValueError("`tie_lengths` must be positive integers")
+                raise ValueError("`tie_lengths` must be strictly positive integers")
             if not np.isscalar(sampling_interval):
                 raise ValueError("`sampling_interval` must be a scalar value")
-            if np.issubdtype(sampling_interval.dtype, np.datetime64):
-                sampling_interval = sampling_interval.astype("timedelta64[ns]")
-            else:
-                sampling_interval = np.asarray(sampling_interval).astype(dtype)
-        tie_lengths = tie_lengths.astype(int)
+            if np.issubdtype(tie_values.dtype, np.datetime64):
+                if not np.issubdtype(sampling_interval.dtype, np.timedelta64):
+                    raise ValueError(
+                        "`sampling_interval` must be timedelta64 for datetime64 `tie_values`"
+                    )
         self.data = dict(
             tie_values=tie_values,
             tie_lengths=tie_lengths,
