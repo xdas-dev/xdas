@@ -980,43 +980,43 @@ class SampledCoordinate(Coordinate):
 
     def __init__(self, data=None, dim=None, dtype=None):
         if data is None:
-            data = {"tie_values": [], "tie_samples": [], "sampling_interval": None}
+            data = {"tie_values": [], "tie_lengths": [], "sampling_interval": None}
         data, dim = parse(data, dim)
         if not self.__class__.isvalid(data):
             raise TypeError("`data` must be dict-like")
-        if not set(data) == {"tie_values", "tie_samples", "sampling_interval"}:
+        if not set(data) == {"tie_values", "tie_lengths", "sampling_interval"}:
             raise ValueError(
-                "keys `tie_values`, `tie_samples`, and `sampling_interval` must be provided"
+                "keys `tie_values`, `tie_lengths`, and `sampling_interval` must be provided"
             )
         tie_values = np.asarray(data["tie_values"], dtype=dtype)
-        tie_samples = np.asarray(data["tie_samples"])
+        tie_lengths = np.asarray(data["tie_lengths"])
         sampling_interval = np.asarray(data["sampling_interval"])
         if not tie_values.ndim == 1:
             raise ValueError("`tie_values` must be 1D")
-        if not tie_samples.ndim == 1:
-            raise ValueError("`tie_samples` must be 1D")
-        if not len(tie_values) == len(tie_samples):
-            raise ValueError("`tie_values` and `tie_samples` must have the same length")
+        if not tie_lengths.ndim == 1:
+            raise ValueError("`tie_lengths` must be 1D")
+        if not len(tie_values) == len(tie_lengths):
+            raise ValueError("`tie_values` and `tie_lengths` must have the same length")
         if not (
             np.issubdtype(tie_values.dtype, np.number)
             or np.issubdtype(tie_values.dtype, np.datetime64)
         ):
             raise ValueError("`tie_values` must have either numeric or datetime dtype")
         if not self.empty:
-            if not np.issubdtype(tie_samples.dtype, np.integer):
-                raise ValueError("`tie_samples` must be integer-like")
-            if not np.all(tie_samples > 0):
-                raise ValueError("`tie_samples` must be positive integers")
+            if not np.issubdtype(tie_lengths.dtype, np.integer):
+                raise ValueError("`tie_lengths` must be integer-like")
+            if not np.all(tie_lengths > 0):
+                raise ValueError("`tie_lengths` must be positive integers")
             if not np.isscalar(sampling_interval):
                 raise ValueError("`sampling_interval` must be a scalar value")
             if np.issubdtype(sampling_interval.dtype, np.datetime64):
                 sampling_interval = sampling_interval.astype("timedelta64[ns]")
             else:
                 sampling_interval = np.asarray(sampling_interval).astype(dtype)
-        tie_samples = tie_samples.astype(int)
+        tie_lengths = tie_lengths.astype(int)
         self.data = dict(
             tie_values=tie_values,
-            tie_samples=tie_samples,
+            tie_lengths=tie_lengths,
             sampling_interval=sampling_interval,
         )
         self.dim = dim
@@ -1026,7 +1026,7 @@ class SampledCoordinate(Coordinate):
         match data:
             case {
                 "tie_values": _,
-                "tie_samples": _,
+                "tie_lengths": _,
                 "sampling_interval": _,
             }:
                 return True
@@ -1037,7 +1037,7 @@ class SampledCoordinate(Coordinate):
         if self.empty:
             return 0
         else:
-            return sum(self.tie_samples)
+            return sum(self.tie_lengths)
 
     def __repr__(self):
         if self.empty:
@@ -1066,7 +1066,7 @@ class SampledCoordinate(Coordinate):
         return self.__class__(
             {
                 "tie_values": self.tie_values + other,
-                "tie_samples": self.tie_samples,
+                "tie_lengths": self.tie_lengths,
                 "sampling_interval": self.sampling_interval,
             },
             self.dim,
@@ -1076,7 +1076,7 @@ class SampledCoordinate(Coordinate):
         return self.__class__(
             {
                 "tie_values": self.tie_values - other,
-                "tie_samples": self.tie_samples,
+                "tie_lengths": self.tie_lengths,
                 "sampling_interval": self.sampling_interval,
             },
             self.dim,
@@ -1099,8 +1099,8 @@ class SampledCoordinate(Coordinate):
         return self.data["tie_values"]
 
     @property
-    def tie_samples(self):
-        return self.data["tie_samples"]
+    def tie_lengths(self):
+        return self.data["tie_lengths"]
 
     @property
     def sampling_interval(self):
@@ -1108,7 +1108,7 @@ class SampledCoordinate(Coordinate):
 
     @property
     def tie_indices(self):
-        return np.concatenate(([0], np.cumsum(self.tie_samples[:-1])))
+        return np.concatenate(([0], np.cumsum(self.tie_lengths[:-1])))
 
     @property
     def empty(self):
@@ -1146,12 +1146,12 @@ class SampledCoordinate(Coordinate):
 
     @property
     def end(self):
-        return self.tie_values[-1] + self.sampling_interval * self.tie_samples[-1]
+        return self.tie_values[-1] + self.sampling_interval * self.tie_lengths[-1]
 
     def equals(self, other):
         return (
             np.array_equal(self.tie_values, other.tie_values)
-            and np.array_equal(self.tie_samples, other.tie_samples)
+            and np.array_equal(self.tie_lengths, other.tie_lengths)
             and self.sampling_interval == other.sampling_interval
             and self.dim == other.dim
             and self.dtype == other.dtype
@@ -1177,18 +1177,18 @@ class SampledCoordinate(Coordinate):
             return self.__class__(
                 dict(
                     tie_values=[],
-                    tie_samples=[],
+                    tie_lengths=[],
                     sampling_interval=self.sampling_interval,
                 ),
                 self.dim,
             )
         elif (stop_index - start_index) <= step_index:
             tie_values = [self.get_value(start_index)]
-            tie_samples = [stop_index - start_index]
+            tie_lengths = [stop_index - start_index]
             return self.__class__(
                 dict(
                     tie_values=tie_values,
-                    tie_samples=tie_samples,
+                    tie_lengths=tie_lengths,
                     sampling_interval=self.sampling_interval,
                 ),
                 self.dim,
@@ -1197,7 +1197,7 @@ class SampledCoordinate(Coordinate):
             # keep tie values, number of samples and related tie indices contained in the slice
             mask = (start_index < self.tie_indices) & (self.tie_indices <= stop_index)
             tie_values = self.tie_values[mask]
-            tie_samples = self.tie_samples[mask]
+            tie_lengths = self.tie_lengths[mask]
             tie_indices = self.tie_indices[mask]
 
             # insert the missing start value
@@ -1205,15 +1205,15 @@ class SampledCoordinate(Coordinate):
             tie_values = np.concatenate([[start_value], self.tie_values[mask]])
 
             # insert the missing start number of samples and adjust the end one
-            tie_samples = np.concatenate(
-                [[start_index - tie_indices[0]], tie_samples[mask]]
+            tie_lengths = np.concatenate(
+                [[start_index - tie_indices[0]], tie_lengths[mask]]
             )
-            tie_samples[-1] = stop_index - tie_indices[-1]
+            tie_lengths[-1] = stop_index - tie_indices[-1]
 
             # repack data and decimate if needed
             data = {
                 "tie_values": tie_values,
-                "tie_samples": tie_samples,
+                "tie_lengths": tie_lengths,
                 "sampling_interval": self.sampling_interval,
             }
             coord = self.__class__(data, self.dim)
@@ -1259,11 +1259,11 @@ class SampledCoordinate(Coordinate):
                 "cannot append coordinate with different sampling intervals"
             )
         tie_values = np.concatenate([self.tie_values, other.tie_values])
-        tie_samples = np.concatenate([self.tie_samples, other.tie_samples + len(self)])
+        tie_lengths = np.concatenate([self.tie_lengths, other.tie_lengths + len(self)])
         return self.__class__(
             {
                 "tie_values": tie_values,
-                "tie_samples": tie_samples,
+                "tie_lengths": tie_lengths,
                 "sampling_interval": self.sampling_interval,
             },
             self.dim,
@@ -1293,12 +1293,12 @@ class SampledCoordinate(Coordinate):
 
     def to_dict(self):
         tie_values = self.data["tie_values"]
-        tie_samples = self.data["tie_samples"]
+        tie_lengths = self.data["tie_lengths"]
         if np.issubdtype(tie_values.dtype, np.datetime64):
             tie_values = tie_values.astype(str)
         data = {
             "tie_values": tie_values.tolist(),
-            "tie_samples": tie_samples.tolist(),
+            "tie_lengths": tie_lengths.tolist(),
             "sampling_interval": self.sampling_interval,
         }
         return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
