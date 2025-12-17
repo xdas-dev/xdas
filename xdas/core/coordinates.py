@@ -1413,6 +1413,8 @@ def get_sampling_interval(da, dim, cast=True):
         num = num[mask]
         den = den[mask]
         d = np.median(num / den)
+    elif isinstance(coord, SampledCoordinate):
+        d = coord.sampling_interval
     else:
         d = (coord[-1].values - coord[0].values) / (len(coord) - 1)
         d = np.asarray(d)
