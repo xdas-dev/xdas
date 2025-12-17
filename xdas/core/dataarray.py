@@ -874,36 +874,17 @@ class DataArray(NDArrayOperatorsMixin):
         """
         if virtual is None:
             virtual = isinstance(self.data, (VirtualArray, DaskArray))
+
+        # initialize
         ds = xr.Dataset(attrs={"Conventions": "CF-1.9"})
-        mappings = []
-        for name, coord in self.coords.items():
-            if coord.isinterp():
-                mappings.append(f"{name}: {name}_indices {name}_values")
-                tie_indices = coord.tie_indices
-                tie_values = (
-                    coord.tie_values.astype("M8[ns]")
-                    if np.issubdtype(coord.tie_values.dtype, np.datetime64)
-                    else coord.tie_values
-                )
-                attrs = {
-                    "interpolation_name": "linear",
-                    "tie_points_mapping": f"{name}_points: {name}_indices {name}_values",
-                }
-                ds.update(
-                    {
-                        f"{name}_interpolation": ((), np.nan, attrs),
-                        f"{name}_indices": (f"{name}_points", tie_indices),
-                        f"{name}_values": (f"{name}_points", tie_values),
-                    }
-                )
-            else:
-                ds = ds.assign_coords(
-                    {name: (coord.dim, coord.values) if coord.dim else coord.values}
-                )
-        mapping = " ".join(mappings)
-        attrs = {} if self.attrs is None else self.attrs
-        attrs |= {"coordinate_interpolation": mapping} if mapping else attrs
-        name = "__values__" if self.name is None else self.name
+        variable_attrs = {} if self.attrs is None else self.attrs
+        variable_name = "__values__" if self.name is None else self.name
+
+        # prepare metadata
+        for coord in self.coords.values():
+            ds, variable_attrs = coord.to_netcdf(ds, variable_attrs)
+
+        # write data
         with h5netcdf.File(fname, mode=mode) as file:
             if group is not None and group not in file:
                 file.create_group(group)
@@ -912,7 +893,7 @@ class DataArray(NDArrayOperatorsMixin):
             if not virtual:
                 encoding = {} if encoding is None else encoding
                 variable = file.create_variable(
-                    name,
+                    variable_name,
                     self.dims,
                     self.dtype,
                     data=self.values,
@@ -922,15 +903,15 @@ class DataArray(NDArrayOperatorsMixin):
                 if encoding is not None:
                     raise ValueError("cannot use `encoding` with in virtual mode")
                 if isinstance(self.data, VirtualArray):
-                    self.data.to_dataset(file._h5group, name)
-                    variable = file._variable_cls(file, name, self.dims)
-                    file._variables[name] = variable
+                    self.data.to_dataset(file._h5group, variable_name)
+                    variable = file._variable_cls(file, variable_name, self.dims)
+                    file._variables[variable_name] = variable
                     variable._attach_dim_scales()
                     variable._attach_coords()
                     variable._ensure_dim_id()
                 elif isinstance(self.data, DaskArray):
                     variable = file.create_variable(
-                        name,
+                        variable_name,
                         self.dims,
                         self.dtype,
                     )
@@ -941,8 +922,10 @@ class DataArray(NDArrayOperatorsMixin):
                     raise ValueError(
                         "can only use `virtual=True` with a virtual array as data"
                     )
-            if attrs:
-                variable.attrs.update(attrs)
+            if variable_attrs:
+                variable.attrs.update(variable_attrs)
+
+        # add metadata
         ds.to_netcdf(fname, mode="a", group=group, engine="h5netcdf")
 
     @classmethod

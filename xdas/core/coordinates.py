@@ -362,6 +362,12 @@ class Coordinate:
     def to_dict(self):
         raise NotImplementedError
 
+    def to_netcdf(self, ds, attrs):
+        ds = ds.assign_coords(
+            {self.name: (self.dim, self.values) if self.dim else self.values}
+        )
+        return ds, attrs
+
     @classmethod
     def from_dict(cls, dct):
         return cls(**dct)
@@ -1014,6 +1020,31 @@ class InterpCoordinate(Coordinate):
             "tie_values": tie_values.tolist(),
         }
         return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
+
+    def to_netcdf(self, ds, attrs):
+        mapping = f"{self.name}: {self.name}_indices {self.name}_values"
+        if "coordinate_interpolation" in attrs:
+            attrs["coordinate_interpolation"] += " " + mapping
+        else:
+            attrs["coordinate_interpolation"] = mapping
+        tie_indices = self.tie_indices
+        tie_values = (
+            self.tie_values.astype("M8[ns]")
+            if np.issubdtype(self.tie_values.dtype, np.datetime64)
+            else self.tie_values
+        )
+        interp_attrs = {
+            "interpolation_name": "linear",
+            "tie_points_mapping": f"{self.name}_points: {self.name}_indices {self.name}_values",
+        }
+        ds.update(
+            {
+                f"{self.name}_interpolation": ((), np.nan, interp_attrs),
+                f"{self.name}_indices": (f"{self.name}_points", tie_indices),
+                f"{self.name}_values": (f"{self.name}_points", tie_values),
+            }
+        )
+        return ds, attrs
 
 
 class SampledCoordinate(Coordinate):
