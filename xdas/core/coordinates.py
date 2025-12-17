@@ -1465,9 +1465,34 @@ class SampledCoordinate(Coordinate):
 
 
     def get_availabilities(self):
-        raise NotImplementedError(
-            "get_availabilities is not implemented for SampledCoordinate"
-        )
+        if self.empty:
+            return pd.DataFrame(
+                columns=[
+                    "start_index",
+                    "end_index",
+                    "start_value",
+                    "end_value",
+                    "delta",
+                    "type",
+                ]
+            )
+        records = []
+        for index, value, length in zip(self.tie_indices, self.tie_values, self.tie_indices):
+            start_index = index
+            end_index = index + length - 1
+            start_value = value
+            end_value = value + self.sampling_interval * (length - 1)
+            records.append(
+                {
+                    "start_index": start_index,
+                    "end_index": end_index,
+                    "start_value": start_value,
+                    "end_value": end_value,
+                    "delta": end_value - start_value,
+                    "type": "data",
+                }
+            )
+        return pd.DataFrame.from_records(records)
 
     @classmethod
     def from_array(cls, arr, dim=None, sampling_interval=None):
