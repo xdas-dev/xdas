@@ -1435,9 +1435,34 @@ class SampledCoordinate(Coordinate):
         )
 
     def get_discontinuities(self):
-        raise NotImplementedError(
-            "get_discontinuities is not implemented for SampledCoordinate"
-        )
+        if self.empty:
+            return pd.DataFrame(
+                columns=[
+                    "start_index",
+                    "end_index",
+                    "start_value",
+                    "end_value",
+                    "delta",
+                    "type",
+                ]
+            )
+        records = []
+        for index in self.tie_indices[: -1]:
+            start_index = index 
+            end_index = index + 1
+            start_value = self.get_value(index)
+            end_value = self.get_value(index + 1)
+            record = {
+                "start_index": start_index,
+                "end_index": end_index,
+                "start_value": start_value,
+                "end_value": end_value,
+                "delta": end_value - start_value,
+                "type": ("gap" if end_value > start_value else "overlap"),
+            }
+            records.append(record)
+        return pd.DataFrame.from_records(records)
+
 
     def get_availabilities(self):
         raise NotImplementedError(
