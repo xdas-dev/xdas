@@ -1447,8 +1447,8 @@ class SampledCoordinate(Coordinate):
                 ]
             )
         records = []
-        for index in self.tie_indices[: -1]:
-            start_index = index 
+        for index in self.tie_indices[:-1]:
+            start_index = index
             end_index = index + 1
             start_value = self.get_value(index)
             end_value = self.get_value(index + 1)
@@ -1463,7 +1463,6 @@ class SampledCoordinate(Coordinate):
             records.append(record)
         return pd.DataFrame.from_records(records)
 
-
     def get_availabilities(self):
         if self.empty:
             return pd.DataFrame(
@@ -1477,7 +1476,9 @@ class SampledCoordinate(Coordinate):
                 ]
             )
         records = []
-        for index, value, length in zip(self.tie_indices, self.tie_values, self.tie_indices):
+        for index, value, length in zip(
+            self.tie_indices, self.tie_values, self.tie_indices
+        ):
             start_index = index
             end_index = index + length - 1
             start_value = value
