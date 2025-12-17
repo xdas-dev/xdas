@@ -967,25 +967,8 @@ class DataArray(NDArrayOperatorsMixin):
                 else:
                     raise ValueError("several possible data arrays detected")
 
-            # read regular coordinates
-            coords = {
-                name: (
-                    (
-                        coord.dims[0],
-                        (
-                            coord.values.astype("U")
-                            if coord.dtype == np.dtype("O")
-                            else coord.values
-                        ),
-                    )
-                    if coord.dims
-                    else coord.values
-                )
-                for name, coord in da.coords.items()
-            }
-
-            # read advanced coordinates
-            coords |= Coordinates.from_dataset(ds, name)
+            # read coordinates
+            coords = Coordinates.from_dataset(ds, name)
 
         # read data
         with h5py.File(fname) as file:

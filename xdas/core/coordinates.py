@@ -645,6 +645,24 @@ class DenseCoordinate(Coordinate):
             data = self.data.tolist()
         return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
 
+    @classmethod
+    def from_dataset(cls, ds, name):
+        return {
+            name: (
+                (
+                    coord.dims[0],
+                    (
+                        coord.values.astype("U")
+                        if coord.dtype == np.dtype("O")
+                        else coord.values
+                    ),
+                )
+                if coord.dims
+                else coord.values
+            )
+            for name, coord in ds[name].coords.items()
+        }
+
 
 class InterpCoordinate(Coordinate):
     """
