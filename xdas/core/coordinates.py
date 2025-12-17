@@ -1416,8 +1416,22 @@ class SampledCoordinate(Coordinate):
         )
 
     def simplify(self, tolerance=None):
-        raise NotImplementedError(
-            "simplification is not implemented for SampledCoordinate"
+        tie_values = [self.tie_values[0]]
+        tie_lengths = [self.tie_lengths[0]]
+        for value, length in zip(self.tie_values[1:], self.tie_lengths[1:]):
+            delta = value - (tie_values[-1] + self.sampling_interval * tie_lengths[-1])
+            if np.abs(delta) <= tolerance:
+                tie_lengths[-1] += length
+            else:
+                tie_values.append(value)
+                tie_lengths.append(length)
+        return self.__class__(
+            {
+                "tie_values": np.array(tie_values),
+                "tie_lengths": np.array(tie_lengths),
+                "sampling_interval": self.sampling_interval,
+            },
+            self.dim,
         )
 
     def get_discontinuities(self):
