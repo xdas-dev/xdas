@@ -98,6 +98,7 @@ class Coordinates(dict):
                         f"conflicting sizes for dimension {coord.dim}: size {len(coord)} "
                         f"in `coords` and size {size} in `data`"
                     )
+        coord._parent = self
         return super().__setitem__(key, coord)
 
     def __repr__(self):
@@ -232,8 +233,8 @@ class Coordinates(dict):
     def _assign_parent(self, parent):
         if not len(self.dims) == parent.ndim:
             raise ValueError(
-                "infered dimension number from `coords` does not match "
-                "`data` dimensionality`"
+                f"inferred number of dimensions {len(self.dims)} from `coords` does "
+                f"not match `data` dimensionality of {parent.ndim}"
             )
         for dim, size in zip(self.dims, parent.shape):
             if (dim in self) and (not len(self[dim]) == size):
@@ -336,7 +337,27 @@ class Coordinate:
     def to_dataarray(self):
         from .dataarray import DataArray  # TODO: avoid defered import?
 
-        return DataArray(self.values, {self.dim: self}, name=self.dim)
+        if self.name is None:
+            raise ValueError("cannot convert unnamed coordinate to DataArray")
+
+        if self.parent is None:
+            return DataArray(
+                self.values,
+                {self.dim: self},
+                dims=[self.dim],
+                name=self.name,
+            )
+        else:
+            return DataArray(
+                self.values,
+                {
+                    name: coord
+                    for name, coord in self.parent.items()
+                    if coord.dim == self.dim
+                },
+                dims=[self.dim],
+                name=self.name,
+            )
 
     def to_dict(self):
         raise NotImplementedError
@@ -396,6 +417,25 @@ class Coordinate:
         ):
             stop_index -= 1
         return slice(start_index, stop_index)
+
+    def __reduce__(self):
+        return self.__class__, (self.data, self.dim), {"_parent": self.parent}
+
+    @property
+    def parent(self):
+        return getattr(self, "_parent", None)
+
+    @property
+    def name(self):
+        if self.parent is None:
+            return self.dim
+        return next((name for name in self.parent if self.parent[name] is self), None)
+
+    def isdim(self):
+        if self.parent is None or self.name is None:
+            return None
+        else:
+            return self.parent.isdim(self.name)
 
 
 class ScalarCoordinate(Coordinate):
@@ -924,23 +964,38 @@ class InterpCoordinate(Coordinate):
                 The type of the discontinuity, always "data".
 
         """
-        (indices,) = np.nonzero(np.diff(self.tie_indices) == 1)
-        indices = np.insert(indices, [0, len(indices)], [0, len(self.tie_indices) - 1])
+        if self.empty:
+            return pd.DataFrame(
+                columns=[
+                    "start_index",
+                    "end_index",
+                    "start_value",
+                    "end_value",
+                    "delta",
+                    "type",
+                ]
+            )
+        (cut_pos,) = np.nonzero(np.diff(self.tie_indices) == 1)
+        # start each segment after the previous cut (or at 0)
+        starts = np.concatenate(([0], cut_pos + 1))
+        # end each segment at the cut position (or at n-1 for the last)
+        ends = np.concatenate((cut_pos, [len(self.tie_indices) - 1]))
         records = []
-        for start, end in zip(indices[:-1], indices[1:]):
-            start_index = self.tie_indices[start]
-            end_index = self.tie_indices[end]
-            start_value = self.tie_values[start]
-            end_value = self.tie_values[end]
-            record = {
-                "start_index": start_index,
-                "end_index": end_index,
-                "start_value": start_value,
-                "end_value": end_value,
-                "delta": end_value - start_value,
-                "type": "data",
-            }
-            records.append(record)
+        for s, e in zip(starts, ends):
+            start_index = self.tie_indices[s]
+            end_index = self.tie_indices[e]
+            start_value = self.tie_values[s]
+            end_value = self.tie_values[e]
+            records.append(
+                {
+                    "start_index": start_index,
+                    "end_index": end_index,
+                    "start_value": start_value,
+                    "end_value": end_value,
+                    "delta": end_value - start_value,
+                    "type": "data",
+                }
+            )
         return pd.DataFrame.from_records(records)
 
     @classmethod

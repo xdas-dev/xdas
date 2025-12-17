@@ -166,9 +166,9 @@ def max(da, dim=None, *, skipna=True, **kwargs):
     else:
         axis = None
     if skipna and np.issubdtype(da.dtype, np.floating):
-        return np.max(da, axis, **kwargs)
-    else:
         return np.nanmax(da, axis, **kwargs)
+    else:
+        return np.max(da, axis, **kwargs)
 
 
 @atomized
@@ -202,9 +202,9 @@ def min(da, dim=None, *, skipna=True, **kwargs):
     else:
         axis = None
     if skipna and np.issubdtype(da.dtype, np.floating):
-        return np.min(da, axis, **kwargs)
-    else:
         return np.nanmin(da, axis, **kwargs)
+    else:
+        return np.min(da, axis, **kwargs)
 
 
 @atomized
@@ -239,9 +239,9 @@ def argmax(da, dim=None, *, skipna=True, **kwargs):
     else:
         axis = None
     if skipna and np.issubdtype(da.dtype, np.floating):
-        return np.argmax(da, axis, **kwargs)
-    else:
         return np.nanargmax(da, axis, **kwargs)
+    else:
+        return np.argmax(da, axis, **kwargs)
 
 
 @atomized
@@ -276,9 +276,9 @@ def argmin(da, dim=None, *, skipna=True, **kwargs):
     else:
         axis = None
     if skipna and np.issubdtype(da.dtype, np.floating):
-        return np.argmin(da, axis, **kwargs)
-    else:
         return np.nanargmin(da, axis, **kwargs)
+    else:
+        return np.argmin(da, axis, **kwargs)
 
 
 @atomized
@@ -312,9 +312,9 @@ def median(da, dim=None, *, skipna=True, **kwargs):
     else:
         axis = None
     if skipna and np.issubdtype(da.dtype, np.floating):
-        return np.median(da, axis, **kwargs)
-    else:
         return np.nanmedian(da, axis, **kwargs)
+    else:
+        return np.median(da, axis, **kwargs)
 
 
 @atomized
@@ -378,9 +378,9 @@ def mean(da, dim=None, *, skipna=True, **kwargs):
     else:
         axis = None
     if skipna and np.issubdtype(da.dtype, np.floating):
-        return np.mean(da, axis, **kwargs)
-    else:
         return np.nanmean(da, axis, **kwargs)
+    else:
+        return np.mean(da, axis, **kwargs)
 
 
 @atomized
@@ -414,9 +414,9 @@ def prod(da, dim=None, *, skipna=True, **kwargs):
     else:
         axis = None
     if skipna and np.issubdtype(da.dtype, np.floating):
-        return np.prod(da, axis, **kwargs)
-    else:
         return np.nanprod(da, axis, **kwargs)
+    else:
+        return np.prod(da, axis, **kwargs)
 
 
 @atomized
@@ -451,9 +451,9 @@ def std(da, dim=None, *, skipna=True, **kwargs):
     else:
         axis = None
     if skipna and np.issubdtype(da.dtype, np.floating):
-        return np.std(da, axis, **kwargs)
-    else:
         return np.nanstd(da, axis, **kwargs)
+    else:
+        return np.std(da, axis, **kwargs)
 
 
 @atomized
@@ -487,9 +487,9 @@ def sum(da, dim=None, *, skipna=True, **kwargs):
     else:
         axis = None
     if skipna and np.issubdtype(da.dtype, np.floating):
-        return np.sum(da, axis, **kwargs)
-    else:
         return np.nansum(da, axis, **kwargs)
+    else:
+        return np.sum(da, axis, **kwargs)
 
 
 @atomized
@@ -523,9 +523,9 @@ def var(da, dim=None, *, skipna=True, **kwargs):
     else:
         axis = None
     if skipna and np.issubdtype(da.dtype, np.floating):
-        return np.var(da, axis, **kwargs)
-    else:
         return np.nanvar(da, axis, **kwargs)
+    else:
+        return np.var(da, axis, **kwargs)
 
 
 @atomized
@@ -561,9 +561,9 @@ def percentile(da, q, dim=None, *, skipna=True, **kwargs):
     else:
         axis = None
     if skipna and np.issubdtype(da.dtype, np.floating):
-        return np.percentile(da, q, axis, **kwargs)
-    else:
         return np.nanpercentile(da, q, axis, **kwargs)
+    else:
+        return np.percentile(da, q, axis, **kwargs)
 
 
 @atomized
@@ -599,9 +599,9 @@ def quantile(da, q, dim=None, *, skipna=True, **kwargs):
     else:
         axis = None
     if skipna and np.issubdtype(da.dtype, np.floating):
-        return np.quantile(da, q, axis, **kwargs)
-    else:
         return np.nanquantile(da, q, axis, **kwargs)
+    else:
+        return np.quantile(da, q, axis, **kwargs)
 
 
 @atomized
