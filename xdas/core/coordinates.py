@@ -250,14 +250,10 @@ class Coordinate:
         if data is None:
             raise TypeError("cannot infer coordinate type if no `data` is provided")
         data, dim = parse(data, dim)
-        if ScalarCoordinate.isvalid(data):
-            return object.__new__(ScalarCoordinate)
-        elif DenseCoordinate.isvalid(data):
-            return object.__new__(DenseCoordinate)
-        elif InterpCoordinate.isvalid(data):
-            return object.__new__(InterpCoordinate)
-        else:
-            raise TypeError("could not parse `data`")
+        for subcls in cls.__subclasses__():
+            if subcls.isvalid(data):
+                return object.__new__(subcls)
+        raise TypeError("could not parse `data`")
 
     def __getitem__(self, item):
         data = self.data.__getitem__(item)
