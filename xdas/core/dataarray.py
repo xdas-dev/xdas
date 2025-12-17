@@ -944,55 +944,49 @@ class DataArray(NDArrayOperatorsMixin):
         DataArray
             The openend data array.
         """
+        # read metadata
         with xr.open_dataset(fname, group=group, engine="h5netcdf") as ds:
+            # check file format
             if not ("Conventions" in ds.attrs and "CF" in ds.attrs["Conventions"]):
                 raise TypeError(
                     "file format not recognized. please provide the file format "
                     "with the `engine` keyword argument"
                 )
+
+            # identify the "main" data array
             if len(ds) == 1:
                 name, da = next(iter(ds.items()))
-                coords = {
-                    name: (
-                        (
-                            coord.dims[0],
-                            (
-                                coord.values.astype("U")
-                                if coord.dtype == np.dtype("O")
-                                else coord.values
-                            ),
-                        )
-                        if coord.dims
-                        else coord.values
-                    )
-                    for name, coord in da.coords.items()
-                }
             else:
-                data_vars = [
-                    var
-                    for var in ds.values()
-                    if "coordinate_interpolation" in var.attrs
-                ]
+                data_vars = {
+                    name: var
+                    for name, var in ds.items()
+                    if any("coordinate" in attr for attr in var.attrs)
+                }
                 if len(data_vars) == 1:
-                    da = data_vars[0]
+                    name, da = next(iter(data_vars.items()))
                 else:
                     raise ValueError("several possible data arrays detected")
-                coords = {
-                    name: (
+
+            # read regular coordinates
+            coords = {
+                name: (
+                    (
+                        coord.dims[0],
                         (
-                            coord.dims[0],
-                            (
-                                coord.values.astype("U")
-                                if coord.dtype == np.dtype("O")
-                                else coord.values
-                            ),
-                        )
-                        if coord.dims
-                        else coord.values
+                            coord.values.astype("U")
+                            if coord.dtype == np.dtype("O")
+                            else coord.values
+                        ),
                     )
-                    for name, coord in da.coords.items()
-                }
-                mapping = da.attrs.pop("coordinate_interpolation")
+                    if coord.dims
+                    else coord.values
+                )
+                for name, coord in da.coords.items()
+            }
+
+            # read advanced coordinates
+            mapping = da.attrs.pop("coordinate_interpolation", None)
+            if mapping is not None:
                 matches = re.findall(r"(\w+): (\w+) (\w+)", mapping)
                 for match in matches:
                     dim, indices, values = match
