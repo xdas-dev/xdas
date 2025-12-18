@@ -258,13 +258,9 @@ class Coordinate:
         raise TypeError("could not parse `data`")
 
     def __getitem__(self, item):
-        from .scalar import ScalarCoordinate
-
         data = self.data.__getitem__(item)
-        if ScalarCoordinate.isvalid(data):
-            return ScalarCoordinate(data)
-        else:
-            return Coordinate(data, self.dim)
+        dim = None if isscalar(data) else self.dim
+        return Coordinate(data, dim)
 
     def __len__(self):
         return self.data.__len__()
@@ -513,6 +509,11 @@ def get_sampling_interval(da, dim, cast=True):
     if cast and np.issubdtype(d.dtype, np.timedelta64):
         d = d / np.timedelta64(1, "s")
     return d
+
+
+def isscalar(data):
+    data = np.asarray(data)
+    return (data.dtype != np.dtype(object)) and (data.ndim == 0)
 
 
 def is_strictly_increasing(x):

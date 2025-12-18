@@ -1,6 +1,6 @@
 import numpy as np
 
-from .core import Coordinate, parse
+from .core import Coordinate, isscalar, parse
 
 
 class DefaultCoordinate(Coordinate):
@@ -25,13 +25,10 @@ class DefaultCoordinate(Coordinate):
             return self.data["size"]
 
     def __getitem__(self, item):
-        from .scalar import ScalarCoordinate
 
         data = self.__array__()[item]
-        if ScalarCoordinate.isvalid(data):
-            return ScalarCoordinate(data)
-        else:
-            return Coordinate(data, self.dim)
+        dim = None if isscalar(data) else self.dim
+        return Coordinate(data, dim)
 
     def __array__(self, dtype=None):
         return np.arange(self.data["size"], dtype=dtype)
