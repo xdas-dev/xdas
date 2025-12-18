@@ -612,9 +612,9 @@ class Bag:
             if self.dim in self.dims
             else da.coords.drop_coords(self.dim)
         )
-        try:
+        if self.dim in da.coords:
             self.delta = get_sampling_interval(da, self.dim)
-        except (ValueError, KeyError):
+        else:
             self.delta = None
         self.dtype = da.dtype
 

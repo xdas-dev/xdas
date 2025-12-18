@@ -323,6 +323,15 @@ class Coordinate:
             return self.dim
         return next((name for name in self.parent if self.parent[name] is self), None)
 
+    def get_sampling_interval(self, cast=True):
+        if len(self) < 2:
+            return None
+        delta = (self[-1].values - self[0].values) / (len(self) - 1)
+        delta = np.asarray(delta)  # TODO: why?
+        if cast and np.issubdtype(delta.dtype, np.timedelta64):
+            delta = delta / np.timedelta64(1, "s")
+        return delta
+
     def isdim(self):
         if self.parent is None or self.name is None:
             return None
@@ -488,27 +497,9 @@ def get_sampling_interval(da, dim, cast=True):
     -------
     float
         The sample spacing.
+
     """
-    if da.sizes[dim] < 2:
-        raise ValueError(
-            "cannot compute sample spacing on a dimension with less than 2 points"
-        )
-    coord = da[dim]
-    if coord.isinterp():
-        num = np.diff(coord.tie_values)
-        den = np.diff(coord.tie_indices)
-        mask = den != 1
-        num = num[mask]
-        den = den[mask]
-        d = np.median(num / den)
-    elif coord.issampled():
-        d = coord.sampling_interval
-    else:
-        d = (coord[-1].values - coord[0].values) / (len(coord) - 1)
-        d = np.asarray(d)
-    if cast and np.issubdtype(d.dtype, np.timedelta64):
-        d = d / np.timedelta64(1, "s")
-    return d
+    return da[dim].get_sampling_interval(cast=cast)
 
 
 def isscalar(data):

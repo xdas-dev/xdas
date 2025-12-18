@@ -164,6 +164,19 @@ class InterpCoordinate(Coordinate):
         else:
             return self.get_value(self.indices)
 
+    def get_sampling_interval(self, cast=True):
+        if len(self) < 2:
+            return None
+        num = np.diff(self.tie_values)
+        den = np.diff(self.tie_indices)
+        mask = den != 1
+        num = num[mask]
+        den = den[mask]
+        delta = np.median(num / den)
+        if cast and np.issubdtype(delta.dtype, np.timedelta64):
+            delta = delta / np.timedelta64(1, "s")
+        return delta
+
     def equals(self, other):
         return (
             np.array_equal(self.tie_indices, other.tie_indices)

@@ -112,6 +112,9 @@ class SampledCoordinate(Coordinate):
     def issampled(self):
         return True
 
+    def get_sampling_interval(self, cast=True):
+        return self.sampling_interval
+
     def __len__(self):
         if self.empty:
             return 0

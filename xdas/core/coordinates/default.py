@@ -25,7 +25,6 @@ class DefaultCoordinate(Coordinate):
             return self.data["size"]
 
     def __getitem__(self, item):
-
         data = self.__array__()[item]
         dim = None if isscalar(data) else self.dim
         return Coordinate(data, dim)
@@ -59,6 +58,9 @@ class DefaultCoordinate(Coordinate):
     @property
     def shape(self):
         return (len(self),)
+
+    def get_sampling_interval(self, cast=True):
+        return 1
 
     def equals(self, other):
         if isinstance(other, self.__class__):
