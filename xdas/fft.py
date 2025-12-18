@@ -1,7 +1,7 @@
 import numpy as np
 
 from .atoms.core import atomized
-from .core.coordinates import get_sampling_interval
+from .coordinates.core import get_sampling_interval
 from .core.dataarray import DataArray
 from .parallel import parallelize
 

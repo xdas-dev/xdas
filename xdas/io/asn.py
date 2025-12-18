@@ -4,8 +4,7 @@ import h5py
 import numpy as np
 import zmq
 
-from xdas.core.coordinates import get_sampling_interval
-
+from ..coordinates.core import get_sampling_interval
 from ..core.dataarray import DataArray
 from ..virtual import VirtualSource
 

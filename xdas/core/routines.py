@@ -11,8 +11,9 @@ import plotly.express as px
 import xarray as xr
 from tqdm import tqdm
 
+from ..coordinates.core import Coordinates, get_sampling_interval
+from ..coordinates.interp import InterpCoordinate
 from ..virtual import VirtualSource, VirtualStack
-from .coordinates import Coordinates, InterpCoordinate, get_sampling_interval
 from .dataarray import DataArray
 from .datacollection import DataCollection, DataMapping, DataSequence
 

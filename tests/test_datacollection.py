@@ -4,7 +4,7 @@ from tempfile import TemporaryDirectory
 import h5py
 import pytest
 
-import xdas
+import xdas as xd
 import xdas.signal as xs
 from xdas.core.datacollection import get_depth
 from xdas.synthetics import wavelet_wavefronts
@@ -12,10 +12,10 @@ from xdas.synthetics import wavelet_wavefronts
 
 class TestDataCollection:
     def nest(self, da):
-        return xdas.DataCollection(
+        return xd.DataCollection(
             {
-                "das1": xdas.DataCollection([da, da], "acquisition"),
-                "das2": xdas.DataCollection([da, da, da], "acquisition"),
+                "das1": xd.DataCollection([da, da], "acquisition"),
+                "das2": xd.DataCollection([da, da, da], "acquisition"),
             },
             "instrument",
         )
@@ -30,12 +30,12 @@ class TestDataCollection:
                 "das2": ("acquisition", [da, da, da]),
             },
         )
-        result = xdas.DataCollection(data)
+        result = xd.DataCollection(data)
         assert result.equals(dc)
 
     def test_io(self):
         da = wavelet_wavefronts()
-        dc = xdas.DataCollection(
+        dc = xd.DataCollection(
             {
                 "das1": da,
                 "das2": da,
@@ -45,27 +45,27 @@ class TestDataCollection:
         with TemporaryDirectory() as dirpath:
             path = os.path.join(dirpath, "tmp.nc")
             dc.to_netcdf(path)
-            result = xdas.DataCollection.from_netcdf(path)
+            result = xd.DataCollection.from_netcdf(path)
             assert result.equals(dc)
-        dc = xdas.DataCollection([da, da], "instrument")
+        dc = xd.DataCollection([da, da], "instrument")
         with TemporaryDirectory() as dirpath:
             path = os.path.join(dirpath, "tmp.nc")
             dc.to_netcdf(path)
-            result = xdas.DataCollection.from_netcdf(path)
+            result = xd.DataCollection.from_netcdf(path)
             assert result.equals(dc)
-        dc = xdas.DataCollection(
+        dc = xd.DataCollection(
             {
-                "das1": xdas.DataCollection([da, da], "acquisition"),
-                "das2": xdas.DataCollection([da, da, da], "acquisition"),
+                "das1": xd.DataCollection([da, da], "acquisition"),
+                "das2": xd.DataCollection([da, da, da], "acquisition"),
             },
             "instrument",
         )
         with TemporaryDirectory() as dirpath:
             path = os.path.join(dirpath, "tmp.nc")
             dc.to_netcdf(path)
-            result = xdas.DataCollection.from_netcdf(path)
+            result = xd.DataCollection.from_netcdf(path)
             assert result.equals(dc)
-            result = xdas.open_datacollection(path)
+            result = xd.open_datacollection(path)
             assert result.equals(dc)
 
     def test_depth_counter(self):
@@ -108,9 +108,9 @@ class TestDataCollection:
         da = wavelet_wavefronts()
         dc = self.nest(da)
         result = dc.query(instrument="das1", acquisition=0)
-        expected = xdas.DataCollection(
+        expected = xd.DataCollection(
             {
-                "das1": xdas.DataCollection([da], "acquisition"),
+                "das1": xd.DataCollection([da], "acquisition"),
             },
             "instrument",
         )

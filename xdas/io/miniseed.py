@@ -2,7 +2,7 @@ import dask
 import numpy as np
 import obspy
 
-from ..core.coordinates import Coordinate, Coordinates
+from ..coordinates.core import Coordinate, Coordinates
 from ..core.dataarray import DataArray
 
 

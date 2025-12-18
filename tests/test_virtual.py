@@ -5,7 +5,7 @@ import h5py
 import numpy as np
 import pytest
 
-import xdas
+import xdas as xd
 from xdas.synthetics import wavelet_wavefronts
 from xdas.virtual import (
     Selection,
@@ -22,11 +22,11 @@ class TestFunctional:  # TODO: move elsewhere
     def test_all(self):
         with tempfile.TemporaryDirectory() as dirpath:
             expected = wavelet_wavefronts()
-            chunks = xdas.split(expected, 3)
+            chunks = xd.split(expected, 3)
             for index, chunk in enumerate(chunks, start=1):
                 chunk.to_netcdf(os.path.join(dirpath, f"{index:03d}.nc"))
 
-            da = xdas.open_dataarray(os.path.join(dirpath, "002.nc"))
+            da = xd.open_dataarray(os.path.join(dirpath, "002.nc"))
             datasource = da.data
             assert np.allclose(np.asarray(datasource[0]), da.load().values[0])
             assert np.allclose(np.asarray(datasource[0][1]), da.load().values[0][1])
@@ -68,9 +68,9 @@ class TestFunctional:  # TODO: move elsewhere
             np.complex128,
         )
         for dtype in dtypes:
-            expected = xdas.DataArray(np.zeros((3, 5), dtype=dtype))
+            expected = xd.DataArray(np.zeros((3, 5), dtype=dtype))
             expected.to_netcdf(tmp_path / "data.nc")
-            result = xdas.open_dataarray(tmp_path / "data.nc")
+            result = xd.open_dataarray(tmp_path / "data.nc")
             assert result.equals(expected)
 
 

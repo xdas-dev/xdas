@@ -421,7 +421,7 @@ class Coordinate:
         raise NotImplementedError(f"append is not implemented for {self.__class__}")
 
     def to_dataarray(self):
-        from ..dataarray import DataArray  # TODO: avoid defered import?
+        from ..core.dataarray import DataArray  # TODO: avoid defered import?
 
         if self.name is None:
             raise ValueError("cannot convert unnamed coordinate to DataArray")

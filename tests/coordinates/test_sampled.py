@@ -2,7 +2,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from xdas.core.coordinates import DenseCoordinate, SampledCoordinate, ScalarCoordinate
+from xdas.coordinates import (
+    Coordinate,
+    DenseCoordinate,
+    SampledCoordinate,
+    ScalarCoordinate,
+)
 
 
 class TestSampledCoordinateBasics:
@@ -355,8 +360,6 @@ class TestSampledCoordinateSerialization:
         )
         d = coord.to_dict()
         # round-trip via Coordinate factory
-        from xdas.core.coordinates import Coordinate
-
         back = Coordinate.from_dict(d)
         assert isinstance(back, SampledCoordinate)
         assert back.equals(coord)

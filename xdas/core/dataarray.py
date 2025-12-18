@@ -1,6 +1,4 @@
 import copy
-import json
-import re
 import warnings
 from functools import partial
 
@@ -12,9 +10,9 @@ import xarray as xr
 from dask.array import Array as DaskArray
 from numpy.lib.mixins import NDArrayOperatorsMixin
 
+from ..coordinates import Coordinates, get_sampling_interval
 from ..dask.core import create_variable, from_dict, loads, to_dict
 from ..virtual import VirtualArray, VirtualSource, _to_human
-from .coordinates import Coordinate, Coordinates, get_sampling_interval
 
 HANDLED_NUMPY_FUNCTIONS = {}
 HANDLED_METHODS = {}

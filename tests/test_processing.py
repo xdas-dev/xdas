@@ -10,10 +10,10 @@ import obspy
 import pandas as pd
 import scipy.signal as sp
 
-import xdas
+import xdas as xd
 import xdas.processing as xp
 from xdas.atoms import Partial, Sequential
-from xdas.processing.core import (
+from xdas.processing import (
     DataArrayLoader,
     DataArrayWriter,
     DataFrameWriter,
@@ -31,7 +31,7 @@ class TestProcessing:
         with tempfile.TemporaryDirectory() as tempdir:
             # generate test dataarray
             wavelet_wavefronts().to_netcdf(os.path.join(tempdir, "sample.nc"))
-            da = xdas.open_dataarray(os.path.join(tempdir, "sample.nc"))
+            da = xd.open_dataarray(os.path.join(tempdir, "sample.nc"))
 
             # declare processing sequence
             sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
@@ -189,20 +189,20 @@ class TestZMQ:
             result.append(packet)
             if n == len(packets):
                 break
-        return xdas.concatenate(result)
+        return xd.concatenate(result)
 
     def test_publish_and_subscribe(self):
-        expected = xdas.synthetics.dummy()
-        packets = xdas.split(expected, 10)
-        address = f"tcp://localhost:{xdas.io.get_free_port()}"
+        expected = xd.synthetics.dummy()
+        packets = xd.split(expected, 10)
+        address = f"tcp://localhost:{xd.io.get_free_port()}"
 
         result = self._publish_and_subscribe(packets, address)
         assert result.equals(expected)
 
     def test_encoding(self):
-        expected = xdas.synthetics.dummy()
-        packets = xdas.split(expected, 10)
-        address = f"tcp://localhost:{xdas.io.get_free_port()}"
+        expected = xd.synthetics.dummy()
+        packets = xd.split(expected, 10)
+        address = f"tcp://localhost:{xd.io.get_free_port()}"
         encoding = {"chunks": (10, 10), **hdf5plugin.Zfp(accuracy=1e-6)}
 
         result = self._publish_and_subscribe(packets, address, encoding=encoding)
@@ -221,7 +221,7 @@ class TestStreamWriter:
             endtime = starttime + np.timedelta64(10, "ms") * (data.shape[0] - 1)
             distance = 5.0 * np.arange(data.shape[1])
 
-            da = xdas.DataArray(
+            da = xd.DataArray(
                 data=data,
                 coords={
                     "time": {
@@ -275,7 +275,7 @@ class TestStreamWriter:
 
     def test_with_gap(self):
         with tempfile.TemporaryDirectory() as tempdir:
-            da = xdas.DataArray(
+            da = xd.DataArray(
                 data=np.random.randint(
                     low=-1000, high=1000, size=(900, 10), dtype=np.int32
                 ),
@@ -350,7 +350,7 @@ class TestStreamWriter:
             endtime = starttime + np.timedelta64(10, "ms") * (data.shape[0] - 1)
             distance = 5.0 * np.arange(data.shape[1])
 
-            da = xdas.DataArray(
+            da = xd.DataArray(
                 data=data,
                 coords={
                     "time": {

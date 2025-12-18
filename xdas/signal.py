@@ -2,7 +2,7 @@ import numpy as np
 import scipy.signal as sp
 
 from .atoms.core import atomized
-from .core.coordinates import Coordinate, get_sampling_interval
+from .coordinates.core import Coordinate, get_sampling_interval
 from .core.dataarray import DataArray
 from .parallel import parallelize
 from .spectral import stft
