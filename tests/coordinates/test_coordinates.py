@@ -13,12 +13,6 @@ class TestCoordinate:
         assert coord.isdense()
         assert coord.dim == "dim"
 
-    def test_to_dataarray(self):
-        coord = xd.Coordinate([1, 2, 3], "dim")
-        result = coord.to_dataarray()
-        expected = xd.DataArray([1, 2, 3], {"dim": [1, 2, 3]}, name="dim")
-        assert result.equals(expected)
-
     def test_empty(self):
         with pytest.raises(TypeError, match="cannot infer coordinate type"):
             xd.Coordinate()
@@ -44,6 +38,10 @@ class TestCoordinate:
         assert coords["other_dim"].name == "other_dim"
 
     def test_to_dataarray(self):
+        coord = xd.Coordinate([1, 2, 3], "dim")
+        result = coord.to_dataarray()
+        expected = xd.DataArray([1, 2, 3], {"dim": [1, 2, 3]}, name="dim")
+        assert result.equals(expected)
         coord = xd.Coordinate([1, 2, 3])
         with pytest.raises(ValueError, match="unnamed coordinate"):
             coord.to_dataarray()
