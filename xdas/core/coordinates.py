@@ -1353,7 +1353,7 @@ class SampledCoordinate(Coordinate):
         else:
             value = np.asarray(value)
         # Check that value lies within the coordinate value range (vectorized)
-        if np.any(value < self.start) or np.any(value > self.end):
+        if np.any(value < self.start) or np.any(value >= self.end):
             raise KeyError("index not found")
         if not is_strictly_increasing(self.tie_values):
             raise ValueError("tie_values must be strictly increasing")

@@ -360,3 +360,68 @@ class TestSampledCoordinateSerialization:
         back = Coordinate.from_dict(d)
         assert isinstance(back, SampledCoordinate)
         assert back.equals(coord)
+
+
+class TestSampledCoordinateDatetime:
+    def make_dt_coord(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        return SampledCoordinate(
+            {
+                "tie_values": [t0, t0 + np.timedelta64(10, "s")],
+                "tie_lengths": [3, 2],
+                "sampling_interval": np.timedelta64(1, "s"),
+            }
+        )
+
+    def test_datetime_values_and_dtype(self):
+        coord = self.make_dt_coord()
+        assert np.issubdtype(coord.dtype, np.datetime64)
+        vals = coord.values
+        assert np.issubdtype(vals.dtype, np.datetime64)
+        assert vals[0] == np.datetime64("2000-01-01T00:00:00")
+        assert vals[3] == np.datetime64("2000-01-01T00:00:10")
+
+    def test_get_value_datetime(self):
+        coord = self.make_dt_coord()
+        assert coord.get_value(1) == np.datetime64("2000-01-01T00:00:01")
+        assert coord.get_value(4) == np.datetime64("2000-01-01T00:00:11")
+        with pytest.raises(IndexError):
+            coord.get_value(5)
+
+    def test_get_indexer_datetime_methods(self):
+        coord = self.make_dt_coord()
+        t = np.datetime64("2000-01-01T00:00:01.500")
+        # exact required when method=None -> should raise
+        with pytest.raises(KeyError):
+            coord.get_indexer(t)
+        # method variants
+        assert coord.get_indexer(t, method="nearest") in [1, 2]
+        assert coord.get_indexer(t, method="ffill") == 1
+        assert coord.get_indexer(t, method="bfill") == 2
+        # bounds
+        with pytest.raises(KeyError):
+            coord.get_indexer(np.datetime64("1999-12-31T23:59:59"))
+        with pytest.raises(KeyError):
+            coord.get_indexer(np.datetime64("2000-01-01T00:00:12"))
+
+    def test_start_end_properties_datetime(self):
+        coord = self.make_dt_coord()
+        assert coord.start == np.datetime64("2000-01-01T00:00:00")
+        # end is last tie_value + sampling_interval * last_length
+        assert coord.end == np.datetime64("2000-01-01T00:00:12")
+
+
+class TestSampledCoordinateIndexerEdgeCases:
+    def test_invalid_method_raises(self):
+        coord = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
+        )
+        with pytest.raises(ValueError):
+            coord.get_indexer(0.0, method="bad")
+
+    def test_non_increasing_tie_values_raises(self):
+        coord = SampledCoordinate(
+            {"tie_values": [2.0, 1.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
+        )
+        with pytest.raises(ValueError):
+            coord.get_indexer(2.0)
