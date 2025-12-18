@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from xdas.core.coordinates import SampledCoordinate, ScalarCoordinate, DenseCoordinate
+import pandas as pd
 
 
 class TestSampledCoordinateBasics:
@@ -130,6 +131,100 @@ class TestSampledCoordinateIndexing:
         # Just ensure it returns a string
         coord = self.make_coord()
         assert isinstance(repr(coord), str)
+
+
+class TestSampledCoordinateSliceEdgeCases:
+    def make_coord(self):
+        return SampledCoordinate(
+            {"tie_values": [0.0, 10.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
+        )
+
+    def test_slice_negative_and_out_of_bounds(self):
+        coord = self.make_coord()
+        # negative slice indices
+        s = coord[-4:-1]
+        assert isinstance(s, SampledCoordinate)
+        # slice that extends beyond bounds should clip
+        s2 = coord[-10:10]
+        assert s2.equals(coord)
+
+    def test_slice_step_decimate(self):
+        coord = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [10], "sampling_interval": 1.0}
+        )
+        stepped = coord[::2]
+        decimated = coord.decimate(2)
+        assert isinstance(stepped, SampledCoordinate)
+        assert decimated.equals(stepped)
+
+
+class TestSampledCoordinateAppendErrors:
+    def test_append_sampling_interval_mismatch(self):
+        coord1 = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
+        )
+        coord2 = SampledCoordinate(
+            {"tie_values": [10.0], "tie_lengths": [2], "sampling_interval": 2.0}
+        )
+        with pytest.raises(ValueError):
+            coord1.append(coord2)
+
+    def test_append_dtype_mismatch(self):
+        coord1 = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
+        )
+        coord2 = SampledCoordinate(
+            {
+                "tie_values": [np.datetime64("2000-01-01T00:00:00")],
+                "tie_lengths": [1],
+                "sampling_interval": np.timedelta64(1, "s"),
+            }
+        )
+        with pytest.raises(ValueError):
+            coord1.append(coord2)
+
+
+class TestSampledCoordinateDiscontinuitiesAvailabilities:
+    def test_discontinuities_and_availabilities(self):
+        # tie_lengths set to create 2 segments
+        coord = SampledCoordinate(
+            {"tie_values": [0.0, 5.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
+        )
+        dis = coord.get_discontinuities()
+        avail = coord.get_availabilities()
+        # expect DataFrame with specific columns
+        for df in (dis, avail):
+            assert isinstance(df, pd.DataFrame)
+            assert set(df.columns) >= {
+                "start_index",
+                "end_index",
+                "start_value",
+                "end_value",
+                "delta",
+                "type",
+            }
+        # availabilities should list segments (2 segments -> 2 records)
+        assert len(avail) >= 1
+
+
+class TestSampledCoordinateToDatasetAndDict:
+    def test_to_dict_contains_expected_keys(self):
+        coord = SampledCoordinate(
+            {
+                "tie_values": [0.0, 10.0],
+                "tie_lengths": [3, 2],
+                "sampling_interval": 1.0,
+            },
+            dim="time",
+        )
+        d = coord.to_dict()
+        assert "dim" in d
+        assert "data" in d
+        assert set(d["data"].keys()) >= {
+            "tie_values",
+            "tie_lengths",
+            "sampling_interval",
+        }
 
 
 class TestSampledCoordinateSlicing:

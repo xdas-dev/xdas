@@ -1313,6 +1313,8 @@ class SampledCoordinate(Coordinate):
     def slice_index(self, index_slice):
         index_slice = self.format_index_slice(index_slice)
 
+        # TODO: optimize when start and/or stop are None
+
         # get indices relative to tie points
         relative_start_index = np.clip(
             index_slice.start - self.tie_indices, 0, self.tie_lengths
@@ -1334,9 +1336,7 @@ class SampledCoordinate(Coordinate):
         if index_slice.step == 1:
             sampling_interval = self.sampling_interval
         else:
-            tie_lengths = (
-                (self.tie_lengths + index_slice.step - 1) // index_slice.step,
-            )
+            tie_lengths = (self.tie_lengths + index_slice.step - 1) // index_slice.step
             sampling_interval = self.sampling_interval * index_slice.step
 
         # build new coordinate
@@ -1403,14 +1403,7 @@ class SampledCoordinate(Coordinate):
         )
 
     def decimate(self, q):
-        return self.__class__(
-            {
-                "tie_values": self.tie_values,
-                "tie_lengths": (self.tie_lengths + q - 1) // q,
-                "sampling_interval": self.sampling_interval * q,
-            },
-            self.dim,
-        )
+        return self[::q]
 
     def simplify(self, tolerance=None):
         tie_values = [self.tie_values[0]]
