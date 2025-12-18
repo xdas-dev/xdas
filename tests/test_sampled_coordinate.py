@@ -1,8 +1,8 @@
 import numpy as np
+import pandas as pd
 import pytest
 
-from xdas.core.coordinates import SampledCoordinate, ScalarCoordinate, DenseCoordinate
-import pandas as pd
+from xdas.core.coordinates import DenseCoordinate, SampledCoordinate, ScalarCoordinate
 
 
 class TestSampledCoordinateBasics:
