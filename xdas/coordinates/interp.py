@@ -292,6 +292,12 @@ class InterpCoordinate(Coordinate):
             dict(tie_indices=tie_indices, tie_values=tie_values), self.dim
         )
 
+    def get_div_points(self):
+        (points,) = np.nonzero(np.diff(self.tie_indices, prepend=[0]) == 1)
+        div_points = [self.tie_indices[point] for point in points]
+        div_points = [0] + div_points + [len(self)]
+        return div_points
+
     def get_discontinuities(self):
         """
         Returns a DataFrame containing information about the discontinuities.

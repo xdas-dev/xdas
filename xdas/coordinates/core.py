@@ -420,6 +420,11 @@ class Coordinate:
     def append(self, other):
         raise NotImplementedError(f"append is not implemented for {self.__class__}")
 
+    def get_div_points(self):
+        raise NotImplementedError(
+            f"get_div_points is not implemented for {self.__class__}"
+        )
+
     def to_dataarray(self):
         from ..core.dataarray import DataArray  # TODO: avoid defered import?
 

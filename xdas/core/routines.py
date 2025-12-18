@@ -12,7 +12,6 @@ import xarray as xr
 from tqdm import tqdm
 
 from ..coordinates.core import Coordinates, get_sampling_interval
-from ..coordinates.interp import InterpCoordinate
 from ..virtual import VirtualSource, VirtualStack
 from .dataarray import DataArray
 from .datacollection import DataCollection, DataMapping, DataSequence
@@ -779,16 +778,7 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
     if isinstance(indices_or_sections, str) and (
         indices_or_sections == "discontinuities"
     ):
-        if isinstance(da[dim], InterpCoordinate):
-            coord = da[dim].simplify(tolerance)
-            (points,) = np.nonzero(np.diff(coord.tie_indices, prepend=[0]) == 1)
-            div_points = [coord.tie_indices[point] for point in points]
-            div_points = [0] + div_points + [da.sizes[dim]]
-        else:
-            raise TypeError(
-                "discontinuities can only be found on dimension that have as type "
-                "`InterpCoordinate`."
-            )
+        div_points = da[dim].simplify(tolerance).get_div_points()
     elif isinstance(indices_or_sections, int):
         nsamples = da.sizes[dim]
         nchunk = indices_or_sections
