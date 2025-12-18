@@ -365,7 +365,9 @@ class Coordinate:
         if step is None:
             step = 1
         if step <= 0:
-            raise NotImplementedError("negative or zero step when slicing is not supported yet")
+            raise NotImplementedError(
+                "negative or zero step when slicing is not supported yet"
+            )
         start = self.format_index(start, bounds="clip")
         stop = self.format_index(stop, bounds="clip")
         return slice(start, stop, step)
@@ -1148,7 +1150,9 @@ class SampledCoordinate(Coordinate):
             if not np.isscalar(sampling_interval):
                 raise ValueError("`sampling_interval` must be a scalar value")
             if np.issubdtype(tie_values.dtype, np.datetime64):
-                if not np.issubdtype(np.asarray(sampling_interval).dtype, np.timedelta64):
+                if not np.issubdtype(
+                    np.asarray(sampling_interval).dtype, np.timedelta64
+                ):
                     raise ValueError(
                         "`sampling_interval` must be timedelta64 for datetime64 `tie_values`"
                     )
@@ -1310,21 +1314,29 @@ class SampledCoordinate(Coordinate):
         index_slice = self.format_index_slice(index_slice)
 
         # get indices relative to tie points
-        relative_start_index = np.clip(index_slice.start - self.tie_indices, 0, self.tie_lengths)
-        relative_stop_index = np.clip(index_slice.stop - self.tie_indices, 0, self.tie_lengths)
+        relative_start_index = np.clip(
+            index_slice.start - self.tie_indices, 0, self.tie_lengths
+        )
+        relative_stop_index = np.clip(
+            index_slice.stop - self.tie_indices, 0, self.tie_lengths
+        )
 
         # keep segments with data
         mask = relative_start_index < relative_stop_index
 
         # compute new tie points ane lengths
-        tie_values = self.tie_values[mask] + relative_start_index[mask] * self.sampling_interval
+        tie_values = (
+            self.tie_values[mask] + relative_start_index[mask] * self.sampling_interval
+        )
         tie_lengths = relative_stop_index[mask] - relative_start_index[mask]
 
         # adjust for step if needed
         if index_slice.step == 1:
             sampling_interval = self.sampling_interval
         else:
-            tie_lengths = (self.tie_lengths + index_slice.step - 1) // index_slice.step,
+            tie_lengths = (
+                (self.tie_lengths + index_slice.step - 1) // index_slice.step,
+            )
             sampling_interval = self.sampling_interval * index_slice.step
 
         # build new coordinate
@@ -1334,7 +1346,6 @@ class SampledCoordinate(Coordinate):
             "sampling_interval": sampling_interval,
         }
         return self.__class__(data, self.dim)
-
 
     def get_indexer(self, value, method=None):
         if isinstance(value, str):
@@ -1348,18 +1359,21 @@ class SampledCoordinate(Coordinate):
             raise ValueError("tie_values must be strictly increasing")
         reference = np.searchsorted(self.tie_values, value, side="right") - 1
         offset = (value - self.tie_values[reference]) / self.sampling_interval
-        if method is None:
-            if np.any(offset % 1 != 0):
-                raise KeyError("index not found")
-            offset = offset.astype(int)
-        elif method == "nearest":
-            offset = np.round(offset).astype(int)
-        elif method == "ffill":
-            offset = np.floor(offset).astype(int)
-        elif method == "bfill":
-            offset = np.ceil(offset).astype(int)
-        else:
-            raise ValueError("method must be one of `None`, 'nearest', 'ffill', or 'bfill'")
+        match method:
+            case None:
+                if np.any(offset % 1 != 0):
+                    raise KeyError("index not found")
+                offset = offset.astype(int)
+            case "nearest":
+                offset = np.round(offset).astype(int)
+            case "ffill":
+                offset = np.floor(offset).astype(int)
+            case "bfill":
+                offset = np.ceil(offset).astype(int)
+            case _:
+                raise ValueError(
+                    "method must be one of `None`, 'nearest', 'ffill', or 'bfill'"
+                )
         return self.tie_indices[reference] + offset
 
     def append(self, other):
