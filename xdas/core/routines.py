@@ -778,7 +778,7 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
     if isinstance(indices_or_sections, str) and (
         indices_or_sections == "discontinuities"
     ):
-        div_points = da[dim].simplify(tolerance).get_div_points()
+        div_points = da[dim].get_div_points(tolerance)
     elif isinstance(indices_or_sections, int):
         nsamples = da.sizes[dim]
         nchunk = indices_or_sections

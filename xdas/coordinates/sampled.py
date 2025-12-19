@@ -346,6 +346,16 @@ class SampledCoordinate(Coordinate):
             self.dim,
         )
 
+    def get_div_points(self, tolerance=None):
+        div_points = self.tie_indices[1:]
+        if tolerance is not None:
+            deltas = self.tie_values[1:] - (
+                self.tie_values[:-1] + self.sampling_interval * self.tie_lengths[:-1]
+            )
+            div_points = div_points[np.abs(deltas) >= tolerance]
+        div_points = np.concatenate(([0], div_points, [len(self)]))
+        return div_points
+
     def get_discontinuities(self):
         if self.empty:
             return pd.DataFrame(

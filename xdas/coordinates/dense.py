@@ -71,6 +71,17 @@ class DenseCoordinate(Coordinate):
             raise ValueError("cannot append coordinate with different dtype")
         return self.__class__(np.concatenate([self.data, other.data]), self.dim)
 
+    def get_div_points(self, tolerance=None):
+        deltas = np.diff(self.data)
+        if tolerance is not None:
+            div_points = np.nonzero(np.abs(deltas) >= tolerance)[0] + 1
+        else:
+            raise NotImplementedError(
+                "get_div_points without tolerance is not implemented for DenseCoordinate"
+            )
+        div_points = np.concatenate(([0], div_points, [len(self)]))
+        return div_points
+
     def to_dict(self):
         if np.issubdtype(self.dtype, np.datetime64):
             data = self.data.astype(str).tolist()

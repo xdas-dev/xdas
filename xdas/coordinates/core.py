@@ -420,7 +420,7 @@ class Coordinate:
     def append(self, other):
         raise NotImplementedError(f"append is not implemented for {self.__class__}")
 
-    def get_div_points(self):
+    def get_div_points(self, tolerance=None):
         raise NotImplementedError(
             f"get_div_points is not implemented for {self.__class__}"
         )

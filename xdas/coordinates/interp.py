@@ -292,11 +292,14 @@ class InterpCoordinate(Coordinate):
             dict(tie_indices=tie_indices, tie_values=tie_values), self.dim
         )
 
-    def get_div_points(self):
+    def get_div_points(self, tolerance=None):
         (points,) = np.nonzero(np.diff(self.tie_indices, prepend=[0]) == 1)
+        deltas = self.tie_values[points] - self.tie_values[points - 1]
+        if tolerance is not None:
+            points = points[np.abs(deltas) >= tolerance]
         div_points = [self.tie_indices[point] for point in points]
         div_points = [0] + div_points + [len(self)]
-        return div_points
+        return np.array(div_points)
 
     def get_discontinuities(self):
         """
