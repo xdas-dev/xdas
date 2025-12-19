@@ -1,7 +1,9 @@
 from copy import copy, deepcopy
 from functools import wraps
+from itertools import pairwise
 
 import numpy as np
+import pandas as pd
 
 
 def wraps_first_last(func):
@@ -420,10 +422,117 @@ class Coordinate:
     def append(self, other):
         raise NotImplementedError(f"append is not implemented for {self.__class__}")
 
-    def get_div_points(self, tolerance=None):
+    def get_split_indices(self, tolerance=None):
         raise NotImplementedError(
-            f"get_div_points is not implemented for {self.__class__}"
+            f"get_split_indices is not implemented for {self.__class__}"
         )
+
+    def get_discontinuities(self, tolerance=None):
+        """
+        Returns a DataFrame containing information about the discontinuities.
+
+        Returns
+        -------
+        pandas.DataFrame
+            A DataFrame with the following columns:
+
+            - start_index : int
+                The index where the discontinuity starts.
+            - end_index : int
+                The index where the discontinuity ends.
+            - start_value : float
+                The value at the start of the discontinuity.
+            - end_value : float
+                The value at the end of the discontinuity.
+            - delta : float
+                The difference between the end_value and start_value.
+            - type : str
+                The type of the discontinuity, either "gap" or "overlap".
+
+        """
+        if self.empty:
+            return pd.DataFrame(
+                columns=[
+                    "start_index",
+                    "end_index",
+                    "start_value",
+                    "end_value",
+                    "delta",
+                    "type",
+                ]
+            )
+        indices = self.get_split_indices(tolerance)
+        records = []
+        for index in indices:
+            start_index = index
+            end_index = index + 1
+            start_value = self.get_value(index)
+            end_value = self.get_value(index + 1)
+            delta = end_value - start_value
+            if tolerance is not None and np.abs(delta) < tolerance:
+                continue
+            record = {
+                "start_index": start_index,
+                "end_index": end_index,
+                "start_value": start_value,
+                "end_value": end_value,
+                "delta": end_value - start_value,
+                "type": ("gap" if end_value > start_value else "overlap"),
+            }
+            records.append(record)
+        return pd.DataFrame.from_records(records)
+
+    def get_availabilities(self):
+        """
+        Returns a DataFrame containing information about the data availability.
+
+        Returns
+        -------
+        pandas.DataFrame
+            A DataFrame with the following columns:
+
+            - start_index : int
+                The index where the discontinuity starts.
+            - end_index : int
+                The index where the discontinuity ends.
+            - start_value : float
+                The value at the start of the discontinuity.
+            - end_value : float
+                The value at the end of the discontinuity.
+            - delta : float
+                The difference between the end_value and start_value.
+            - type : str
+                The type of the discontinuity, always "data".
+
+        """
+        if self.empty:
+            return pd.DataFrame(
+                columns=[
+                    "start_index",
+                    "end_index",
+                    "start_value",
+                    "end_value",
+                    "delta",
+                    "type",
+                ]
+            )
+        indices = np.concatenate([[0], self.get_split_indices(), [len(self)]])
+        records = []
+        for start_index, stop_index in pairwise(indices):
+            end_index = stop_index - 1
+            start_value = self.get_value(start_index)
+            end_value = self.get_value(end_index)
+            records.append(
+                {
+                    "start_index": start_index,
+                    "end_index": end_index,
+                    "start_value": start_value,
+                    "end_value": end_value,
+                    "delta": end_value - start_value,
+                    "type": "data",
+                }
+            )
+        return pd.DataFrame.from_records(records)
 
     def to_dataarray(self):
         from ..core.dataarray import DataArray  # TODO: avoid defered import?

@@ -4,6 +4,7 @@ import warnings
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from glob import glob
+from itertools import pairwise
 
 import numpy as np
 import pandas as pd
@@ -778,8 +779,9 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
     if isinstance(indices_or_sections, str) and (
         indices_or_sections == "discontinuities"
     ):
-        div_points = da[dim].get_div_points(tolerance)
-    elif isinstance(indices_or_sections, int):
+        indices_or_sections = da[dim].get_split_indices(tolerance)
+
+    if isinstance(indices_or_sections, int):
         nsamples = da.sizes[dim]
         nchunk = indices_or_sections
         if nchunk <= 0:
@@ -790,12 +792,9 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
         chunks = extras * [chunk_size + 1] + (nchunk - extras) * [chunk_size]
         div_points = np.cumsum([0] + chunks, dtype=np.int64)
     else:
-        div_points = [0] + indices_or_sections + [da.sizes[dim]]
+        div_points = np.concatenate([[0], indices_or_sections, [da.sizes[dim]]])
     return DataCollection(
-        [
-            da.isel({dim: slice(div_points[idx], div_points[idx + 1])})
-            for idx in range(len(div_points) - 1)
-        ]
+        [da.isel({dim: slice(start, stop)}) for start, stop in pairwise(div_points)]
     )
 
 

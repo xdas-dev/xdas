@@ -346,76 +346,14 @@ class SampledCoordinate(Coordinate):
             self.dim,
         )
 
-    def get_div_points(self, tolerance=None):
-        div_points = self.tie_indices[1:]
+    def get_split_indices(self, tolerance=None):
+        indices = self.tie_indices[1:]
         if tolerance is not None:
             deltas = self.tie_values[1:] - (
                 self.tie_values[:-1] + self.sampling_interval * self.tie_lengths[:-1]
             )
-            div_points = div_points[np.abs(deltas) >= tolerance]
-        div_points = np.concatenate(([0], div_points, [len(self)]))
-        return div_points
-
-    def get_discontinuities(self):
-        if self.empty:
-            return pd.DataFrame(
-                columns=[
-                    "start_index",
-                    "end_index",
-                    "start_value",
-                    "end_value",
-                    "delta",
-                    "type",
-                ]
-            )
-        records = []
-        for index in self.tie_indices[:-1]:
-            start_index = index
-            end_index = index + 1
-            start_value = self.get_value(index)
-            end_value = self.get_value(index + 1)
-            record = {
-                "start_index": start_index,
-                "end_index": end_index,
-                "start_value": start_value,
-                "end_value": end_value,
-                "delta": end_value - start_value,
-                "type": ("gap" if end_value > start_value else "overlap"),
-            }
-            records.append(record)
-        return pd.DataFrame.from_records(records)
-
-    def get_availabilities(self):
-        if self.empty:
-            return pd.DataFrame(
-                columns=[
-                    "start_index",
-                    "end_index",
-                    "start_value",
-                    "end_value",
-                    "delta",
-                    "type",
-                ]
-            )
-        records = []
-        for index, value, length in zip(
-            self.tie_indices, self.tie_values, self.tie_indices
-        ):
-            start_index = index
-            end_index = index + length - 1
-            start_value = value
-            end_value = value + self.sampling_interval * (length - 1)
-            records.append(
-                {
-                    "start_index": start_index,
-                    "end_index": end_index,
-                    "start_value": start_value,
-                    "end_value": end_value,
-                    "delta": end_value - start_value,
-                    "type": "data",
-                }
-            )
-        return pd.DataFrame.from_records(records)
+            indices = indices[np.abs(deltas) <= tolerance]
+        return indices
 
     @classmethod
     def from_array(cls, arr, dim=None, sampling_interval=None):
