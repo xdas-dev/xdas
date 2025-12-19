@@ -113,7 +113,10 @@ class SampledCoordinate(Coordinate):
         return True
 
     def get_sampling_interval(self, cast=True):
-        return self.sampling_interval
+        delta = self.sampling_interval
+        if cast and np.issubdtype(delta.dtype, np.timedelta64):
+            delta = delta / np.timedelta64(1, "s")
+        return delta
 
     def __len__(self):
         if self.empty:
@@ -328,6 +331,8 @@ class SampledCoordinate(Coordinate):
         return self[::q]
 
     def simplify(self, tolerance=None):
+        if tolerance is None:
+            tolerance = np.array(0, dtype=self.sampling_interval.dtype)
         tie_values = [self.tie_values[0]]
         tie_lengths = [self.tie_lengths[0]]
         for value, length in zip(self.tie_values[1:], self.tie_lengths[1:]):
