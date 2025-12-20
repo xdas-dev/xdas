@@ -4,12 +4,12 @@ import h5py
 import numpy as np
 import zmq
 
-from ..coordinates.core import get_sampling_interval
+from ..coordinates.core import Coordinate, get_sampling_interval
 from ..core.dataarray import DataArray
 from ..virtual import VirtualSource
 
 
-def read(fname):
+def read(fname, ctype="interpolated"):
     with h5py.File(fname, "r") as file:
         header = file["header"]
         t0 = np.datetime64(round(header["time"][()] * 1e9), "ns")
@@ -17,8 +17,8 @@ def read(fname):
         dx = header["dx"][()] * np.median(np.diff(header["channels"]))
         data = VirtualSource(file["data"])
     nt, nx = data.shape
-    time = {"tie_indices": [0, nt - 1], "tie_values": [t0, t0 + (nt - 1) * dt]}
-    distance = {"tie_indices": [0, nx - 1], "tie_values": [0.0, (nx - 1) * dx]}
+    time = Coordinate[ctype].from_block(t0, nt, dt, dim="time")
+    distance = Coordinate[ctype].from_block(0.0, nx, dx, dim="distance")
     return DataArray(data, {"time": time, "distance": distance})
 
 
