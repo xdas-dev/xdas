@@ -7,7 +7,7 @@ from xinterp import forward, inverse
 from .core import Coordinate, format_datetime, is_strictly_increasing, parse
 
 
-class InterpCoordinate(Coordinate):
+class InterpCoordinate(Coordinate, name="interpolated"):
     """
     Array-like object used to represent piecewise evenly spaced coordinates using the
     CF convention.
@@ -355,6 +355,16 @@ class InterpCoordinate(Coordinate):
                 data = {"tie_indices": dataset[indices], "tie_values": dataset[values]}
                 coords[dim] = Coordinate(data, dim)
         return coords
+
+    @classmethod
+    def from_block(cls, start, size, step, dim=None, dtype=None):
+        return cls(
+            {
+                "tie_indices": [0, size - 1],
+                "tie_values": [start, start + step * (size - 1)],
+            },
+            dim=dim,
+        )
 
 
 def douglas_peucker(x, y, epsilon):

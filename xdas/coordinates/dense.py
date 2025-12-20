@@ -4,7 +4,7 @@ import pandas as pd
 from .core import Coordinate, parse
 
 
-class DenseCoordinate(Coordinate):
+class DenseCoordinate(Coordinate, name="dense"):
     def __new__(cls, *args, **kwargs):
         return object.__new__(cls)
 
@@ -106,3 +106,8 @@ class DenseCoordinate(Coordinate):
             )
             for name, coord in dataset[name].coords.items()
         }
+
+    @classmethod
+    def from_block(cls, start, size, step, dim=None, dtype=None):
+        data = start + step * np.arange(size)
+        return cls(data, dim=dim, dtype=dtype)

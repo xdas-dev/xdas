@@ -3,7 +3,7 @@ import numpy as np
 from .core import Coordinate, isscalar, parse
 
 
-class DefaultCoordinate(Coordinate):
+class DefaultCoordinate(Coordinate, name="default"):
     def __new__(cls, *args, **kwargs):
         return object.__new__(cls)
 

@@ -250,6 +250,16 @@ class Coordinates(dict):
 
 
 class Coordinate:
+    _registry = {}
+
+    def __init_subclass__(cls, *, name=None, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if name is not None:
+            Coordinate._registry[name] = cls
+
+    def __class_getitem__(cls, item):
+        return cls._registry[item]
+
     def __new__(cls, data=None, dim=None, dtype=None):
         if data is None:
             raise TypeError("cannot infer coordinate type if no `data` is provided")
@@ -579,6 +589,10 @@ class Coordinate:
             if hasattr(subcls, "from_dataset"):
                 coords |= subcls.from_dataset(dataset, name)
         return coords
+
+    @classmethod
+    def from_block(cls, start, size, step, dim=None, dtype=None):
+        raise NotImplementedError
 
 
 def parse(data, dim=None):

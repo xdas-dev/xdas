@@ -1,12 +1,11 @@
 import re
 
 import numpy as np
-import pandas as pd
 
 from .core import Coordinate, format_datetime, is_strictly_increasing, parse
 
 
-class SampledCoordinate(Coordinate):
+class SampledCoordinate(Coordinate, name="sampled"):
     """
     A coordinate that is sampled at regular intervals.
 
@@ -142,10 +141,10 @@ class SampledCoordinate(Coordinate):
     def __getitem__(self, item):
         if isinstance(item, slice):
             return self.slice_index(item)
-        elif np.isscalar(item):
-            return Coordinate(self.get_value(item), None)
         else:
-            return Coordinate(self.get_value(item), self.dim)
+            return Coordinate(
+                self.get_value(item), None if np.isscalar(item) else self.dim
+            )
 
     def __add__(self, other):
         return self.__class__(
@@ -280,7 +279,9 @@ class SampledCoordinate(Coordinate):
         # Check that value lies within the coordinate value range (vectorized)
         if np.any(value < self.start) or np.any(value >= self.end):
             raise KeyError("index not found")
-        if not is_strictly_increasing(self.tie_values):
+        if not is_strictly_increasing(
+            self.tie_values
+        ):  # TODO: make it work even in this case
             raise ValueError("tie_values must be strictly increasing")
         reference = np.searchsorted(self.tie_values, value, side="right") - 1
         offset = (value - self.tie_values[reference]) / self.sampling_interval
@@ -417,3 +418,12 @@ class SampledCoordinate(Coordinate):
                 }
                 coords[dim] = Coordinate(data, dim)
         return coords
+
+    @classmethod
+    def from_block(cls, start, size, step, dim=None, dtype=None):
+        data = {
+            "tie_values": [start],
+            "tie_lengths": [size],
+            "sampling_interval": step,
+        }
+        return cls(data, dim=dim, dtype=dtype)
