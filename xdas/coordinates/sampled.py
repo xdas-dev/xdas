@@ -235,33 +235,31 @@ class SampledCoordinate(Coordinate, name="sampled"):
         )
 
     def slice_index(self, index_slice):
-        index_slice = self.format_index_slice(index_slice)
+        # normalize slice
+        start, stop, step = index_slice.indices(len(self))
 
-        # TODO: optimize when start and/or stop are None
+        if step < 0:
+            raise NotImplementedError("negative slice step is not implemented")
 
-        # get indices relative to tie points
-        relative_start_index = np.clip(
-            index_slice.start - self.tie_indices, 0, self.tie_lengths
-        )
-        relative_stop_index = np.clip(
-            index_slice.stop - self.tie_indices, 0, self.tie_lengths
-        )
+        # align stop
+        stop += (start - stop) % step  # TODO: check for negative step
 
-        # keep segments with data
-        mask = relative_start_index < relative_stop_index
+        # get relative start and stop within each tie
+        q, r = np.divmod(start - self.tie_indices, step)
+        lo = np.maximum(q, 0) * step + r
 
-        # compute new tie points ane lengths
-        tie_values = (
-            self.tie_values[mask] + relative_start_index[mask] * self.sampling_interval
-        )
-        tie_lengths = relative_stop_index[mask] - relative_start_index[mask]
+        q, r = np.divmod(self.tie_indices + self.tie_lengths - stop, step)
+        hi = self.tie_lengths - np.maximum(q, 0) * step + r
 
-        # adjust for step if needed
-        if index_slice.step == 1:
-            sampling_interval = self.sampling_interval
-        else:
-            tie_lengths = (self.tie_lengths + index_slice.step - 1) // index_slice.step
-            sampling_interval = self.sampling_interval * index_slice.step
+        # filter empty segments
+        mask = hi > lo
+        lo = lo[mask]
+        hi = hi[mask]
+
+        # compute new tie values, tie lengths and sampling interval
+        tie_values = self.tie_values[mask] + lo * self.sampling_interval
+        tie_lengths = (hi - lo) // step
+        sampling_interval = self.sampling_interval * step
 
         # build new coordinate
         data = {

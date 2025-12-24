@@ -370,7 +370,7 @@ class Coordinate:
             idx = np.clip(idx, 0, len(self))
         return idx
 
-    def format_index_slice(self, slc):
+    def format_index_slice(self, slc):  # TODO: use slice.indices instead
         start = slc.start
         stop = slc.stop
         step = slc.step

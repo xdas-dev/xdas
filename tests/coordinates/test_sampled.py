@@ -109,14 +109,26 @@ class TestSampledCoordinateIndexing:
         assert coord.get_value(2) == 2.0
         assert coord.get_value(3) == 10.0
         assert coord.get_value(4) == 11.0
+        # negative index
+        assert coord.get_value(-1) == 11.0
+        assert coord.get_value(-2) == 10.0
+        assert coord.get_value(-3) == 2.0
+        assert coord.get_value(-4) == 1.0
+        assert coord.get_value(-5) == 0.0
         # vectorized
-        vals = coord.get_value([0, 2, 3, 4])
-        assert np.array_equal(vals, np.array([0.0, 2.0, 10.0, 11.0]))
+        vals = coord.get_value([0, 1, 2, 3, 4, -5, -4, -3, -2, -1])
+        assert np.array_equal(
+            vals, np.array([0.0, 1.0, 2.0, 10.0, 11.0, 0.0, 1.0, 2.0, 10.0, 11.0])
+        )
         # bounds
         with pytest.raises(IndexError):
             coord.get_value(-6)
         with pytest.raises(IndexError):
             coord.get_value(5)
+        with pytest.raises(IndexError):
+            coord.get_value([0, 5])
+        with pytest.raises(IndexError):
+            coord.get_value([-6, 0])
 
     def test_getitem(self):
         coord = self.make_coord()
@@ -127,6 +139,36 @@ class TestSampledCoordinateIndexing:
         # slice -> SampledCoordinate or compatible
         sub = coord[1:4]
         assert isinstance(sub, SampledCoordinate)
+        assert np.array_equal(sub.values, np.array([1.0, 2.0, 10.0]))
+        # slice negative
+        sub_neg = coord[-4:-1]
+        assert isinstance(sub_neg, SampledCoordinate)
+        assert np.array_equal(sub_neg.values, np.array([1.0, 2.0, 10.0]))
+        # full slice
+        full = coord[:]
+        assert full.equals(coord)
+        # None bound indexing
+        none_start = coord[None:3]
+        assert isinstance(none_start, SampledCoordinate)
+        assert np.array_equal(none_start.values, np.array([0.0, 1.0, 2.0]))
+        none_end = coord[2:None]
+        assert isinstance(none_end, SampledCoordinate)
+        assert np.array_equal(none_end.values, np.array([2.0, 10.0, 11.0]))
+        # step slice -> SampledCoordinate
+        step = coord[::2]
+        assert isinstance(step, SampledCoordinate)
+        assert np.array_equal(step.values, np.array([0.0, 2.0, 11.0]))
+        # step slice with start/stop
+        step_ss = coord[1:5:2]
+        assert isinstance(step_ss, SampledCoordinate)
+        assert np.array_equal(step_ss.values, np.array([1.0, 10.0]))
+        # negative step slice with start/stop
+        step_ss_neg = coord[-4:-1:2]
+        assert isinstance(step_ss_neg, SampledCoordinate)
+        assert np.array_equal(step_ss_neg.values, np.array([1.0, 10.0]))
+        # negative step slice -> raise NotImplementedError
+        with pytest.raises(NotImplementedError):
+            coord[::-1]
         # array -> DenseCoordinate of values
         arr = coord[[0, 4]]
         assert isinstance(arr, DenseCoordinate)
