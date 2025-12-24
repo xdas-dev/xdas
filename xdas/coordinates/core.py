@@ -370,24 +370,6 @@ class Coordinate:
             idx = np.clip(idx, 0, len(self))
         return idx
 
-    def format_index_slice(self, slc):  # TODO: use slice.indices instead
-        start = slc.start
-        stop = slc.stop
-        step = slc.step
-        if start is None:
-            start = 0
-        if stop is None:
-            stop = len(self)
-        if step is None:
-            step = 1
-        if step <= 0:
-            raise NotImplementedError(
-                "negative or zero step when slicing is not supported yet"
-            )
-        start = self.format_index(start, bounds="clip")
-        stop = self.format_index(stop, bounds="clip")
-        return slice(start, stop, step)
-
     def slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
         if start is not None:
             try:

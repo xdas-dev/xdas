@@ -318,7 +318,6 @@ Methods
    InterpCoordinate.get_value
    InterpCoordinate.format_index
    InterpCoordinate.slice_index
-   InterpCoordinate.format_index_slice
    InterpCoordinate.get_indexer
    InterpCoordinate.slice_indexer
    InterpCoordinate.decimate

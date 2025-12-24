@@ -190,12 +190,9 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         return forward(index, self.tie_indices, self.tie_values)
 
     def slice_index(self, index_slice):
-        index_slice = self.format_index_slice(index_slice)
-        start_index, stop_index, step_index = (
-            index_slice.start,
-            index_slice.stop,
-            index_slice.step,
-        )
+        start_index, stop_index, step_index = index_slice.indices(len(self))
+        if step_index < 0:
+            raise NotImplementedError("negative slice step is not implemented")
         if stop_index - start_index <= 0:
             return self.__class__(dict(tie_indices=[], tie_values=[]), dim=self.dim)
         elif (stop_index - start_index) <= step_index:

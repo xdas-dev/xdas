@@ -147,10 +147,6 @@ class TestInterpCoordinate:
         # TODO
         pass
 
-    def test_format_index_slice(self):
-        # TODO
-        pass
-
     def test_get_value(self):
         coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert coord.get_value(0) == 100.0

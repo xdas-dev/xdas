@@ -191,6 +191,7 @@ class TestSampledCoordinateSliceEdgeCases:
         # negative slice indices
         s = coord[-4:-1]
         assert isinstance(s, SampledCoordinate)
+        assert np.array_equal(s.values, np.array([1.0, 2.0, 10.0]))
         # slice that extends beyond bounds should clip
         s2 = coord[-10:10]
         assert s2.equals(coord)

@@ -226,9 +226,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
         )
 
     def get_value(self, index):
-        index = self.format_index(index)
-        if np.any(index < 0) or np.any(index >= len(self)):
-            raise IndexError("index is out of bounds")
+        index = self.format_index(index, bounds="raise")
         reference = np.searchsorted(self.tie_indices, index, side="right") - 1
         return self.tie_values[reference] + (
             (index - self.tie_indices[reference]) * self.sampling_interval
