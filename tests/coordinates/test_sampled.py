@@ -206,6 +206,33 @@ class TestSampledCoordinateSliceEdgeCases:
         assert decimated.equals(stepped)
 
 
+class TestSampledCoordinateValueBasedIndexing:
+    def make_coord(self):
+        return SampledCoordinate(
+            {"tie_values": [0.0, 10.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
+        )  # two segments: [0, 1, 2] and [10, 11]
+
+    def test_get_indexer_exact(self):
+        coord = self.make_coord()
+        assert coord.get_indexer(0.0, method=None) == 0
+        assert coord.get_indexer(10.0, method=None) == 3
+        with pytest.raises(KeyError):
+            coord.get_indexer(1.5, method=None)
+        with pytest.raises(KeyError):
+            coord.get_indexer(5.0, method=None)
+
+    def test_get_indexer_nearest(self):
+        coord = self.make_coord()
+        vals = [0.4, 0.6, 10.4, 10.6, -10.0, 20.0, 6.4, 6.6, 6.5]
+        expected = [0, 1, 3, 4, 0, 4, 2, 3, 3]
+        for v, e in zip(vals, expected):
+            idx = coord.get_indexer(v, method="nearest")
+            print(f"Value: {v}, Index: {idx}, Expected: {e}")
+            assert idx == e
+        idxs = coord.get_indexer(vals, method="nearest")
+        assert np.array_equal(idxs, np.array(expected))
+
+
 class TestSampledCoordinateAppendErrors:
     def test_append_sampling_interval_mismatch(self):
         coord1 = SampledCoordinate(
