@@ -29,8 +29,11 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         return object.__new__(cls)
 
     def __init__(self, data=None, dim=None, dtype=None):
+        # empty
         if data is None:
             data = {"tie_indices": [], "tie_values": []}
+
+        # parse data
         data, dim = parse(data, dim)
         if not self.__class__.isvalid(data):
             raise TypeError("`data` must be dict-like")
@@ -40,12 +43,16 @@ class InterpCoordinate(Coordinate, name="interpolated"):
             )
         tie_indices = np.asarray(data["tie_indices"])
         tie_values = np.asarray(data["tie_values"], dtype=dtype)
+
+        # check shapes
         if not tie_indices.ndim == 1:
             raise ValueError("`tie_indices` must be 1D")
         if not tie_values.ndim == 1:
             raise ValueError("`tie_values` must be 1D")
         if not len(tie_indices) == len(tie_values):
             raise ValueError("`tie_indices` and `tie_values` must have the same length")
+
+        # check dtypes
         if not tie_indices.shape == (0,):
             if not np.issubdtype(tie_indices.dtype, np.integer):
                 raise ValueError("`tie_indices` must be integer-like")
@@ -58,9 +65,49 @@ class InterpCoordinate(Coordinate, name="interpolated"):
             or np.issubdtype(tie_values.dtype, np.datetime64)
         ):
             raise ValueError("`tie_values` must have either numeric or datetime dtype")
+
+        # store data
         tie_indices = tie_indices.astype(int)
         self.data = dict(tie_indices=tie_indices, tie_values=tie_values)
         self.dim = dim
+
+    @property
+    def tie_indices(self):
+        return self.data["tie_indices"]
+
+    @property
+    def tie_values(self):
+        return self.data["tie_values"]
+
+    @property
+    def dtype(self):
+        return self.tie_values.dtype
+
+    @property
+    def empty(self):
+        return self.tie_indices.shape == (0,)
+
+    @property
+    def ndim(self):
+        return self.tie_values.ndim
+
+    @property
+    def shape(self):
+        return (len(self),)
+
+    @property
+    def indices(self):
+        if self.empty:
+            return np.array([], dtype="int")
+        else:
+            return np.arange(self.tie_indices[-1] + 1)
+
+    @property
+    def values(self):
+        if self.empty:
+            return np.array([], dtype=self.dtype)
+        else:
+            return self.get_value(self.indices)
 
     @staticmethod
     def isvalid(data):
@@ -69,9 +116,6 @@ class InterpCoordinate(Coordinate, name="interpolated"):
                 return True
             case _:
                 return False
-
-    def isinterp(self):
-        return True
 
     def __len__(self):
         if self.empty:
@@ -126,43 +170,8 @@ class InterpCoordinate(Coordinate, name="interpolated"):
     def __array_function__(self, func, types, args, kwargs):
         raise NotImplementedError
 
-    @property
-    def tie_indices(self):
-        return self.data["tie_indices"]
-
-    @property
-    def tie_values(self):
-        return self.data["tie_values"]
-
-    @property
-    def empty(self):
-        return self.tie_indices.shape == (0,)
-
-    @property
-    def dtype(self):
-        return self.tie_values.dtype
-
-    @property
-    def ndim(self):
-        return self.tie_values.ndim
-
-    @property
-    def shape(self):
-        return (len(self),)
-
-    @property
-    def indices(self):
-        if self.empty:
-            return np.array([], dtype="int")
-        else:
-            return np.arange(self.tie_indices[-1] + 1)
-
-    @property
-    def values(self):
-        if self.empty:
-            return np.array([], dtype=self.dtype)
-        else:
-            return self.get_value(self.indices)
+    def isinterp(self):
+        return True
 
     def get_sampling_interval(self, cast=True):
         if len(self) < 2:

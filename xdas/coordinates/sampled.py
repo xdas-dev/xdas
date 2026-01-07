@@ -96,6 +96,44 @@ class SampledCoordinate(Coordinate, name="sampled"):
     def dtype(self):
         return self.tie_values.dtype
 
+    @property
+    def tie_indices(self):
+        return np.concatenate(([0], np.cumsum(self.tie_lengths[:-1])))
+
+    @property
+    def empty(self):
+        return self.tie_values.shape == (0,)
+
+    @property
+    def ndim(self):
+        return self.tie_values.ndim
+
+    @property
+    def shape(self):
+        return (len(self),)
+
+    @property
+    def indices(self):
+        if self.empty:
+            return np.array([], dtype="int")
+        else:
+            return np.arange(len(self))
+
+    @property
+    def values(self):
+        if self.empty:
+            return np.array([], dtype=self.dtype)
+        else:
+            return self.get_value(self.indices)
+
+    @property
+    def start(self):
+        return self.tie_values[0]
+
+    @property
+    def end(self):
+        return self.tie_values[-1] + self.sampling_interval * self.tie_lengths[-1]
+
     @staticmethod
     def isvalid(data):
         match data:
@@ -107,15 +145,6 @@ class SampledCoordinate(Coordinate, name="sampled"):
                 return True
             case _:
                 return False
-
-    def issampled(self):
-        return True
-
-    def get_sampling_interval(self, cast=True):
-        delta = self.sampling_interval
-        if cast and np.issubdtype(delta.dtype, np.timedelta64):
-            delta = delta / np.timedelta64(1, "s")
-        return delta
 
     def __len__(self):
         if self.empty:
@@ -178,43 +207,14 @@ class SampledCoordinate(Coordinate, name="sampled"):
     def __array_function__(self, func, types, args, kwargs):
         raise NotImplementedError
 
-    @property
-    def tie_indices(self):
-        return np.concatenate(([0], np.cumsum(self.tie_lengths[:-1])))
+    def issampled(self):
+        return True
 
-    @property
-    def empty(self):
-        return self.tie_values.shape == (0,)
-
-    @property
-    def ndim(self):
-        return self.tie_values.ndim
-
-    @property
-    def shape(self):
-        return (len(self),)
-
-    @property
-    def indices(self):
-        if self.empty:
-            return np.array([], dtype="int")
-        else:
-            return np.arange(len(self))
-
-    @property
-    def values(self):
-        if self.empty:
-            return np.array([], dtype=self.dtype)
-        else:
-            return self.get_value(self.indices)
-
-    @property
-    def start(self):
-        return self.tie_values[0]
-
-    @property
-    def end(self):
-        return self.tie_values[-1] + self.sampling_interval * self.tie_lengths[-1]
+    def get_sampling_interval(self, cast=True):
+        delta = self.sampling_interval
+        if cast and np.issubdtype(delta.dtype, np.timedelta64):
+            delta = delta / np.timedelta64(1, "s")
+        return delta
 
     def equals(self, other):
         return (

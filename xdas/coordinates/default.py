@@ -8,40 +8,22 @@ class DefaultCoordinate(Coordinate, name="default"):
         return object.__new__(cls)
 
     def __init__(self, data=None, dim=None, dtype=None):
+        # empty
         if data is None:
             data = {"size": 0}
+
+        # parse data
         data, dim = parse(data, dim)
         if not self.isvalid(data):
             raise TypeError("`data` must be a mapping {'size': <int>}")
+
+        # check dtype
         if dtype is not None:
             raise ValueError("`dtype` is not supported for DefaultCoordinate")
+
+        # store data
         self.data = data
         self.dim = dim
-
-    def __len__(self):
-        if self.data["size"] is None:
-            return 0
-        else:
-            return self.data["size"]
-
-    def __getitem__(self, item):
-        data = self.__array__()[item]
-        dim = None if isscalar(data) else self.dim
-        return Coordinate(data, dim)
-
-    def __array__(self, dtype=None):
-        return np.arange(self.data["size"], dtype=dtype)
-
-    @staticmethod
-    def isvalid(data):
-        match data:
-            case {"size": None | int(_)}:
-                return True
-            case _:
-                return False
-
-    def isdefault(self):
-        return True
 
     @property
     def empty(self):
@@ -58,6 +40,37 @@ class DefaultCoordinate(Coordinate, name="default"):
     @property
     def shape(self):
         return (len(self),)
+
+    @staticmethod
+    def isvalid(data):
+        match data:
+            case {"size": None | int(_)}:
+                return True
+            case _:
+                return False
+
+    def __len__(self):
+        if self.data["size"] is None:
+            return 0
+        else:
+            return self.data["size"]
+
+    def __getitem__(self, item):
+        data = self.__array__()[item]
+        dim = None if isscalar(data) else self.dim
+        return Coordinate(data, dim)
+
+    def __array__(self, dtype=None):
+        return np.arange(self.data["size"], dtype=dtype)
+
+    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        raise NotImplementedError
+
+    def __array_function__(self, func, types, args, kwargs):
+        raise NotImplementedError
+
+    def isdefault(self):
+        return True
 
     def get_sampling_interval(self, cast=True):
         return 1

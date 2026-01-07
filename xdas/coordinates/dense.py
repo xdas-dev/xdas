@@ -9,13 +9,22 @@ class DenseCoordinate(Coordinate, name="dense"):
         return object.__new__(cls)
 
     def __init__(self, data=None, dim=None, dtype=None):
+        # empty
         if data is None:
             data = []
+
+        # parse data
         data, dim = parse(data, dim)
         if not self.isvalid(data):
             raise TypeError("`data` must be array-like")
+
+        # store data
         self.data = np.asarray(data, dtype=dtype)
         self.dim = dim
+
+    @property
+    def index(self):
+        return pd.Index(self.data)
 
     @staticmethod
     def isvalid(data):
@@ -24,10 +33,6 @@ class DenseCoordinate(Coordinate, name="dense"):
 
     def isdense(self):
         return True
-
-    @property
-    def index(self):
-        return pd.Index(self.data)
 
     def equals(self, other):
         if isinstance(other, self.__class__):

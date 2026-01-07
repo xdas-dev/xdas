@@ -26,9 +26,6 @@ class ScalarCoordinate(Coordinate):
         if value is not None:
             raise ValueError("A scalar coordinate cannot have a `dim` other that None")
 
-    def get_sampling_interval(self, cast=True):
-        return None
-
     @staticmethod
     def isvalid(data):
         data = np.asarray(data)
@@ -36,6 +33,9 @@ class ScalarCoordinate(Coordinate):
 
     def isscalar(self):
         return True
+
+    def get_sampling_interval(self, cast=True):
+        return None
 
     def equals(self, other):
         if isinstance(other, self.__class__):
