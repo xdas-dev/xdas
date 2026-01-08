@@ -212,7 +212,18 @@ class TestSampledCoordinateValueBasedIndexing:
             {"tie_values": [0.0, 10.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
         )  # two segments: [0, 1, 2] and [10, 11]
 
+    def make_coord_datetime(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        return SampledCoordinate(
+            {
+                "tie_values": [t0, t0 + np.timedelta64(10, "s")],
+                "tie_lengths": [3, 2],
+                "sampling_interval": np.timedelta64(1, "s"),
+            }
+        )
+
     def test_get_indexer_exact(self):
+        # float
         coord = self.make_coord()
         assert coord.get_indexer(0.0, method=None) == 0
         assert coord.get_indexer(10.0, method=None) == 3
@@ -221,10 +232,34 @@ class TestSampledCoordinateValueBasedIndexing:
         with pytest.raises(KeyError):
             coord.get_indexer(5.0, method=None)
 
+        # datetime
+        coord = self.make_coord_datetime()
+        t0 = coord[0].values
+        assert coord.get_indexer(t0, method=None) == 0
+        assert coord.get_indexer(t0 + np.timedelta64(10, "s"), method=None) == 3
+        with pytest.raises(KeyError):
+            coord.get_indexer(t0 + np.timedelta64(1500, "ms"), method=None)
+        with pytest.raises(KeyError):
+            coord.get_indexer(t0 + np.timedelta64(5, "s"), method=None)
+
     def test_get_indexer_nearest(self):
+        # float
         coord = self.make_coord()
         vals = [0.0, 0.4, 0.6, 1.0, 10.4, 10.6, -10.0, 20.0, 5.9, 6.0, 6.1]
         expected = [0, 0, 1, 1, 3, 4, 0, 4, 2, 3, 3]
+        # scalar
+        for v, e in zip(vals, expected):
+            idx = coord.get_indexer(v, method="nearest")
+            assert idx == e
+        # vectorized
+        idxs = coord.get_indexer(vals, method="nearest")
+        assert np.array_equal(idxs, np.array(expected))
+
+        # datetime
+        coord = self.make_coord_datetime()
+        t0 = coord[0].values
+        vals = t0 + np.rint(1000 * np.array(vals)).astype("timedelta64[ms]")
+        # scalar
         for v, e in zip(vals, expected):
             idx = coord.get_indexer(v, method="nearest")
             assert idx == e
@@ -233,9 +268,11 @@ class TestSampledCoordinateValueBasedIndexing:
         assert np.array_equal(idxs, np.array(expected))
 
     def test_get_indexer_ffill(self):
+        # float
         coord = self.make_coord()
         vals = [0.0, 0.4, 0.6, 1.0, 10.4, 10.6, 20.0, 5.9, 6.0, 6.1]
         expected = [0, 0, 0, 1, 3, 3, 4, 2, 2, 2]
+        # scalar
         for v, e in zip(vals, expected):
             idx = coord.get_indexer(v, method="ffill")
             assert idx == e
@@ -247,10 +284,30 @@ class TestSampledCoordinateValueBasedIndexing:
         with pytest.raises(KeyError):
             coord.get_indexer([-10.0, 0.0], method="ffill")
 
+        # datetime
+        coord = self.make_coord_datetime()
+        t0 = coord[0].values
+        vals = t0 + np.rint(1000 * np.array(vals)).astype("timedelta64[ms]")
+        print(vals)
+        # scalar
+        for v, e in zip(vals, expected):
+            idx = coord.get_indexer(v, method="ffill")
+            print(f"v={v}, idx={idx}, expected={e}")
+            assert idx == e
+        with pytest.raises(KeyError):
+            coord.get_indexer(t0 - np.timedelta64(10, "s"), method="ffill")
+        # vectorized
+        idxs = coord.get_indexer(vals, method="ffill")
+        assert np.array_equal(idxs, np.array(expected))
+        with pytest.raises(KeyError):
+            coord.get_indexer([t0 - np.timedelta64(10, "s"), t0], method="ffill")
+
     def test_get_indexer_bfill(self):
+        # float
         coord = self.make_coord()
         vals = [0.0, 0.4, 0.6, 1.0, 10.4, 10.6, -10.0, 5.9, 6.0, 6.1]
         expected = [0, 1, 1, 1, 4, 4, 0, 3, 3, 3]
+        # scalar
         for v, e in zip(vals, expected):
             idx = coord.get_indexer(v, method="bfill")
             assert idx == e
@@ -261,6 +318,22 @@ class TestSampledCoordinateValueBasedIndexing:
         assert np.array_equal(idxs, np.array(expected))
         with pytest.raises(KeyError):
             coord.get_indexer([11.0, 20.0], method="bfill")
+
+        # datetime
+        coord = self.make_coord_datetime()
+        t0 = coord[0].values
+        vals = t0 + np.rint(1000 * np.array(vals)).astype("timedelta64[ms]")
+        # scalar
+        for v, e in zip(vals, expected):
+            idx = coord.get_indexer(v, method="bfill")
+            assert idx == e
+        with pytest.raises(KeyError):
+            coord.get_indexer(t0 + np.timedelta64(20, "s"), method="bfill")
+        # vectorized
+        idxs = coord.get_indexer(vals, method="bfill")
+        assert np.array_equal(idxs, np.array(expected))
+        with pytest.raises(KeyError):
+            coord.get_indexer([t0, t0 + np.timedelta64(20, "s")], method="bfill")
 
 
 class TestSampledCoordinateAppendErrors:
