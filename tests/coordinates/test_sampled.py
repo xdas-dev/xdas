@@ -223,14 +223,44 @@ class TestSampledCoordinateValueBasedIndexing:
 
     def test_get_indexer_nearest(self):
         coord = self.make_coord()
-        vals = [0.4, 0.6, 10.4, 10.6, -10.0, 20.0, 6.4, 6.6, 6.5]
-        expected = [0, 1, 3, 4, 0, 4, 2, 3, 3]
+        vals = [0.0, 0.4, 0.6, 1.0, 10.4, 10.6, -10.0, 20.0, 5.9, 6.0, 6.1]
+        expected = [0, 0, 1, 1, 3, 4, 0, 4, 2, 3, 3]
         for v, e in zip(vals, expected):
             idx = coord.get_indexer(v, method="nearest")
-            print(f"Value: {v}, Index: {idx}, Expected: {e}")
             assert idx == e
+        # vectorized
         idxs = coord.get_indexer(vals, method="nearest")
         assert np.array_equal(idxs, np.array(expected))
+
+    def test_get_indexer_ffill(self):
+        coord = self.make_coord()
+        vals = [0.0, 0.4, 0.6, 1.0, 10.4, 10.6, 20.0, 5.9, 6.0, 6.1]
+        expected = [0, 0, 0, 1, 3, 3, 4, 2, 2, 2]
+        for v, e in zip(vals, expected):
+            idx = coord.get_indexer(v, method="ffill")
+            assert idx == e
+        with pytest.raises(KeyError):
+            coord.get_indexer(-10.0, method="ffill")
+        # vectorized
+        idxs = coord.get_indexer(vals, method="ffill")
+        assert np.array_equal(idxs, np.array(expected))
+        with pytest.raises(KeyError):
+            coord.get_indexer([-10.0, 0.0], method="ffill")
+
+    def test_get_indexer_bfill(self):
+        coord = self.make_coord()
+        vals = [0.0, 0.4, 0.6, 1.0, 10.4, 10.6, -10.0, 5.9, 6.0, 6.1]
+        expected = [0, 1, 1, 1, 4, 4, 0, 3, 3, 3]
+        for v, e in zip(vals, expected):
+            idx = coord.get_indexer(v, method="bfill")
+            assert idx == e
+        with pytest.raises(KeyError):
+            coord.get_indexer(20.0, method="bfill")
+        # vectorized
+        idxs = coord.get_indexer(vals, method="bfill")
+        assert np.array_equal(idxs, np.array(expected))
+        with pytest.raises(KeyError):
+            coord.get_indexer([11.0, 20.0], method="bfill")
 
 
 class TestSampledCoordinateAppendErrors:

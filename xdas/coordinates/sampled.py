@@ -283,22 +283,34 @@ class SampledCoordinate(Coordinate, name="sampled"):
 
         # overlaps
         before = np.maximum(reference - 1, 0)
-        ends = (
-            self.tie_values[before] + self.tie_lengths[before] * self.sampling_interval
+        end = (
+            self.tie_values[before]
+            + (self.tie_lengths[before] - 1) * self.sampling_interval
         )
-        if np.any((reference > 0) & (value < ends)):
+        if np.any((reference > 0) & (value < end)):
             raise KeyError("value is in an overlap region")
 
         # gap
         after = np.minimum(reference + 1, len(self.tie_values) - 1)
-        ends = (
+        end = (
             self.tie_values[reference]
-            + self.tie_lengths[reference] * self.sampling_interval
+            + (self.tie_lengths[reference] - 1) * self.sampling_interval
         )
-        mask = (reference < len(self.tie_values) - 1) & (
-            value - ends >= self.tie_values[after] - value
-        )
-        reference = np.where(mask, after, reference)
+        match method:
+            case "nearest":
+                mask = (reference < len(self.tie_values) - 1) & (
+                    value - end >= self.tie_values[after] - value
+                )
+                reference = np.where(mask, after, reference)
+            case "bfill":
+                mask = (reference < len(self.tie_values) - 1) & (value >= end)
+                reference = np.where(mask, after, reference)
+            case "ffill" | None:
+                pass
+            case _:
+                raise ValueError(
+                    "method must be one of `None`, 'nearest', 'ffill', or 'bfill'"
+                )
 
         offset = (value - self.tie_values[reference]) / self.sampling_interval
 
@@ -316,14 +328,14 @@ class SampledCoordinate(Coordinate, name="sampled"):
                 offset = np.clip(offset, 0, self.tie_lengths[reference] - 1)
             case "ffill":
                 offset = np.floor(offset).astype(int)
-                if np.any(offset > self.tie_lengths[reference] - 1):
-                    raise KeyError("index not found")
-                offset = np.maximum(offset, 0)
-            case "bfill":
-                offset = np.ceil(offset).astype(int)
                 if np.any(offset < 0):
                     raise KeyError("index not found")
                 offset = np.minimum(offset, self.tie_lengths[reference] - 1)
+            case "bfill":
+                offset = np.ceil(offset).astype(int)
+                if np.any(offset > self.tie_lengths[reference] - 1):
+                    raise KeyError("index not found")
+                offset = np.maximum(offset, 0)
             case _:
                 raise ValueError(
                     "method must be one of `None`, 'nearest', 'ffill', or 'bfill'"
