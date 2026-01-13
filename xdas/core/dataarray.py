@@ -3,6 +3,7 @@ import json
 import re
 import warnings
 from functools import partial
+import os
 
 import h5netcdf
 import h5py
@@ -904,6 +905,9 @@ class DataArray(NDArrayOperatorsMixin):
         attrs = {} if self.attrs is None else self.attrs
         attrs |= {"coordinate_interpolation": mapping} if mapping else attrs
         name = "__values__" if self.name is None else self.name
+        if os.path.dirname(fname) is not "" and not os.path.exists(os.path.dirname(fname)):
+            os.makedirs(os.path.dirname(fname), exist_ok=True)
+
         with h5netcdf.File(fname, mode=mode) as file:
             if group is not None and group not in file:
                 file.create_group(group)

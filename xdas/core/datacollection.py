@@ -239,7 +239,7 @@ class DataMapping(DataCollection, dict):
             location = "/".join([name, str(key)])
             if group is not None:
                 location = "/".join([group, location])
-            if not os.path.exists(os.path.dirname(fname)):
+            if os.path.dirname(fname) is not "" and not os.path.exists(os.path.dirname(fname)):
                 os.makedirs(os.path.dirname(fname), exist_ok=True)
             self[key].to_netcdf(
                 fname,
