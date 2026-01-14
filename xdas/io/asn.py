@@ -7,9 +7,11 @@ import zmq
 from ..coordinates.core import Coordinate, get_sampling_interval
 from ..core.dataarray import DataArray
 from ..virtual import VirtualSource
+from .core import parse_ctype
 
 
-def read(fname, ctype="interpolated"):
+def read(fname, ctype=None):
+    ctype = parse_ctype(ctype)
     with h5py.File(fname, "r") as file:
         header = file["header"]
         t0 = np.datetime64(round(header["time"][()] * 1e9), "ns")
@@ -17,8 +19,8 @@ def read(fname, ctype="interpolated"):
         dx = header["dx"][()] * np.median(np.diff(header["channels"]))
         data = VirtualSource(file["data"])
     nt, nx = data.shape
-    time = Coordinate[ctype].from_block(t0, nt, dt, dim="time")
-    distance = Coordinate[ctype].from_block(0.0, nx, dx, dim="distance")
+    time = Coordinate[ctype["time"]].from_block(t0, nt, dt, dim="time")
+    distance = Coordinate[ctype["distance"]].from_block(0.0, nx, dx, dim="distance")
     return DataArray(data, {"time": time, "distance": distance})
 
 
@@ -105,7 +107,7 @@ class ZMQSubscriber:
         roiTable = header["roiTable"][0]
         di = (roiTable["roiStart"] // roiTable["roiDec"]) * header["dx"]
         de = (roiTable["roiEnd"] // roiTable["roiDec"]) * header["dx"]
-        self.distance = {
+        self.distance = {  # TODO: use from_block
             "tie_indices": [0, header["nChannels"] - 1],
             "tie_values": [di, de],
         }
@@ -114,7 +116,7 @@ class ZMQSubscriber:
     def _unpack(self, message):
         t0 = np.frombuffer(message[:8], "datetime64[ns]").reshape(())
         data = np.frombuffer(message[8:], self.dtype).reshape(self.shape)
-        time = {
+        time = {  # TODO: use from_block
             "tie_indices": [0, self.shape[0] - 1],
             "tie_values": [t0, t0 + (self.shape[0] - 1) * self.delta],
         }

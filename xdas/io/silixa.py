@@ -3,10 +3,12 @@ import numpy as np
 
 from ..coordinates.core import Coordinate
 from ..core.dataarray import DataArray
+from .core import parse_ctype
 from .tdms import TdmsReader
 
 
-def read(fname, ctype="interpolated"):
+def read(fname, ctype=None):
+    ctype = parse_ctype(ctype)
     shape, dtype, coords = read_header(fname, ctype)
     data = dask.array.from_delayed(dask.delayed(read_data)(fname), shape, dtype)
     return DataArray(data, coords)
@@ -19,7 +21,7 @@ def read_header(fname, ctype):
         dtype = tdms._data_type
     t0 = np.datetime64(props["GPSTimeStamp"])
     dt = np.timedelta64(round(1e9 / props["SamplingFrequency[Hz]"]), "ns")
-    time = Coordinate[ctype].from_block(t0, shape[0], dt, dim="time")
+    time = Coordinate[ctype["time"]].from_block(t0, shape[0], dt, dim="time")
     distance = {
         "tie_indices": [0, shape[1] - 1],
         "tie_values": [props["Start Distance (m)"], props["Stop Distance (m)"]],

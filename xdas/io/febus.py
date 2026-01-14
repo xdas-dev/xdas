@@ -7,9 +7,10 @@ from ..coordinates.core import Coordinate
 from ..core.dataarray import DataArray
 from ..core.routines import concatenate
 from ..virtual import VirtualSource
+from .core import parse_ctype
 
 
-def read(fname, overlaps=None, offset=None, ctype="interpolated"):
+def read(fname, overlaps=None, offset=None, ctype=None):
     """
     Open a Febus file into a xdas DataArray object.
 
@@ -41,6 +42,7 @@ def read(fname, overlaps=None, offset=None, ctype="interpolated"):
         A data array containing the data from the Febus file.
 
     """
+    ctype = parse_ctype(ctype)
     with h5py.File(fname, "r") as file:
         (device_name,) = list(file.keys())
         source = file[device_name]["Source1"]
@@ -94,8 +96,8 @@ def read(fname, overlaps=None, offset=None, ctype="interpolated"):
     for t0, chunk in zip(times, chunks):
 
         t0 = np.rint(1e6 * t0).astype("M8[us]").astype("M8[ns]")
-        time = Coordinate[ctype].from_block(t0, nt, dt, dim="time")
-        distance = Coordinate[ctype].from_block(0.0, nx, dx, dim="distance")
+        time = Coordinate[ctype["time"]].from_block(t0, nt, dt, dim="time")
+        distance = Coordinate[ctype["distance"]].from_block(0.0, nx, dx, dim="distance")
         da = DataArray(chunk, {"time": time, "distance": distance}, name=name)
         dc.append(da)
 
