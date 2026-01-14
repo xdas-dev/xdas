@@ -49,8 +49,9 @@ class SampledCoordinate(Coordinate, name="sampled"):
         if not len(tie_values) == len(tie_lengths):
             raise ValueError("`tie_values` and `tie_lengths` must have the same length")
 
-        # check dtypes
+        # check dtypes and values
         if not empty:
+            # tie_values
             if not (
                 np.issubdtype(tie_values.dtype, np.number)
                 or np.issubdtype(tie_values.dtype, np.datetime64)
@@ -58,10 +59,14 @@ class SampledCoordinate(Coordinate, name="sampled"):
                 raise ValueError(
                     "`tie_values` must have either numeric or datetime dtype"
                 )
+
+            # tie_lengths
             if not np.issubdtype(tie_lengths.dtype, np.integer):
                 raise ValueError("`tie_lengths` must be integer-like")
             if not np.all(tie_lengths > 0):
                 raise ValueError("`tie_lengths` must be strictly positive integers")
+
+            # sampling_interval
             if not np.isscalar(sampling_interval):
                 raise ValueError("`sampling_interval` must be a scalar value")
             if np.issubdtype(tie_values.dtype, np.datetime64):
@@ -418,7 +423,9 @@ class SampledCoordinate(Coordinate, name="sampled"):
         return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
 
     def to_dataset(self, dataset, attrs):
-        mapping = f"{self.name}: {self.name}_values {self.name}_lengths"
+        mapping = (
+            f"{self.name}: {self.name}_values {self.name}_lengths {self.name}_sampling"
+        )
         if "coordinate_sampling" in attrs:
             attrs["coordinate_sampling"] += " " + mapping
         else:
@@ -430,12 +437,11 @@ class SampledCoordinate(Coordinate, name="sampled"):
         )
         tie_lengths = self.tie_lengths
         interp_attrs = {
-            "sampling_interval": self.sampling_interval,
-            "tie_points_mapping": f"{self.name}_points: {self.name}_values {self.name}_lengths",
+            "tie_point_mapping": f"{self.name}_points: {self.name}_values {self.name}_lengths",
         }
         dataset.update(
             {
-                f"{self.name}_sampling": ((), np.nan, interp_attrs),
+                f"{self.name}_sampling": ((), self.sampling_interval, interp_attrs),
                 f"{self.name}_values": (f"{self.name}_points", tie_values),
                 f"{self.name}_lengths": (f"{self.name}_points", tie_lengths),
             }
@@ -447,14 +453,13 @@ class SampledCoordinate(Coordinate, name="sampled"):
         coords = {}
         mapping = dataset[name].attrs.pop("coordinate_sampling", None)
         if mapping is not None:
-            matches = re.findall(r"(\w+): (\w+) (\w+)", mapping)
+            matches = re.findall(r"(\w+): (\w+) (\w+) (\w+)", mapping)
             for match in matches:
-                dim, values, lengths = match
-                sampling_interval = ...
+                dim, values, lengths, sampling = match
                 data = {
-                    "tie_values": dataset[values],
-                    "tie_lengths": dataset[lengths],
-                    "sampling_interval": sampling_interval,
+                    "tie_values": dataset[values].values,
+                    "tie_lengths": dataset[lengths].values,
+                    "sampling_interval": dataset[sampling].values[()],
                 }
                 coords[dim] = Coordinate(data, dim)
         return coords

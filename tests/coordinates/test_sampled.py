@@ -1,7 +1,10 @@
+import tempfile
+
 import numpy as np
 import pandas as pd
 import pytest
 
+import xdas as xd
 from xdas.coordinates import (
     Coordinate,
     DenseCoordinate,
@@ -288,11 +291,9 @@ class TestSampledCoordinateValueBasedIndexing:
         coord = self.make_coord_datetime()
         t0 = coord[0].values
         vals = t0 + np.rint(1000 * np.array(vals)).astype("timedelta64[ms]")
-        print(vals)
         # scalar
         for v, e in zip(vals, expected):
             idx = coord.get_indexer(v, method="ffill")
-            print(f"v={v}, idx={idx}, expected={e}")
             assert idx == e
         with pytest.raises(KeyError):
             coord.get_indexer(t0 - np.timedelta64(10, "s"), method="ffill")
@@ -336,7 +337,56 @@ class TestSampledCoordinateValueBasedIndexing:
             coord.get_indexer([t0, t0 + np.timedelta64(20, "s")], method="bfill")
 
 
-class TestSampledCoordinateAppendErrors:
+class TestSampledCoordinateAppend:
+    def test_append_two_coords(self):
+        coord1 = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
+        )
+        coord2 = SampledCoordinate(
+            {"tie_values": [10.0], "tie_lengths": [2], "sampling_interval": 1.0}
+        )
+        expected = SampledCoordinate(
+            {"tie_values": [0.0, 10.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
+        )
+        result = coord1.append(coord2)
+        assert result.equals(expected)
+
+    def test_append_two_datetime_coords(self):
+        coord1 = SampledCoordinate(
+            {
+                "tie_values": [np.datetime64("2000-01-01T00:00:00")],
+                "tie_lengths": [3],
+                "sampling_interval": np.timedelta64(1, "s"),
+            }
+        )
+        coord2 = SampledCoordinate(
+            {
+                "tie_values": [np.datetime64("2000-01-01T00:00:10")],
+                "tie_lengths": [2],
+                "sampling_interval": np.timedelta64(1, "s"),
+            }
+        )
+        expected = SampledCoordinate(
+            {
+                "tie_values": [
+                    np.datetime64("2000-01-01T00:00:00"),
+                    np.datetime64("2000-01-01T00:00:10"),
+                ],
+                "tie_lengths": [3, 2],
+                "sampling_interval": np.timedelta64(1, "s"),
+            }
+        )
+        result = coord1.append(coord2)
+        assert result.equals(expected)
+
+    def test_append_empty(self):
+        coord1 = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
+        )
+        coord2 = SampledCoordinate()
+        assert coord1.append(coord2).equals(coord1)
+        assert coord2.append(coord1).equals(coord1)
+
     def test_append_sampling_interval_mismatch(self):
         coord1 = SampledCoordinate(
             {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
@@ -430,28 +480,6 @@ class TestSampledCoordinateSlicing:
         coord = self.make_coord()
         sliced = coord[:]
         assert sliced.equals(coord)
-
-
-class TestSampledCoordinateAppend:
-    def test_append_two_coords(self):
-        coord1 = SampledCoordinate(
-            {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
-        )
-        coord2 = SampledCoordinate(
-            {"tie_values": [10.0], "tie_lengths": [2], "sampling_interval": 1.0}
-        )
-        result = coord1.append(coord2)
-        assert len(result) == 5
-        assert result.tie_values[0] == 0.0
-        assert result.tie_values[1] == 10.0
-
-    def test_append_empty(self):
-        coord1 = SampledCoordinate(
-            {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
-        )
-        coord2 = SampledCoordinate()
-        assert coord1.append(coord2).equals(coord1)
-        assert coord2.append(coord1).equals(coord1)
 
 
 class TestSampledCoordinateDecimate:
@@ -601,3 +629,51 @@ class TestSampledCoordinateIndexerEdgeCases:
         )
         with pytest.raises(ValueError):
             coord.get_indexer(2.0)
+
+
+class TestSampledCoordinateToNetCDF:
+    def make_dataarray(self):
+        return xd.DataArray(
+            np.random.rand(20, 30),
+            {
+                "time": {
+                    "tie_values": [
+                        np.datetime64("2000-01-01T00:00:00.000000000"),
+                        np.datetime64("2000-01-01T00:00:10.000000000"),
+                    ],
+                    "tie_lengths": [5, 15],
+                    "sampling_interval": np.timedelta64(1_000_000_000, "ns").astype(
+                        "timedelta64[ns]"
+                    ),
+                },
+                "distance": {
+                    "tie_values": [0.0],
+                    "tie_lengths": [30],
+                    "sampling_interval": 1.0,
+                },
+            },
+        )
+
+    def test_to_dataset_and_back(self):
+        import xarray as xr
+
+        da = self.make_dataarray()
+        dataset = xr.Dataset()
+        variable_attrs = {}
+
+        # prepare metadata
+        for coord in da.coords.values():
+            dataset, variable_attrs = coord.to_dataset(dataset, variable_attrs)
+
+        dataset["data"] = xr.DataArray(attrs=variable_attrs)
+        coords = xd.Coordinates.from_dataset(dataset, "data")
+
+        assert coords.equals(da.coords)
+
+    def test_to_netcdf_and_back(self):
+        expected = self.make_dataarray()
+
+        with tempfile.NamedTemporaryFile(suffix=".nc", delete=False) as file:
+            expected.to_netcdf(file.name)
+            result = xd.open_dataarray(file.name)
+            assert result.equals(expected)

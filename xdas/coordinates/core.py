@@ -214,7 +214,7 @@ class Coordinates(dict):
 
     @classmethod
     def from_dataset(cls, dataset, name):
-        return Coordinate.from_dataset(dataset, name)
+        return cls(Coordinate.from_dataset(dataset, name))
 
     def copy(self, deep=True):
         if deep:
