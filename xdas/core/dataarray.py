@@ -944,12 +944,7 @@ class DataArray(NDArrayOperatorsMixin):
         """
         # read metadata
         with xr.open_dataset(
-            fname,
-            group=group,
-            engine="h5netcdf",
-            decode_timedelta=(
-                xr.__version__ >= "2025.7"
-            ),  # TODO: remove when dropping support for python 3.10
+            fname, group=group, engine="h5netcdf", decode_timedelta=False
         ) as dataset:
             # check file format
             if not (

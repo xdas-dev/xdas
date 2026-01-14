@@ -5,6 +5,17 @@ import numpy as np
 from .core import Coordinate, format_datetime, is_strictly_increasing, parse
 
 
+CODE_TO_UNITS = {
+    "h": "hours",
+    "m": "minutes",
+    "s": "seconds",
+    "ms": "milliseconds",
+    "us": "microseconds",
+    "ns": "nanoseconds",
+}
+UNITS_TO_CODE = {v: k for k, v in CODE_TO_UNITS.items()}
+
+
 class SampledCoordinate(Coordinate, name="sampled"):
     """
     A coordinate that is sampled at regular intervals.
@@ -434,9 +445,19 @@ class SampledCoordinate(Coordinate, name="sampled"):
         interp_attrs = {
             "tie_point_mapping": f"{self.dim}: {self.name}_values {self.name}_lengths",
         }
+
+        # timedelta
+        if np.issubdtype(self.sampling_interval.dtype, np.timedelta64):
+            code, count = np.datetime_data(self.sampling_interval.dtype)
+            interp_attrs["dtype"] = "timedelta64[ns]"
+            interp_attrs["units"] = CODE_TO_UNITS[code]
+            sampling_interval = count * self.sampling_interval.astype(int)
+        else:
+            sampling_interval = self.sampling_interval
+
         dataset.update(
             {
-                f"{self.name}_sampling": ((), self.sampling_interval, interp_attrs),
+                f"{self.name}_sampling": ((), sampling_interval, interp_attrs),
                 f"{self.name}_values": (f"{self.name}_points", tie_values),
                 f"{self.name}_lengths": (f"{self.name}_points", tie_lengths),
             }
@@ -460,18 +481,15 @@ class SampledCoordinate(Coordinate, name="sampled"):
                     "sampling_interval": dataset[sampling].values[()],
                 }
 
-                # TODO: remove when dropping support for python 3.10
-                import xarray
-
+                # timedelta
                 if (
-                    xarray.__version__ < "2025.7"
-                    and "dtype" in dataset[sampling].attrs
+                    "dtype" in dataset[sampling].attrs
                     and "units" in dataset[sampling].attrs
                 ):
-                    data["sampling_interval"] = np.array(
+                    data["sampling_interval"] = np.timedelta64(
                         data["sampling_interval"],
-                        dtype=dataset[sampling].attrs["dtype"],
-                    )[()]
+                        UNITS_TO_CODE[dataset[sampling].attrs.pop("units")],
+                    ).astype(dataset[sampling].attrs.pop("dtype"))
 
                 coords[name] = Coordinate(data, dim)
         return coords
