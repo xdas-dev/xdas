@@ -943,7 +943,14 @@ class DataArray(NDArrayOperatorsMixin):
             The openend data array.
         """
         # read metadata
-        with xr.open_dataset(fname, group=group, engine="h5netcdf") as dataset:
+        with xr.open_dataset(
+            fname,
+            group=group,
+            engine="h5netcdf",
+            decode_timedelta=(
+                xr.__version__ >= "2025.7"
+            ),  # TODO: remove when dropping support for python 3.10
+        ) as dataset:
             # check file format
             if not (
                 "Conventions" in dataset.attrs and "CF" in dataset.attrs["Conventions"]

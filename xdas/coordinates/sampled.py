@@ -459,6 +459,20 @@ class SampledCoordinate(Coordinate, name="sampled"):
                     "tie_lengths": dataset[lengths].values,
                     "sampling_interval": dataset[sampling].values[()],
                 }
+
+                # TODO: remove when dropping support for python 3.10
+                import xarray
+
+                if (
+                    xarray.__version__ < "2025.7"
+                    and "dtype" in dataset[sampling].attrs
+                    and "units" in dataset[sampling].attrs
+                ):
+                    data["sampling_interval"] = np.array(
+                        data["sampling_interval"],
+                        dtype=dataset[sampling].attrs["dtype"],
+                    )[()]
+
                 coords[name] = Coordinate(data, dim)
         return coords
 
