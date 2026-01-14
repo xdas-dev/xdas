@@ -502,9 +502,46 @@ class TestSampledCoordinateSimplify:
                 "sampling_interval": 1.0,
             }
         )
-        simplified = coord.simplify(tolerance=0.1)
-        # If continuous (end of first == start of second), should merge
-        assert len(simplified.tie_values) <= 2
+        result = coord.simplify()
+        expected = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [5], "sampling_interval": 1.0}
+        )
+        assert result.equals(expected)
+
+    def test_simplify_with_tolerance(self):
+        # Two nearly continuous segments should merge with tolerance
+        coord = SampledCoordinate(
+            {
+                "tie_values": [0.0, 3.1],
+                "tie_lengths": [3, 2],
+                "sampling_interval": 1.0,
+            }
+        )
+        result = coord.simplify(tolerance=0.2)
+        expected = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [5], "sampling_interval": 1.0}
+        )
+        assert result.equals(expected)
+        # more advanced test
+        coord = SampledCoordinate(
+            {
+                "tie_values": 10 * np.arange(100) + np.random.rand(100) * 0.2 - 0.1,
+                "tie_lengths": 10 * np.ones(100, dtype=int),
+                "sampling_interval": 1.0,
+            }
+        )
+        result = coord.simplify(tolerance=0.2)
+        assert len(result.tie_values) == 1
+        # extra test
+        coord = SampledCoordinate(
+            {
+                "tie_values": 10 * np.arange(100) + np.random.rand(100) * 0.2 - 0.1,
+                "tie_lengths": 10 * np.ones(100, dtype=int),
+                "sampling_interval": 1.0,
+            }
+        )
+        result = coord.simplify(tolerance=0.1)
+        assert np.all(np.abs(result.values - coord.values) <= 0.1)
 
 
 class TestSampledCoordinateGetIndexer:

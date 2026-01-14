@@ -69,6 +69,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
             # sampling_interval
             if not np.isscalar(sampling_interval):
                 raise ValueError("`sampling_interval` must be a scalar value")
+            sampling_interval = np.asarray(sampling_interval)[()]  # ensure numpy scalar
             if np.issubdtype(tie_values.dtype, np.datetime64):
                 if not np.issubdtype(
                     np.asarray(sampling_interval).dtype, np.timedelta64
@@ -378,7 +379,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
 
     def simplify(self, tolerance=None):
         if tolerance is None:
-            tolerance = np.array(0, dtype=self.sampling_interval.dtype)
+            tolerance = np.array(0, dtype=self.sampling_interval.dtype)[()]
         tie_values = [self.tie_values[0]]
         tie_lengths = [self.tie_lengths[0]]
         for value, length in zip(self.tie_values[1:], self.tie_lengths[1:]):
