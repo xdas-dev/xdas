@@ -33,7 +33,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
         # parse data
         data, dim = parse(data, dim)
         if not self.__class__.isvalid(data):
-            raise TypeError(
+            raise ValueError(
                 "`data` must be dict-like and contain `tie_values`, `tie_lengths`, and "
                 "`sampling_interval`"
             )
@@ -293,7 +293,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
             self.tie_values[before]
             + (self.tie_lengths[before] - 1) * self.sampling_interval
         )
-        if np.any((reference > 0) & (value < end)):
+        if np.any((reference > 0) & (value <= end)):
             raise KeyError("value is in an overlap region")
 
         # gap
@@ -342,10 +342,6 @@ class SampledCoordinate(Coordinate, name="sampled"):
                 if np.any(offset > self.tie_lengths[reference] - 1):
                     raise KeyError("index not found")
                 offset = np.maximum(offset, 0)
-            case _:
-                raise ValueError(
-                    "method must be one of `None`, 'nearest', 'ffill', or 'bfill'"
-                )
         return self.tie_indices[reference] + offset
 
     def append(self, other):
@@ -404,7 +400,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
             deltas = self.tie_values[1:] - (
                 self.tie_values[:-1] + self.sampling_interval * self.tie_lengths[:-1]
             )
-            indices = indices[np.abs(deltas) <= tolerance]
+            indices = indices[np.abs(deltas) > tolerance]
         return indices
 
     @classmethod

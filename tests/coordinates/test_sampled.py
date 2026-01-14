@@ -36,6 +36,7 @@ class TestSampledCoordinateBasics:
         assert empty.shape == (0,)
         assert empty.ndim == 1
         assert empty.values.size == 0
+        assert empty.indices.size == 0
 
     def test_init_validation_numeric(self):
         # valid numeric
@@ -45,6 +46,8 @@ class TestSampledCoordinateBasics:
         assert len(coord) == 3
         assert coord.start == 0.0
         assert coord.end == 3.0
+        assert coord.issampled()
+        coord.get_sampling_interval() == 1.0
 
         # mismatched lengths
         with pytest.raises(ValueError):
@@ -71,6 +74,12 @@ class TestSampledCoordinateBasics:
                 {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": [1.0]}
             )
 
+        # non-numeric tie_values
+        with pytest.raises(ValueError):
+            SampledCoordinate(
+                {"tie_values": ["a"], "tie_lengths": [3], "sampling_interval": 1.0}
+            )
+
     def test_init_validation_datetime(self):
         # valid datetime with timedelta sampling interval
         t0 = np.datetime64("2000-01-01T00:00:00")
@@ -83,11 +92,41 @@ class TestSampledCoordinateBasics:
         )
         assert coord.start == t0
         assert coord.end == t0 + np.timedelta64(2, "s")
+        assert coord.get_sampling_interval() == 1
+        assert coord.get_sampling_interval(cast=False) == np.timedelta64(1, "s")
 
         # invalid: datetime with numeric sampling interval
         with pytest.raises(ValueError):
             SampledCoordinate(
                 {"tie_values": [t0], "tie_lengths": [2], "sampling_interval": 1}
+            )
+
+    def test_invalid_data(self):
+        # lack of required keys
+        with pytest.raises(ValueError):
+            SampledCoordinate({"tie_values": [0.0], "tie_lengths": [3]})
+        with pytest.raises(ValueError):
+            SampledCoordinate({"tie_lengths": [3], "sampling_interval": 1.0})
+        with pytest.raises(ValueError):
+            SampledCoordinate({"tie_values": [0.0], "sampling_interval": 1.0})
+
+    def test_invalid_shapes(self):
+        # tie_values and tie_lengths must be 1D
+        with pytest.raises(ValueError):
+            SampledCoordinate(
+                {
+                    "tie_values": [[0.0, 10.0]],
+                    "tie_lengths": [3, 2],
+                    "sampling_interval": 1.0,
+                }
+            )
+        with pytest.raises(ValueError):
+            SampledCoordinate(
+                {
+                    "tie_values": [0.0, 10.0],
+                    "tie_lengths": [[3], [2]],
+                    "sampling_interval": 1.0,
+                }
             )
 
 
@@ -133,6 +172,13 @@ class TestSampledCoordinateIndexing:
         with pytest.raises(IndexError):
             coord.get_value([-6, 0])
 
+    def test_values(self):
+        coord = self.make_coord()
+        expected = np.array([0.0, 1.0, 2.0, 10.0, 11.0])
+        assert np.array_equal(coord.values, expected)
+        assert np.array_equal(coord.__array__(), expected)
+        assert np.array_equal(coord.__array__(dtype=expected.dtype), expected)
+
     def test_getitem(self):
         coord = self.make_coord()
         # scalar -> ScalarCoordinate
@@ -176,11 +222,36 @@ class TestSampledCoordinateIndexing:
         arr = coord[[0, 4]]
         assert isinstance(arr, DenseCoordinate)
         assert np.array_equal(arr.values, np.array([0.0, 11.0]))
+        # negative step is not implemented yet
+        with pytest.raises(NotImplementedError):
+            coord[4:0:-1]
 
     def test_repr(self):
-        # Just ensure it returns a string
-        coord = self.make_coord()
-        assert isinstance(repr(coord), str)
+        # floating coord
+        floating = self.make_coord()
+        assert isinstance(repr(floating), str)
+        # integer coord
+        integer = SampledCoordinate(
+            {"tie_values": [0], "tie_lengths": [3], "sampling_interval": 1}
+        )
+        assert isinstance(repr(integer), str)
+        # empty coord
+        empty = SampledCoordinate()
+        assert repr(empty) == "empty coordinate"
+        # singleton
+        singleton = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [1], "sampling_interval": 1.0}
+        )
+        assert isinstance(repr(singleton), str)
+        # numeric coord
+        datetime = SampledCoordinate(
+            {
+                "tie_values": [np.datetime64("2000-01-01T00:00:00")],
+                "tie_lengths": [3],
+                "sampling_interval": np.timedelta64(1, "s"),
+            }
+        )
+        assert isinstance(repr(datetime), str)
 
 
 class TestSampledCoordinateSliceEdgeCases:
@@ -336,6 +407,31 @@ class TestSampledCoordinateValueBasedIndexing:
         with pytest.raises(KeyError):
             coord.get_indexer([t0, t0 + np.timedelta64(20, "s")], method="bfill")
 
+    def test_get_indexer_overlap(self):
+        coord = SampledCoordinate(
+            {"tie_values": [0.0, 2.0], "tie_lengths": [3, 3], "sampling_interval": 1.0}
+        )  # segments: [0,1,2] and [2,3,4]
+        assert coord.get_indexer(1.0) == 1
+        assert coord.get_indexer(3.0) == 4
+        with pytest.raises(KeyError):
+            coord.get_indexer(2.0)
+        coord = SampledCoordinate(
+            {"tie_values": [0.0, 2.0], "tie_lengths": [5, 5], "sampling_interval": 1.0}
+        )  # segments: [0,1,2,3,4] and [2,3,4,5,6]
+        assert coord.get_indexer(1.0) == 1
+        assert coord.get_indexer(6.0) == 9
+        with pytest.raises(KeyError):
+            coord.get_indexer(2.0)
+        with pytest.raises(KeyError):
+            coord.get_indexer(2.5, method="nearest")
+        with pytest.raises(KeyError):
+            coord.get_indexer(4.0)
+
+    def test_get_indexer_invalid_method(self):
+        coord = self.make_coord()
+        with pytest.raises(ValueError):
+            coord.get_indexer(0.0, method="invalid")
+
 
 class TestSampledCoordinateAppend:
     def test_append_two_coords(self):
@@ -411,6 +507,26 @@ class TestSampledCoordinateAppend:
         with pytest.raises(ValueError):
             coord1.append(coord2)
 
+    def test_append_type_mismatch(self):
+        coord1 = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
+        )
+        coord2 = DenseCoordinate(np.array([10.0, 11.0]))
+        with pytest.raises(TypeError):
+            coord1.append(coord2)
+
+    def test_append_dimension_mismatch(self):
+        coord1 = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0},
+            dim="time",
+        )
+        coord2 = SampledCoordinate(
+            {"tie_values": [10.0], "tie_lengths": [2], "sampling_interval": 1.0},
+            dim="depth",
+        )
+        with pytest.raises(ValueError):
+            coord1.append(coord2)
+
 
 class TestSampledCoordinateDiscontinuitiesAvailabilities:
     def test_discontinuities_and_availabilities(self):
@@ -442,6 +558,25 @@ class TestSampledCoordinateToDatasetAndDict:
                 "tie_values": [0.0, 10.0],
                 "tie_lengths": [3, 2],
                 "sampling_interval": 1.0,
+            },
+            dim="time",
+        )
+        d = coord.to_dict()
+        assert "dim" in d
+        assert "data" in d
+        assert set(d["data"].keys()) >= {
+            "tie_values",
+            "tie_lengths",
+            "sampling_interval",
+        }
+
+    def test_to_dict_with_datetime(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        coord = SampledCoordinate(
+            {
+                "tie_values": [t0, t0 + np.timedelta64(10, "s")],
+                "tie_lengths": [3, 2],
+                "sampling_interval": np.timedelta64(1, "s"),
             },
             dim="time",
         )
@@ -644,6 +779,11 @@ class TestSampledCoordinateDatetime:
             coord.get_indexer(np.datetime64("1999-12-31T23:59:59"))
         with pytest.raises(KeyError):
             coord.get_indexer(np.datetime64("2000-01-01T00:00:12"))
+        # string input
+        assert coord.get_indexer("2000-01-01T00:00:01.500", method="nearest") in [1, 2]
+        # invalid method
+        with pytest.raises(ValueError):
+            coord.get_indexer(t, method="bad")
 
     def test_start_end_properties_datetime(self):
         coord = self.make_dt_coord()
@@ -714,3 +854,47 @@ class TestSampledCoordinateToNetCDF:
             expected.to_netcdf(file.name)
             result = xd.open_dataarray(file.name)
             assert result.equals(expected)
+
+
+class TestGetSplitIndices:
+    def test_get_split_indices_no_tolerance(self):
+        coord = SampledCoordinate(
+            {"tie_values": [0.0, 10.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
+        )
+        div_points = coord.get_split_indices()
+        expected = np.array([3])  # indices where segments end
+        assert np.array_equal(div_points, expected)
+
+    def test_get_split_indices_with_tolerance(self):
+        coord = SampledCoordinate(
+            {
+                "tie_values": [0.0, 3.1, 10.0],
+                "tie_lengths": [3, 2, 2],
+                "sampling_interval": 1.0,
+            }
+        )
+        div_points = coord.get_split_indices(tolerance=0.2)
+        expected = np.array([5])  # only the second gap exceeds tolerance
+        assert np.array_equal(div_points, expected)
+
+
+class TestFromBlock:
+    def test_from_block(self):
+        result = SampledCoordinate.from_block(start=0.0, size=5, step=1.0)
+        expected = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [5], "sampling_interval": 1.0}
+        )
+        assert result.equals(expected)
+
+
+class TestNotImplementedMethods:
+    def test_raises(self):
+        coord = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
+        )
+        with pytest.raises(NotImplementedError):
+            coord.__array_ufunc__(None, None)
+        with pytest.raises(NotImplementedError):
+            coord.__array_function__(None, None, None, None)
+        with pytest.raises(NotImplementedError):
+            coord.from_array(None)
