@@ -17,6 +17,8 @@ kernelspec:
 | {py:class}`~xdas.coordinates.InterpCoordinate` | Values are interpolated linearly between tie points | `interpolated` | `{"tie_indices": array-like[int], "tie_values": array-like[any]}` |
 | {py:class}`~xdas.coordinates.SampledCoordinate` | Values are given as a multiple of a fixed sampling interval and several start values | `sampled` | `{"tie_values": array-like[any], "tie_indices": array-like[int], "sampling_interval": any}` |
 
+In the current state fo the documentation most of the coordinate information can be found in the [Interpolated Coordinate](interpolated-coordinates) page.
+
 ## Per type information
 
 ```{toctree}
