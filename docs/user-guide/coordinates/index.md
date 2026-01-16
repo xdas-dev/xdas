@@ -9,13 +9,13 @@ kernelspec:
 
 {py:class}`~xdas.DataArray` is the base class in *xdas*. It is mainly composed of a N-dimensional array and of a set of {py:class}`~xdas.Coordinate` objects that are gathered in a {py:class}`~xdas.Coordinates` dict-like object than can be accessed by the `DataArray.coords` attribute. Xdas comme with several flavours of {py:class}`~xdas.Coordinate` objects. 
 
-| Type | Description | `data` |
-|:---|:---|:---:|
-| {py:class}`~xdas.coordinates.ScalarCoordinate` | Used to label 0D dimensions | `{"value": any}` |
-| {py:class}`~xdas.coordinates.DefaultCoordinate` | Each value is equal to its index | `{"size": int}` |
-| {py:class}`~xdas.coordinates.DenseCoordinate` | Each index is mapped to a given value | `array-like[any]` |
-| {py:class}`~xdas.coordinates.InterpCoordinate` | Values are interpolated linearly between tie points | `{"tie_indices": array-like[int], "tie_values": array-like[any]}` |
-| {py:class}`~xdas.coordinates.SampledCoordinate` | Values are given as a multiple of a fixed sampling interval and several start values | `{"tie_values": array-like[any], "tie_indices": array-like[int], "sampling_interval": any}` |
+| Type | Description | `name` | `data` |
+|:---|:---|:---:|:---:|
+| {py:class}`~xdas.coordinates.ScalarCoordinate` | Used to label 0D dimensions | `scalar` | `{"value": any}` |
+| {py:class}`~xdas.coordinates.DefaultCoordinate` | Each value is equal to its index | `default` | `{"size": int}` |
+| {py:class}`~xdas.coordinates.DenseCoordinate` | Each index is mapped to a given value | `dense` | `array-like[any]` |
+| {py:class}`~xdas.coordinates.InterpCoordinate` | Values are interpolated linearly between tie points | `interpolated` | `{"tie_indices": array-like[int], "tie_values": array-like[any]}` |
+| {py:class}`~xdas.coordinates.SampledCoordinate` | Values are given as a multiple of a fixed sampling interval and several start values | `sampled` | `{"tie_values": array-like[any], "tie_indices": array-like[int], "sampling_interval": any}` |
 
 ## Per type information
 
