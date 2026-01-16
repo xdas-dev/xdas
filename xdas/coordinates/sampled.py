@@ -4,7 +4,6 @@ import numpy as np
 
 from .core import Coordinate, format_datetime, is_strictly_increasing, parse
 
-
 CODE_TO_UNITS = {
     "h": "hours",
     "m": "minutes",
