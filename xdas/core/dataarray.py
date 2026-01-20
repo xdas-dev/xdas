@@ -129,7 +129,8 @@ class DataArray(NDArrayOperatorsMixin):
             return self.data.__array__(dtype)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        from .routines import broadcast_coords, broadcast_to  # TODO: circular import
+        from .routines import broadcast_coords  # TODO: circular import
+        from .routines import broadcast_to
 
         if not method == "__call__":
             return NotImplemented
