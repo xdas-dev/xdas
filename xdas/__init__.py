@@ -25,5 +25,6 @@ from .core.routines import (
     open_mfdatacollection,
     open_mfdatatree,
     plot_availability,
+    fit_into_memory,
     split,
 )
