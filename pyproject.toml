@@ -20,6 +20,7 @@ dependencies = [
     "obspy",
     "pandas",
     "plotly",
+    "psutil",
     "scipy",
     "tqdm",
     "watchdog",
