@@ -458,6 +458,16 @@ class TestDataArray:
             assert result.attrs == attrs
             assert result.equals(da)
 
+    def test_io_create_dirs(self):
+        da = xd.DataArray(np.arange(3))
+        with TemporaryDirectory() as dirpath:
+            path = os.path.join(dirpath, "subdir", "tmp.nc")
+            with pytest.raises(FileNotFoundError, match="No such file or directory"):
+                da.to_netcdf(path)
+            da.to_netcdf(path, create_dirs=True)
+            result = xd.DataArray.from_netcdf(path)
+            assert result.equals(da)
+
     def test_ufunc(self):
         da = wavelet_wavefronts()
         result = np.add(da, 1)

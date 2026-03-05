@@ -1,4 +1,5 @@
 import copy
+import os
 import warnings
 from functools import partial
 
@@ -825,7 +826,15 @@ class DataArray(NDArrayOperatorsMixin):
         }
         return cls(data, {dims[0]: channel, dims[1]: time})
 
-    def to_netcdf(self, fname, mode="w", group=None, virtual=None, encoding=None):
+    def to_netcdf(
+        self,
+        fname,
+        mode="w",
+        group=None,
+        virtual=None,
+        encoding=None,
+        create_dirs=False,
+    ):
         """
         Write DataArray contents to a netCDF file.
 
@@ -849,6 +858,8 @@ class DataArray(NDArrayOperatorsMixin):
             the `h5netcdf` engine to write the data. If you want to use a specific plugin
             for compression, you can use the `hdf5plugin` package. For example, to use the
             ZFP compression, you can use the `hdf5plugin.Zfp` class.
+        create_dirs : bool, optional
+            Whether to create parent directories if they do not exist. Default is False.
 
         Examples
         --------
@@ -882,6 +893,12 @@ class DataArray(NDArrayOperatorsMixin):
         # prepare metadata
         for coord in self.coords.values():
             dataset, variable_attrs = coord.to_dataset(dataset, variable_attrs)
+
+        # create parent directories if needed
+        if create_dirs:
+            dirname = os.path.dirname(fname)
+            if dirname:
+                os.makedirs(dirname, exist_ok=True)
 
         # write data
         with h5netcdf.File(fname, mode=mode) as file:
