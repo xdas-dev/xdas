@@ -4,7 +4,13 @@ import numpy as np
 import pandas as pd
 from xinterp import forward, inverse
 
-from .core import Coordinate, format_datetime, is_strictly_increasing, parse
+from .core import (
+    Coordinate,
+    format_datetime,
+    is_strictly_increasing,
+    parse,
+    parse_tolerance,
+)
 
 
 class InterpCoordinate(Coordinate, name="interpolated"):
@@ -286,11 +292,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         )
 
     def simplify(self, tolerance=None):
-        if tolerance is None:
-            if np.issubdtype(self.dtype, np.datetime64):
-                tolerance = np.timedelta64(0, "ns")
-            else:
-                tolerance = 0.0
+        tolerance = parse_tolerance(tolerance, self.dtype)
         tie_indices, tie_values = douglas_peucker(
             self.tie_indices, self.tie_values, tolerance
         )
