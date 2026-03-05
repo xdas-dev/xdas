@@ -1,11 +1,16 @@
 # Release notes
 
+## 0.2.5
+- Add SampleCoordinate for more SEED-like coordinates (@atrabattoni).
+- Add `create_dirs` to `.to_netcdf` methods to create intermediate directories (@aurelienfalco).
+- Fix numpy 2.4 and obspy 1.4.2 incompatibilities and add `xdas.__version__` (@atrabatto).
+
 ## 0.2.4
 - Add StreamWriter to write long time series to miniSEED (@marbail).
 - Fix OptaSense engine wrong axis attribution (@smouellet).
-- Fix ASN (OptoDAS) engine: handling of roiDec (@AndresLaurine)
-- Fix nan handling for several methods (@ClaudioStrumia)
-- Fix InterpCoordinate.get_availabilities (@AMordret)
+- Fix ASN (OptoDAS) engine: handling of roiDec (@AndresLaurine).
+- Fix nan handling for several methods (@ClaudioStrumia).
+- Fix `InterpCoordinate.get_availabilities` (@AMordret).
 
 ## 0.2.3
 - Fix Febus engine (round timestamps to closest us).
@@ -25,23 +30,19 @@
 - Fix applying fft functions in presence of non-dimensional coordinates.
 
 ## 0.2
-
 - Add Dask virtualization backend for non-HDF5 formats (@atrabattoni).
 - Add support for miniSEED format (@atrabattoni, @chauvetige).
 - Add support for Silixa (TDMS) format (@atrabattoni, @Stutzmann).
 
 ## 0.1.2
-
 - Add ZeroMQ streaming capabilities (@atrabattoni).
 - Add support of Terra15 format (@chauvetige).
 - Fix Febus engine (@ClaudioStrumia).
 
 ## 0.1.1
-
 - Add support for `hdf5plugin` compression schemes.
 - Drop `netCDF4` dependency and only use `h5netcdf` to fix incompatibilities.
 - Drop useless `dask` dependency.
 
 ## 0.1
-
 Initial stable version.

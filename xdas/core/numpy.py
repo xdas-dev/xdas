@@ -1,6 +1,7 @@
 from inspect import signature
 
 import numpy as np
+from numpy.lib import NumpyVersion
 
 from .dataarray import HANDLED_NUMPY_FUNCTIONS, DataArray
 
@@ -112,6 +113,10 @@ handled(reduce=True)(np.count_nonzero)
 handled(drop_coords=True)
 handled(drop_coords=True)(np.diff)
 handled(drop_coords=True)(np.ediff1d)
-handled(drop_coords=True)(np.trapz)
+
+if NumpyVersion(np.__version__) < "2.4.0":
+    handled(drop_coords=True)(np.trapz)
+if NumpyVersion(np.__version__) >= "2.0.0":
+    handled(drop_coords=True)(np.trapezoid)
 
 # TODO: gradient

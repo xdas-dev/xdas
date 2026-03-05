@@ -5,9 +5,11 @@
 
 xdas
 atoms
-io
+coordinates
 fft
+io
 parallel
+picking
 processing
 signal
 synthetics

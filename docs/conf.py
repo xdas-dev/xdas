@@ -11,7 +11,7 @@ copyright = "2024, Alister Trabattoni"
 author = "Alister Trabattoni"
 
 # The full version, including alpha/beta/rc tags
-release = "0.2.4"
+release = "0.2.5"
 
 
 # -- General configuration ---------------------------------------------------

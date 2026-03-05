@@ -3,7 +3,7 @@ import pandas as pd
 from numba import njit
 
 from .atoms.core import Atom, State, atomized
-from .core.coordinates import Coordinate
+from .coordinates.core import Coordinate
 
 
 class Trigger(Atom):
