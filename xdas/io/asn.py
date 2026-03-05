@@ -48,7 +48,9 @@ def read(fname, ctype=None):
     nt = data.shape[0]
     time = Coordinate[ctype["time"]].from_block(t0, nt, dt, dim="time")
     if not ctype["distance"] == "interpolated":
-        raise NotImplementedError("ctype must be 'interpolated' along the 'distance' dim")
+        raise NotImplementedError(
+            "ctype must be 'interpolated' along the 'distance' dim"
+        )
     distance = {"tie_indices": dist_tie_inds, "tie_values": dist_tie_vals}
     return DataArray(data, {"time": time, "distance": distance})
 
