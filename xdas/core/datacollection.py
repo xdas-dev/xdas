@@ -231,7 +231,15 @@ class DataMapping(DataCollection, dict):
         )
         return uniquifiy(out)
 
-    def to_netcdf(self, fname, mode="w", group=None, virtual=None, encoding=None):
+    def to_netcdf(
+        self,
+        fname,
+        mode="w",
+        group=None,
+        virtual=None,
+        encoding=None,
+        create_dirs=False,
+    ):
         if mode == "w" and group is None and os.path.exists(fname):
             os.remove(fname)
         for key in self:
@@ -239,10 +247,10 @@ class DataMapping(DataCollection, dict):
             location = "/".join([name, str(key)])
             if group is not None:
                 location = "/".join([group, location])
-            if os.path.dirname(fname) is not "" and not os.path.exists(
-                os.path.dirname(fname)
-            ):
-                os.makedirs(os.path.dirname(fname), exist_ok=True)
+            if create_dirs:
+                dirname = os.path.dirname(fname)
+                if dirname:
+                    os.makedirs(dirname, exist_ok=True)
             self[key].to_netcdf(
                 fname,
                 mode="a",
@@ -445,9 +453,22 @@ class DataSequence(DataCollection, list):
     def from_mapping(cls, data):
         return cls(data.values(), data.name)
 
-    def to_netcdf(self, fname, mode="w", group=None, virtual=None, encoding=None):
+    def to_netcdf(
+        self,
+        fname,
+        mode="w",
+        group=None,
+        virtual=None,
+        encoding=None,
+        create_dirs=False,
+    ):
         self.to_mapping().to_netcdf(
-            fname, mode=mode, group=group, virtual=virtual, encoding=encoding
+            fname,
+            mode=mode,
+            group=group,
+            virtual=virtual,
+            encoding=encoding,
+            create_dirs=create_dirs,
         )
 
     @classmethod
