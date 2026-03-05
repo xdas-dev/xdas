@@ -5,11 +5,11 @@ from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from glob import glob
 from itertools import pairwise
-import psutil
 
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import psutil
 import xarray as xr
 from tqdm import tqdm
 
@@ -743,19 +743,21 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
 
     return DataArray(data, coords, dims, name, attrs)
 
+
 import sys
-from types import ModuleType, FunctionType
 from gc import get_referents
+from types import FunctionType, ModuleType
 
 # Custom objects know their class.
 # Function objects seem to know way too much, including modules.
 # Exclude modules as well.
 BLACKLIST = type, ModuleType, FunctionType
 
+
 def getsize(obj):
-    """sum size of object & members. See https://stackoverflow.com/a/30316760/12774714 """
+    """sum size of object & members. See https://stackoverflow.com/a/30316760/12774714"""
     if isinstance(obj, BLACKLIST):
-        raise TypeError('getsize() does not take argument of type: '+ str(type(obj)))
+        raise TypeError("getsize() does not take argument of type: " + str(type(obj)))
     seen_ids = set()
     size = 0
     objects = [obj]
@@ -769,7 +771,14 @@ def getsize(obj):
         objects = get_referents(*need_referents)
     return size
 
-def fit_into_memory(da, RAM_limit : float = .8 , indices_or_sections="discontinuities", dim="first", tolerance=None):
+
+def fit_into_memory(
+    da,
+    RAM_limit: float = 0.8,
+    indices_or_sections="discontinuities",
+    dim="first",
+    tolerance=None,
+):
     """
     Check if a data array is too large to fit into a memory limit and split it if it is the case.
 
@@ -782,7 +791,7 @@ def fit_into_memory(da, RAM_limit : float = .8 , indices_or_sections="discontinu
     da : DataArray
         The data array to split
     RAM_limit : float, optional
-        Ratio of the available memory to not exceed. 
+        Ratio of the available memory to not exceed.
     indices_or_sections : str, int or list of int, optional
         If `indices_or_section` is an integer N, the array will be divided into N
         almost equal (can differ by one element if the `dim` size is not a multiple of
@@ -805,9 +814,9 @@ def fit_into_memory(da, RAM_limit : float = .8 , indices_or_sections="discontinu
         The splitted data array.
     """
 
-    available_RAM = psutil.virtual_memory().available # in bytes
-    n_chunks = 1+int(getsize(da) / (RAM_limit * available_RAM))
-    
+    available_RAM = psutil.virtual_memory().available  # in bytes
+    n_chunks = 1 + int(getsize(da) / (RAM_limit * available_RAM))
+
     # n_chunks = max(2, n_chunks_to_fit) # make at least 2 chunks even if fitting into memory?
 
     # print(f"DataArray size : {getsize(da)/1e9} MB")

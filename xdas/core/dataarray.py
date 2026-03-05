@@ -1,7 +1,7 @@
 import copy
+import os
 import warnings
 from functools import partial
-import os
 
 import h5netcdf
 import h5py
@@ -885,7 +885,9 @@ class DataArray(NDArrayOperatorsMixin):
             dataset, variable_attrs = coord.to_dataset(dataset, variable_attrs)
 
         # write data
-        if os.path.dirname(fname) is not "" and not os.path.exists(os.path.dirname(fname)):
+        if os.path.dirname(fname) is not "" and not os.path.exists(
+            os.path.dirname(fname)
+        ):
             os.makedirs(os.path.dirname(fname), exist_ok=True)
 
         with h5netcdf.File(fname, mode=mode) as file:
