@@ -68,6 +68,23 @@ class TestDataCollection:
             result = xd.open_datacollection(path)
             assert result.equals(dc)
 
+    def test_io_create_dirs(self):
+        da = wavelet_wavefronts()
+        dc = xd.DataCollection(
+            {
+                "das1": da,
+                "das2": da,
+            },
+            "instrument",
+        )
+        with TemporaryDirectory() as dirpath:
+            path = os.path.join(dirpath, "subdir", "tmp.nc")
+            with pytest.raises(FileNotFoundError, match="No such file or directory"):
+                dc.to_netcdf(path)
+            dc.to_netcdf(path, create_dirs=True)
+            result = xd.DataCollection.from_netcdf(path)
+            assert result.equals(dc)
+
     def test_depth_counter(self):
         da = wavelet_wavefronts()
         da.name = "da"
