@@ -1,4 +1,5 @@
 import json
+from bisect import bisect_left
 
 import h5py
 import numpy as np
@@ -14,13 +15,43 @@ def read(fname, ctype=None):
     ctype = parse_ctype(ctype)
     with h5py.File(fname, "r") as file:
         header = file["header"]
+        demod = file["demodSpec"]
+
         t0 = np.datetime64(round(header["time"][()] * 1e9), "ns")
         dt = np.timedelta64(round(1e9 * header["dt"][()]), "ns")
-        dx = header["dx"][()] * np.median(np.diff(header["channels"]))
+        dx = float(header["dx"][()])  # Note: dx before (internal) downsampling!
         data = VirtualSource(file["data"])
-    nt, nx = data.shape
+
+        # Get the optical distance for all the recorded channels (after downsampling)
+        # Note that this vector is not continuous for more than one ROI
+        all_dists = file["cableSpec"]["sensorDistances"][...]
+
+        # Buffer for the data index at which each ROI starts/stops
+        dist_tie_inds = []
+        # Buffer for the optical distance at which each ROI starts/stops
+        dist_tie_vals = []
+
+        # Loop over ROIs, get the start/stop index before downsampling
+        for n_start, n_end in zip(demod["roiStart"], demod["roiEnd"]):
+            # Get the index where the ROI starts based on the position in the
+            # distance vector. This solves the issue of rounding during decimation
+            i = bisect_left(all_dists, n_start * dx)
+            # Append the data index and optical distance to the buffers
+            dist_tie_inds.append(i)
+            dist_tie_vals.append(float(all_dists[i]))
+
+            # Repeat the procedure for the index/distance at which the ROI ends.
+            i = bisect_left(all_dists, n_end * dx)
+            dist_tie_inds.append(i)
+            dist_tie_vals.append(float(all_dists[i]))
+
+    nt = data.shape[0]
     time = Coordinate[ctype["time"]].from_block(t0, nt, dt, dim="time")
-    distance = Coordinate[ctype["distance"]].from_block(0.0, nx, dx, dim="distance")
+    if not ctype["distance"] == "interpolated":
+        raise NotImplementedError(
+            "ctype must be 'interpolated' along the 'distance' dim"
+        )
+    distance = {"tie_indices": dist_tie_inds, "tie_values": dist_tie_vals}
     return DataArray(data, {"time": time, "distance": distance})
 
 
