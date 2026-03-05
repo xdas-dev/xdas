@@ -3,12 +3,14 @@ import warnings
 import h5py
 import numpy as np
 
+from ..coordinates.core import Coordinate
 from ..core.dataarray import DataArray
 from ..core.routines import concatenate
 from ..virtual import VirtualSource
+from .core import parse_ctype
 
 
-def read(fname, overlaps=None, offset=None):
+def read(fname, overlaps=None, offset=None, ctype=None):
     """
     Open a Febus file into a xdas DataArray object.
 
@@ -40,6 +42,7 @@ def read(fname, overlaps=None, offset=None):
         A data array containing the data from the Febus file.
 
     """
+    ctype = parse_ctype(ctype)
     with h5py.File(fname, "r") as file:
         (device_name,) = list(file.keys())
         source = file[device_name]["Source1"]
@@ -87,16 +90,19 @@ def read(fname, overlaps=None, offset=None):
     dt, dx = delta
     _, nt, nx = chunks.shape
 
+    dt = np.rint(1e6 * dt).astype("m8[us]").astype("m8[ns]")
+
     dc = []
     for t0, chunk in zip(times, chunks):
-        time = {
-            "tie_indices": [0, nt - 1],
-            "tie_values": np.rint(1e6 * np.array([t0, t0 + (nt - 1) * dt]))
-            .astype("M8[us]")
-            .astype("M8[ns]"),
-        }
-        distance = {"tie_indices": [0, nx - 1], "tie_values": [0.0, (nx - 1) * dx]}
+
+        t0 = np.rint(1e6 * t0).astype("M8[us]").astype("M8[ns]")
+        time = Coordinate[ctype["time"]].from_block(t0, nt, dt, dim="time")
+        distance = Coordinate[ctype["distance"]].from_block(0.0, nx, dx, dim="distance")
         da = DataArray(chunk, {"time": time, "distance": distance}, name=name)
         dc.append(da)
 
     return concatenate(dc, "time")
+
+
+def _to_datetime64(data):
+    return

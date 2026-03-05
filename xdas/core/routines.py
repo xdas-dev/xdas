@@ -4,6 +4,7 @@ import warnings
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from glob import glob
+from itertools import pairwise
 import psutil
 
 import numpy as np
@@ -12,8 +13,8 @@ import plotly.express as px
 import xarray as xr
 from tqdm import tqdm
 
+from ..coordinates.core import Coordinates, get_sampling_interval
 from ..virtual import VirtualSource, VirtualStack
-from .coordinates import Coordinates, InterpCoordinate, get_sampling_interval
 from .dataarray import DataArray
 from .datacollection import DataCollection, DataMapping, DataSequence
 
@@ -613,9 +614,9 @@ class Bag:
             if self.dim in self.dims
             else da.coords.drop_coords(self.dim)
         )
-        try:
+        if self.dim in da.coords:
             self.delta = get_sampling_interval(da, self.dim)
-        except (ValueError, KeyError):
+        else:
             self.delta = None
         self.dtype = da.dtype
 
@@ -853,17 +854,9 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
     if isinstance(indices_or_sections, str) and (
         indices_or_sections == "discontinuities"
     ):
-        if isinstance(da[dim], InterpCoordinate):
-            coord = da[dim].simplify(tolerance)
-            (points,) = np.nonzero(np.diff(coord.tie_indices, prepend=[0]) == 1)
-            div_points = [coord.tie_indices[point] for point in points]
-            div_points = [0] + div_points + [da.sizes[dim]]
-        else:
-            raise TypeError(
-                "discontinuities can only be found on dimension that have as type "
-                "`InterpCoordinate`."
-            )
-    elif isinstance(indices_or_sections, int):
+        indices_or_sections = da[dim].get_split_indices(tolerance)
+
+    if isinstance(indices_or_sections, int):
         nsamples = da.sizes[dim]
         nchunk = indices_or_sections
         if nchunk <= 0:
@@ -874,12 +867,9 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
         chunks = extras * [chunk_size + 1] + (nchunk - extras) * [chunk_size]
         div_points = np.cumsum([0] + chunks, dtype=np.int64)
     else:
-        div_points = [0] + indices_or_sections + [da.sizes[dim]]
+        div_points = np.concatenate([[0], indices_or_sections, [da.sizes[dim]]])
     return DataCollection(
-        [
-            da.isel({dim: slice(div_points[idx], div_points[idx + 1])})
-            for idx in range(len(div_points) - 1)
-        ]
+        [da.isel({dim: slice(start, stop)}) for start, stop in pairwise(div_points)]
     )
 
 

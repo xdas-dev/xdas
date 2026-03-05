@@ -1,1 +1,1 @@
-from .core import dumps, loads
+from .core import create_variable, dumps, loads

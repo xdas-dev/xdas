@@ -16,7 +16,7 @@ os.chdir("../../_data")
 {py:class}`~xdas.DataArray` is the base class to load and manipulate big datasets to in *xdas*. It is mainly composed of two attributes: 
 
 - `data`: any N-dimensional array-like object. Compared to *xarray* `xdas.DataArray` are more permissive to the kinds of array-like objects that can be used. In particular, [virtual arrays](../virtual-datasets) can be used.
-- `coords`: a dict-like container of coordinates. As opposed to *xarray*, which uses dense arrays to label each point, *xdas* also implements [interpolated coordinates](../interpolated-coordinates) that provides an efficient representation of evenly spaced data (gracefully handling gaps and small sampling variations).
+- `coords`: a dict-like container of coordinates. As opposed to *xarray*, which uses dense arrays to label each point, *xdas* also implements [interpolated coordinates](../coordinates/interpolated-coordinates) that provides an efficient representation of evenly spaced data (gracefully handling gaps and small sampling variations).
 
 ![](/_static/dataarray.svg)
 
@@ -30,7 +30,7 @@ In the following examples, we use only one `DataArray`, if you have several `Dat
 
 ## Creating a DataArray
 
-The user can wrap together an n-dimensional array and some related coordinates. See the related description of how to create coordinates [here](../interpolated-coordinates.md). For example:
+The user can wrap together an n-dimensional array and some related coordinates. See the related description of how to create coordinates [here](../coordinates/interpolated-coordinates.md). For example:
 
 
 ```{code-cell}

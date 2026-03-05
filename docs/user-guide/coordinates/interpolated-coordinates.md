@@ -59,7 +59,7 @@ is to `simplify` the coordinates, increasing the tolerance such that the overlap
 disappear. 
 ```
 
-# Gaps and Overlaps
+## Gaps and Overlaps
 
 Gaps and Overlaps can be easily identified based on the tie point positions, and extracted with:
 
@@ -79,7 +79,7 @@ coord = coord.simplify(tolerance=0.0)
 coord
 ```
 
-# Temporal Coordinates
+## Temporal Coordinates
 
 The main use of coordinates in *xdas* is to deal with long time series. By default 
 *xdas* uses `"datetime64[us]"` dtype. Microseconds are used because to perform 
