@@ -2,6 +2,7 @@
 
 ## 0.2.5
 - Fix numpy 2.4 and obspy 1.4.2 incompatibilities (@atrabatto).
+- Add SampleCoordinate for more SEED-like coordinates (@atrabattoni).
 
 ## 0.2.4
 - Add StreamWriter to write long time series to miniSEED (@marbail).

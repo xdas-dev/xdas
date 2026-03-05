@@ -2,9 +2,9 @@ import importlib
 
 import numpy as np
 
-from ..atoms import Atom, State
 from ..core.dataarray import DataArray
 from ..core.routines import concatenate
+from .core import Atom, State
 
 
 class LazyModule:

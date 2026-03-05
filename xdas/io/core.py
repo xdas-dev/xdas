@@ -18,3 +18,26 @@ def get_free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
         return s.getsockname()[1]
+
+
+def parse_ctype(ctype):
+    if ctype is None:
+        ctype = {
+            "time": "interpolated",
+            "distance": "interpolated",
+        }
+    elif isinstance(ctype, str):
+        ctype = {
+            "time": ctype,
+            "distance": ctype,
+        }
+    elif isinstance(ctype, dict):
+        ctype = {
+            "time": ctype.get("time", "interpolated"),
+            "distance": ctype.get("distance", "interpolated"),
+        }
+    else:
+        raise ValueError(
+            "ctype must be None, str, or dict with 'time' and/or 'distance' keys"
+        )
+    return ctype
