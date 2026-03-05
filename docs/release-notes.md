@@ -3,8 +3,7 @@
 ## 0.2.5
 - Add SampleCoordinate for more SEED-like coordinates (@atrabattoni).
 - Add `create_dirs` to `.to_netcdf` methods to create intermediate directories (@aurelienfalco).
-- Fix numpy 2.4 and obspy 1.4.2 incompatibilities (@atrabatto).
-
+- Fix numpy 2.4 and obspy 1.4.2 incompatibilities and add `xdas.__version__` (@atrabatto).
 
 ## 0.2.4
 - Add StreamWriter to write long time series to miniSEED (@marbail).
