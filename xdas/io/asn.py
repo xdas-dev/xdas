@@ -40,12 +40,9 @@ def read(fname: str) -> DataArray:
             dist_tie_vals.append(float(all_dists[i]))
 
             # Repeat the procedure for the index/distance at which the ROI ends.
-            # A "discontinuity" in the interpolation scheme is created in the
-            # following way: n_roi = [start, stop-1, stop, start, stop-1, stop, ...]
             i = bisect_left(all_dists, n_end * dx)
-            for j in reversed(range(2)):
-                dist_tie_inds.append(i-j)
-                dist_tie_vals.append(float(all_dists[i-j]))
+            dist_tie_inds.append(i)
+            dist_tie_vals.append(float(all_dists[i]))
 
     nt = data.shape[0]
     time = {"tie_indices": [0, nt - 1], "tie_values": [t0, t0 + (nt - 1) * dt]}
