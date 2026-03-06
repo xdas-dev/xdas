@@ -63,7 +63,7 @@ da = xdas.open_mfdataarray("00*.h5", engine=None)
 da
 ```
 
-Xdas only loads the metadata from each file and returns a {py:class}`~xdas.DataArray` object. This object has mainly two attributes. First a `data` attribute that contain the data. Here a {py:class}`~xdas.VirtualStack` object that is a pointer to the different files we opened. Second, a `coords` attribute that contains the metadata related to how the space and the time are sampled. Here both dimensions are labeled using {py:class}`~xdas.InterpCoordinate` objects. Those allow to concisely store the time and space information, including potential gaps and overlaps. See the [](user-guide/interpolated-coordinates) section for more information. 
+Xdas only loads the metadata from each file and returns a {py:class}`~xdas.DataArray` object. This object has mainly two attributes. First a `data` attribute that contain the data. Here a {py:class}`~xdas.VirtualStack` object that is a pointer to the different files we opened. Second, a `coords` attribute that contains the metadata related to how the space and the time are sampled. Here both dimensions are labeled using {py:class}`~xdas.InterpCoordinate` objects. Those allow to concisely store the time and space information, including potential gaps and overlaps. See the [](user-guide/coordinates/interpolated-coordinates) section for more information. 
 
 Note that if you want to create a single data collection object for multiple acquisitions (i.e. different instruments or several acquisition with different parameters), you can use the [DataCollection](user-guide/data-structures/datacollection) structure.  
 
