@@ -678,6 +678,23 @@ class TestSampledCoordinateSimplify:
         result = coord.simplify(tolerance=0.1)
         assert np.all(np.abs(result.values - coord.values) <= 0.1)
 
+    def test_simplify_with_tolerance_on_datetime(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        jitter = np.random.rand(100) * 0.2 - 0.1
+        jitter = jitter.astype("timedelta64[ms]")  # convert to timedelta
+        coord = SampledCoordinate(
+            {
+                "tie_values": t0 + 10 * np.arange(100) + jitter,
+                "tie_lengths": 10 * np.ones(100, dtype=int),
+                "sampling_interval": np.timedelta64(1, "s"),
+            }
+        )
+        result = coord.simplify(tolerance=np.timedelta64(200, "ms"))
+        assert len(result.tie_values) == 1
+        # float tolerance should be treated as seconds
+        result = coord.simplify(tolerance=0.2)
+        assert len(result.tie_values) == 1
+
 
 class TestSampledCoordinateGetIndexer:
     def make_coord(self):

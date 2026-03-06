@@ -592,17 +592,13 @@ def parse(data, dim=None):
 
 def parse_tolerance(tolerance, dtype):
     if np.issubdtype(dtype, np.datetime64):
-        unit, step = np.datetime_data(dtype)
-        dtype = np.dtype(f"timedelta64[{step}{unit}]")
         if tolerance is None:
             tolerance = np.timedelta64(0, "ns")
         elif isinstance(tolerance, (int, float)):
             tolerance = np.timedelta64(round(tolerance * 1e9), "ns")
     else:
         if tolerance is None:
-            tolerance = np.array(0, dtype=dtype)[()]
-        else:
-            tolerance = np.array(tolerance, dtype=dtype)[()]
+            tolerance = 0
     return tolerance
 
 
