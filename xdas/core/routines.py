@@ -434,8 +434,9 @@ def asdataarray(obj, tolerance=None):
     obj : object
         The objected to convert
     tolerance : float or datetime64, optional
-        For dense coordinates, tolerance error for interpolation representation, by
-        default zero.
+        For dense coordinates, tolerance error for interpolation representation.
+        For time coordinates, numeric values are considered as seconds.
+        Zero by default.
 
     Returns
     -------
@@ -476,7 +477,8 @@ def combine_by_field(
         The dimension along which concatenate. Default to "first".
     tolerance : float of timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
-        the following, zero by default.
+        the following. For time coordinates, numeric  values are considered as seconds.
+        Zero by default.
     squeeze : bool, optional
         Whether to return a Database instead of a DataCollection if the combinatison
         results in a data collection containing a unique Database.
@@ -539,7 +541,8 @@ def combine_by_coords(
         The dimension along which concatenate. Default to "first".
     tolerance : float of timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
-        the following, zero by default.
+        the following. For time coordinates, numeric values are considered as seconds.
+        Zero by default.
     squeeze : bool, optional
         Whether to return a Database instead of a DataCollection if the combination
         results in a data collection containing a unique Database.
@@ -677,7 +680,8 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         The dimension along which concatenate.
     tolerance : float of timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
-        the following, zero by default.
+        the following, For time coordinates, numeric values are considered as seconds.
+        Zero by default.
     virtual : bool, optional
         Whether to create a virtual dataset. It requires that all concatenated
         data arrays are virtual. By default tries to create a virtual dataset if possible.
