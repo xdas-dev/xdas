@@ -40,7 +40,8 @@ def open_mfdatacollection(
         The dimension along which the data arrays are concatenated. Default to "first".
     tolerance : float of timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
-        continuous with beginning of the following one. Default to zero tolerance.
+        continuous with beginning of the following one. For time coordinates, numeric
+        values are considered as seconds. Default to zero tolerance.
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
@@ -118,7 +119,8 @@ def open_mfdatatree(
         The dimension along which the data arrays are concatenated. Default to "first".
     tolerance : float of timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
-        continuous with beginning of the following one. Default to zero tolerance.
+        continuous with beginning of the following one. For time coordinates, numeric
+        values are considered as seconds. Default to zero tolerance.
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
@@ -217,7 +219,8 @@ def collect(
         The dimension along which the data arrays are concatenated. Default to "first".
     tolerance : float of timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
-        continuous with beginning of the following one. Default to zero tolerance.
+        continuous with beginning of the following one. For time coordinates, numeric
+        values are considered as seconds. Default to zero tolerance.
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
@@ -284,7 +287,8 @@ def open_mfdataarray(
         The dimension along which the data arrays are concatenated. Default to "first".
     tolerance : float of timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
-        continuous with beginning of the following one. Default to zero tolerance.
+        continuous with beginning of the following one. For time coordinates, numeric
+        values are considered as seconds. Default to zero tolerance.
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
@@ -769,7 +773,8 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
         The dimension along which to split, by default "first"
     tolerance : float or timedelta64, optional
         If `indices_or_sections="discontinuities"` split will only occur on gaps and
-        overlaps that are bigger than `tolerance`. Zero tolerance by default.
+        overlaps that are bigger than `tolerance`. For time coordinates, numeric
+        values are considered as seconds. Zero tolerance by default.
 
     Returns
     -------
