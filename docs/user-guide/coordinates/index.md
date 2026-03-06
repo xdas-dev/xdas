@@ -7,7 +7,7 @@ kernelspec:
 # Coordinates
 
 
-{py:class}`~xdas.DataArray` is the base class in *xdas*. It is mainly composed of a N-dimensional array and of a set of {py:class}`~xdas.Coordinate` objects that are gathered in a {py:class}`~xdas.Coordinates` dict-like object than can be accessed by the `DataArray.coords` attribute. Xdas comme with several flavours of {py:class}`~xdas.Coordinate` objects. 
+{py:class}`~xdas.DataArray` is the base class in *xdas*. It is mainly composed of a N-dimensional array and a set of {py:class}`~xdas.Coordinate` objects that are gathered in a {py:class}`~xdas.Coordinates` dict-like object that can be accessed by the `DataArray.coords` attribute. Xdas comes with several flavors of {py:class}`~xdas.Coordinate` objects.
 
 | Type | Description | `name` | `data` |
 |:---|:---|:---:|:---:|
@@ -17,7 +17,7 @@ kernelspec:
 | {py:class}`~xdas.coordinates.InterpCoordinate` | Values are interpolated linearly between tie points | `interpolated` | `{"tie_indices": array-like[int], "tie_values": array-like[any]}` |
 | {py:class}`~xdas.coordinates.SampledCoordinate` | Values are given as a multiple of a fixed sampling interval and several start values | `sampled` | `{"tie_values": array-like[any], "tie_indices": array-like[int], "sampling_interval": any}` |
 
-In the current state fo the documentation most of the coordinate information can be found in the [Interpolated Coordinate](interpolated-coordinates) page.
+In the current state of the documentation, most coordinate information can be found on the [Interpolated Coordinates](interpolated-coordinates) page.
 
 ## Per type information
 

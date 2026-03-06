@@ -103,8 +103,10 @@ def tapered_selection(da, start, end, window=None, size=None, dim="last"):
                 }
             else:
                 pass  # skip non-dimensional coords for `dim`
-        else:
+        elif da[name].dim is not None:
             coords[name] = da[name][selection]
+        else:
+            coords[name] = da[name]
 
     # return output DataArray
     return xd.DataArray(data, coords=coords, dims=da.dims)

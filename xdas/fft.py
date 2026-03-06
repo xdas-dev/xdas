@@ -38,7 +38,7 @@ def fft(da, n=None, dim={"last": "spectrum"}, norm=None, parallel=None):
 
     Notes
     -----
-    To perform a multidimensional fourrier operations, repeat this function on the
+    To perform a multidimensional Fourier operations, repeat this function on the
     desired dimensions.
 
     Examples
@@ -106,7 +106,7 @@ def rfft(da, n=None, dim={"last": "spectrum"}, norm=None, parallel=None):
 
     Notes
     -----
-    To perform a multidimensional fourrier operations, repeat this function on the
+    To perform a multidimensional Fourier operations, repeat this function on the
     desired dimensions.
 
     Examples
@@ -156,7 +156,7 @@ def ifft(da, n=None, dim={"last": "signal"}, norm=None, parallel=None):
         dimension specified by `dim` is used.
     dim: {str: str}, optional
         A mapping indicating as a key the dimension along which to compute the IFFT, and
-        as value the new name of the dimension. Default to {"last": "time"}.
+        as value the new name of the dimension. Default to {"last": "signal"}.
     norm: {“backward”, “ortho”, “forward”}, optional
         Normalization mode (see `numpy.fft`). Default is "backward". Indicates which
         direction of the forward/backward pair of transforms is scaled and with what
@@ -169,7 +169,7 @@ def ifft(da, n=None, dim={"last": "signal"}, norm=None, parallel=None):
 
     Notes
     -----
-    To perform a multidimensional inverse fourrier operations, repeat this function on
+    To perform a multidimensional inverse Fourier operations, repeat this function on
     the desired dimensions.
 
     Examples
@@ -237,7 +237,7 @@ def irfft(da, n=None, dim={"last": "signal"}, norm=None, parallel=None):
 
     Notes
     -----
-    To perform a multidimensional fourrier operations, repeat this function on the
+    To perform a multidimensional Fourier operations, repeat this function on the
     desired dimensions.
 
     Examples
