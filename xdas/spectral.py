@@ -2,7 +2,7 @@ import numpy as np
 from scipy.fft import fft, fftfreq, fftshift, rfft, rfftfreq
 from scipy.signal import get_window
 
-from .core.coordinates import get_sampling_interval
+from .coordinates.core import get_sampling_interval
 from .core.dataarray import DataArray
 from .parallel import parallelize
 

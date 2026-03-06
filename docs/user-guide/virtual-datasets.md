@@ -49,7 +49,7 @@ To handle individual files, multiple files, and virtual datasets, *xdas* offers 
 | {py:func}`xdas.open_mfdatatree`      | {py:class}`~xdas.DataCollection` | Open a directory tree of files, organizing data in a data collection.       |
 | {py:func}`xdas.open_datacollection`  | {py:class}`~xdas.DataCollection` | Open a (virtual) collection.                                         |
 
-Please refer to the [](data-structure/datacollection.md) section for the functions that return a data collection.
+Please refer to the [](data-structures/datacollection.md) section for the functions that return a data collection.
 
 ## Linking multi-file datasets
 

@@ -4,6 +4,7 @@ import warnings
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from glob import glob
+from itertools import pairwise
 
 import numpy as np
 import pandas as pd
@@ -11,8 +12,8 @@ import plotly.express as px
 import xarray as xr
 from tqdm import tqdm
 
+from ..coordinates.core import Coordinates, get_sampling_interval
 from ..virtual import VirtualSource, VirtualStack
-from .coordinates import Coordinates, InterpCoordinate, get_sampling_interval
 from .dataarray import DataArray
 from .datacollection import DataCollection, DataMapping, DataSequence
 
@@ -39,7 +40,8 @@ def open_mfdatacollection(
         The dimension along which the data arrays are concatenated. Default to "first".
     tolerance : float of timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
-        continuous with beginning of the following one. Default to zero tolerance.
+        continuous with beginning of the following one. For time coordinates, numeric
+        values are considered as seconds. Default to zero tolerance.
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
@@ -117,7 +119,8 @@ def open_mfdatatree(
         The dimension along which the data arrays are concatenated. Default to "first".
     tolerance : float of timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
-        continuous with beginning of the following one. Default to zero tolerance.
+        continuous with beginning of the following one. For time coordinates, numeric
+        values are considered as seconds. Default to zero tolerance.
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
@@ -216,7 +219,8 @@ def collect(
         The dimension along which the data arrays are concatenated. Default to "first".
     tolerance : float of timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
-        continuous with beginning of the following one. Default to zero tolerance.
+        continuous with beginning of the following one. For time coordinates, numeric
+        values are considered as seconds. Default to zero tolerance.
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
@@ -283,7 +287,8 @@ def open_mfdataarray(
         The dimension along which the data arrays are concatenated. Default to "first".
     tolerance : float of timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
-        continuous with beginning of the following one. Default to zero tolerance.
+        continuous with beginning of the following one. For time coordinates, numeric
+        values are considered as seconds. Default to zero tolerance.
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
@@ -429,8 +434,9 @@ def asdataarray(obj, tolerance=None):
     obj : object
         The objected to convert
     tolerance : float or datetime64, optional
-        For dense coordinates, tolerance error for interpolation representation, by
-        default zero.
+        For dense coordinates, tolerance error for interpolation representation.
+        For time coordinates, numeric values are considered as seconds.
+        Zero by default.
 
     Returns
     -------
@@ -471,7 +477,8 @@ def combine_by_field(
         The dimension along which concatenate. Default to "first".
     tolerance : float of timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
-        the following, zero by default.
+        the following. For time coordinates, numeric  values are considered as seconds.
+        Zero by default.
     squeeze : bool, optional
         Whether to return a Database instead of a DataCollection if the combinatison
         results in a data collection containing a unique Database.
@@ -534,7 +541,8 @@ def combine_by_coords(
         The dimension along which concatenate. Default to "first".
     tolerance : float of timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
-        the following, zero by default.
+        the following. For time coordinates, numeric values are considered as seconds.
+        Zero by default.
     squeeze : bool, optional
         Whether to return a Database instead of a DataCollection if the combination
         results in a data collection containing a unique Database.
@@ -612,9 +620,9 @@ class Bag:
             if self.dim in self.dims
             else da.coords.drop_coords(self.dim)
         )
-        try:
+        if self.dim in da.coords:
             self.delta = get_sampling_interval(da, self.dim)
-        except (ValueError, KeyError):
+        else:
             self.delta = None
         self.dtype = da.dtype
 
@@ -672,7 +680,8 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         The dimension along which concatenate.
     tolerance : float of timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
-        the following, zero by default.
+        the following, For time coordinates, numeric values are considered as seconds.
+        Zero by default.
     virtual : bool, optional
         Whether to create a virtual dataset. It requires that all concatenated
         data arrays are virtual. By default tries to create a virtual dataset if possible.
@@ -768,7 +777,8 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
         The dimension along which to split, by default "first"
     tolerance : float or timedelta64, optional
         If `indices_or_sections="discontinuities"` split will only occur on gaps and
-        overlaps that are bigger than `tolerance`. Zero tolerance by default.
+        overlaps that are bigger than `tolerance`. For time coordinates, numeric
+        values are considered as seconds. Zero tolerance by default.
 
     Returns
     -------
@@ -778,17 +788,9 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
     if isinstance(indices_or_sections, str) and (
         indices_or_sections == "discontinuities"
     ):
-        if isinstance(da[dim], InterpCoordinate):
-            coord = da[dim].simplify(tolerance)
-            (points,) = np.nonzero(np.diff(coord.tie_indices, prepend=[0]) == 1)
-            div_points = [coord.tie_indices[point] for point in points]
-            div_points = [0] + div_points + [da.sizes[dim]]
-        else:
-            raise TypeError(
-                "discontinuities can only be found on dimension that have as type "
-                "`InterpCoordinate`."
-            )
-    elif isinstance(indices_or_sections, int):
+        indices_or_sections = da[dim].get_split_indices(tolerance)
+
+    if isinstance(indices_or_sections, int):
         nsamples = da.sizes[dim]
         nchunk = indices_or_sections
         if nchunk <= 0:
@@ -799,12 +801,9 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
         chunks = extras * [chunk_size + 1] + (nchunk - extras) * [chunk_size]
         div_points = np.cumsum([0] + chunks, dtype=np.int64)
     else:
-        div_points = [0] + indices_or_sections + [da.sizes[dim]]
+        div_points = np.concatenate([[0], indices_or_sections, [da.sizes[dim]]])
     return DataCollection(
-        [
-            da.isel({dim: slice(div_points[idx], div_points[idx + 1])})
-            for idx in range(len(div_points) - 1)
-        ]
+        [da.isel({dim: slice(start, stop)}) for start, stop in pairwise(div_points)]
     )
 
 

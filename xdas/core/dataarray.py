@@ -1,6 +1,5 @@
 import copy
-import json
-import re
+import os
 import warnings
 from functools import partial
 
@@ -12,9 +11,9 @@ import xarray as xr
 from dask.array import Array as DaskArray
 from numpy.lib.mixins import NDArrayOperatorsMixin
 
-from ..dask.core import dumps, from_dict, loads, to_dict
+from ..coordinates import Coordinates, get_sampling_interval
+from ..dask.core import create_variable, from_dict, loads, to_dict
 from ..virtual import VirtualArray, VirtualSource, _to_human
-from .coordinates import Coordinate, Coordinates, get_sampling_interval
 
 HANDLED_NUMPY_FUNCTIONS = {}
 HANDLED_METHODS = {}
@@ -131,7 +130,8 @@ class DataArray(NDArrayOperatorsMixin):
             return self.data.__array__(dtype)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        from .routines import broadcast_coords, broadcast_to  # TODO: circular import
+        from .routines import broadcast_coords  # TODO: circular import
+        from .routines import broadcast_to
 
         if not method == "__call__":
             return NotImplemented
@@ -826,7 +826,15 @@ class DataArray(NDArrayOperatorsMixin):
         }
         return cls(data, {dims[0]: channel, dims[1]: time})
 
-    def to_netcdf(self, fname, mode="w", group=None, virtual=None, encoding=None):
+    def to_netcdf(
+        self,
+        fname,
+        mode="w",
+        group=None,
+        virtual=None,
+        encoding=None,
+        create_dirs=False,
+    ):
         """
         Write DataArray contents to a netCDF file.
 
@@ -850,6 +858,8 @@ class DataArray(NDArrayOperatorsMixin):
             the `h5netcdf` engine to write the data. If you want to use a specific plugin
             for compression, you can use the `hdf5plugin` package. For example, to use the
             ZFP compression, you can use the `hdf5plugin.Zfp` class.
+        create_dirs : bool, optional
+            Whether to create parent directories if they do not exist. Default is False.
 
         Examples
         --------
@@ -874,45 +884,37 @@ class DataArray(NDArrayOperatorsMixin):
         """
         if virtual is None:
             virtual = isinstance(self.data, (VirtualArray, DaskArray))
-        ds = xr.Dataset(attrs={"Conventions": "CF-1.9"})
-        mappings = []
-        for name, coord in self.coords.items():
-            if coord.isinterp():
-                mappings.append(f"{name}: {name}_indices {name}_values")
-                tie_indices = coord.tie_indices
-                tie_values = (
-                    coord.tie_values.astype("M8[ns]")
-                    if np.issubdtype(coord.tie_values.dtype, np.datetime64)
-                    else coord.tie_values
-                )
-                attrs = {
-                    "interpolation_name": "linear",
-                    "tie_points_mapping": f"{name}_points: {name}_indices {name}_values",
-                }
-                ds.update(
-                    {
-                        f"{name}_interpolation": ((), np.nan, attrs),
-                        f"{name}_indices": (f"{name}_points", tie_indices),
-                        f"{name}_values": (f"{name}_points", tie_values),
-                    }
-                )
-            else:
-                ds = ds.assign_coords(
-                    {name: (coord.dim, coord.values) if coord.dim else coord.values}
-                )
-        mapping = " ".join(mappings)
-        attrs = {} if self.attrs is None else self.attrs
-        attrs |= {"coordinate_interpolation": mapping} if mapping else attrs
-        name = "__values__" if self.name is None else self.name
+
+        # initialize
+        dataset = xr.Dataset(attrs={"Conventions": "CF-1.9"})
+        variable_attrs = {} if self.attrs is None else self.attrs
+        variable_name = "__values__" if self.name is None else self.name
+
+        # prepare metadata
+        for coord in self.coords.values():
+            dataset, variable_attrs = coord.to_dataset(dataset, variable_attrs)
+
+        # create parent directories if needed
+        if create_dirs:
+            dirname = os.path.dirname(fname)
+            if dirname:
+                os.makedirs(dirname, exist_ok=True)
+
+        # write data
         with h5netcdf.File(fname, mode=mode) as file:
+            # group
             if group is not None and group not in file:
                 file.create_group(group)
             file = file if group is None else file[group]
+
+            # dims
             file.dimensions.update(self.sizes)
+
+            # variable
             if not virtual:
                 encoding = {} if encoding is None else encoding
                 variable = file.create_variable(
-                    name,
+                    variable_name,
                     self.dims,
                     self.dtype,
                     data=self.values,
@@ -922,28 +924,24 @@ class DataArray(NDArrayOperatorsMixin):
                 if encoding is not None:
                     raise ValueError("cannot use `encoding` with in virtual mode")
                 if isinstance(self.data, VirtualArray):
-                    self.data.to_dataset(file._h5group, name)
-                    variable = file._variable_cls(file, name, self.dims)
-                    file._variables[name] = variable
-                    variable._attach_dim_scales()
-                    variable._attach_coords()
-                    variable._ensure_dim_id()
-                elif isinstance(self.data, DaskArray):
-                    variable = file.create_variable(
-                        name,
-                        self.dims,
-                        self.dtype,
+                    variable = self.data.create_variable(
+                        file, variable_name, self.dims, self.dtype
                     )
-                    variable.attrs.update(
-                        {"__dask_array__": np.frombuffer(dumps(self.data), "uint8")}
+                elif isinstance(self.data, DaskArray):
+                    variable = create_variable(
+                        self.data, file, variable_name, self.dims, self.dtype
                     )
                 else:
                     raise ValueError(
                         "can only use `virtual=True` with a virtual array as data"
                     )
-            if attrs:
-                variable.attrs.update(attrs)
-        ds.to_netcdf(fname, mode="a", group=group, engine="h5netcdf")
+
+            # attrs
+            if variable_attrs:
+                variable.attrs.update(variable_attrs)
+
+        # write metadata
+        dataset.to_netcdf(fname, mode="a", group=group, engine="h5netcdf")
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
@@ -962,70 +960,54 @@ class DataArray(NDArrayOperatorsMixin):
         DataArray
             The openend data array.
         """
-        with xr.open_dataset(fname, group=group, engine="h5netcdf") as ds:
-            if not ("Conventions" in ds.attrs and "CF" in ds.attrs["Conventions"]):
+        # read metadata
+        with xr.open_dataset(
+            fname, group=group, engine="h5netcdf", decode_timedelta=False
+        ) as dataset:
+            # check file format
+            if not (
+                "Conventions" in dataset.attrs and "CF" in dataset.attrs["Conventions"]
+            ):
                 raise TypeError(
                     "file format not recognized. please provide the file format "
                     "with the `engine` keyword argument"
                 )
-            if len(ds) == 1:
-                name, da = next(iter(ds.items()))
-                coords = {
-                    name: (
-                        (
-                            coord.dims[0],
-                            (
-                                coord.values.astype("U")
-                                if coord.dtype == np.dtype("O")
-                                else coord.values
-                            ),
-                        )
-                        if coord.dims
-                        else coord.values
-                    )
-                    for name, coord in da.coords.items()
-                }
+
+            # identify the "main" data array
+            if len(dataset) == 1:
+                name = next(iter(dataset.keys()))
             else:
-                data_vars = [
-                    var
-                    for var in ds.values()
-                    if "coordinate_interpolation" in var.attrs
-                ]
+                data_vars = {
+                    key: var
+                    for key, var in dataset.items()
+                    if any("coordinate" in attr for attr in var.attrs)
+                }
                 if len(data_vars) == 1:
-                    da = data_vars[0]
+                    name = next(iter(data_vars.keys()))
                 else:
                     raise ValueError("several possible data arrays detected")
-                coords = {
-                    name: (
-                        (
-                            coord.dims[0],
-                            (
-                                coord.values.astype("U")
-                                if coord.dtype == np.dtype("O")
-                                else coord.values
-                            ),
-                        )
-                        if coord.dims
-                        else coord.values
-                    )
-                    for name, coord in da.coords.items()
-                }
-                mapping = da.attrs.pop("coordinate_interpolation")
-                matches = re.findall(r"(\w+): (\w+) (\w+)", mapping)
-                for match in matches:
-                    dim, indices, values = match
-                    data = {"tie_indices": ds[indices], "tie_values": ds[values]}
-                    coords[dim] = Coordinate(data, dim)
-        with h5py.File(fname) as file:
-            if group:
-                file = file[group]
-            name = "__values__" if da.name is None else da.name
-            variable = file[name]
-            if "__dask_array__" in variable.attrs:
-                data = loads(da.attrs.pop("__dask_array__"))
-            else:
-                data = VirtualSource(file[name])
-        return cls(data, coords, da.dims, da.name, None if da.attrs == {} else da.attrs)
+
+            # read coordinates
+            coords = Coordinates.from_dataset(dataset, name)
+
+        # read data
+        if "__dask_array__" in dataset[name].attrs:
+            data = loads(dataset[name].attrs.pop("__dask_array__"))
+        else:
+            with h5py.File(fname) as file:
+                if group:
+                    file = file[group]
+                variable = file["__values__" if name is None else name]
+                data = VirtualSource(variable)
+
+        # pack everything
+        return cls(
+            data,
+            coords,
+            dataset[name].dims,
+            name,
+            None if dataset[name].attrs == {} else dataset[name].attrs,
+        )
 
     def to_dict(self):
         """Convert the DataArray to a dictionary."""
