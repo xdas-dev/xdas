@@ -391,7 +391,6 @@ class SampledCoordinate(Coordinate, name="sampled"):
 
     def simplify(self, tolerance=None):
         tolerance = parse_tolerance(tolerance, self.dtype)
-        tolerance = np.array(0, dtype=self.sampling_interval.dtype)[()]
         tie_values = [self.tie_values[0]]
         tie_lengths = [self.tie_lengths[0]]
         for value, length in zip(self.tie_values[1:], self.tie_lengths[1:]):
