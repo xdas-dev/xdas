@@ -304,6 +304,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         (indices,) = np.nonzero(np.diff(self.tie_indices) == 1)
         indices += 1
         if tolerance is not None:
+            tolerance = parse_tolerance(tolerance, self.dtype)
             deltas = self.tie_values[indices + 1] - self.tie_values[indices]
             indices = indices[np.abs(deltas) >= tolerance]
         return np.array(

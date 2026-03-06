@@ -874,7 +874,7 @@ class TestSampledCoordinateToNetCDF:
 
 
 class TestGetSplitIndices:
-    def test_get_split_indices_no_tolerance(self):
+    def test_no_tolerance(self):
         coord = SampledCoordinate(
             {"tie_values": [0.0, 10.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
         )
@@ -882,7 +882,7 @@ class TestGetSplitIndices:
         expected = np.array([3])  # indices where segments end
         assert np.array_equal(div_points, expected)
 
-    def test_get_split_indices_with_tolerance(self):
+    def test_with_tolerance(self):
         coord = SampledCoordinate(
             {
                 "tie_values": [0.0, 3.1, 10.0],
@@ -892,6 +892,26 @@ class TestGetSplitIndices:
         )
         div_points = coord.get_split_indices(tolerance=0.2)
         expected = np.array([5])  # only the second gap exceeds tolerance
+        assert np.array_equal(div_points, expected)
+
+    def test_with_tolerance_on_datetime(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        coord = SampledCoordinate(
+            {
+                "tie_values": [
+                    t0,
+                    t0 + np.timedelta64(3, "s") + np.timedelta64(100, "ms"),
+                    t0 + np.timedelta64(10, "s"),
+                ],
+                "tie_lengths": [3, 2, 2],
+                "sampling_interval": np.timedelta64(1, "s"),
+            }
+        )
+        div_points = coord.get_split_indices(tolerance=np.timedelta64(200, "ms"))
+        expected = np.array([5])  # only the second gap exceeds tolerance
+        assert np.array_equal(div_points, expected)
+        # float tolerance should be treated as seconds
+        div_points = coord.get_split_indices(tolerance=0.2)
         assert np.array_equal(div_points, expected)
 
 

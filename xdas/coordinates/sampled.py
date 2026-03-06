@@ -412,6 +412,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
     def get_split_indices(self, tolerance=None):
         indices = self.tie_indices[1:]
         if tolerance is not None:
+            tolerance = parse_tolerance(tolerance, self.dtype)
             deltas = self.tie_values[1:] - (
                 self.tie_values[:-1] + self.sampling_interval * self.tie_lengths[:-1]
             )
