@@ -27,7 +27,7 @@ class DefaultCoordinate(Coordinate, name="default"):
 
     @property
     def empty(self):
-        return self.data["size"] == 0 
+        return self.data["size"] == 0
 
     @property
     def dtype(self):

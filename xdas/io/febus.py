@@ -102,7 +102,3 @@ def read(fname, overlaps=None, offset=None, ctype=None):
         dc.append(da)
 
     return concatenate(dc, "time")
-
-
-def _to_datetime64(data):
-    return
