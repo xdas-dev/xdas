@@ -678,6 +678,23 @@ class TestSampledCoordinateSimplify:
         result = coord.simplify(tolerance=0.1)
         assert np.all(np.abs(result.values - coord.values) <= 0.1)
 
+    def test_simplify_with_tolerance_on_datetime(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        jitter = np.random.rand(100) * 0.2 - 0.1
+        jitter = jitter.astype("timedelta64[ms]")  # convert to timedelta
+        coord = SampledCoordinate(
+            {
+                "tie_values": t0 + 10 * np.arange(100) + jitter,
+                "tie_lengths": 10 * np.ones(100, dtype=int),
+                "sampling_interval": np.timedelta64(1, "s"),
+            }
+        )
+        result = coord.simplify(tolerance=np.timedelta64(200, "ms"))
+        assert len(result.tie_values) == 1
+        # float tolerance should be treated as seconds
+        result = coord.simplify(tolerance=0.2)
+        assert len(result.tie_values) == 1
+
 
 class TestSampledCoordinateGetIndexer:
     def make_coord(self):
@@ -857,7 +874,7 @@ class TestSampledCoordinateToNetCDF:
 
 
 class TestGetSplitIndices:
-    def test_get_split_indices_no_tolerance(self):
+    def test_no_tolerance(self):
         coord = SampledCoordinate(
             {"tie_values": [0.0, 10.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
         )
@@ -865,7 +882,7 @@ class TestGetSplitIndices:
         expected = np.array([3])  # indices where segments end
         assert np.array_equal(div_points, expected)
 
-    def test_get_split_indices_with_tolerance(self):
+    def test_with_tolerance(self):
         coord = SampledCoordinate(
             {
                 "tie_values": [0.0, 3.1, 10.0],
@@ -875,6 +892,26 @@ class TestGetSplitIndices:
         )
         div_points = coord.get_split_indices(tolerance=0.2)
         expected = np.array([5])  # only the second gap exceeds tolerance
+        assert np.array_equal(div_points, expected)
+
+    def test_with_tolerance_on_datetime(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        coord = SampledCoordinate(
+            {
+                "tie_values": [
+                    t0,
+                    t0 + np.timedelta64(3, "s") + np.timedelta64(100, "ms"),
+                    t0 + np.timedelta64(10, "s"),
+                ],
+                "tie_lengths": [3, 2, 2],
+                "sampling_interval": np.timedelta64(1, "s"),
+            }
+        )
+        div_points = coord.get_split_indices(tolerance=np.timedelta64(200, "ms"))
+        expected = np.array([5])  # only the second gap exceeds tolerance
+        assert np.array_equal(div_points, expected)
+        # float tolerance should be treated as seconds
+        div_points = coord.get_split_indices(tolerance=0.2)
         assert np.array_equal(div_points, expected)
 
 

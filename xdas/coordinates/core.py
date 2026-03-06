@@ -590,6 +590,18 @@ def parse(data, dim=None):
     return data, dim
 
 
+def parse_tolerance(tolerance, dtype):
+    if np.issubdtype(dtype, np.datetime64):
+        if tolerance is None:
+            tolerance = np.timedelta64(0, "ns")
+        elif isinstance(tolerance, (int, float)):
+            tolerance = np.timedelta64(round(tolerance * 1e9), "ns")
+    else:
+        if tolerance is None:
+            tolerance = 0
+    return tolerance
+
+
 def get_sampling_interval(da, dim, cast=True):
     """
     Returns the sample spacing along a given dimension.

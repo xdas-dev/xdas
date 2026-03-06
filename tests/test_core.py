@@ -211,23 +211,6 @@ class TestCore:
         for dim in da.dims:
             assert np.array_equal(out[dim].values, da[dim].values)
 
-    def test_split(self):
-        da = xd.DataArray(
-            np.ones(30),
-            {
-                "time": {
-                    "tie_indices": [0, 9, 10, 19, 20, 29],
-                    "tie_values": [0.0, 9.0, 20.0, 29.0, 40.0, 49.0],
-                },
-            },
-        )
-        assert xd.concatenate(xd.split(da)).equals(da)
-        assert xd.split(da, tolerance=20.0)[0].equals(da)
-
-    def test_chunk(self):
-        da = wavelet_wavefronts()
-        assert xd.concatenate(xd.split(da, 3)).equals(da)
-
     def test_align(self):
         da1 = xd.DataArray(np.arange(2), {"x": [0, 1]})
         da2 = xd.DataArray(np.arange(3), {"y": [2, 3, 4]})
@@ -240,3 +223,43 @@ class TestCore:
         da3 = xd.DataArray(np.arange(6).reshape(2, 3), {"x": [1, 2], "y": [2, 3, 4]})
         with pytest.raises(ValueError, match="differs from one data array to another"):
             xd.align(da1, da2, da3)
+
+
+class TestSplit:
+    def test_integer(self):
+        da = wavelet_wavefronts()
+        assert xd.concatenate(xd.split(da, 3)).equals(da)
+
+    def test_interp(self):
+        da = xd.DataArray(
+            np.ones(30),
+            {
+                "time": {
+                    "tie_indices": [0, 9, 10, 19, 20, 29],
+                    "tie_values": [0.0, 9.0, 20.0, 29.0, 40.0, 49.0],
+                },
+            },
+        )
+        assert xd.concatenate(xd.split(da)).equals(da)
+        assert xd.split(da, tolerance=20.0)[0].equals(da)
+
+    def test_interp_datetime(self):
+        da = xd.DataArray(
+            np.ones(30),
+            {
+                "time": {
+                    "tie_indices": [0, 9, 10, 19, 20, 29],
+                    "tie_values": [
+                        np.datetime64("2000-01-01T00:00:00"),
+                        np.datetime64("2000-01-01T00:00:09"),
+                        np.datetime64("2000-01-01T00:00:20"),
+                        np.datetime64("2000-01-01T00:00:29"),
+                        np.datetime64("2000-01-01T00:00:40"),
+                        np.datetime64("2000-01-01T00:00:49"),
+                    ],
+                },
+            },
+        )
+        assert xd.concatenate(xd.split(da)).equals(da)
+        assert xd.split(da, tolerance=np.timedelta64(20, "s"))[0].equals(da)
+        assert xd.split(da, tolerance=20.0)[0].equals(da)

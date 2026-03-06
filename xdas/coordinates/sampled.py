@@ -2,7 +2,13 @@ import re
 
 import numpy as np
 
-from .core import Coordinate, format_datetime, is_strictly_increasing, parse
+from .core import (
+    Coordinate,
+    format_datetime,
+    is_strictly_increasing,
+    parse,
+    parse_tolerance,
+)
 
 CODE_TO_UNITS = {
     "h": "hours",
@@ -384,8 +390,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
         return self[::q]
 
     def simplify(self, tolerance=None):
-        if tolerance is None:
-            tolerance = np.array(0, dtype=self.sampling_interval.dtype)[()]
+        tolerance = parse_tolerance(tolerance, self.dtype)
         tie_values = [self.tie_values[0]]
         tie_lengths = [self.tie_lengths[0]]
         for value, length in zip(self.tie_values[1:], self.tie_lengths[1:]):
@@ -407,6 +412,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
     def get_split_indices(self, tolerance=None):
         indices = self.tie_indices[1:]
         if tolerance is not None:
+            tolerance = parse_tolerance(tolerance, self.dtype)
             deltas = self.tie_values[1:] - (
                 self.tie_values[:-1] + self.sampling_interval * self.tie_lengths[:-1]
             )

@@ -285,6 +285,21 @@ class TestInterpCoordinate:
         coord = InterpCoordinate({"tie_indices": xp, "tie_values": yp})
         assert len(coord.simplify(1.0).tie_indices) == 2
 
+    def test_simplify_datetime(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        xp = np.sort(np.random.choice(10000, 1000, replace=False))
+        xp[0] = 0
+        xp[-1] = 10000
+        yp = (
+            t0
+            + xp.astype("timedelta64[s]")
+            + np.random.randint(-500, 500, size=1000).astype("timedelta64[ms]")
+        )
+        coord = InterpCoordinate({"tie_indices": xp, "tie_values": yp})
+        assert len(coord.simplify(np.timedelta64(1, "s")).tie_indices) == 2
+        assert len(coord.simplify(np.timedelta64(1000, "ms")).tie_indices) == 2
+        assert len(coord.simplify(1.0).tie_indices) == 2
+
     def test_singleton(self):
         coord = InterpCoordinate({"tie_indices": [0], "tie_values": [1.0]})
         assert coord[0].values == 1.0
