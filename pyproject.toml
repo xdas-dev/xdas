@@ -20,6 +20,7 @@ dependencies = [
     "obspy",
     "pandas",
     "plotly",
+    "psutil",
     "setuptools<82.0.0",
     "scipy",
     "tqdm",

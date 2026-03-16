@@ -34,6 +34,7 @@ from .core.routines import (
     combine_by_coords,
     combine_by_field,
     concatenate,
+    fit_into_memory,
     open_dataarray,
     open_datacollection,
     open_mfdataarray,
