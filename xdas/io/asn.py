@@ -1,5 +1,5 @@
 import json
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 
 import h5py
 import numpy as np
@@ -9,6 +9,18 @@ from ..coordinates.core import Coordinate, get_sampling_interval
 from ..core.dataarray import DataArray
 from ..virtual import VirtualSource
 from .core import parse_ctype
+
+
+def _get_roi_bound_indices(all_dists, n_start, n_end, dx):
+    start_index = bisect_left(all_dists, n_start * dx)
+    if start_index >= len(all_dists):
+        raise IndexError("ROI start lies beyond available sensor distances")
+
+    end_index = bisect_right(all_dists, n_end * dx) - 1
+    if end_index < 0:
+        raise IndexError("ROI end lies before available sensor distances")
+
+    return start_index, end_index
 
 
 def read(fname, ctype=None):
@@ -33,17 +45,19 @@ def read(fname, ctype=None):
 
         # Loop over ROIs, get the start/stop index before downsampling
         for n_start, n_end in zip(demod["roiStart"], demod["roiEnd"]):
+            # ASN stores ROI end as an upper boundary. Use the last sampled distance
+            # that does not exceed that boundary instead of indexing the insertion point.
+            i_start, i_end = _get_roi_bound_indices(all_dists, n_start, n_end, dx)
+
             # Get the index where the ROI starts based on the position in the
             # distance vector. This solves the issue of rounding during decimation
-            i = bisect_left(all_dists, n_start * dx)
             # Append the data index and optical distance to the buffers
-            dist_tie_inds.append(i)
-            dist_tie_vals.append(float(all_dists[i]))
+            dist_tie_inds.append(i_start)
+            dist_tie_vals.append(float(all_dists[i_start]))
 
             # Repeat the procedure for the index/distance at which the ROI ends.
-            i = bisect_left(all_dists, n_end * dx)
-            dist_tie_inds.append(i)
-            dist_tie_vals.append(float(all_dists[i]))
+            dist_tie_inds.append(i_end)
+            dist_tie_vals.append(float(all_dists[i_end]))
 
     nt = data.shape[0]
     time = Coordinate[ctype["time"]].from_block(t0, nt, dt, dim="time")
