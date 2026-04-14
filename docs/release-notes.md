@@ -1,6 +1,10 @@
 # Release notes
 
 ## 0.2.5
+- Make `open_mfdataarray` raise `RuntimeError` when openning all files fails (@asladen). 
+- Fix ASN ROI handling (@asladen).
+
+## 0.2.5
 - Add SampleCoordinate for more SEED-like coordinates and refactor the coordinate backend (@atrabattoni).
 - Add `xdas.picking.tapered_selection` to extract windows around picks (@atrabattoni).
 - Add `create_dirs` to `.to_netcdf` methods to create intermediate directories (@aurelienfalco).
