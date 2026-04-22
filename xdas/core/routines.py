@@ -18,6 +18,9 @@ from .dataarray import DataArray
 from .datacollection import DataCollection, DataMapping, DataSequence
 
 
+def open(): ...  # TODO
+
+
 def open_mfdatacollection(
     paths, dim="first", tolerance=None, squeeze=False, verbose=False
 ):
