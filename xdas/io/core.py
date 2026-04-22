@@ -1,6 +1,9 @@
 import socket
 
 
+class Reader: ...  # TODO
+
+
 def get_free_port():
     """
     Find and return a free port on the host machine.
