@@ -19,7 +19,104 @@ from .dataarray import DataArray
 from .datacollection import DataCollection, DataMapping, DataSequence
 
 
-def open(paths, dim="first", tolerance=None, squeeze=None, engine=None, verbose=False):
+def open(
+    paths,
+    dim="first",
+    tolerance=None,
+    squeeze=None,
+    engine=None,
+    verbose=False,
+    **kwargs,
+):
+    """
+    Open one or several files as a data array or collection.
+
+    Automatically dispatches to the appropriate reader based on the shape of `paths`:
+
+    - **Single file** (plain path string): tries to open as a data collection first,
+      falls back to a data array if the file does not contain a data collection.
+    - **Multi-file** (wildcarded string with ``*``, ``?``, or ``[…]``, or a list of
+      paths): tries to open and combine as a multi-file data collection first, falls
+      back to a multi-file data array if the files are not data collections.
+    - **Tree-like** (string containing ``{field}`` placeholders):
+      opens a directory tree as a nested data collection using
+      :func:`open_mfdatatree`.
+
+    Parameters
+    ----------
+    paths : str or list of str
+        The path(s) to open. Can be:
+
+        - A plain file path (single file).
+        - A shell-style wildcard string (``*``, ``?``, ``[…]``) matching multiple
+          files.
+        - A list of explicit file paths.
+        - A tree descriptor string containing ``{field}`` (dict level) and
+          ``[field]`` (list level) placeholders.
+    dim : str, optional
+        The dimension along which multiple files are concatenated. Ignored when
+        opening a single file. Default is ``"first"``.
+    tolerance : float or timedelta64, optional
+        Maximum gap or overlap allowed between consecutive files to still be
+        considered continuous. For time coordinates, numeric values are interpreted
+        as seconds. Ignored when opening a single file. Default is zero tolerance.
+    squeeze : bool or None, optional
+        Whether to return a DataArray instead of a DataCollection when the result
+        contains only one data array. When ``None`` (default), the behaviour depends
+        on the dispatch path: ``True`` for multi-file data arrays, ``False``
+        otherwise. Ignored when opening a single file.
+    engine : str or callable, optional
+        The file format engine to use, or a custom read callable. When ``None``
+        (default), the xdas NetCDF format is assumed. Providing an engine skips the
+        automatic DataCollection detection.
+    verbose : bool, optional
+        Whether to display a progress bar while reading metadata. Ignored when
+        opening a single file. Default is ``False``.
+    **kwargs
+        Additional keyword arguments forwarded to the underlying engine read
+        function. Only used when `engine` is not ``None``.
+
+    Returns
+    -------
+    DataArray or DataCollection
+        The opened data. The exact type depends on the dispatch path and the
+        ``squeeze`` setting.
+
+    Raises
+    ------
+    ValueError
+        If `paths` is neither a string nor a list.
+    FileNotFoundError
+        If no file matching `paths` can be found.
+
+    See Also
+    --------
+    open_dataarray : Open a single DataArray file.
+    open_datacollection : Open a single DataCollection file.
+    open_mfdataarray : Open and combine multiple DataArray files.
+    open_mfdatacollection : Open and combine multiple DataCollection files.
+    open_mfdatatree : Open a directory tree as a nested DataCollection.
+
+    Examples
+    --------
+    Open a single file (auto-detects DataCollection vs DataArray):
+
+    >>> import xdas as xd
+    >>> da = xd.open("path/to/file.nc")  # doctest: +SKIP
+
+    Open multiple files with a wildcard:
+
+    >>> da = xd.open("path/to/files/*.nc")  # doctest: +SKIP
+
+    Open a list of explicit paths:
+
+    >>> da = xd.open(["file1.nc", "file2.nc"])  # doctest: +SKIP
+
+    Open a directory tree:
+
+    >>> dc = xd.open("/data/{node}/[acq].nc", engine="asn")  # doctest: +SKIP
+
+    """
     paths = _ensure_str_paths(paths)
     if isinstance(paths, str):
         if "{" in paths:
@@ -41,7 +138,7 @@ def open(paths, dim="first", tolerance=None, squeeze=None, engine=None, verbose=
                     return open_datacollection(paths)
                 except ValueError:
                     pass
-            return open_dataarray(paths, engine=engine)
+            return open_dataarray(paths, engine=engine, **kwargs)
         case "multi-file":
             if engine is None:
                 try:
@@ -61,6 +158,7 @@ def open(paths, dim="first", tolerance=None, squeeze=None, engine=None, verbose=
                 squeeze=True if squeeze is None else squeeze,
                 engine=engine,
                 verbose=verbose,
+                **kwargs,
             )
         case "tree-like":
             return open_mfdatatree(
@@ -70,6 +168,7 @@ def open(paths, dim="first", tolerance=None, squeeze=None, engine=None, verbose=
                 squeeze=False if squeeze is None else squeeze,
                 engine=engine,
                 verbose=verbose,
+                **kwargs,
             )
 
 
