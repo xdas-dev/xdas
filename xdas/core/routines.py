@@ -387,29 +387,31 @@ def open_mfdataarray(
             "The maximum number of file that can be opened at once is for now limited "
             "to 100 000."
         )
-    max_workers = 1 if engine == "miniseed" else None  # TODO: dirty fix
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures_to_paths = {
-            executor.submit(open_dataarray, path, engine=engine, **kwargs): path
-            for path in paths
-        }
-        if verbose:
-            iterator = tqdm(
-                as_completed(futures_to_paths),
-                total=len(futures_to_paths),
-                desc="Fetching metadata from files",
-            )
-        else:
-            iterator = as_completed(futures_to_paths)
-        objs = []
-        for future in iterator:
-            try:
-                obj = future.result()
-            except Exception as e:
-                path = futures_to_paths[future]
-                warnings.warn(f"could not open {path}: {e}", RuntimeWarning)
+    if engine == "miniseed": # TODO: dirty fix
+        objs = [open_dataarray(path, engine=engine, **kwargs) for path in paths]
+    else:
+        with ProcessPoolExecutor() as executor:
+            futures_to_paths = {
+                executor.submit(open_dataarray, path, engine=engine, **kwargs): path
+                for path in paths
+            }
+            if verbose:
+                iterator = tqdm(
+                    as_completed(futures_to_paths),
+                    total=len(futures_to_paths),
+                    desc="Fetching metadata from files",
+                )
             else:
-                objs.append(obj)
+                iterator = as_completed(futures_to_paths)
+            objs = []
+            for future in iterator:
+                try:
+                    obj = future.result()
+                except Exception as e:
+                    path = futures_to_paths[future]
+                    warnings.warn(f"could not open {path}: {e}", RuntimeWarning)
+                else:
+                    objs.append(obj)
     return combine_by_coords(objs, dim, tolerance, squeeze, None, verbose)
 
 
