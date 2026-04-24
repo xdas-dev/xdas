@@ -19,7 +19,25 @@ from .dataarray import DataArray
 from .datacollection import DataCollection, DataMapping, DataSequence
 
 
-def open(): ...  # TODO
+def open(paths, dim="first", tolerance=None, squeeze=None, engine=None, verbose=False):
+    if isinstance(paths, Path):
+        paths = str(paths)
+    if isinstance(paths, str):
+        if "{" in paths:
+            squeeze = False if squeeze is None else squeeze
+            return open_mfdatatree(paths, dim, tolerance, squeeze, engine, verbose)
+        elif "*" in paths or "?" in paths or "[" in paths:
+            squeeze = True if squeeze is None else squeeze
+            return open_mfdataarray(paths, dim, tolerance, squeeze, engine, verbose)
+        else:
+            return open_dataarray(paths, engine=engine)
+    elif isinstance(paths, list):
+        squeeze = True if squeeze is None else squeeze
+        return open_mfdataarray(paths, dim, tolerance, squeeze, engine, verbose)
+    else:
+        raise ValueError(
+            f"`paths` must be either a string or a list, found {type(paths)}"
+        )
 
 
 def open_mfdatacollection(
@@ -58,8 +76,8 @@ def open_mfdatacollection(
         The combined data collection
 
     """
-    if isinstance(paths, Path):
-        paths = str(paths)
+    paths = _ensure_str_paths(paths)
+
     if isinstance(paths, str):
         paths = sorted(glob(paths))
     elif isinstance(paths, list):
@@ -167,8 +185,7 @@ def open_mfdatatree(
 
 
     """
-    if isinstance(paths, Path):
-        paths = str(paths)
+    paths = _ensure_str_paths(paths)
 
     placeholders = re.findall(r"[\{\[].*?[\}\]]", paths)
 
@@ -319,8 +336,7 @@ def open_mfdataarray(
     FileNotFound
         If no file can be found.
     """
-    if isinstance(paths, Path):
-        paths = str(paths)
+    paths = _ensure_str_paths(paths)
     if isinstance(paths, str):
         paths = sorted(glob(paths))
     elif isinstance(paths, list):
@@ -395,8 +411,7 @@ def open_dataarray(fname, group=None, engine=None, **kwargs):
     FileNotFound
         If no file can be found.
     """
-    if isinstance(fname, Path):
-        fname = str(fname)
+    fname = _ensure_str_paths(fname)
     if not os.path.exists(fname):
         raise FileNotFoundError("no file to open")
     if engine is None:
@@ -431,8 +446,7 @@ def open_datacollection(fname, group=None):
     FileNotFound
         If no file can be found.
     """
-    if isinstance(fname, Path):
-        fname = str(fname)
+    fname = _ensure_str_paths(fname)
     if not os.path.exists(fname):
         raise FileNotFoundError("no file to open")
     return DataCollection.from_netcdf(fname, group)
@@ -1048,3 +1062,11 @@ def _get_timeline_dataframe(obj, dim="first", name=None):
             f"`obj` must be a DataArray of a DataCollection, found {type(obj)}"
         )
     return dataframe
+
+
+def _ensure_str_paths(paths):
+    if isinstance(paths, Path):
+        paths = str(paths)
+    if isinstance(paths, list):
+        paths = [str(path) if isinstance(path, Path) else path for path in paths]
+    return paths
