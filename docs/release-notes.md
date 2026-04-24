@@ -1,7 +1,7 @@
 # Release notes
 
 ## 0.2.6
-- Add `xdas.open` that automatically which `xdas.open_*` function to use.
+- Add `xdas.open` that automatically infer which `xdas.open_*` function to use (@atrabattoni, @yetinam).
 - Add `pathlib.Path` support as input for all Xdas file-related functions and methods (@atrabattoni).
 
 ## 0.2.5
