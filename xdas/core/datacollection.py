@@ -273,6 +273,15 @@ class DataMapping(DataCollection, dict):
             else:
                 group = file[group]
             name = group.name.split("/")[-1]
+            if isinstance(group, h5py.Dataset):
+                raise ValueError(
+                    "it looks like you are trying to open a data array as a data collection."
+                )
+            else:
+                if not isinstance(group, h5py.Group):
+                    raise RuntimeError(
+                        "something went wrong while opening the data collection."
+                    )
             keys = list(group.keys())
             self = cls({}, name=None if name == "collection" else name)
             for key in keys:

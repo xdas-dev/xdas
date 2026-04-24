@@ -20,24 +20,57 @@ from .datacollection import DataCollection, DataMapping, DataSequence
 
 
 def open(paths, dim="first", tolerance=None, squeeze=None, engine=None, verbose=False):
-    if isinstance(paths, Path):
-        paths = str(paths)
+    paths = _ensure_str_paths(paths)
     if isinstance(paths, str):
         if "{" in paths:
-            squeeze = False if squeeze is None else squeeze
-            return open_mfdatatree(paths, dim, tolerance, squeeze, engine, verbose)
+            method = "tree-like"
         elif "*" in paths or "?" in paths or "[" in paths:
-            squeeze = True if squeeze is None else squeeze
-            return open_mfdataarray(paths, dim, tolerance, squeeze, engine, verbose)
+            method = "multi-file"
         else:
-            return open_dataarray(paths, engine=engine)
+            method = "single-file"
     elif isinstance(paths, list):
-        squeeze = True if squeeze is None else squeeze
-        return open_mfdataarray(paths, dim, tolerance, squeeze, engine, verbose)
+        method = "multi-file"
     else:
         raise ValueError(
             f"`paths` must be either a string or a list, found {type(paths)}"
         )
+    match method:
+        case "single-file":
+            if engine is None:
+                try:
+                    return open_datacollection(paths)
+                except ValueError:
+                    pass
+            return open_dataarray(paths, engine=engine)
+        case "multi-file":
+            if engine is None:
+                try:
+                    return open_mfdatacollection(
+                        paths,
+                        dim,
+                        tolerance,
+                        squeeze=False if squeeze is None else squeeze,
+                        verbose=verbose,
+                    )
+                except ValueError:
+                    pass
+            return open_mfdataarray(
+                paths,
+                dim,
+                tolerance,
+                squeeze=True if squeeze is None else squeeze,
+                engine=engine,
+                verbose=verbose,
+            )
+        case "tree-like":
+            return open_mfdatatree(
+                paths,
+                dim,
+                tolerance,
+                squeeze=False if squeeze is None else squeeze,
+                engine=engine,
+                verbose=verbose,
+            )
 
 
 def open_mfdatacollection(
