@@ -5,6 +5,7 @@ from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from glob import glob
 from itertools import pairwise
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -57,6 +58,8 @@ def open_mfdatacollection(
         The combined data collection
 
     """
+    if isinstance(paths, Path):
+        paths = str(paths)
     if isinstance(paths, str):
         paths = sorted(glob(paths))
     elif isinstance(paths, list):
@@ -164,6 +167,9 @@ def open_mfdatatree(
 
 
     """
+    if isinstance(paths, Path):
+        paths = str(paths)
+
     placeholders = re.findall(r"[\{\[].*?[\}\]]", paths)
 
     seen = set()
@@ -313,6 +319,8 @@ def open_mfdataarray(
     FileNotFound
         If no file can be found.
     """
+    if isinstance(paths, Path):
+        paths = str(paths)
     if isinstance(paths, str):
         paths = sorted(glob(paths))
     elif isinstance(paths, list):
@@ -387,6 +395,8 @@ def open_dataarray(fname, group=None, engine=None, **kwargs):
     FileNotFound
         If no file can be found.
     """
+    if isinstance(fname, Path):
+        fname = str(fname)
     if not os.path.exists(fname):
         raise FileNotFoundError("no file to open")
     if engine is None:
@@ -421,6 +431,8 @@ def open_datacollection(fname, group=None):
     FileNotFound
         If no file can be found.
     """
+    if isinstance(fname, Path):
+        fname = str(fname)
     if not os.path.exists(fname):
         raise FileNotFoundError("no file to open")
     return DataCollection.from_netcdf(fname, group)

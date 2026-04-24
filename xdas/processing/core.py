@@ -1,6 +1,7 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
 from glob import glob
+from pathlib import Path
 from queue import Queue
 from tempfile import TemporaryDirectory
 
@@ -137,7 +138,7 @@ class DataArrayLoader:
 class RealTimeLoader(Observer):
     def __init__(self, path, engine="netcdf"):
         super().__init__()
-        self.path = path
+        self.path = str(path) if isinstance(path, Path) else path
         self.queue = Queue()
         self.handler = Handler(self.queue, engine)
         self.schedule(self.handler, self.path, recursive=True)
@@ -170,7 +171,7 @@ class DataArrayWriter:
 
     Parameters
     ----------
-    dirpath : str or path
+    dirpath : str or Path
         The directory to store the output of a processing pipeline. The directory needs
         to exist and be empty.
     encoding : dict
@@ -190,7 +191,7 @@ class DataArrayWriter:
     """
 
     def __init__(self, dirpath, encoding=None):
-        self.dirpath = dirpath
+        self.dirpath = str(dirpath) if isinstance(dirpath, Path) else dirpath
         self.encoding = encoding
         self.queue = Queue(maxsize=1)
         self.results = []
@@ -258,7 +259,7 @@ class DataFrameWriter:
     """
 
     def __init__(self, path, parse_dates=False):
-        self.path = path
+        self.path = str(path) if isinstance(path, Path) else path
         self.parse_dates = parse_dates
         self.queue = Queue(maxsize=1)
         self.executor = ThreadPoolExecutor(1)
@@ -391,6 +392,7 @@ class StreamWriter:
     def __init__(
         self, path, dataquality, kw_merge=None, kw_write=None, output_format="SDS"
     ):
+        path = str(path) if isinstance(path, Path) else path
         if output_format == "SDS":
             os.makedirs(path, exist_ok=True)
             self.dirpath = path

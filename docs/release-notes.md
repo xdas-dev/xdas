@@ -1,5 +1,8 @@
 # Release notes
 
+## 0.2.6
+- Add `pathlib.Path` support as input for all Xdas file-related functions and methods.
+
 ## 0.2.5
 - Add SampleCoordinate for more SEED-like coordinates and refactor the coordinate backend (@atrabattoni).
 - Add `xdas.picking.tapered_selection` to extract windows around picks (@atrabattoni).

@@ -1,5 +1,6 @@
 import os
 from fnmatch import fnmatch
+from pathlib import Path
 
 import h5py
 
@@ -172,6 +173,8 @@ class DataCollection:
             The opened data collection.
 
         """
+        if isinstance(fname, Path):
+            fname = str(fname)
         self = DataMapping.from_netcdf(fname, group)
         try:
             keys = [int(key) for key in self.keys()]
@@ -261,6 +264,9 @@ class DataMapping(DataCollection, dict):
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
+        if isinstance(fname, Path):
+            fname = str(fname)
+
         with h5py.File(fname, "r") as file:
             if group is None:
                 group = file[list(file.keys())[0]]

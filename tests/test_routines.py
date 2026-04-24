@@ -209,10 +209,10 @@ class TestOpenMFDataArray:
         )
         for index, chunk in enumerate(xd.split(expected, 3, "time"), start=1):
             chunk.to_netcdf(tmp_path / f"chunk_{index}.nc")
-        result = xd.open_mfdataarray(str(tmp_path / "*.nc"))  # TODO: should accept Path
+        result = xd.open_mfdataarray(tmp_path / "*.nc")
         assert result.equals(expected)
         with (tmp_path / "corrupted.nc").open("wb") as f:
             f.write(b"corrupted")
         with pytest.warns(RuntimeWarning):
-            result = xd.open_mfdataarray(str(tmp_path / "*.nc"))
+            result = xd.open_mfdataarray(tmp_path / "*.nc")
         assert result.equals(expected)

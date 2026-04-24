@@ -1,6 +1,3 @@
-from glob import glob
-from tempfile import TemporaryDirectory
-
 import numpy as np
 import obspy
 
@@ -54,121 +51,108 @@ def make_header(idx, component, starttime):
     return header
 
 
-def test_miniseed():
-    with TemporaryDirectory() as dirpath:
-        make_network(dirpath, samples=100)
-        paths = sorted(glob(f"{dirpath}/*.mseed"))
+def test_miniseed(tmp_path):
+    make_network(tmp_path, samples=100)
+    paths = sorted(tmp_path.glob("*.mseed"))
 
-        # read one file
-        da = xd.open_dataarray(paths[0], engine="miniseed")
-        assert da.shape == (3, 100)
-        assert da.dims == ("channel", "time")
-        assert da.coords["time"].isinterp()
-        assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
-        assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:00:00.990")
-        assert da.coords["network"].values == "DX"
-        assert da.coords["station"].values == "CH001"
-        assert da.coords["location"].values == "00"
-        assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
+    # read one file
+    da = xd.open_dataarray(paths[0], engine="miniseed")
+    assert da.shape == (3, 100)
+    assert da.dims == ("channel", "time")
+    assert da.coords["time"].isinterp()
+    assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
+    assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:00:00.990")
+    assert da.coords["network"].values == "DX"
+    assert da.coords["station"].values == "CH001"
+    assert da.coords["location"].values == "00"
+    assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
 
-        # read one file without the last sample
-        da = xd.open_dataarray(paths[0], engine="miniseed", ignore_last_sample=True)
-        assert da.shape == (3, 99)
-        assert da.dims == ("channel", "time")
-        assert da.coords["time"].isinterp()
-        assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
-        assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:00:00.980")
-        assert da.coords["network"].values == "DX"
-        assert da.coords["station"].values == "CH001"
-        assert da.coords["location"].values == "00"
-        assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
+    # read one file without the last sample
+    da = xd.open_dataarray(paths[0], engine="miniseed", ignore_last_sample=True)
+    assert da.shape == (3, 99)
+    assert da.dims == ("channel", "time")
+    assert da.coords["time"].isinterp()
+    assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
+    assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:00:00.980")
+    assert da.coords["network"].values == "DX"
+    assert da.coords["station"].values == "CH001"
+    assert da.coords["location"].values == "00"
+    assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
 
-        # read one file with gaps
-        make_network(dirpath, gap=True, samples=100)
-        paths = sorted(glob(f"{dirpath}/*_gap.mseed"))
-        da = xd.open_dataarray(paths[0], engine="miniseed")
-        assert da.shape == (3, 90)
-        assert da.dims == ("channel", "time")
-        assert da.coords["time"].isinterp()
-        assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
-        assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:01:00.390")
-        assert da.coords["network"].values == "DX"
-        assert da.coords["station"].values == "CH001"
-        assert da.coords["location"].values == "00"
-        assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
+    # read one file with gaps
+    make_network(tmp_path, gap=True, samples=100)
+    paths = sorted(tmp_path.glob("*_gap.mseed"))
+    da = xd.open_dataarray(paths[0], engine="miniseed")
+    assert da.shape == (3, 90)
+    assert da.dims == ("channel", "time")
+    assert da.coords["time"].isinterp()
+    assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
+    assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:01:00.390")
+    assert da.coords["network"].values == "DX"
+    assert da.coords["station"].values == "CH001"
+    assert da.coords["location"].values == "00"
+    assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
 
-        # read one file with gaps and ignore the last sample
-        da = xd.open_dataarray(paths[0], engine="miniseed", ignore_last_sample=True)
-        assert da.shape == (3, 89)
-        assert da.dims == ("channel", "time")
-        assert da.coords["time"].isinterp()
-        assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
-        assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:01:00.380")
-        assert da.coords["network"].values == "DX"
-        assert da.coords["station"].values == "CH001"
-        assert da.coords["location"].values == "00"
-        assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
+    # read one file with gaps and ignore the last sample
+    da = xd.open_dataarray(paths[0], engine="miniseed", ignore_last_sample=True)
+    assert da.shape == (3, 89)
+    assert da.dims == ("channel", "time")
+    assert da.coords["time"].isinterp()
+    assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
+    assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:01:00.380")
+    assert da.coords["network"].values == "DX"
+    assert da.coords["station"].values == "CH001"
+    assert da.coords["location"].values == "00"
+    assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
 
-        # manually concatenate several files (without gaps)
-        paths = sorted(glob(f"{dirpath}/*00.mseed"))
-        objs = [xd.open_dataarray(path, engine="miniseed") for path in paths]
-        da = xd.concatenate(objs, "station")
-        assert da.shape == (10, 3, 100)
-        assert da.dims == ("station", "channel", "time")
-        assert da.coords["station"].values.tolist() == [
-            f"CH{i:03d}" for i in range(1, 11)
-        ]
-        assert da.coords["time"].isinterp()
-        assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
-        assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:00:00.990")
-        assert da.coords["network"].values == "DX"
-        assert da.coords["location"].values == "00"
-        assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
+    # manually concatenate several files (without gaps)
+    paths = sorted(tmp_path.glob("*00.mseed"))
+    objs = [xd.open_dataarray(path, engine="miniseed") for path in paths]
+    da = xd.concatenate(objs, "station")
+    assert da.shape == (10, 3, 100)
+    assert da.dims == ("station", "channel", "time")
+    assert da.coords["station"].values.tolist() == [f"CH{i:03d}" for i in range(1, 11)]
+    assert da.coords["time"].isinterp()
+    assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
+    assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:00:00.990")
+    assert da.coords["network"].values == "DX"
+    assert da.coords["location"].values == "00"
+    assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
 
-        # manually concatenate several files with gaps
-        paths = sorted(glob(f"{dirpath}/*gap.mseed"))
-        objs = [xd.open_dataarray(path, engine="miniseed") for path in paths]
-        da = xd.concatenate(objs, "station")
-        assert da.shape == (10, 3, 90)
-        assert da.dims == ("station", "channel", "time")
-        assert da.coords["station"].values.tolist() == [
-            f"CH{i:03d}" for i in range(1, 11)
-        ]
-        assert da.coords["time"].isinterp()
-        assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
-        assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:01:00.390")
-        assert da.coords["network"].values == "DX"
-        assert da.coords["location"].values == "00"
-        assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
+    # manually concatenate several files with gaps
+    paths = sorted(tmp_path.glob("*gap.mseed"))
+    objs = [xd.open_dataarray(path, engine="miniseed") for path in paths]
+    da = xd.concatenate(objs, "station")
+    assert da.shape == (10, 3, 90)
+    assert da.dims == ("station", "channel", "time")
+    assert da.coords["station"].values.tolist() == [f"CH{i:03d}" for i in range(1, 11)]
+    assert da.coords["time"].isinterp()
+    assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
+    assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:01:00.390")
+    assert da.coords["network"].values == "DX"
+    assert da.coords["location"].values == "00"
+    assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
 
-        # automatically open multiple files (without gaps)
-        da = xd.open_mfdataarray(
-            f"{dirpath}/*00.mseed", dim="station", engine="miniseed"
-        )
-        assert da.shape == (10, 3, 100)
-        assert da.dims == ("station", "channel", "time")
-        assert da.coords["station"].values.tolist() == [
-            f"CH{i:03d}" for i in range(1, 11)
-        ]
-        assert da.coords["time"].isinterp()
-        assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
-        assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:00:00.990")
-        assert da.coords["network"].values == "DX"
-        assert da.coords["location"].values == "00"
-        assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
+    # automatically open multiple files (without gaps)
+    da = xd.open_mfdataarray(tmp_path / "*00.mseed", dim="station", engine="miniseed")
+    assert da.shape == (10, 3, 100)
+    assert da.dims == ("station", "channel", "time")
+    assert da.coords["station"].values.tolist() == [f"CH{i:03d}" for i in range(1, 11)]
+    assert da.coords["time"].isinterp()
+    assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
+    assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:00:00.990")
+    assert da.coords["network"].values == "DX"
+    assert da.coords["location"].values == "00"
+    assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
 
-        # automatically open multiple files (with gaps)
-        da = xd.open_mfdataarray(
-            f"{dirpath}/*gap.mseed", dim="station", engine="miniseed"
-        )
-        assert da.shape == (10, 3, 90)
-        assert da.dims == ("station", "channel", "time")
-        assert da.coords["station"].values.tolist() == [
-            f"CH{i:03d}" for i in range(1, 11)
-        ]
-        assert da.coords["time"].isinterp()
-        assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
-        assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:01:00.390")
-        assert da.coords["network"].values == "DX"
-        assert da.coords["location"].values == "00"
-        assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
+    # automatically open multiple files (with gaps)
+    da = xd.open_mfdataarray(tmp_path / "*gap.mseed", dim="station", engine="miniseed")
+    assert da.shape == (10, 3, 90)
+    assert da.dims == ("station", "channel", "time")
+    assert da.coords["station"].values.tolist() == [f"CH{i:03d}" for i in range(1, 11)]
+    assert da.coords["time"].isinterp()
+    assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
+    assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:01:00.390")
+    assert da.coords["network"].values == "DX"
+    assert da.coords["location"].values == "00"
+    assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
