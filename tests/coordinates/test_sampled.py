@@ -869,7 +869,7 @@ class TestSampledCoordinateToNetCDF:
 
         with tempfile.NamedTemporaryFile(suffix=".nc", delete=False) as file:
             expected.to_netcdf(file.name)
-            result = xd.open_dataarray(file.name)
+            result = xd.open(file.name)
             assert result.equals(expected)
 
 

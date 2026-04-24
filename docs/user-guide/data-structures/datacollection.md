@@ -35,13 +35,13 @@ In the example, our `DataCollection` will be a sequence of {py:class}`xdas.DataA
 
 ```{code-cell}
 import numpy as np
-import xdas
+import xdas as xd
 
 # Reopen dataarray from previous section as a virtual source
-da = xdas.open_dataarray("dataarray.nc") 
+da = xd.open("dataarray.nc") 
 
 # Create a DataCollection
-dc = xdas.DataCollection(
+dc = xd.DataCollection(
     {
         "event_1": da.sel(time=slice("2023-01-01T00:00:10", "2023-01-01T00:00:20")), 
         "event_2": da.sel(time=slice("2023-01-01T00:00:40", "2023-01-01T00:00:50")),
@@ -61,26 +61,20 @@ dc.to_netcdf("datacollection.nc", virtual=False)
 
 ```{code-cell}
 # Read a DataCollection
-dc = xdas.open_datacollection("datacollection.nc")
+dc = xd.open("datacollection.nc")
 dc
 ```
 
 ## Case B: DataCollection comprising a set of acquisitions
 
-You can also create a DataCollection to gather different acquisitions on a same fiber with {py:func}`xdas.open_mfdatatree`. This function opens a directory tree structure as a data collection. 
+You can also create a DataCollection to gather different acquisitions on a same fiber with {py:func}`xdas.open`to opens a directory tree structure as a data collection. 
 The tree structure is described by a path descriptor provided as a string
 containing placeholders. Two flavors of placeholder can be provided:
 
-- `{field}`: this level of the tree will behave as a dict. It will use the
-directory/file names as keys.
-- `[field]`: this level of the tree will behave as a list. The directory/file
-names are not considered (as if the placeholder was replaced by a `*`) and
-files are gathered and combined as if using {py:func}`xdas.open_mfdataarray`.
+- `{field}`: this level of the tree will behave as a dict. It will use the directory/file names as keys.
+- `[field]`: this level of the tree will behave as a list. The directory/file names are not considered (as if the placeholder was replaced by a `*`) and files are gathered and combined as usual.
 
-Several dict placeholders with different names can be provided. They must be
-followed by one or more list placeholders that must share a unique name. The
-resulting data collection will be a nesting of dicts down to the lower level
-which will be a list of dataarrays.
+Several dict placeholders with different names can be provided. They must be followed by one or more list placeholders that must share a unique name. The resulting data collection will be a nesting of dicts down to the lower level which will be a list of dataarrays.
 
 ### Gather all your DataCollections
 
@@ -90,7 +84,7 @@ If your data paths are something like: "/data/REKA/RK1/20231119/proc/*.hdf5" and
 
 ```python
 path = "/data/{network}/{cable}/20231119/proc/[acquisition].hdf5"
-dc = xdas.open_mfdatatree(path, engine='asn')
+dc = xd.open(path, engine='asn')
 dc
 ```
 ```text
@@ -113,7 +107,7 @@ dc.to_netcdf("datacollection.nc", virtual=True)
 
 ```python
 # Read your global DataCollection with open_datacollection
-dc = xdas.open_datacollection("datacollection.nc")
+dc = xd.open("datacollection.nc")
 dc
 ```
 ```text
@@ -130,7 +124,7 @@ Network:
             0: <xdas.DataArray (time: 54000, distance: 10000)>
 ```
 
-If you have several DataCollections, you can gather them in one file using {py:func}`xdas.open_mfdatacollection` and write it to one single DataCollection.
+If you have several DataCollections, you can gather them in one file using {py:func}`xdas.open` and write it to one single DataCollection.
 
 ### Extend your DataCollection
 
@@ -138,10 +132,10 @@ You can extend your {py:class}`xdas.DataCollection` by inserting new {py:class}`
 
 ```python
 # Read your global DataCollection with open_datacollection
-dc = xdas.open_datacollection("datacollection.nc")
+dc = xd.open("datacollection.nc")
 
 # Read the dataarray you want to add
-da = xdas.open_dataarray("dataarray.nc")
+da = xd.open("dataarray.nc")
 da
 ```
 ```text
