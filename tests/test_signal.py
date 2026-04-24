@@ -173,7 +173,7 @@ class TestSignal:
         for i, chunk in enumerate(chunks):
             chunk_path = tmp_path / f"chunk_{i}.nc"
             chunk.to_netcdf(chunk_path)
-        da_virtual = xd.open_mfdataarray(tmp_path / "chunk_*.nc")
+        da_virtual = xd.open(tmp_path / "chunk_*.nc")
         result = xs.decimate(da_virtual, 5, dim="time")
         assert result.equals(expected)
 

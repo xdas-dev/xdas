@@ -30,7 +30,7 @@ class TestProcessing:
 
         # generate test dataarray
         wavelet_wavefronts().to_netcdf(sample_path)
-        da = xd.open_dataarray(sample_path)
+        da = xd.open(sample_path)
 
         # declare processing sequence
         sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")

@@ -56,7 +56,7 @@ def test_miniseed(tmp_path):
     paths = sorted(tmp_path.glob("*.mseed"))
 
     # read one file
-    da = xd.open_dataarray(paths[0], engine="miniseed")
+    da = xd.open(paths[0], engine="miniseed")
     assert da.shape == (3, 100)
     assert da.dims == ("channel", "time")
     assert da.coords["time"].isinterp()
@@ -68,7 +68,7 @@ def test_miniseed(tmp_path):
     assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
 
     # read one file without the last sample
-    da = xd.open_dataarray(paths[0], engine="miniseed", ignore_last_sample=True)
+    da = xd.open(paths[0], engine="miniseed", ignore_last_sample=True)
     assert da.shape == (3, 99)
     assert da.dims == ("channel", "time")
     assert da.coords["time"].isinterp()
@@ -82,7 +82,7 @@ def test_miniseed(tmp_path):
     # read one file with gaps
     make_network(tmp_path, gap=True, samples=100)
     paths = sorted(tmp_path.glob("*_gap.mseed"))
-    da = xd.open_dataarray(paths[0], engine="miniseed")
+    da = xd.open(paths[0], engine="miniseed")
     assert da.shape == (3, 90)
     assert da.dims == ("channel", "time")
     assert da.coords["time"].isinterp()
@@ -94,7 +94,7 @@ def test_miniseed(tmp_path):
     assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
 
     # read one file with gaps and ignore the last sample
-    da = xd.open_dataarray(paths[0], engine="miniseed", ignore_last_sample=True)
+    da = xd.open(paths[0], engine="miniseed", ignore_last_sample=True)
     assert da.shape == (3, 89)
     assert da.dims == ("channel", "time")
     assert da.coords["time"].isinterp()
@@ -107,7 +107,7 @@ def test_miniseed(tmp_path):
 
     # manually concatenate several files (without gaps)
     paths = sorted(tmp_path.glob("*00.mseed"))
-    objs = [xd.open_dataarray(path, engine="miniseed") for path in paths]
+    objs = [xd.open(path, engine="miniseed") for path in paths]
     da = xd.concatenate(objs, "station")
     assert da.shape == (10, 3, 100)
     assert da.dims == ("station", "channel", "time")
@@ -121,7 +121,7 @@ def test_miniseed(tmp_path):
 
     # manually concatenate several files with gaps
     paths = sorted(tmp_path.glob("*gap.mseed"))
-    objs = [xd.open_dataarray(path, engine="miniseed") for path in paths]
+    objs = [xd.open(path, engine="miniseed") for path in paths]
     da = xd.concatenate(objs, "station")
     assert da.shape == (10, 3, 90)
     assert da.dims == ("station", "channel", "time")
@@ -134,7 +134,7 @@ def test_miniseed(tmp_path):
     assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
 
     # automatically open multiple files (without gaps)
-    da = xd.open_mfdataarray(tmp_path / "*00.mseed", dim="station", engine="miniseed")
+    da = xd.open(tmp_path / "*00.mseed", dim="station", engine="miniseed")
     assert da.shape == (10, 3, 100)
     assert da.dims == ("station", "channel", "time")
     assert da.coords["station"].values.tolist() == [f"CH{i:03d}" for i in range(1, 11)]
@@ -146,7 +146,7 @@ def test_miniseed(tmp_path):
     assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
 
     # automatically open multiple files (with gaps)
-    da = xd.open_mfdataarray(tmp_path / "*gap.mseed", dim="station", engine="miniseed")
+    da = xd.open(tmp_path / "*gap.mseed", dim="station", engine="miniseed")
     assert da.shape == (10, 3, 90)
     assert da.dims == ("station", "channel", "time")
     assert da.coords["station"].values.tolist() == [f"CH{i:03d}" for i in range(1, 11)]

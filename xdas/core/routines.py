@@ -486,7 +486,7 @@ def open_mfdataarray(
             "The maximum number of file that can be opened at once is for now limited "
             "to 100 000."
         )
-    if engine == "miniseed": # TODO: dirty fix
+    if engine == "miniseed":  # TODO: dirty fix
         objs = [open_dataarray(path, engine=engine, **kwargs) for path in paths]
     else:
         with ProcessPoolExecutor() as executor:

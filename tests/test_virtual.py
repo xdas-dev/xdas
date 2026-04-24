@@ -22,7 +22,7 @@ class TestFunctional:  # TODO: move elsewhere
         for index, chunk in enumerate(chunks, start=1):
             chunk.to_netcdf(tmp_path / f"{index:03d}.nc")
 
-        da = xd.open_dataarray(tmp_path / "002.nc")
+        da = xd.open(tmp_path / "002.nc")
         datasource = da.data
         assert np.allclose(np.asarray(datasource[0]), da.load().values[0])
         assert np.allclose(np.asarray(datasource[0][1]), da.load().values[0][1])
@@ -62,7 +62,7 @@ class TestFunctional:  # TODO: move elsewhere
         for dtype in dtypes:
             expected = xd.DataArray(np.zeros((3, 5), dtype=dtype))
             expected.to_netcdf(tmp_path / "data.nc")
-            result = xd.open_dataarray(tmp_path / "data.nc")
+            result = xd.open(tmp_path / "data.nc")
             assert result.equals(expected)
 
 
