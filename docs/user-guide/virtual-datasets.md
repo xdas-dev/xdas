@@ -39,7 +39,7 @@ When opening a virtual dataset, this later will appear as a {py:class}`VirtualSo
 
 ## Use cases
 
-To handle individual files, multiple files, and virtual datasets, *xdas* offers the following routines:
+The generic {py:func}`xdas.open` funtion should cover all your needs. But you can specify how to handle individual files, multiple files, and virtual datasets, by picking one of the following routines:
 
 | Function                             | Output                           | Description                                                                 |
 |--------------------------------------|----------------------------------|-----------------------------------------------------------------------------|
@@ -53,26 +53,26 @@ Please refer to the [](data-structures/datacollection.md) section for the functi
 
 ## Linking multi-file datasets
 
-Multiple physical data files can be opened simultaneously with the {py:func}`xdas.open_mfdataarray`:
+Multiple physical data files can be opened simultaneously with {py:func}`xdas.open`:
 
 ```{code-cell}
 :tags: [remove-stdout,remove-stderr]
 
-da = xd.open_mfdataarray("00*.nc")
+da = xd.open("00*.nc")
 da
 ```
 
-Here, `*` is a wildcard operator. `open_mfdataarray` only creates file handles and loads basic metadata, but does not directly load the underlying DAS data in memory. Hence this method can open an arbitrary number
+Here, `*` is a wildcard operator. `xdas.open` only creates file handles and loads basic metadata, but does not directly load the underlying DAS data in memory. Hence this method can open an arbitrary number
 of files with no concern over memory allocation. Next, the DataArray can be written to disk as a single dataset. The `virtual` argument ensures that only the pointers to the original data files are written to disk (otherwise the whole data set will be written to disk):
 
 ```{code-cell}
 da.to_netcdf("vds.nc", virtual=True)
 ```
 
-It can then be read again as a single file using {py:func}`xdas.open_dataarray`:
+It can then be read again as a single file using {py:func}`xdas.open`:
 
 ```{code-cell}
-xd.open_dataarray("vds.nc")
+xd.open("vds.nc")
 ```
 
 ```{hint}

@@ -2,6 +2,7 @@ import copy
 import os
 import warnings
 from functools import partial
+from pathlib import Path
 
 import h5netcdf
 import h5py
@@ -882,6 +883,9 @@ class DataArray(NDArrayOperatorsMixin):
         ...     da.to_netcdf(tmpfile, encoding=encoding)
 
         """
+        if isinstance(fname, Path):
+            fname = str(fname)
+
         if virtual is None:
             virtual = isinstance(self.data, (VirtualArray, DaskArray))
 
@@ -960,6 +964,9 @@ class DataArray(NDArrayOperatorsMixin):
         DataArray
             The openend data array.
         """
+        if isinstance(fname, Path):
+            fname = str(fname)
+
         # read metadata
         with xr.open_dataset(
             fname, group=group, engine="h5netcdf", decode_timedelta=False
