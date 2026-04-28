@@ -2,8 +2,100 @@ import dask
 import numpy as np
 import obspy
 
-from ..coordinates.core import Coordinate, Coordinates
+from ..coordinates.core import Coordinate, Coordinates, get_sampling_interval
 from ..core.dataarray import DataArray
+
+
+def to_stream(
+    da,
+    network="NET",
+    station="DAS{:05}",
+    location="00",
+    channel="{:1}N1",
+    dim={"last": "first"},
+):
+    """
+    Convert a data array into an obspy stream.
+
+    Parameters
+    ----------
+    network : str, optional
+        The network code, by default "NET".
+    station : str, optional
+        The station code. Must be a string that can be formatted.
+        By default "DAS{:05}"
+    location : str, optional
+        The location code, by default "00".
+    channel : str, optional
+        The channel code. If the string can be formatted, the band code will be
+        inferred from the sampling rate. By default "{:1}N1"
+    dim : dict, optional
+        A dict with as key the spatial dimension to split into traces, and as key
+        the temporal dimension. By default {"last": "first"}.
+
+    Returns
+    -------
+    Stream
+        the obspy stream version of the data array.
+
+    """
+    dimdist, dimtime = dim.copy().popitem()
+    if not da.ndim == 2:
+        raise ValueError("the data array must be 2D")
+    starttime = obspy.UTCDateTime(str(da[dimtime][0].values))
+    delta = get_sampling_interval(da, dimtime)
+    band_code = get_band_code(1.0 / delta)
+    if "{" in channel and "}" in channel:
+        channel = channel.format(band_code)
+    header = {
+        "network": network,
+        "location": location,
+        "channel": channel,
+        "starttime": starttime,
+        "delta": delta,
+    }
+    return obspy.Stream(
+        [
+            obspy.Trace(
+                data=np.ascontiguousarray(da.isel({dimdist: idx}).values),
+                header=header | {"station": station.format(idx + 1)},
+            )
+            for idx in range(len(da[dimdist]))
+        ]
+    )
+
+
+def from_stream(st, dims=("channel", "time")):
+    """
+    Convert an obspy stream into a data array.
+
+    Traces in the stream must have the same length an must be syncronized. Traces
+    are stacked along the first axis. The trace ids are used as labels along the
+    first dimension.
+
+    Parameters
+    ----------
+    st: Stream
+        The stream to convert.
+    dims: (str, str)
+        The name of the dimension respectively given to the trace and time
+        dimensions.
+
+    Returns
+    -------
+    DataArray:
+        The consolidated data array.
+    """
+    data = np.stack([tr.data for tr in st])
+    channel = [tr.id for tr in st]
+    time = {
+        "tie_indices": [0, st[0].stats.npts - 1],
+        "tie_values": [
+            np.datetime64(st[0].stats.starttime.datetime),
+            np.datetime64(st[0].stats.endtime.datetime),
+        ],
+    }
+    return DataArray(data, {dims[0]: channel, dims[1]: time})
 
 
 def read(fname, ignore_last_sample=False, ctype="interpolated"):
@@ -103,3 +195,13 @@ def uniquifiy(seq):
         return seq[0]
     else:
         return seq
+
+
+def get_band_code(sampling_rate):
+    band_code = ["T", "P", "R", "U", "V", "L", "M", "B", "H", "C", "F"]
+    limits = [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 80, 250, 1000, 5000]
+    index = np.searchsorted(limits, sampling_rate, "right") - 1
+    if index < 0 or index >= len(band_code):
+        return "X"
+    else:
+        return band_code[index]

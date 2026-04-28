@@ -1,5 +1,4 @@
 import copy
-import warnings
 from functools import partial
 
 import numpy as np
@@ -7,7 +6,7 @@ import xarray as xr
 from dask.array import Array as DaskArray
 from numpy.lib.mixins import NDArrayOperatorsMixin
 
-from ..coordinates import Coordinates, get_sampling_interval
+from ..coordinates import Coordinates
 from ..dask.core import from_dict, to_dict
 from ..virtual import VirtualArray, _to_human
 
@@ -758,36 +757,9 @@ class DataArray(NDArrayOperatorsMixin):
             the obspy stream version of the data array.
 
         """
-        dimdist, dimtime = dim.copy().popitem()
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                from obspy import Stream, Trace, UTCDateTime
-        except ImportError:
-            raise ImportError("obspy is not installed. Please install it.")
-        if not self.ndim == 2:
-            raise ValueError("the data array must be 2D")
-        starttime = UTCDateTime(str(self[dimtime][0].values))
-        delta = get_sampling_interval(self, dimtime)
-        band_code = get_band_code(1.0 / delta)
-        if "{" in channel and "}" in channel:
-            channel = channel.format(band_code)
-        header = {
-            "network": network,
-            "location": location,
-            "channel": channel,
-            "starttime": starttime,
-            "delta": delta,
-        }
-        return Stream(
-            [
-                Trace(
-                    data=np.ascontiguousarray(self.isel({dimdist: idx}).values),
-                    header=header | {"station": station.format(idx + 1)},
-                )
-                for idx in range(len(self[dimdist]))
-            ]
-        )
+        from ..io.miniseed import to_stream
+
+        return to_stream(self, network, station, location, channel, dim)
 
     @classmethod
     def from_stream(cls, st, dims=("channel", "time")):
@@ -811,16 +783,9 @@ class DataArray(NDArrayOperatorsMixin):
         DataArray:
             The consolidated data array.
         """
-        data = np.stack([tr.data for tr in st])
-        channel = [tr.id for tr in st]
-        time = {
-            "tie_indices": [0, st[0].stats.npts - 1],
-            "tie_values": [
-                np.datetime64(st[0].stats.starttime.datetime),
-                np.datetime64(st[0].stats.endtime.datetime),
-            ],
-        }
-        return cls(data, {dims[0]: channel, dims[1]: time})
+        from ..io.miniseed import from_stream
+
+        return from_stream(st, dims)
 
     def to_netcdf(
         self,
@@ -986,13 +951,3 @@ class DimSizer(dict):
         if key == "last":
             key = list(self.keys())[-1]
         return super().__getitem__(key)
-
-
-def get_band_code(sampling_rate):
-    band_code = ["T", "P", "R", "U", "V", "L", "M", "B", "H", "C", "F"]
-    limits = [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 80, 250, 1000, 5000]
-    index = np.searchsorted(limits, sampling_rate, "right") - 1
-    if index < 0 or index >= len(band_code):
-        return "X"
-    else:
-        return band_code[index]
