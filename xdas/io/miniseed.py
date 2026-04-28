@@ -14,31 +14,6 @@ def to_stream(
     channel="{:1}N1",
     dim={"last": "first"},
 ):
-    """
-    Convert a data array into an obspy stream.
-
-    Parameters
-    ----------
-    network : str, optional
-        The network code, by default "NET".
-    station : str, optional
-        The station code. Must be a string that can be formatted.
-        By default "DAS{:05}"
-    location : str, optional
-        The location code, by default "00".
-    channel : str, optional
-        The channel code. If the string can be formatted, the band code will be
-        inferred from the sampling rate. By default "{:1}N1"
-    dim : dict, optional
-        A dict with as key the spatial dimension to split into traces, and as key
-        the temporal dimension. By default {"last": "first"}.
-
-    Returns
-    -------
-    Stream
-        the obspy stream version of the data array.
-
-    """
     dimdist, dimtime = dim.copy().popitem()
     if not da.ndim == 2:
         raise ValueError("the data array must be 2D")
@@ -66,26 +41,6 @@ def to_stream(
 
 
 def from_stream(st, dims=("channel", "time")):
-    """
-    Convert an obspy stream into a data array.
-
-    Traces in the stream must have the same length an must be syncronized. Traces
-    are stacked along the first axis. The trace ids are used as labels along the
-    first dimension.
-
-    Parameters
-    ----------
-    st: Stream
-        The stream to convert.
-    dims: (str, str)
-        The name of the dimension respectively given to the trace and time
-        dimensions.
-
-    Returns
-    -------
-    DataArray:
-        The consolidated data array.
-    """
     data = np.stack([tr.data for tr in st])
     channel = [tr.id for tr in st]
     time = {

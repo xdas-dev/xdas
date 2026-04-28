@@ -14,21 +14,6 @@ from ..virtual import VirtualArray, VirtualSource
 
 
 def read(fname, group=None):
-    """
-    Lazily read a data array from a NetCDF file.
-
-    Parameters
-    ----------
-    fname: str
-        The path of the file to open.
-    group: str, optional
-        The location of the data array within the file. Root by default
-
-    Returns
-    -------
-    DataArray
-        The openend data array.
-    """
     if isinstance(fname, Path):
         fname = str(fname)
 
@@ -91,53 +76,6 @@ def write(
     encoding=None,
     create_dirs=False,
 ):
-    """
-    Write DataArray contents to a netCDF file.
-
-    Parameters
-    ----------
-    fname : str
-        Path to which to save this dataset.
-    mode : {'w', 'a'}, optional
-        Write ('w') or append ('a') mode. If mode='a', the file must already exist.
-    group : str, optional
-        Path to the netCDF4 group in the given file to open.
-    virtual : bool, optional
-        Weather to write a virtual dataset. The DataArray data must be a VirtualSource
-        or a VirtualLayout. Default (None) is to try to write a virtual dataset if
-        possible.
-    encoding : dict, optional
-        Dictionary of encoding attributes. Because a DataArray contains a unique
-        data variable, the encoding dictionary should not contain the variable name.
-        For more information on encoding, see the `xarray documentation
-        <http://xarray.pydata.org/en/stable/io.html#netcdf>`_. Note that xdas use
-        the `h5netcdf` engine to write the data. If you want to use a specific plugin
-        for compression, you can use the `hdf5plugin` package. For example, to use the
-        ZFP compression, you can use the `hdf5plugin.Zfp` class.
-    create_dirs : bool, optional
-        Whether to create parent directories if they do not exist. Default is False.
-
-    Examples
-    --------
-    >>> import os
-    >>> import tempfile
-
-    >>> import numpy as np
-    >>> import xdas as xd
-    >>> import hdf5plugin
-
-    Create some sample data array:
-
-    >>> da = xd.DataArray(np.random.rand(100, 100))
-
-    Save the dataset with ZFP compression:
-
-    >>> encoding = {"chunks": (10, 10), **hdf5plugin.Zfp(accuracy=0.001)}
-    >>> with tempfile.TemporaryDirectory() as tmpdir:
-    ...     tmpfile = os.path.join(tmpdir, "path.nc")
-    ...     da.to_netcdf(tmpfile, encoding=encoding)
-
-    """
     if isinstance(fname, Path):
         fname = str(fname)
 
