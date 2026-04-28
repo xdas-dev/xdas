@@ -40,7 +40,7 @@ docs = [
     "sphinx-copybutton",
     "sphinx",
 ]
-tests = ["pytest", "pytest-cov", "seisbench", "torch"]
+tests = ["dascore", "pytest", "pytest-cov", "seisbench", "torch"]
 
 [tool.isort]
 profile = "black"
