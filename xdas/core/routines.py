@@ -514,7 +514,7 @@ def open_mfdataarray(
     return combine_by_coords(objs, dim, tolerance, squeeze, None, verbose)
 
 
-def open_dataarray(fname, group=None, engine=None, **kwargs):
+def open_dataarray(fname, engine=None, **kwargs):
     """
     Open a dataarray.
 
@@ -522,9 +522,6 @@ def open_dataarray(fname, group=None, engine=None, **kwargs):
     ----------
     fname : str
         The path of the dataarray.
-    group : str, optional
-        The file group where the dataarray is located, by default None which corresponds
-        to the root of the file.
     engine: str of callable, optional
         The type of file to open or a read function. Default to xdas netcdf format.
     **kwargs
@@ -545,12 +542,15 @@ def open_dataarray(fname, group=None, engine=None, **kwargs):
     FileNotFound
         If no file can be found.
     """
+    # parse & checks]
     fname = _ensure_str_paths(fname)
+    if engine is None:
+        engine = "netcdf"
     if not os.path.exists(fname):
         raise FileNotFoundError("no file to open")
-    if engine is None:
-        return DataArray.from_netcdf(fname, group=group)
-    elif callable(engine):
+
+    # dispatch & open
+    if callable(engine):
         return engine(fname, **kwargs)
     elif isinstance(engine, str):
         from .. import io
