@@ -843,9 +843,9 @@ class DataArray(NDArrayOperatorsMixin):
         ...     da.to_netcdf(tmpfile, encoding=encoding)
 
         """
-        from ..io.netcdf import write
+        from ..io.netcdf import save_dataarray
 
-        write(self, fname, mode, group, virtual, encoding, create_dirs)
+        save_dataarray(self, fname, mode, group, virtual, encoding, create_dirs)
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
@@ -864,9 +864,9 @@ class DataArray(NDArrayOperatorsMixin):
         DataArray
             The openend data array.
         """
-        from ..io.netcdf import read
+        from ..io.netcdf import open_dataarray
 
-        return read(fname, group)
+        return open_dataarray(fname, group)
 
     def to_dict(self):
         """Convert the DataArray to a dictionary."""

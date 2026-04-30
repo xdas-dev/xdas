@@ -542,7 +542,7 @@ def open_dataarray(fname, engine=None, **kwargs):
     FileNotFound
         If no file can be found.
     """
-    # parse & checks]
+    # parse & checks
     fname = _ensure_str_paths(fname)
     if engine is None:
         engine = "netcdf"
@@ -553,10 +553,9 @@ def open_dataarray(fname, engine=None, **kwargs):
     if callable(engine):
         return engine(fname, **kwargs)
     elif isinstance(engine, str):
-        from .. import io
+        from ..io.engine import Engine
 
-        module = getattr(io, engine)
-        return module.read(fname, **kwargs)
+        return Engine[engine].open_dataarray(fname, **kwargs)
     else:
         raise ValueError("engine not recognized")
 

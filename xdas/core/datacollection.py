@@ -243,55 +243,15 @@ class DataMapping(DataCollection, dict):
         encoding=None,
         create_dirs=False,
     ):
-        if mode == "w" and group is None and os.path.exists(fname):
-            os.remove(fname)
-        for key in self:
-            name = self.name if self.name is not None else "collection"
-            location = "/".join([name, str(key)])
-            if group is not None:
-                location = "/".join([group, location])
-            if create_dirs:
-                dirname = os.path.dirname(fname)
-                if dirname:
-                    os.makedirs(dirname, exist_ok=True)
-            self[key].to_netcdf(
-                fname,
-                mode="a",
-                group=location,
-                virtual=virtual,
-                encoding=encoding,
-            )
+        from ..io.netcdf import save_datamapping
+
+        save_datamapping(self, fname, mode, group, virtual, encoding, create_dirs)
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
-        if isinstance(fname, Path):
-            fname = str(fname)
+        from ..io.netcdf import open_datamapping
 
-        with h5py.File(fname, "r") as file:
-            if group is None:
-                group = file[list(file.keys())[0]]
-            else:
-                group = file[group]
-            name = group.name.split("/")[-1]
-            if isinstance(group, h5py.Dataset):
-                raise ValueError(
-                    "it looks like you are trying to open a data array as a data collection."
-                )
-            else:
-                if not isinstance(group, h5py.Group):
-                    raise RuntimeError(
-                        "something went wrong while opening the data collection."
-                    )
-            keys = list(group.keys())
-            self = cls({}, name=None if name == "collection" else name)
-            for key in keys:
-                subgroup = group[key]
-                if get_depth(subgroup) == 0:
-                    self[key] = DataArray.from_netcdf(fname, subgroup.name)
-                else:
-                    subgroup = subgroup[list(subgroup.keys())[0]]
-                    self[key] = DataCollection.from_netcdf(fname, subgroup.name)
-        return self
+        return open_datamapping(fname, group)
 
     def equals(self, other):
         if not isinstance(other, self.__class__):
