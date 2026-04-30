@@ -514,7 +514,7 @@ def open_mfdataarray(
     return combine_by_coords(objs, dim, tolerance, squeeze, None, verbose)
 
 
-def open_dataarray(fname, engine=None, **kwargs):
+def open_dataarray(fname, engine=None, vtype=None, ctype=None, **kwargs):
     """
     Open a dataarray.
 
@@ -555,7 +555,8 @@ def open_dataarray(fname, engine=None, **kwargs):
     elif isinstance(engine, str):
         from ..io.core import Engine
 
-        return Engine[engine].open_dataarray(fname, **kwargs)
+        engine = Engine[engine](vtype=vtype, ctype=ctype)
+        return engine.open_dataarray(fname, **kwargs)
     else:
         raise ValueError("engine not recognized")
 

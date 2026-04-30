@@ -3,6 +3,12 @@ import socket
 
 class Engine:
     _registry = {}
+    _supported_vtypes = []
+    _supported_ctypes = {"distance": [], "time": []}
+
+    def __init__(self, vtype=None, ctype=None):
+        self.vtype = self._parse_vtype(vtype)
+        self.ctype = self._parse_ctype(ctype)
 
     def __init_subclass__(cls, *, name=None, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -12,13 +18,56 @@ class Engine:
     def __class_getitem__(cls, item):
         return cls._registry[item]
 
-    @staticmethod
-    def open_dataarray(fname, **kwargs):
+    def open_dataarray(self, fname, **kwargs):
         raise NotImplementedError
 
-    @staticmethod
-    def save_dataarray(da, fname, **kwargs):
+    def save_dataarray(self, da, fname, **kwargs):
         raise NotImplementedError
+
+    def open_datacollection(self, fname, **kwargs):
+        raise NotImplementedError
+
+    def save_datacollection(self, dc, fname, **kwargs):
+        raise NotImplementedError
+
+    def _parse_vtype(self, vtype):
+        if vtype is None:
+            vtype = self._supported_vtypes[0]
+        elif isinstance(vtype, str):
+            pass
+        else:
+            raise ValueError("vtype must be None or a string")
+        if vtype not in self._supported_vtypes:
+            raise ValueError(
+                f"vtype '{vtype}' is not supported by {self.__class__.__name__}"
+            )
+        return vtype
+
+    def _parse_ctype(self, ctype):
+        if ctype is None:
+            ctype = {
+                key: self._supported_ctypes[key][0] for key in self._supported_ctypes
+            }
+        elif isinstance(ctype, str):
+            ctype = {key: ctype for key in self._supported_ctypes}
+        elif isinstance(ctype, dict):
+            ctype = {
+                key: ctype.get(key, self._supported_ctypes[key][0])
+                for key in self._supported_ctypes
+            }
+            for key in ctype:
+                if ctype[key] is None:
+                    ctype[key] = self._supported_ctypes[key][0]
+        else:
+            raise ValueError(
+                "ctype must be None, str, or dict with the supported dimensions"
+            )
+        for key in ctype:
+            if ctype[key] not in self._supported_ctypes[key]:
+                raise ValueError(
+                    f"ctype '{ctype[key]}' for '{key}' is not supported by {self.__class__.__name__}"
+                )
+        return ctype
 
 
 def get_free_port():
@@ -38,26 +87,3 @@ def get_free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
         return s.getsockname()[1]
-
-
-def parse_ctype(ctype):
-    if ctype is None:
-        ctype = {
-            "time": "interpolated",
-            "distance": "interpolated",
-        }
-    elif isinstance(ctype, str):
-        ctype = {
-            "time": ctype,
-            "distance": ctype,
-        }
-    elif isinstance(ctype, dict):
-        ctype = {
-            "time": ctype.get("time", "interpolated"),
-            "distance": ctype.get("distance", "interpolated"),
-        }
-    else:
-        raise ValueError(
-            "ctype must be None, str, or dict with 'time' and/or 'distance' keys"
-        )
-    return ctype

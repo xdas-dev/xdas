@@ -16,20 +16,23 @@ from .core import Engine
 
 
 class XdasEngine(Engine, name="xdas"):
-    @staticmethod
-    def open_dataarray(fname, **kwargs):
+    # TODO: does not make sense for the XdasEngine...
+    _supported_vtypes = ["hdf5"]
+    _supported_ctypes = {
+        "distance": ["interpolated", "sampled", "dense"],
+        "time": ["interpolated", "sampled", "dense"],
+    }
+
+    def open_dataarray(self, fname, **kwargs):
         return open_dataarray(fname, **kwargs)
 
-    @staticmethod
-    def save_dataarray(da, fname, **kwargs):
+    def save_dataarray(self, da, fname, **kwargs):
         return save_dataarray(da, fname, **kwargs)
 
-    @staticmethod
-    def open_datacollection(fname, **kwargs):
+    def open_datacollection(self, fname, **kwargs):
         return open_datamapping(fname, **kwargs)
 
-    @staticmethod
-    def save_datacollection(dc, fname, **kwargs):
+    def save_datacollection(self, dc, fname, **kwargs):
         return save_datamapping(dc, fname, **kwargs)
 
 
