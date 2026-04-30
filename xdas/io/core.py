@@ -1,6 +1,26 @@
 import socket
 
 
+class Engine:
+    _registry = {}
+
+    def __init_subclass__(cls, *, name=None, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if name is not None:
+            Engine._registry[name] = cls
+
+    def __class_getitem__(cls, item):
+        return cls._registry[item]
+
+    @staticmethod
+    def open_dataarray(fname, **kwargs):
+        raise NotImplementedError
+
+    @staticmethod
+    def save_dataarray(da, fname, **kwargs):
+        raise NotImplementedError
+
+
 def get_free_port():
     """
     Find and return a free port on the host machine.

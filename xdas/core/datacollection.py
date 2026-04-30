@@ -243,13 +243,13 @@ class DataMapping(DataCollection, dict):
         encoding=None,
         create_dirs=False,
     ):
-        from ..io.netcdf import save_datamapping
+        from ..io.xdas import save_datamapping
 
         save_datamapping(self, fname, mode, group, virtual, encoding, create_dirs)
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
-        from ..io.netcdf import open_datamapping
+        from ..io.xdas import open_datamapping
 
         return open_datamapping(fname, group)
 

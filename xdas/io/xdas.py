@@ -12,6 +12,25 @@ from ..core.dataarray import DataArray
 from ..core.datacollection import DataCollection, DataMapping, DataSequence
 from ..dask.core import create_variable, loads
 from ..virtual import VirtualArray, VirtualSource
+from .core import Engine
+
+
+class XdasEngine(Engine, name="xdas"):
+    @staticmethod
+    def open_dataarray(fname, **kwargs):
+        return open_dataarray(fname, **kwargs)
+
+    @staticmethod
+    def save_dataarray(da, fname, **kwargs):
+        return save_dataarray(da, fname, **kwargs)
+
+    @staticmethod
+    def open_datacollection(fname, **kwargs):
+        return open_datamapping(fname, **kwargs)
+
+    @staticmethod
+    def save_datacollection(dc, fname, **kwargs):
+        return save_datamapping(dc, fname, **kwargs)
 
 
 def open_dataarray(fname, group=None):

@@ -4,7 +4,13 @@ import numpy as np
 from ..coordinates.core import Coordinate
 from ..core.dataarray import DataArray
 from ..virtual import VirtualSource
-from .core import parse_ctype
+from .core import Engine, parse_ctype
+
+
+class OptaSenseEngine(Engine, name="optasense"):
+    @staticmethod
+    def open_dataarray(fname, **kwargs):
+        return read(fname, **kwargs)
 
 
 def read(fname, ctype=None):

@@ -4,7 +4,15 @@ import numpy as np
 from ..coordinates.core import Coordinate
 from ..core.dataarray import DataArray
 from ..virtual import VirtualSource
-from .core import parse_ctype
+from .core import Engine, parse_ctype
+
+
+class SintelaEngine(Engine, name="sintela"):
+    @staticmethod
+    def open_dataarray(fname, **kwargs):
+        from .sintela import read
+
+        return read(fname, **kwargs)
 
 
 def read(fname, ctype=None):

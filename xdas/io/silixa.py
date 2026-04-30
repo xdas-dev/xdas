@@ -3,8 +3,14 @@ import numpy as np
 
 from ..coordinates.core import Coordinate
 from ..core.dataarray import DataArray
-from .core import parse_ctype
+from .core import Engine, parse_ctype
 from .tdms import TdmsReader
+
+
+class SilixaEngine(Engine, name="silixa"):
+    @staticmethod
+    def open_dataarray(fname, **kwargs):
+        return read(fname, **kwargs)
 
 
 def read(fname, ctype=None):

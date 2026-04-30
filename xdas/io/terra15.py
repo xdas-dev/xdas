@@ -6,7 +6,15 @@ import numpy as np
 from ..coordinates.core import Coordinate
 from ..core.dataarray import DataArray
 from ..virtual import VirtualSource
-from .core import parse_ctype
+from .core import Engine, parse_ctype
+
+
+class Terra15Engine(Engine, name="terra15"):
+    @staticmethod
+    def open_dataarray(fname, **kwargs):
+        from .terra15 import read
+
+        return read(fname, **kwargs)
 
 
 def read(fname, ctype=None, tz=timezone.utc):

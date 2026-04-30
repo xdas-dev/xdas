@@ -3,10 +3,10 @@ from . import (
     asn,
     febus,
     miniseed,
-    netcdf,
     optasense,
     silixa,
     sintela,
     terra15,
+    xdas,
 )
 from .core import get_free_port

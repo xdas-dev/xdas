@@ -8,7 +8,13 @@ import zmq
 from ..coordinates.core import Coordinate, get_sampling_interval
 from ..core.dataarray import DataArray
 from ..virtual import VirtualSource
-from .core import parse_ctype
+from .core import Engine, parse_ctype
+
+
+class ASNEngine(Engine, name="asn"):
+    @staticmethod
+    def open_dataarray(fname, **kwargs):
+        return read(fname, **kwargs)
 
 
 def read(fname, ctype=None):

@@ -545,7 +545,7 @@ def open_dataarray(fname, engine=None, **kwargs):
     # parse & checks
     fname = _ensure_str_paths(fname)
     if engine is None:
-        engine = "netcdf"
+        engine = "xdas"
     if not os.path.exists(fname):
         raise FileNotFoundError("no file to open")
 
@@ -553,7 +553,7 @@ def open_dataarray(fname, engine=None, **kwargs):
     if callable(engine):
         return engine(fname, **kwargs)
     elif isinstance(engine, str):
-        from ..io.engine import Engine
+        from ..io.core import Engine
 
         return Engine[engine].open_dataarray(fname, **kwargs)
     else:

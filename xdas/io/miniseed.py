@@ -4,6 +4,13 @@ import obspy
 
 from ..coordinates.core import Coordinate, Coordinates, get_sampling_interval
 from ..core.dataarray import DataArray
+from .core import Engine
+
+
+class MiniSEEDEngine(Engine, name="miniseed"):
+    @staticmethod
+    def open_dataarray(fname, **kwargs):
+        return read(fname, **kwargs)
 
 
 def to_stream(

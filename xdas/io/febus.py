@@ -7,7 +7,15 @@ from ..coordinates.core import Coordinate
 from ..core.dataarray import DataArray
 from ..core.routines import concatenate
 from ..virtual import VirtualSource
-from .core import parse_ctype
+from .core import Engine, parse_ctype
+
+
+class FebusEngine(Engine, name="febus"):
+    @staticmethod
+    def open_dataarray(fname, **kwargs):
+        from .febus import read
+
+        return read(fname, **kwargs)
 
 
 def read(fname, overlaps=None, offset=None, ctype=None):

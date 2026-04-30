@@ -843,7 +843,7 @@ class DataArray(NDArrayOperatorsMixin):
         ...     da.to_netcdf(tmpfile, encoding=encoding)
 
         """
-        from ..io.netcdf import save_dataarray
+        from ..io.xdas import save_dataarray
 
         save_dataarray(self, fname, mode, group, virtual, encoding, create_dirs)
 
@@ -864,7 +864,7 @@ class DataArray(NDArrayOperatorsMixin):
         DataArray
             The openend data array.
         """
-        from ..io.netcdf import open_dataarray
+        from ..io.xdas import open_dataarray
 
         return open_dataarray(fname, group)
 
