@@ -22,6 +22,8 @@ for engine, fnames in TEST_FILES.items():
         print(engine)
         path = fetch(fname)
         da = xd.open(path, engine=engine)
+        da_auto = xd.open(path)
+        assert da.equals(da_auto)
         spool = dc.read(path)
         patch = spool[0]
         assert isinstance(da, xd.DataArray)

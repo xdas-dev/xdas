@@ -3,8 +3,8 @@ import socket
 
 class Engine:
     _registry = {}
-    _supported_vtypes = []
-    _supported_ctypes = {"distance": [], "time": []}
+    _supported_vtypes = None
+    _supported_ctypes = None
 
     def __init__(self, vtype=None, ctype=None):
         self.vtype = self._parse_vtype(vtype)
@@ -31,6 +31,8 @@ class Engine:
         raise NotImplementedError
 
     def _parse_vtype(self, vtype):
+        if self._supported_vtypes is None:
+            return vtype
         if vtype is None:
             vtype = self._supported_vtypes[0]
         elif isinstance(vtype, str):
@@ -38,12 +40,14 @@ class Engine:
         else:
             raise ValueError("vtype must be None or a string")
         if vtype not in self._supported_vtypes:
-            raise ValueError(
+            raise UnsupportedTypeError(
                 f"vtype '{vtype}' is not supported by {self.__class__.__name__}"
             )
         return vtype
 
     def _parse_ctype(self, ctype):
+        if self._supported_ctypes is None:
+            return ctype
         if ctype is None:
             ctype = {
                 key: self._supported_ctypes[key][0] for key in self._supported_ctypes
@@ -64,10 +68,39 @@ class Engine:
             )
         for key in ctype:
             if ctype[key] not in self._supported_ctypes[key]:
-                raise ValueError(
+                raise UnsupportedTypeError(
                     f"ctype '{ctype[key]}' for '{key}' is not supported by {self.__class__.__name__}"
                 )
         return ctype
+
+
+class AutoEngine(Engine, name="auto"):
+    def open_dataarray(self, fname, **kwargs):
+        for engine in Engine._registry:
+            if engine == "auto":
+                continue
+            try:
+                return Engine[engine](
+                    vtype=self.vtype, ctype=self.ctype
+                ).open_dataarray(fname, **kwargs)
+            except InvalidEngineError:
+                continue
+            except UnsupportedTypeError:
+                continue
+        if self.ctype is None and self.vtype is None:
+            raise ValueError("no engine could open the file")
+        else:
+            raise ValueError(
+                "no engine could open the file with the specified vtype/ctype"
+            )
+
+
+class InvalidEngineError(Exception):
+    pass
+
+
+class UnsupportedTypeError(Exception):
+    pass
 
 
 def get_free_port():

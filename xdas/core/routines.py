@@ -545,7 +545,7 @@ def open_dataarray(fname, engine=None, vtype=None, ctype=None, **kwargs):
     # parse & checks
     fname = _ensure_str_paths(fname)
     if engine is None:
-        engine = "xdas"
+        engine = "auto"
     if not os.path.exists(fname):
         raise FileNotFoundError("no file to open")
 
@@ -555,8 +555,7 @@ def open_dataarray(fname, engine=None, vtype=None, ctype=None, **kwargs):
     elif isinstance(engine, str):
         from ..io.core import Engine
 
-        engine = Engine[engine](vtype=vtype, ctype=ctype)
-        return engine.open_dataarray(fname, **kwargs)
+        return Engine[engine](vtype=vtype, ctype=ctype).open_dataarray(fname, **kwargs)
     else:
         raise ValueError("engine not recognized")
 
