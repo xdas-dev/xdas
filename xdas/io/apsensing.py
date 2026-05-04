@@ -17,7 +17,7 @@ class APSensingEngine(Engine, name="apsensing"):
     def open_dataarray(self, fname):
         with h5py.File(fname, "r") as file:
             t0 = file["Metadata"]["Timestamp"][()].item().decode()
-            fs = file["DAQ"]["RepetitionFrequency"][()].item()
+            fs = file["ProcessingServer"]["DataRate"][()].item()
             dx = file["ProcessingServer"]["SpatialSampling"][()].item()
             data = VirtualSource(file["DAS"])
         if t0.endswith("Z"):
