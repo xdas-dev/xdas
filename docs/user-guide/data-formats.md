@@ -20,7 +20,7 @@ os.chdir("../_data")
 
 ## Implemented file formats
 
-Here below the list of formats that are currently implemented. All HDF5 based formats support native virtualization. Other formats support Dask virtualization. Please refer to the [](virtual-datasets) section. To read a them you have to specify which one you want in the `engine` argument in {py:func}`xdas.open`.
+Here below the list of formats that are currently implemented. All HDF5 based formats support native virtualization. Other formats support Dask virtualization. Please refer to the [](virtual-datasets) section. Xdas should automatically detect the correct file format. You can still specify which one you want in the `engine` argument in {py:func}`xdas.open`.
 
 Xdas support the following DAS formats:
 
