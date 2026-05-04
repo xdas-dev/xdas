@@ -1,20 +1,14 @@
 import copy
-import os
-import warnings
 from functools import partial
-from pathlib import Path
 
-import h5netcdf
-import h5py
-import hdf5plugin
 import numpy as np
 import xarray as xr
 from dask.array import Array as DaskArray
 from numpy.lib.mixins import NDArrayOperatorsMixin
 
-from ..coordinates import Coordinates, get_sampling_interval
-from ..dask.core import create_variable, from_dict, loads, to_dict
-from ..virtual import VirtualArray, VirtualSource, _to_human
+from ..coordinates import Coordinates
+from ..dask.core import from_dict, to_dict
+from ..virtual import VirtualArray, _to_human
 
 HANDLED_NUMPY_FUNCTIONS = {}
 HANDLED_METHODS = {}
@@ -763,36 +757,9 @@ class DataArray(NDArrayOperatorsMixin):
             the obspy stream version of the data array.
 
         """
-        dimdist, dimtime = dim.copy().popitem()
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                from obspy import Stream, Trace, UTCDateTime
-        except ImportError:
-            raise ImportError("obspy is not installed. Please install it.")
-        if not self.ndim == 2:
-            raise ValueError("the data array must be 2D")
-        starttime = UTCDateTime(str(self[dimtime][0].values))
-        delta = get_sampling_interval(self, dimtime)
-        band_code = get_band_code(1.0 / delta)
-        if "{" in channel and "}" in channel:
-            channel = channel.format(band_code)
-        header = {
-            "network": network,
-            "location": location,
-            "channel": channel,
-            "starttime": starttime,
-            "delta": delta,
-        }
-        return Stream(
-            [
-                Trace(
-                    data=np.ascontiguousarray(self.isel({dimdist: idx}).values),
-                    header=header | {"station": station.format(idx + 1)},
-                )
-                for idx in range(len(self[dimdist]))
-            ]
-        )
+        from ..io.miniseed import to_stream
+
+        return to_stream(self, network, station, location, channel, dim)
 
     @classmethod
     def from_stream(cls, st, dims=("channel", "time")):
@@ -816,16 +783,9 @@ class DataArray(NDArrayOperatorsMixin):
         DataArray:
             The consolidated data array.
         """
-        data = np.stack([tr.data for tr in st])
-        channel = [tr.id for tr in st]
-        time = {
-            "tie_indices": [0, st[0].stats.npts - 1],
-            "tie_values": [
-                np.datetime64(st[0].stats.starttime.datetime),
-                np.datetime64(st[0].stats.endtime.datetime),
-            ],
-        }
-        return cls(data, {dims[0]: channel, dims[1]: time})
+        from ..io.miniseed import from_stream
+
+        return from_stream(st, dims)
 
     def to_netcdf(
         self,
@@ -883,69 +843,9 @@ class DataArray(NDArrayOperatorsMixin):
         ...     da.to_netcdf(tmpfile, encoding=encoding)
 
         """
-        if isinstance(fname, Path):
-            fname = str(fname)
+        from ..io.xdas import save_dataarray
 
-        if virtual is None:
-            virtual = isinstance(self.data, (VirtualArray, DaskArray))
-
-        # initialize
-        dataset = xr.Dataset(attrs={"Conventions": "CF-1.9"})
-        variable_attrs = {} if self.attrs is None else self.attrs
-        variable_name = "__values__" if self.name is None else self.name
-
-        # prepare metadata
-        for coord in self.coords.values():
-            dataset, variable_attrs = coord.to_dataset(dataset, variable_attrs)
-
-        # create parent directories if needed
-        if create_dirs:
-            dirname = os.path.dirname(fname)
-            if dirname:
-                os.makedirs(dirname, exist_ok=True)
-
-        # write data
-        with h5netcdf.File(fname, mode=mode) as file:
-            # group
-            if group is not None and group not in file:
-                file.create_group(group)
-            file = file if group is None else file[group]
-
-            # dims
-            file.dimensions.update(self.sizes)
-
-            # variable
-            if not virtual:
-                encoding = {} if encoding is None else encoding
-                variable = file.create_variable(
-                    variable_name,
-                    self.dims,
-                    self.dtype,
-                    data=self.values,
-                    **encoding,
-                )
-            else:
-                if encoding is not None:
-                    raise ValueError("cannot use `encoding` with in virtual mode")
-                if isinstance(self.data, VirtualArray):
-                    variable = self.data.create_variable(
-                        file, variable_name, self.dims, self.dtype
-                    )
-                elif isinstance(self.data, DaskArray):
-                    variable = create_variable(
-                        self.data, file, variable_name, self.dims, self.dtype
-                    )
-                else:
-                    raise ValueError(
-                        "can only use `virtual=True` with a virtual array as data"
-                    )
-
-            # attrs
-            if variable_attrs:
-                variable.attrs.update(variable_attrs)
-
-        # write metadata
-        dataset.to_netcdf(fname, mode="a", group=group, engine="h5netcdf")
+        save_dataarray(self, fname, mode, group, virtual, encoding, create_dirs)
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
@@ -964,57 +864,9 @@ class DataArray(NDArrayOperatorsMixin):
         DataArray
             The openend data array.
         """
-        if isinstance(fname, Path):
-            fname = str(fname)
+        from ..io.xdas import open_dataarray
 
-        # read metadata
-        with xr.open_dataset(
-            fname, group=group, engine="h5netcdf", decode_timedelta=False
-        ) as dataset:
-            # check file format
-            if not (
-                "Conventions" in dataset.attrs and "CF" in dataset.attrs["Conventions"]
-            ):
-                raise TypeError(
-                    "file format not recognized. please provide the file format "
-                    "with the `engine` keyword argument"
-                )
-
-            # identify the "main" data array
-            if len(dataset) == 1:
-                name = next(iter(dataset.keys()))
-            else:
-                data_vars = {
-                    key: var
-                    for key, var in dataset.items()
-                    if any("coordinate" in attr for attr in var.attrs)
-                }
-                if len(data_vars) == 1:
-                    name = next(iter(data_vars.keys()))
-                else:
-                    raise ValueError("several possible data arrays detected")
-
-            # read coordinates
-            coords = Coordinates.from_dataset(dataset, name)
-
-        # read data
-        if "__dask_array__" in dataset[name].attrs:
-            data = loads(dataset[name].attrs.pop("__dask_array__"))
-        else:
-            with h5py.File(fname) as file:
-                if group:
-                    file = file[group]
-                variable = file["__values__" if name is None else name]
-                data = VirtualSource(variable)
-
-        # pack everything
-        return cls(
-            data,
-            coords,
-            dataset[name].dims,
-            name,
-            None if dataset[name].attrs == {} else dataset[name].attrs,
-        )
+        return open_dataarray(fname, group)
 
     def to_dict(self):
         """Convert the DataArray to a dictionary."""
@@ -1099,13 +951,3 @@ class DimSizer(dict):
         if key == "last":
             key = list(self.keys())[-1]
         return super().__getitem__(key)
-
-
-def get_band_code(sampling_rate):
-    band_code = ["T", "P", "R", "U", "V", "L", "M", "B", "H", "C", "F"]
-    limits = [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 80, 250, 1000, 5000]
-    index = np.searchsorted(limits, sampling_rate, "right") - 1
-    if index < 0 or index >= len(band_code):
-        return "X"
-    else:
-        return band_code[index]
