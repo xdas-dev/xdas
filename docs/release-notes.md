@@ -2,7 +2,11 @@
 
 ## 0.2.6
 - Add `xdas.open` that automatically infer which `xdas.open_*` function to use (@atrabattoni, @yetinam).
+- Add automatic engine detection to every `xdas.open_*` functions (@atrabattoni, @yetinam).
+- New `io.Engine` backend system to register different file formats (@atrabattoni).
 - Add `pathlib.Path` support as input for all Xdas file-related functions and methods (@atrabattoni).
+- Fix/improve distance coordinates handling for the following engine: "apsensing", "febus", "silixa" (@atrabattoni).
+- Add dim swapping handling for the "optasense" engine with the `swapped_dims=False` kwarg (@atrabattoni).
 
 ## 0.2.5
 - Add SampleCoordinate for more SEED-like coordinates and refactor the coordinate backend (@atrabattoni).

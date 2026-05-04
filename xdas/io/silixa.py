@@ -10,7 +10,7 @@ from .tdms import TdmsReader
 class SilixaEngine(Engine, name="silixa"):
     _supported_vtypes = ["dask"]
     _supported_ctypes = {
-        "distance": ["interpolated"],
+        "distance": ["interpolated", "sampled", "dense"],
         "time": ["interpolated", "sampled", "dense"],
     }
 
