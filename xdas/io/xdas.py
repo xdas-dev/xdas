@@ -16,12 +16,6 @@ from .core import Engine
 
 
 class XdasEngine(Engine, name="xdas"):
-    # TODO: does not make sense for the XdasEngine...
-    _supported_vtypes = ["hdf5"]
-    _supported_ctypes = {
-        "time": ["interpolated", "sampled", "dense"],
-        "distance": ["interpolated", "sampled", "dense"],
-    }
 
     def open_dataarray(self, fname, **kwargs):
         return open_dataarray(fname, **kwargs)
