@@ -7,7 +7,7 @@ import hdf5plugin
 import xarray as xr
 from dask.array import Array as DaskArray
 
-from ..coordinates import Coordinates
+from ..coordinates import Coordinates, Coordinate
 from ..core.dataarray import DataArray
 from ..core.datacollection import DataCollection, DataMapping, DataSequence
 from ..dask.core import create_variable, loads
@@ -16,11 +16,10 @@ from .core import Engine
 
 
 class XdasEngine(Engine, name="xdas"):
-    # TODO: does not make sense for the XdasEngine...
-    _supported_vtypes = ["hdf5"]
+    _supported_vtypes = ["hdf5", "dask"]
     _supported_ctypes = {
-        "time": ["interpolated", "sampled", "dense"],
-        "distance": ["interpolated", "sampled", "dense"],
+        "time": list(Coordinate._registry.keys()),
+        "distance": list(Coordinate._registry.keys()),
     }
 
     def open_dataarray(self, fname, **kwargs):
@@ -202,14 +201,14 @@ def open_datamapping(fname, group=None):
                     "something went wrong while opening the data collection."
                 )
         keys = list(group.keys())
-        dm = DataCollection({}, name=None if name == "collection" else name)
+        dm = DataMapping({}, name=None if name == "collection" else name)
         for key in keys:
             subgroup = group[key]
             if _get_depth(subgroup) == 0:
                 dm[key] = DataArray.from_netcdf(fname, subgroup.name)
             else:
                 subgroup = subgroup[list(subgroup.keys())[0]]
-                dm[key] = DataCollection.from_netcdf(fname, subgroup.name)
+                dm[key] = DataMapping.from_netcdf(fname, subgroup.name)
     return dm
 
 
