@@ -65,6 +65,7 @@ class FebusEngine(Engine, name="febus"):
             (name,) = list(zone.keys())
             chunks = VirtualSource(zone[name])
             delta = (zone.attrs["Spacing"][1] / 1000.0, zone.attrs["Spacing"][0])
+            x0 = zone.attrs["Extent"][0] * delta[1] + zone.attrs["Origin"][0]
         name = "".join(["_" + c.lower() if c.isupper() else c for c in name]).lstrip(
             "_"
         )
@@ -110,7 +111,7 @@ class FebusEngine(Engine, name="febus"):
             t0 = np.rint(1e6 * t0).astype("M8[us]").astype("M8[ns]")
             time = Coordinate[self.ctype["time"]].from_block(t0, nt, dt, dim="time")
             distance = Coordinate[self.ctype["distance"]].from_block(
-                0.0, nx, dx, dim="distance"
+                x0, nx, dx, dim="distance"
             )
             da = DataArray(chunk, {"time": time, "distance": distance}, name=name)
             dc.append(da)

@@ -20,7 +20,6 @@ class TestGenericIO:
 
     SKIP_COMPARISON = [
         "ap_sensing_1.hdf5",  # different distance coordinates
-        "febus_2.h5",  # different distance coordinates
         "sample_tdms_file_v4713.tdms",  # different distance coordinates
     ]
 
@@ -35,7 +34,6 @@ class TestGenericIO:
     def test_compare_with_dascore(self):
         for engine, fnames in self.TEST_FILES.items():
             for fname in fnames:
-                print(f"Testing {engine} with {fname}")
                 if fname in self.SKIP_COMPARISON:
                     continue
                 path = fetch(fname)
