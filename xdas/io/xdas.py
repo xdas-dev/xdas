@@ -19,8 +19,8 @@ class XdasEngine(Engine, name="xdas"):
     # TODO: does not make sense for the XdasEngine...
     _supported_vtypes = ["hdf5"]
     _supported_ctypes = {
-        "distance": ["interpolated", "sampled", "dense"],
         "time": ["interpolated", "sampled", "dense"],
+        "distance": ["interpolated", "sampled", "dense"],
     }
 
     def open_dataarray(self, fname, **kwargs):

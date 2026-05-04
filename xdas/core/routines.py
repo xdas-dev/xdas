@@ -552,15 +552,16 @@ def open_dataarray(fname, engine=None, vtype=None, ctype=None, **kwargs):
         from ..io.core import AutoEngine
 
         engine = AutoEngine(vtype=vtype, ctype=ctype)
+        return engine.open_dataarray(fname, **kwargs)
     elif isinstance(engine, str):
         from ..io.core import Engine
 
         engine = Engine[engine](vtype=vtype, ctype=ctype)
+        return engine.open_dataarray(fname, **kwargs)
     elif callable(engine):
-        pass
+        return engine(fname, **kwargs)
     else:
         raise ValueError("engine not recognized")
-    return engine.open_dataarray(fname, **kwargs)
 
 
 def open_datacollection(fname, group=None):

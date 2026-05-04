@@ -114,4 +114,5 @@ with h5py.File(os.path.join(dirpath, "other_format.hdf5"), "w") as f:
     dset = f.create_dataset("dataset", data.shape, data=data, dtype="float32")
     f["dataset"].attrs["t0"] = "2024-01-01T14:00:00.000"
     f["dataset"].attrs["dt"] = 1 / 100
-    f["dataset"].attrs["dx"] = 10
+    f["dataset"].attrs["x0"] = 0.0
+    f["dataset"].attrs["dx"] = 10.0

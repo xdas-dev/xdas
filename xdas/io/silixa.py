@@ -10,8 +10,8 @@ from .tdms import TdmsReader
 class SilixaEngine(Engine, name="silixa"):
     _supported_vtypes = ["dask"]
     _supported_ctypes = {
-        "distance": ["interpolated", "sampled", "dense"],
         "time": ["interpolated", "sampled", "dense"],
+        "distance": ["interpolated", "sampled", "dense"],
     }
 
     def open_dataarray(self, fname):

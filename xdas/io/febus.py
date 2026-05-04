@@ -13,8 +13,8 @@ from .core import Engine
 class FebusEngine(Engine, name="febus"):
     _supported_vtypes = ["hdf5"]
     _supported_ctypes = {
-        "distance": ["interpolated", "sampled", "dense"],
         "time": ["interpolated", "sampled", "dense"],
+        "distance": ["interpolated", "sampled", "dense"],
     }
 
     def open_dataarray(self, fname, overlaps=None, offset=None):

@@ -14,8 +14,8 @@ from .core import Engine
 class ASNEngine(Engine, name="asn"):
     _supported_vtypes = ["hdf5"]
     _supported_ctypes = {
-        "distance": ["interpolated"],
         "time": ["interpolated", "sampled", "dense"],
+        "distance": ["interpolated"],
     }
 
     def open_dataarray(self, fname):

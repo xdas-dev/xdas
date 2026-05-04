@@ -12,8 +12,8 @@ from .core import Engine
 class Terra15Engine(Engine, name="terra15"):
     _supported_vtypes = ["hdf5"]
     _supported_ctypes = {
-        "distance": ["interpolated", "sampled", "dense"],
         "time": ["interpolated"],
+        "distance": ["interpolated", "sampled", "dense"],
     }
 
     def open_dataarray(self, fname, tz=timezone.utc):
