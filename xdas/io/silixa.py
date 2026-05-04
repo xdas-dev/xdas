@@ -26,14 +26,21 @@ class SilixaEngine(Engine, name="silixa"):
             props = tdms.get_properties()
             shape = tdms.channel_length, tdms.fileinfo["n_channels"]
             dtype = tdms._data_type
+
+        # time
         t0 = np.datetime64(props["GPSTimeStamp"])
         dt = np.timedelta64(round(1e9 / props["SamplingFrequency[Hz]"]), "ns")
         time = Coordinate[self.ctype["time"]].from_block(t0, shape[0], dt, dim="time")
-        distance = {
-            "tie_indices": [0, shape[1] - 1],
-            "tie_values": [props["Start Distance (m)"], props["Stop Distance (m)"]],
-        }  # TODO: use from_block
+
+        # distance
+        x0 = props["Start Distance (m)"]
+        dx = props["Fibre Length Multiplier"] * props["SpatialResolution[m]"]
+        distance = Coordinate[self.ctype["distance"]].from_block(
+            x0, shape[1], dx, dim="distance"
+        )
+
         coords = {"time": time, "distance": distance}
+
         return shape, dtype, coords
 
     def read_data(self, fname):

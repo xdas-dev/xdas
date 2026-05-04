@@ -18,9 +18,9 @@ class TestGenericIO:
         "terra15": ["terra15_v5_test_file.hdf5", "terra15_v6_test_file.hdf5"],
     }
 
-    SKIP_COMPARISON = [
-        "ap_sensing_1.hdf5",  # different distance coordinates
-        "sample_tdms_file_v4713.tdms",  # different distance coordinates
+    SKIP_DISTANCE_COMPARISON = [
+        "ap_sensing_1.hdf5",  # NOTE: we disagree with dascore
+        "sample_tdms_file_v4713.tdms",  # NOTE: dascore does not really know what it does
     ]
 
     def test_auto_open_files(self):
@@ -34,8 +34,6 @@ class TestGenericIO:
     def test_compare_with_dascore(self):
         for engine, fnames in self.TEST_FILES.items():
             for fname in fnames:
-                if fname in self.SKIP_COMPARISON:
-                    continue
                 path = fetch(fname)
                 da = xd.open(path, engine=engine)
                 spool = dc.read(path)
@@ -46,6 +44,8 @@ class TestGenericIO:
                 assert np.array_equal(da.data, patch.data, equal_nan=True)
                 assert da.dims == patch.dims
                 for dim in da.dims:
+                    if dim == "distance" and fname in self.SKIP_DISTANCE_COMPARISON:
+                        continue
                     expected = patch.coords.get_array(dim)
                     result = da[dim].values
                     # assert result.dtype == expected.dtype
