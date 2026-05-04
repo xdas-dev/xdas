@@ -75,16 +75,20 @@ class Engine:
 
 
 class AutoEngine(Engine):
+    _last_successful_engine = "xdas"
+
     def __init__(self, vtype=None, ctype=None):
         self.vtype = vtype
         self.ctype = ctype
 
     def open_dataarray(self, fname, **kwargs):
-        for engine in Engine._registry:
+        for engine in self._ordered_engines():
             try:
-                return Engine[engine](
-                    vtype=self.vtype, ctype=self.ctype
-                ).open_dataarray(fname, **kwargs)
+                out = Engine[engine](vtype=self.vtype, ctype=self.ctype).open_dataarray(
+                    fname, **kwargs
+                )
+                AutoEngine._last_successful_engine = engine
+                return out
             except Exception:
                 continue
         message = f"no engine could open the file '{fname}'"
@@ -93,6 +97,11 @@ class AutoEngine(Engine):
         if self.vtype is not None:
             message += f" with vtype '{self.vtype}'"
         raise ValueError(message)
+
+    def _ordered_engines(self):
+        return [self._last_successful_engine] + [
+            e for e in Engine._registry if e != self._last_successful_engine
+        ]
 
 
 def get_free_port():
