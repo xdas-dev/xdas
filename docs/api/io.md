@@ -12,10 +12,10 @@
    get_free_port
 ```
 
-```{eval-rst}
-.. currentmodule:: xdas.io
-```
 
+```{eval-rst}
+.. currentmodule:: xdas.io.asn
+```
 
 ## ASN
 
