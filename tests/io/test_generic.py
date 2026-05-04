@@ -6,34 +6,26 @@ import xdas as xd
 
 
 class TestGenericIO:
-    OPEN_FILE = {
+    TEST_FILES = {
         "apsensing": ["ap_sensing_1.hdf5"],
         "asn": ["opto_das_1.hdf5"],
         "febus": [
             "febus_1.h5",
             "febus_2.h5",
-        ],  # "valencia_febus_example.h5"
-        # "optasense": ["opta_sense_quantx_v2.h5"],  # dimensions are swapped
-        # "silixa": ["silixa_h5_1.hdf5"],
-        # "sintela": ["sintela_binary_v3_test_1.raw"],
+        ],
+        "optasense": ["opta_sense_quantx_v2.h5"],
+        "silixa": ["sample_tdms_file_v4713.tdms"],
         "terra15": ["terra15_v5_test_file.hdf5", "terra15_v6_test_file.hdf5"],
     }
 
-    COMPARE_FILES = {
-        # "apsensing": ["ap_sensing_1.hdf5"],
-        "asn": ["opto_das_1.hdf5"],
-        "febus": [
-            "febus_1.h5",
-            # "febus_2.h5",
-        ],  # "valencia_febus_example.h5"
-        # "optasense": ["opta_sense_quantx_v2.h5"],  # dimensions are swapped
-        # "silixa": ["silixa_h5_1.hdf5"],
-        # "sintela": ["sintela_binary_v3_test_1.raw"],
-        "terra15": ["terra15_v5_test_file.hdf5", "terra15_v6_test_file.hdf5"],
-    }
+    SKIP_COMPARISON = [
+        "ap_sensing_1.hdf5",  # different distance coordinates
+        "febus_2.h5",  # different distance coordinates
+        "sample_tdms_file_v4713.tdms",  # different distance coordinates
+    ]
 
     def test_auto_open_files(self):
-        for engine, fnames in self.OPEN_FILE.items():
+        for engine, fnames in self.TEST_FILES.items():
             for fname in fnames:
                 path = fetch(fname)
                 da = xd.open(path, engine=engine)
@@ -41,8 +33,11 @@ class TestGenericIO:
                 assert da.equals(da_auto)
 
     def test_compare_with_dascore(self):
-        for engine, fnames in self.COMPARE_FILES.items():
+        for engine, fnames in self.TEST_FILES.items():
             for fname in fnames:
+                print(f"Testing {engine} with {fname}")
+                if fname in self.SKIP_COMPARISON:
+                    continue
                 path = fetch(fname)
                 da = xd.open(path, engine=engine)
                 spool = dc.read(path)

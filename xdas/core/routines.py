@@ -128,7 +128,7 @@ def open(
     elif isinstance(paths, list):
         method = "multi-file"
     else:
-        raise ValueError(
+        raise Exception(
             f"`paths` must be either a string or a list, found {type(paths)}"
         )
     match method:
@@ -136,7 +136,7 @@ def open(
             if engine is None:
                 try:
                     return open_datacollection(paths)
-                except ValueError:
+                except Exception:
                     pass
             return open_dataarray(paths, engine=engine, **kwargs)
         case "multi-file":
@@ -149,7 +149,7 @@ def open(
                         squeeze=False if squeeze is None else squeeze,
                         verbose=verbose,
                     )
-                except ValueError:
+                except Exception:
                     pass
             return open_mfdataarray(
                 paths,

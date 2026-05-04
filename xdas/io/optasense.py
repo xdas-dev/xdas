@@ -10,11 +10,11 @@ from .core import Engine
 class OptaSenseEngine(Engine, name="optasense"):
     _supported_vtypes = ["hdf5"]
     _supported_ctypes = {
-        "distance": ["interpolated", "sampled", "dense"],
         "time": ["interpolated"],
+        "distance": ["interpolated", "sampled", "dense"],
     }
 
-    def open_dataarray(self, fname):
+    def open_dataarray(self, fname, swapped_dims=False):
         with h5py.File(fname, "r") as file:
             acquisition = file["Acquisition"]
             dx = acquisition.attrs["SpatialSamplingInterval"]
@@ -22,7 +22,10 @@ class OptaSenseEngine(Engine, name="optasense"):
             tstart = np.datetime64(rawdata.attrs["PartStartTime"][:-1])
             tend = np.datetime64(rawdata.attrs["PartEndTime"][:-1])
             data = VirtualSource(rawdata)
-        nd, nt = data.shape
+        if swapped_dims:
+            nd, nt = data.shape
+        else:
+            nt, nd = data.shape
         time = {
             "tie_indices": [0, nt - 1],
             "tie_values": [tstart, tend],
@@ -30,4 +33,7 @@ class OptaSenseEngine(Engine, name="optasense"):
         distance = Coordinate[self.ctype["distance"]].from_block(
             0.0, nd, dx, dim="distance"
         )
-        return DataArray(data, {"distance": distance, "time": time})
+        if swapped_dims:
+            return DataArray(data, {"distance": distance, "time": time})
+        else:
+            return DataArray(data, {"time": time, "distance": distance})
