@@ -7,7 +7,7 @@ import hdf5plugin
 import xarray as xr
 from dask.array import Array as DaskArray
 
-from ..coordinates import Coordinate, Coordinates
+from ..coordinates import Coordinates
 from ..core.dataarray import DataArray
 from ..core.datacollection import DataCollection, DataMapping, DataSequence
 from ..dask.core import create_variable, loads
@@ -209,7 +209,7 @@ def open_datamapping(fname, group=None):
                 dm[key] = DataArray.from_netcdf(fname, subgroup.name)
             else:
                 subgroup = subgroup[list(subgroup.keys())[0]]
-                dm[key] = DataMapping.from_netcdf(fname, subgroup.name)
+                dm[key] = DataCollection.from_netcdf(fname, subgroup.name)
     return dm
 
 
