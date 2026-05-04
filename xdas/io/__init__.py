@@ -3,9 +3,8 @@ from . import (
     asn,
     febus,
     miniseed,
-    optasense,
+    prodml,
     silixa,
-    sintela,
     terra15,
     xdas,
 )

@@ -9,12 +9,10 @@ class TestGenericIO:
     TEST_FILES = {
         "apsensing": ["ap_sensing_1.hdf5"],
         "asn": ["opto_das_1.hdf5"],
-        "febus": [
-            "febus_1.h5",
-            "febus_2.h5",
-        ],
+        "febus": ["febus_1.h5", "febus_2.h5"],
         "optasense": ["opta_sense_quantx_v2.h5"],
         "silixa": ["sample_tdms_file_v4713.tdms"],
+        "prodml": ["prodml_2.0.h5", "prodml_2.1.h5"],
         "terra15": ["terra15_v5_test_file.hdf5", "terra15_v6_test_file.hdf5"],
     }
 

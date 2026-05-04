@@ -3,6 +3,7 @@ import socket
 
 class Engine:
     _registry = {}
+    _aliases = {}
     _supported_vtypes = None
     _supported_ctypes = None
 
@@ -10,13 +11,21 @@ class Engine:
         self.vtype = self._parse_vtype(vtype)
         self.ctype = self._parse_ctype(ctype)
 
-    def __init_subclass__(cls, *, name=None, **kwargs):
+    def __init_subclass__(cls, *, name=None, aliases=None, **kwargs):
         super().__init_subclass__(**kwargs)
         if name is not None:
             Engine._registry[name] = cls
+        if aliases is not None:
+            for alias in aliases:
+                Engine._aliases[alias] = name
 
     def __class_getitem__(cls, item):
-        return cls._registry[item]
+        if item in cls._registry:
+            return cls._registry[item]
+        elif item in cls._aliases:
+            return cls._registry[cls._aliases[item]]
+        else:
+            raise KeyError(f"Item '{item}' not found in registry or aliases")
 
     def open_dataarray(self, fname, **kwargs):
         raise NotImplementedError
