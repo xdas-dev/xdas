@@ -535,7 +535,7 @@ def open_dataarray(fname, engine=None, vtype=None, ctype=None, **kwargs):
     Raises
     ------
     ValueError
-        If the engine si not recognized.
+        If the engine is not recognized.
 
     Raises
     ------
@@ -544,20 +544,23 @@ def open_dataarray(fname, engine=None, vtype=None, ctype=None, **kwargs):
     """
     # parse & checks
     fname = _ensure_str_paths(fname)
-    if engine is None:
-        engine = "auto"
     if not os.path.exists(fname):
         raise FileNotFoundError("no file to open")
 
     # dispatch & open
-    if callable(engine):
-        return engine(fname, **kwargs)
+    if engine is None:
+        from ..io.core import AutoEngine
+
+        engine = AutoEngine(vtype=vtype, ctype=ctype)
     elif isinstance(engine, str):
         from ..io.core import Engine
 
-        return Engine[engine](vtype=vtype, ctype=ctype).open_dataarray(fname, **kwargs)
+        engine = Engine[engine](vtype=vtype, ctype=ctype)
+    elif callable(engine):
+        pass
     else:
         raise ValueError("engine not recognized")
+    return engine.open_dataarray(fname, **kwargs)
 
 
 def open_datacollection(fname, group=None):

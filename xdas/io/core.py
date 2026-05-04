@@ -40,7 +40,7 @@ class Engine:
         else:
             raise ValueError("vtype must be None or a string")
         if vtype not in self._supported_vtypes:
-            raise UnsupportedTypeError(
+            raise NotImplementedError(
                 f"vtype '{vtype}' is not supported by {self.__class__.__name__}"
             )
         return vtype
@@ -68,39 +68,31 @@ class Engine:
             )
         for key in ctype:
             if ctype[key] not in self._supported_ctypes[key]:
-                raise UnsupportedTypeError(
+                raise NotImplementedError(
                     f"ctype '{ctype[key]}' for '{key}' is not supported by {self.__class__.__name__}"
                 )
         return ctype
 
 
-class AutoEngine(Engine, name="auto"):
+class AutoEngine(Engine):
+    def __init__(self, vtype=None, ctype=None):
+        self.vtype = vtype
+        self.ctype = ctype
+
     def open_dataarray(self, fname, **kwargs):
         for engine in Engine._registry:
-            if engine == "auto":
-                continue
             try:
                 return Engine[engine](
                     vtype=self.vtype, ctype=self.ctype
                 ).open_dataarray(fname, **kwargs)
-            except InvalidEngineError:
+            except Exception:
                 continue
-            except UnsupportedTypeError:
-                continue
-        if self.ctype is None and self.vtype is None:
-            raise ValueError("no engine could open the file")
-        else:
-            raise ValueError(
-                "no engine could open the file with the specified vtype/ctype"
-            )
-
-
-class InvalidEngineError(Exception):
-    pass
-
-
-class UnsupportedTypeError(Exception):
-    pass
+        message = f"no engine could open the file '{fname}'"
+        if self.ctype is not None:
+            message += f" with ctype '{self.ctype}'"
+        if self.vtype is not None:
+            message += f" with vtype '{self.vtype}'"
+        raise ValueError(message)
 
 
 def get_free_port():
