@@ -17,7 +17,7 @@ class Engine:
     Parameters
     ----------
     vtype : str, optional
-        The virtualization type to use. If vtype is None, the first supported type is 
+        The virtualization type to use. If vtype is None, the first supported type is
         used.
     ctype : str or dict, optional
         The coordinate type(s) to use. Can be:
@@ -37,7 +37,7 @@ class Engine:
     -----
     Subclasses should define class attributes:
     - `_supported_vtypes` (list): List of supported virtualization types
-    - `_supported_ctypes` (dict): Maps component names to lists of supported coordinate 
+    - `_supported_ctypes` (dict): Maps component names to lists of supported coordinate
     types
 
     Examples
@@ -57,6 +57,7 @@ class Engine:
     >>> engine = Engine["netcdf"](vtype="hdf5")
     >>> engine = Engine["nc"](ctype="dense")  # Using alias
     """
+
     _registry = {}
     _aliases = {}
     _supported_vtypes = None
@@ -180,6 +181,7 @@ class AutoEngine(Engine):
     >>> da = engine.open_dataarray("data.hdf5")  # doctest: +SKIP
 
     """
+
     _last_successful_engine = "xdas"
 
     def __init__(self, vtype=None, ctype=None):

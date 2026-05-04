@@ -7,7 +7,7 @@ import hdf5plugin
 import xarray as xr
 from dask.array import Array as DaskArray
 
-from ..coordinates import Coordinates, Coordinate
+from ..coordinates import Coordinate, Coordinates
 from ..core.dataarray import DataArray
 from ..core.datacollection import DataCollection, DataMapping, DataSequence
 from ..dask.core import create_variable, loads
@@ -16,10 +16,11 @@ from .core import Engine
 
 
 class XdasEngine(Engine, name="xdas"):
-    _supported_vtypes = ["hdf5", "dask"]
+    # TODO: does not make sense for the XdasEngine...
+    _supported_vtypes = ["hdf5"]
     _supported_ctypes = {
-        "time": list(Coordinate._registry.keys()),
-        "distance": list(Coordinate._registry.keys()),
+        "time": ["interpolated", "sampled", "dense"],
+        "distance": ["interpolated", "sampled", "dense"],
     }
 
     def open_dataarray(self, fname, **kwargs):
