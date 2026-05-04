@@ -2,6 +2,61 @@ import socket
 
 
 class Engine:
+    """
+    Base class for file format handlers in xdas.
+
+    The Engine class provides a plugin architecture for reading and writing various
+    file formats. Each Engine subclass corresponds to a specific file format (e.g.,
+    "xdas", "asn", "miniseed") and implements methods to open and save DataArray or
+    DataCollection objects.
+
+    Engines are registered in a class-level registry using the `__init_subclass__` hook,
+    allowing them to be accessed by name using the `Engine[name]` syntax. Aliases can
+    also be defined for backwards compatibility or convenience.
+
+    Parameters
+    ----------
+    vtype : str, optional
+        The virtualization type to use. If vtype is None, the first supported type is 
+        used.
+    ctype : str or dict, optional
+        The coordinate type(s) to use. Can be:
+        - None: uses the first supported ctype for each component
+        - str: uses the same ctype for all components
+        - dict: maps component names to their specific ctypes
+        If None or incomplete, missing ctypes default to the first supported option.
+
+    Attributes
+    ----------
+    vtype : str
+        The version type for this engine instance.
+    ctype : str or dict
+        The component type(s) for this engine instance.
+
+    Notes
+    -----
+    Subclasses should define class attributes:
+    - `_supported_vtypes` (list): List of supported virtualization types
+    - `_supported_ctypes` (dict): Maps component names to lists of supported coordinate 
+    types
+
+    Examples
+    --------
+    Subclass registration (automatic via `__init_subclass__`):
+
+    >>> class NetCDFEngine(Engine, name="netcdf", aliases=["nc"]):
+    ...     _supported_vtypes = ["hdf5"]
+    ...     _supported_ctypes = {
+    ...         "time": ["sampled", "dense"], "distance": ["sampled", "dense"]
+    ...     }
+    ...     def open_dataarray(self, fname, **kwargs):
+    ...         ...
+
+    Access registered engines:
+
+    >>> engine = Engine["netcdf"](vtype="hdf5")
+    >>> engine = Engine["nc"](ctype="dense")  # Using alias
+    """
     _registry = {}
     _aliases = {}
     _supported_vtypes = None
@@ -84,6 +139,47 @@ class Engine:
 
 
 class AutoEngine(Engine):
+    """
+    Automatic engine dispatcher for file format detection.
+
+    AutoEngine attempts to open a file using all registered engines in a smart order,
+    making it possible to open files without explicitly specifying the file format.
+    This is the default behavior when no engine is specified in `xdas.open_dataarray()`.
+
+    The engine selection strategy is optimized for performance:
+    - The last successfully used engine is tried first
+    - All other registered engines are tried in their registration order
+    - The first engine that successfully opens the file is used
+    - If all engines fail, an informative error message is raised
+
+    Parameters
+    ----------
+    vtype : str, optional
+        The virtualization type to use. Passed to all engines during auto-detection.
+        If None, each engine uses its default vtype.
+    ctype : str or dict, optional
+        The coordinate type(s) to use. Passed to all engines during auto-detection.
+        Can be a string, dict, or None (each engine uses its default).
+
+    Attributes
+    ----------
+    vtype : str, optional
+        The virtualization type for engine attempts.
+    ctype : str or dict, optional
+        The coordinate type(s) for engine attempts.
+
+    Notes
+    -----
+    All exceptions raised by individual engines are silently caught; only if all
+      engines fail is an error raised to the user.
+
+    Examples
+    --------
+    >>> from xdas.io import AutoEngine
+    >>> engine = AutoEngine(ctype="dense")
+    >>> da = engine.open_dataarray("data.hdf5")  # doctest: +SKIP
+
+    """
     _last_successful_engine = "xdas"
 
     def __init__(self, vtype=None, ctype=None):
