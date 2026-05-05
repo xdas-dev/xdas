@@ -1,3 +1,4 @@
+import weakref
 from copy import copy, deepcopy
 from functools import wraps
 from itertools import pairwise
@@ -65,7 +66,6 @@ class Coordinates(dict):
                 dims = coords.dims
             coords = dict(coords)
         self._dims = () if dims is None else tuple(dims)
-        self._parent = None
         if coords is not None:
             for name in coords:
                 self[name] = coords[name]
@@ -83,7 +83,7 @@ class Coordinates(dict):
         coord = Coordinate(value)
         if coord.dim is None and not coord.isscalar():
             coord.dim = key
-        if self._parent is None:
+        if self.parent is None:
             if coord.dim is not None and coord.dim not in self.dims:
                 self._dims = self.dims + (coord.dim,)
         else:
@@ -92,13 +92,13 @@ class Coordinates(dict):
                     raise KeyError(
                         f"cannot add new dimension {coord.dim} to an existing DataArray"
                     )
-                size = self._parent.sizes[coord.dim]
+                size = self.parent.sizes[coord.dim]
                 if not len(coord) == size:
                     raise ValueError(
                         f"conflicting sizes for dimension {coord.dim}: size {len(coord)} "
                         f"in `coords` and size {size} in `data`"
                     )
-        coord._parent = self
+        coord._assign_parent(self)
         return super().__setitem__(key, coord)
 
     def __repr__(self):
@@ -114,11 +114,18 @@ class Coordinates(dict):
         return "\n".join(lines)
 
     def __reduce__(self):
-        return self.__class__, (dict(self), self.dims), {"_parent": self._parent}
+        return self.__class__, (dict(self), self.dims)
 
     @property
     def dims(self):
         return self._dims
+
+    @property
+    def parent(self):
+        if hasattr(self, "_parent"):
+            return self._parent()
+        else:
+            return None
 
     def isdim(self, name):
         return self[name].dim == name
@@ -246,7 +253,7 @@ class Coordinates(dict):
                     f"conflicting sizes for dimension {dim}: size {len(self[dim])} "
                     f"in `coords` and size {size} in `data`"
                 )
-        self._parent = parent
+        self._parent = weakref.ref(parent)
 
 
 class Coordinate:
@@ -281,7 +288,7 @@ class Coordinate:
         return np.array2string(self.data, threshold=0, edgeitems=1)
 
     def __reduce__(self):
-        return self.__class__, (self.data, self.dim), {"_parent": self.parent}
+        return self.__class__, (self.data, self.dim)
 
     def __add__(self, other):
         return self.__class__(self.data + other, self.dim)
@@ -327,13 +334,19 @@ class Coordinate:
 
     @property
     def parent(self):
-        return getattr(self, "_parent", None)
+        if hasattr(self, "_parent"):
+            return self._parent()
+        else:
+            return None
 
     @property
     def name(self):
         if self.parent is None:
             return self.dim
         return next((name for name in self.parent if self.parent[name] is self), None)
+
+    def _assign_parent(self, parent):
+        self._parent = weakref.ref(parent)
 
     def get_sampling_interval(self, cast=True):
         if len(self) < 2:

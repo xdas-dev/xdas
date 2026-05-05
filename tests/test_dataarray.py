@@ -86,9 +86,9 @@ class TestDataArray:
         with pytest.raises(ValueError, match="conflicting sizes"):
             da["dim_1"] = [1]
         coords = da.coords.copy()
-        assert coords._parent is None
+        assert coords.parent is None
         da.coords = coords
-        assert da.coords._parent is da
+        assert da.coords.parent is da
         coords = da.coords.copy()
         del coords["dim_1"]
         da.coords = coords
