@@ -48,7 +48,7 @@ Most instruments usually produces datasets made out of a multitude of files, eac
 
 ### Linking multiple files 
 
-If you are considering a unique acquisition you can use {py:func}`~xdas.open`. You can either pass a list of paths or a path pattern containing wildcards to specify which files must be linked together. The `engine` keyword indicates the format of the data. Xdas support a variety of DAS formats and it is easy to add support to any custom or missing format. See the [](user-guide/data-formats) section for more information. 
+If you are considering a unique acquisition you can use {py:func}`~xdas.open`. You can either pass a list of paths or a path pattern containing wildcards to specify which files must be linked together. Xdas should automatically detect the file format. Xdas support a variety of DAS formats and it is easy to add support to any custom or missing format. See the [](user-guide/data-formats) section for more information. 
 
 In the example here, we have three files of interest in the current working directory:
 
@@ -59,7 +59,7 @@ ls 00*.h5
 We can link them like this:
 
 ```{code-cell}
-da = xd.open("00*.h5", engine=None)
+da = xd.open("00*.h5")
 da
 ```
 
@@ -68,7 +68,7 @@ Xdas only loads the metadata from each file and returns a {py:class}`~xdas.DataA
 Note that if you want to create a single data collection object for multiple acquisitions (i.e. different instruments or several acquisition with different parameters), you can use the [DataCollection](user-guide/data-structures/datacollection) structure.  
 
 ```{note}
-For Febus users, converting native files into Xdas NetCDF format generally improves I/O operations and reduce the amount of data by a factor two. This can be done by looping over Febus files and running: `xd.open("path_to_febus_file.h5", engine="febus").to_netcdf("path_to_xdas_file.nc", virtual=False)`. The converted files can then be linked as described above.
+For Febus users, converting native files into Xdas NetCDF format generally improves I/O operations and reduce the amount of data by a factor two. This can be done by looping over Febus files and running: `xd.open("path_to_febus_file.h5").to_netcdf("path_to_xdas_file.nc", virtual=False)`. The converted files can then be linked as described above.
 ```
 
 ### Fixing small gaps and overlaps

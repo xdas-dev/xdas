@@ -128,7 +128,7 @@ def open(
     elif isinstance(paths, list):
         method = "multi-file"
     else:
-        raise ValueError(
+        raise Exception(
             f"`paths` must be either a string or a list, found {type(paths)}"
         )
     match method:
@@ -136,7 +136,7 @@ def open(
             if engine is None:
                 try:
                     return open_datacollection(paths)
-                except ValueError:
+                except Exception:
                     pass
             return open_dataarray(paths, engine=engine, **kwargs)
         case "multi-file":
@@ -149,7 +149,7 @@ def open(
                         squeeze=False if squeeze is None else squeeze,
                         verbose=verbose,
                     )
-                except ValueError:
+                except Exception:
                     pass
             return open_mfdataarray(
                 paths,
@@ -514,7 +514,7 @@ def open_mfdataarray(
     return combine_by_coords(objs, dim, tolerance, squeeze, None, verbose)
 
 
-def open_dataarray(fname, group=None, engine=None, **kwargs):
+def open_dataarray(fname, engine=None, vtype=None, ctype=None, **kwargs):
     """
     Open a dataarray.
 
@@ -522,9 +522,6 @@ def open_dataarray(fname, group=None, engine=None, **kwargs):
     ----------
     fname : str
         The path of the dataarray.
-    group : str, optional
-        The file group where the dataarray is located, by default None which corresponds
-        to the root of the file.
     engine: str of callable, optional
         The type of file to open or a read function. Default to xdas netcdf format.
     **kwargs
@@ -538,25 +535,31 @@ def open_dataarray(fname, group=None, engine=None, **kwargs):
     Raises
     ------
     ValueError
-        If the engine si not recognized.
+        If the engine is not recognized.
 
     Raises
     ------
     FileNotFound
         If no file can be found.
     """
+    # parse & checks
     fname = _ensure_str_paths(fname)
     if not os.path.exists(fname):
         raise FileNotFoundError("no file to open")
+
+    # dispatch & open
     if engine is None:
-        return DataArray.from_netcdf(fname, group=group)
+        from ..io.core import AutoEngine
+
+        engine = AutoEngine(vtype=vtype, ctype=ctype)
+        return engine.open_dataarray(fname, **kwargs)
+    elif isinstance(engine, str):
+        from ..io.core import Engine
+
+        engine = Engine[engine](vtype=vtype, ctype=ctype)
+        return engine.open_dataarray(fname, **kwargs)
     elif callable(engine):
         return engine(fname, **kwargs)
-    elif isinstance(engine, str):
-        from .. import io
-
-        module = getattr(io, engine)
-        return module.read(fname, **kwargs)
     else:
         raise ValueError("engine not recognized")
 
