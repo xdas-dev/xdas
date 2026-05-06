@@ -1,6 +1,3 @@
-import os
-from tempfile import TemporaryDirectory
-
 import h5py
 import pytest
 
@@ -33,7 +30,7 @@ class TestDataCollection:
         result = xd.DataCollection(data)
         assert result.equals(dc)
 
-    def test_io(self):
+    def test_io(self, tmp_path):
         da = wavelet_wavefronts()
         dc = xd.DataCollection(
             {
@@ -42,17 +39,15 @@ class TestDataCollection:
             },
             "instrument",
         )
-        with TemporaryDirectory() as dirpath:
-            path = os.path.join(dirpath, "tmp.nc")
-            dc.to_netcdf(path)
-            result = xd.DataCollection.from_netcdf(path)
-            assert result.equals(dc)
+        path = tmp_path / "tmp1.nc"
+        dc.to_netcdf(path)
+        result = xd.DataCollection.from_netcdf(path)
+        assert result.equals(dc)
         dc = xd.DataCollection([da, da], "instrument")
-        with TemporaryDirectory() as dirpath:
-            path = os.path.join(dirpath, "tmp.nc")
-            dc.to_netcdf(path)
-            result = xd.DataCollection.from_netcdf(path)
-            assert result.equals(dc)
+        path = tmp_path / "tmp2.nc"
+        dc.to_netcdf(path)
+        result = xd.DataCollection.from_netcdf(path)
+        assert result.equals(dc)
         dc = xd.DataCollection(
             {
                 "das1": xd.DataCollection([da, da], "acquisition"),
@@ -60,15 +55,14 @@ class TestDataCollection:
             },
             "instrument",
         )
-        with TemporaryDirectory() as dirpath:
-            path = os.path.join(dirpath, "tmp.nc")
-            dc.to_netcdf(path)
-            result = xd.DataCollection.from_netcdf(path)
-            assert result.equals(dc)
-            result = xd.open_datacollection(path)
-            assert result.equals(dc)
+        path = tmp_path / "tmp3.nc"
+        dc.to_netcdf(path)
+        result = xd.DataCollection.from_netcdf(path)
+        assert result.equals(dc)
+        result = xd.open_datacollection(path)
+        assert result.equals(dc)
 
-    def test_io_create_dirs(self):
+    def test_io_create_dirs(self, tmp_path):
         da = wavelet_wavefronts()
         dc = xd.DataCollection(
             {
@@ -77,29 +71,27 @@ class TestDataCollection:
             },
             "instrument",
         )
-        with TemporaryDirectory() as dirpath:
-            path = os.path.join(dirpath, "subdir", "tmp.nc")
-            with pytest.raises(FileNotFoundError, match="No such file or directory"):
-                dc.to_netcdf(path)
-            dc.to_netcdf(path, create_dirs=True)
-            result = xd.DataCollection.from_netcdf(path)
-            assert result.equals(dc)
+        path = tmp_path / "subdir" / "tmp.nc"
+        with pytest.raises(FileNotFoundError, match="No such file or directory"):
+            dc.to_netcdf(path)
+        dc.to_netcdf(path, create_dirs=True)
+        result = xd.DataCollection.from_netcdf(path)
+        assert result.equals(dc)
 
-    def test_depth_counter(self):
+    def test_depth_counter(self, tmp_path):
         da = wavelet_wavefronts()
         da.name = "da"
         dc = self.nest(da)
-        with TemporaryDirectory() as dirpath:
-            path = os.path.join(dirpath, "tmp.nc")
-            dc.to_netcdf(path)
-            with h5py.File(path) as file:
-                assert get_depth(file) > 0
-                assert get_depth(file["instrument"]) > 0
-                assert get_depth(file["instrument/das1"]) > 0
-                assert get_depth(file["instrument/das1/acquisition"]) > 0
-                assert get_depth(file["instrument/das1/acquisition/0"]) == 0
-                with pytest.raises(ValueError):
-                    get_depth(file["instrument/das1/acquisition/0/da"]) == 0
+        path = tmp_path / "tmp.nc"
+        dc.to_netcdf(path)
+        with h5py.File(path) as file:
+            assert get_depth(file) > 0
+            assert get_depth(file["instrument"]) > 0
+            assert get_depth(file["instrument/das1"]) > 0
+            assert get_depth(file["instrument/das1/acquisition"]) > 0
+            assert get_depth(file["instrument/das1/acquisition/0"]) == 0
+            with pytest.raises(ValueError):
+                get_depth(file["instrument/das1/acquisition/0/da"]) == 0
 
     def test_isel(self):
         da = wavelet_wavefronts()

@@ -1,5 +1,4 @@
 import pickle
-import tempfile
 
 import numpy as np
 import scipy.signal as sp
@@ -32,14 +31,13 @@ class TestPartialAtom:
             ]
         )
 
-    def test_pickable(self):
+    def test_pickable(self, tmp_path):
         atom = xs.integrate(..., dim="dim")
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmpfile_path = f"{tmpdir}/tempfile.pkl"
-            with open(tmpfile_path, "wb") as tmpfile:
-                pickle.dump(atom, tmpfile)
-            with open(tmpfile_path, "rb") as tmpfile:
-                result = pickle.load(tmpfile)
+        tmpfile_path = tmp_path / "tempfile.pkl"
+        with open(tmpfile_path, "wb") as tmpfile:
+            pickle.dump(atom, tmpfile)
+        with open(tmpfile_path, "rb") as tmpfile:
+            result = pickle.load(tmpfile)
         assert result.func.__module__ == atom.func.__module__
         assert result.func.__name__ == atom.func.__name__
         assert result.args == atom.args

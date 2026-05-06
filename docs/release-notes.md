@@ -1,5 +1,15 @@
 # Release notes
 
+## 0.2.6
+- Add `xdas.open` that automatically infer which `xdas.open_*` function to use (@atrabattoni, @yetinam).
+- Add automatic engine detection to every `xdas.open_*` functions (@atrabattoni, @yetinam).
+- New `io.Engine` backend system to register different file formats (@atrabattoni).
+- Add `pathlib.Path` support as input for all Xdas file-related functions and methods (@atrabattoni).
+- Fix Memory accumulation when slicing multiple times data arrays, e.g. when using atoms (@atrabattoni).
+- Fix/improve distance handling for: "apsensing", "febus", "optasense", "silixa", and "sintela" (@atrabattoni).
+- Add "prodml" engine (@atrabattoni) and make "optasense" and "sintela" aliases of it (@atrabattoni). 
+- Add dim swapping handling for the "prodml" based engines with the `swapped_dims=False` kwarg (@atrabattoni).
+
 ## 0.2.5
 - Make `open_mfdataarray` raise `RuntimeError` when openning all files fails (@asladen). 
 - Fix ASN ROI handling (@asladen).
@@ -10,7 +20,7 @@
 - Add `create_dirs` to `.to_netcdf` methods to create intermediate directories (@aurelienfalco).
 - Add support for multiple ROI for ASN engine (@martijnende).
 - `tolerance` can now be passed as seconds for datetime64 coordinates (@martijnende, @atrabattoni)
-- Add suppport for python 3.14, numpy 2.4 and obspy 1.4.2 incompatibilities and add `xdas.__version__` (@atrabatto).
+- Add suppport for python 3.14, numpy 2.4 and obspy 1.4.2 incompatibilities and add `xdas.__version__` (@atrabattoni).
 
 ## 0.2.4
 - Add StreamWriter to write long time series to miniSEED (@marbail).

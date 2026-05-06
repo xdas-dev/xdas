@@ -8,7 +8,7 @@ import zmq
 from ..coordinates.core import Coordinate, get_sampling_interval
 from ..core.dataarray import DataArray
 from ..virtual import VirtualSource
-from .core import parse_ctype
+from .core import Engine
 
 
 def _get_roi_bound_indices(all_dists, n_start, n_end, dx):
@@ -23,50 +23,52 @@ def _get_roi_bound_indices(all_dists, n_start, n_end, dx):
     return start_index, end_index
 
 
-def read(fname, ctype=None):
-    ctype = parse_ctype(ctype)
-    with h5py.File(fname, "r") as file:
-        header = file["header"]
-        demod = file["demodSpec"]
+class ASNEngine(Engine, name="asn"):
+    _supported_vtypes = ["hdf5"]
+    _supported_ctypes = {
+        "time": ["interpolated", "sampled", "dense"],
+        "distance": ["interpolated"],
+    }
 
-        t0 = np.datetime64(round(header["time"][()] * 1e9), "ns")
-        dt = np.timedelta64(round(1e9 * header["dt"][()]), "ns")
-        dx = float(header["dx"][()])  # Note: dx before (internal) downsampling!
-        data = VirtualSource(file["data"])
+    def open_dataarray(self, fname):
+        with h5py.File(fname, "r") as file:
+            header = file["header"]
+            demod = file["demodSpec"]
 
-        # Get the optical distance for all the recorded channels (after downsampling)
-        # Note that this vector is not continuous for more than one ROI
-        all_dists = file["cableSpec"]["sensorDistances"][...]
+            t0 = np.datetime64(round(header["time"][()] * 1e9), "ns")
+            dt = np.timedelta64(round(1e9 * header["dt"][()]), "ns")
+            dx = float(header["dx"][()])  # Note: dx before (internal) downsampling!
+            data = VirtualSource(file["data"])
 
-        # Buffer for the data index at which each ROI starts/stops
-        dist_tie_inds = []
-        # Buffer for the optical distance at which each ROI starts/stops
-        dist_tie_vals = []
+            # Get the optical distance for all the recorded channels (after downsampling)
+            # Note that this vector is not continuous for more than one ROI
+            all_dists = file["cableSpec"]["sensorDistances"][...]
 
-        # Loop over ROIs, get the start/stop index before downsampling
-        for n_start, n_end in zip(demod["roiStart"], demod["roiEnd"]):
-            # ASN stores ROI end as an upper boundary. Use the last sampled distance
-            # that does not exceed that boundary instead of indexing the insertion point.
-            i_start, i_end = _get_roi_bound_indices(all_dists, n_start, n_end, dx)
+            # Buffer for the data index at which each ROI starts/stops
+            dist_tie_inds = []
+            # Buffer for the optical distance at which each ROI starts/stops
+            dist_tie_vals = []
 
-            # Get the index where the ROI starts based on the position in the
-            # distance vector. This solves the issue of rounding during decimation
-            # Append the data index and optical distance to the buffers
-            dist_tie_inds.append(i_start)
-            dist_tie_vals.append(float(all_dists[i_start]))
+            # Loop over ROIs, get the start/stop index before downsampling
+            for n_start, n_end in zip(demod["roiStart"], demod["roiEnd"]):
+                # ASN stores ROI end as an upper boundary. Use the last sampled distance
+                # that does not exceed that boundary instead of indexing the insertion point.
+                i_start, i_end = _get_roi_bound_indices(all_dists, n_start, n_end, dx)
 
-            # Repeat the procedure for the index/distance at which the ROI ends.
-            dist_tie_inds.append(i_end)
-            dist_tie_vals.append(float(all_dists[i_end]))
+                # Get the index where the ROI starts based on the position in the
+                # distance vector. This solves the issue of rounding during decimation
+                # Append the data index and optical distance to the buffers
+                dist_tie_inds.append(i_start)
+                dist_tie_vals.append(float(all_dists[i_start]))
 
-    nt = data.shape[0]
-    time = Coordinate[ctype["time"]].from_block(t0, nt, dt, dim="time")
-    if not ctype["distance"] == "interpolated":
-        raise NotImplementedError(
-            "ctype must be 'interpolated' along the 'distance' dim"
-        )
-    distance = {"tie_indices": dist_tie_inds, "tie_values": dist_tie_vals}
-    return DataArray(data, {"time": time, "distance": distance})
+                # Repeat the procedure for the index/distance at which the ROI ends.
+                dist_tie_inds.append(i_end)
+                dist_tie_vals.append(float(all_dists[i_end]))
+
+        nt = data.shape[0]
+        time = Coordinate[self.ctype["time"]].from_block(t0, nt, dt, dim="time")
+        distance = {"tie_indices": dist_tie_inds, "tie_values": dist_tie_vals}
+        return DataArray(data, {"time": time, "distance": distance})
 
 
 type_map = {

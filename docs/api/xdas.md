@@ -10,6 +10,7 @@
 .. autosummary::
    :toctree: ../_autosummary
 
+   open
    open_dataarray
    open_mfdataarray
    open_mfdatatree
