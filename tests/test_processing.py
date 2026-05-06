@@ -34,6 +34,12 @@ class TestDataArrayLoader:
         assert dl.chunk_size == 100
         dl.stop()
 
+    @pytest.mark.timeout(1)
+    def test_context_manager(self):
+        da = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
+        with DataArrayLoader(da, {"time": 100}) as dl:
+            assert dl.da is da
+
 
 class TestProcessing:
     def test_stateful(self, tmp_path):

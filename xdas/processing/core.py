@@ -3,7 +3,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from glob import glob
 from pathlib import Path
-from queue import Queue, Empty, Full
+from queue import Empty, Full, Queue
 from tempfile import TemporaryDirectory
 
 import numpy as np
@@ -88,7 +88,13 @@ class DataArrayLoader:
     >>> chunks = {"time": 1000}
     >>> dl = DataArrayLoader(da, chunks)  # doctest: +SKIP
 
+    Iterate over the chunks
+
+    >>> for chunk in dl:
+    >>>     process(chunk)  # doctest: +SKIP
+
     Do not forget to stop it if you do not iterate over all chunks
+
     >>> dl.close()  # doctest: +SKIP
 
     """
@@ -125,6 +131,12 @@ class DataArrayLoader:
 
     def __next__(self):
         return self._consume()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.stop()
 
     @property
     def nbytes(self):
