@@ -517,7 +517,7 @@ def open_mfdataarray(
         if failures:
             path, error = failures[0]
             raise RuntimeError(
-                f"could not open any file with engine={engine!r}; first failure was {path}: {error}"
+                f"could not open any file with; first failure was {path}: {error}"
             ) from error
         raise FileNotFoundError("no file to open")
     return combine_by_coords(objs, dim, tolerance, squeeze, None, verbose)

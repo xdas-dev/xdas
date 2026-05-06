@@ -11,18 +11,6 @@ from ..virtual import VirtualSource
 from .core import Engine
 
 
-def _get_roi_bound_indices(all_dists, n_start, n_end, dx):
-    start_index = bisect_left(all_dists, n_start * dx)
-    if start_index >= len(all_dists):
-        raise IndexError("ROI start lies beyond available sensor distances")
-
-    end_index = bisect_right(all_dists, n_end * dx) - 1
-    if end_index < 0:
-        raise IndexError("ROI end lies before available sensor distances")
-
-    return start_index, end_index
-
-
 class ASNEngine(Engine, name="asn"):
     _supported_vtypes = ["hdf5"]
     _supported_ctypes = {
@@ -53,7 +41,9 @@ class ASNEngine(Engine, name="asn"):
             for n_start, n_end in zip(demod["roiStart"], demod["roiEnd"]):
                 # ASN stores ROI end as an upper boundary. Use the last sampled distance
                 # that does not exceed that boundary instead of indexing the insertion point.
-                i_start, i_end = _get_roi_bound_indices(all_dists, n_start, n_end, dx)
+                i_start, i_end = self._get_roi_bound_indices(
+                    all_dists, n_start, n_end, dx
+                )
 
                 # Get the index where the ROI starts based on the position in the
                 # distance vector. This solves the issue of rounding during decimation
@@ -69,6 +59,17 @@ class ASNEngine(Engine, name="asn"):
         time = Coordinate[self.ctype["time"]].from_block(t0, nt, dt, dim="time")
         distance = {"tie_indices": dist_tie_inds, "tie_values": dist_tie_vals}
         return DataArray(data, {"time": time, "distance": distance})
+
+    def _get_roi_bound_indices(self, all_dists, n_start, n_end, dx):
+        start_index = bisect_left(all_dists, n_start * dx)
+        if start_index >= len(all_dists):
+            raise IndexError("ROI start lies beyond available sensor distances")
+
+        end_index = bisect_right(all_dists, n_end * dx) - 1
+        if end_index < 0:
+            raise IndexError("ROI end lies before available sensor distances")
+
+        return start_index, end_index
 
 
 type_map = {

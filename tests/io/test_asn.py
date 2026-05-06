@@ -37,6 +37,31 @@ da_int16 = xd.DataArray(
 )
 
 
+class TestASNEngine:
+    def test_read_handles_exclusive_roi_end(self, tmp_path):
+        path = tmp_path / "sample_asn.hdf5"
+        with h5py.File(path, "w") as file:
+            header = file.create_group("header")
+            header["time"] = 0.0
+            header["dt"] = 0.1
+            header["dx"] = 10.0
+
+            file.create_dataset("data", data=np.zeros((4, 4), dtype=np.float32))
+
+            cable_spec = file.create_group("cableSpec")
+            cable_spec["sensorDistances"] = np.array([0.0, 10.0, 20.0, 30.0])
+
+            demod_spec = file.create_group("demodSpec")
+            demod_spec["roiStart"] = np.array([0])
+            demod_spec["roiEnd"] = np.array([4])
+
+        da = xd.open_dataarray(path, engine="asn")
+
+        assert da.shape == (4, 4)
+        assert da["distance"][0].values == 0.0
+        assert da["distance"][-1].values == 30.0
+
+
 class TestZMQPublisher:
     def test_get_header(self):
         header = ZMQPublisher._get_header(da_float32)
@@ -161,30 +186,6 @@ class TestZMQPublisher:
         socket.setsockopt(zmq.SUBSCRIBE, b"")
         time.sleep(0.001)
         return socket
-
-
-def test_read_handles_exclusive_roi_end(tmp_path):
-    path = tmp_path / "sample_asn.hdf5"
-    with h5py.File(path, "w") as file:
-        header = file.create_group("header")
-        header["time"] = 0.0
-        header["dt"] = 0.1
-        header["dx"] = 10.0
-
-        file.create_dataset("data", data=np.zeros((4, 4), dtype=np.float32))
-
-        cable_spec = file.create_group("cableSpec")
-        cable_spec["sensorDistances"] = np.array([0.0, 10.0, 20.0, 30.0])
-
-        demod_spec = file.create_group("demodSpec")
-        demod_spec["roiStart"] = np.array([0])
-        demod_spec["roiEnd"] = np.array([4])
-
-    da = xd.open_dataarray(path, engine="asn")
-
-    assert da.shape == (4, 4)
-    assert da["distance"][0].values == 0.0
-    assert da["distance"][-1].values == 30.0
 
 
 class TestZMQSubscriber:
