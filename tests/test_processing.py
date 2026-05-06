@@ -32,6 +32,7 @@ class TestDataArrayLoader:
         dl = DataArrayLoader(da, {"time": 100})
         assert dl.chunk_dim == "time"
         assert dl.chunk_size == 100
+        assert len(dl) == 10
         dl.stop()
 
     @pytest.mark.timeout(1)
@@ -39,6 +40,14 @@ class TestDataArrayLoader:
         da = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
         with DataArrayLoader(da, {"time": 100}) as dl:
             assert dl.da is da
+
+    @pytest.mark.timeout(1)
+    def test_chunks_integrity(self):
+        da = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
+        dl = DataArrayLoader(da, {"time": 100})
+        chunks = [chunk for chunk in dl]
+        result = xd.concatenate(chunks)
+        assert result.equals(da)
 
 
 class TestProcessing:
