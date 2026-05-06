@@ -76,7 +76,9 @@ class Engine:
                 Engine._aliases[alias] = name
 
     def __class_getitem__(cls, item):
-        if item in cls._registry:
+        if item is None:
+            return AutoEngine
+        elif item in cls._registry:
             return cls._registry[item]
         elif item in cls._aliases:
             return cls._registry[cls._aliases[item]]
@@ -183,10 +185,6 @@ class AutoEngine(Engine):
     """
 
     _last_successful_engine = "xdas"
-
-    def __init__(self, vtype=None, ctype=None):
-        self.vtype = vtype
-        self.ctype = ctype
 
     def open_dataarray(self, fname, **kwargs):
         for engine in self._ordered_engines():

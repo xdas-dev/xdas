@@ -1,6 +1,9 @@
+import os
+
 import dask
 import hdf5plugin
 import numpy as np
+import psutil
 import pytest
 
 import xdas as xd
@@ -86,9 +89,9 @@ class TestDataArray:
         with pytest.raises(ValueError, match="conflicting sizes"):
             da["dim_1"] = [1]
         coords = da.coords.copy()
-        assert coords._parent is None
+        assert coords.parent is None
         da.coords = coords
-        assert da.coords._parent is da
+        assert da.coords.parent is da
         coords = da.coords.copy()
         del coords["dim_1"]
         da.coords = coords
@@ -482,3 +485,64 @@ class TestDataArray:
         assert np.array_equal(result.data, da.data + da.data)
         result = da + da.isel(time=0, drop=True)
         assert np.array_equal(result.data, da.data + da.data[0])
+
+
+class TestGarbadgeCollection:
+
+    process = psutil.Process(os.getpid())
+
+    nchunk = 10
+    chunk_size = 1000
+    other_size = 1000
+
+    def mem_mb(self):
+        return self.process.memory_info().rss / 1024**2
+
+    def test_from_data(self):
+        baseline = self.mem_mb()
+        previous = baseline
+        deltas = []
+        for _ in range(self.nchunk):
+            data = np.random.rand(self.chunk_size, self.other_size)
+            _ = xd.DataArray(data)
+            current = self.mem_mb()
+            deltas.append(current - previous)
+            previous = current
+        assert np.median(deltas) == 0.0
+
+    def test_from_file(self, tmp_path):
+        # generate files
+        for idx in range(self.nchunk):
+            t0 = 10.0 * idx
+            da = xd.DataArray(
+                data=np.random.rand(self.chunk_size, self.other_size),
+                coords={
+                    "time": {
+                        "tie_values": [t0],
+                        "tie_lengths": [self.chunk_size],
+                        "sampling_interval": 0.01,
+                    },
+                    "distance": {
+                        "tie_values": [0.0],
+                        "tie_lengths": [self.other_size],
+                        "sampling_interval": 10.0,
+                    },
+                },
+            )
+            da.to_netcdf(tmp_path / "data" / "chunk_{idx:03d}.nc", create_dirs=True)
+        da = xd.open(tmp_path / "data" / "chunk_*.nc", squeeze=True)
+        da.to_netcdf(tmp_path / "dataarray.nc")
+        da = xd.open(tmp_path / "dataarray.nc")
+
+        # read and check no memory leak
+        baseline = self.mem_mb()
+        previous = baseline
+        deltas = []
+        for idx in range(self.nchunk):
+            start = idx * self.chunk_size
+            end = (idx + 1) * self.chunk_size
+            _ = da.isel(time=slice(start, end)).load()
+            current = self.mem_mb()
+            deltas.append(current - previous)
+            previous = current
+        assert np.median(deltas) == 0.0

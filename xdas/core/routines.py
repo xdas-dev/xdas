@@ -548,12 +548,7 @@ def open_dataarray(fname, engine=None, vtype=None, ctype=None, **kwargs):
         raise FileNotFoundError("no file to open")
 
     # dispatch & open
-    if engine is None:
-        from ..io.core import AutoEngine
-
-        engine = AutoEngine(vtype=vtype, ctype=ctype)
-        return engine.open_dataarray(fname, **kwargs)
-    elif isinstance(engine, str):
+    if engine is None or isinstance(engine, str):
         from ..io.core import Engine
 
         engine = Engine[engine](vtype=vtype, ctype=ctype)
