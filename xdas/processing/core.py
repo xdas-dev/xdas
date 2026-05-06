@@ -291,6 +291,20 @@ class DataFrameWriter:
         Weather to parse dates when reopening the csv file a the end of the process
     create_dirs : bool, optional
         Whether to create parent directories if they do not exist. Default is False.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import xdas.processing as xp
+
+    >>> dw = xp.DataFrameWriter("output.csv")
+    >>> for df in dfs:
+    ...     dw.submit(dfs)
+    >>> result = dw.result()  # doctest: +SKIP
+
+    >>> expected = pd.concat(dfs, ignore_index=True)
+    >>> assert result.equals(expected)  # doctest: +SKIP
+
     """
 
     def __init__(self, path, parse_dates=None, create_dirs=False):
