@@ -102,7 +102,7 @@ class DataArrayLoader:
 
     """
 
-    def __init__(self, da, chunks, prefetch=1, max_workers=1):
+    def __init__(self, da, chunks, max_buffers=1, max_workers=1):
         if not isinstance(da, DataArray):
             raise TypeError(f"`da` must by a DataArray object, not a {type(da)}")
         if not isinstance(chunks, dict) and len(chunks) == 1:
@@ -126,14 +126,14 @@ class DataArrayLoader:
         self.da = da
         self.chunk_dim = chunk_dim
         self.chunk_size = chunk_size
-        self.prefetch = prefetch
+        self.max_buffers = max_buffers
         self.max_workers = max_workers
 
     def __len__(self):
         div, mod = divmod(self.da.sizes[self.chunk_dim], self.chunk_size)
         return div if mod == 0 else div + 1
 
-    def __getitem__(self, idx):
+    def _get_chunk(self, idx):
         start = idx * self.chunk_size
         end = (idx + 1) * self.chunk_size
         query = {
@@ -148,8 +148,8 @@ class DataArrayLoader:
 
             futures = []
             try:
-                for _ in range(self.prefetch):
-                    futures.append(executor.submit(self.__getitem__, next(it)))
+                for _ in range(self.max_buffers):
+                    futures.append(executor.submit(self._get_chunk, next(it)))
             except StopIteration:
                 pass
 
@@ -158,7 +158,7 @@ class DataArrayLoader:
                 result = future.result()
 
                 try:
-                    futures.append(executor.submit(self.__getitem__, next(it)))
+                    futures.append(executor.submit(self._get_chunk, next(it)))
                 except StopIteration:
                     pass
 
@@ -224,40 +224,51 @@ class DataArrayWriter:
 
     """
 
-    def __init__(self, dirpath, encoding=None):
-        self.dirpath = str(dirpath) if isinstance(dirpath, Path) else dirpath
+    def __init__(
+        self, dirpath, encoding=None, max_buffers=1, max_workers=1, create_dirs=False
+    ):
+        dirpath = str(dirpath) if isinstance(dirpath, Path) else dirpath
+        if create_dirs:
+            os.makedirs(dirpath, exist_ok=True)
+        if not os.path.exists(dirpath):
+            raise OSError(f"no directory {dirpath}")
+        self.dirpath = dirpath
         self.encoding = encoding
-        self.queue = Queue(maxsize=1)
-        self.results = []
-        self.executor = ThreadPoolExecutor(1)
-        self.future = self.executor.submit(self.task)
+        self.max_buffers = max_buffers
+        self.max_workers = max_workers
+        self._executor = ThreadPoolExecutor(self.max_workers)
+        self._futures = []
+        self._results = []
+        self._count = 0
 
-    def write(self, da):
-        self.queue.put(da)
+    def submit(self, chunk):
+        if not isinstance(chunk, DataArray):
+            raise TypeError(f"`chunk` must by a DataArray object, not a {type(chunk)}")
+        if not len(self._futures) < self.max_buffers:
+            future = self._futures.pop(0)
+            result = future.result()
+            self._results.append(result)
+        self._futures.append(self._executor.submit(self._write, chunk, self._count))
+        self._count += 1
 
-    def task(self):
-        while True:
-            da = self.queue.get()
-            if da is None:
-                break
-            path = self.get_path(da)
-            if os.path.exists(path):
-                raise OSError(f"the file '{path}' already exists.")
-            else:
-                da.to_netcdf(path, encoding=self.encoding)
-            self.results.append(open_dataarray(path))
+    def write(self, chunk):
+        return self.submit(chunk)
 
-    def get_path(self, da):
-        datetime = np.datetime_as_string(da["time"][0].values, unit="s").replace(
-            ":", "-"
-        )
-        fname = f"{datetime}.nc"
-        return os.path.join(self.dirpath, fname)
+    def _write(self, chunk, count):
+        path = os.path.join(self.dirpath, f"{count:09d}")
+        chunk.to_netcdf(path, encoding=self.encoding)
+        return open_dataarray(path)
+
+    def shutdown(self):
+        self._executor.shutdown()
 
     def result(self):
-        self.queue.put(None)
-        self.future.result()
-        return concatenate(self.results)
+        while self._futures:
+            future = self._futures.pop(0)
+            result = future.result()
+            self._results.append(result)
+        self.shutdown()
+        return concatenate(self._results)
 
 
 class DataFrameWriter:

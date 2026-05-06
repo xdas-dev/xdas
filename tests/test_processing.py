@@ -12,44 +12,33 @@ import scipy.signal as sp
 import xdas as xd
 import xdas.processing as xp
 from xdas.atoms import Partial, Sequential
-from xdas.processing import (
-    DataArrayLoader,
-    DataArrayWriter,
-    DataFrameWriter,
-    StreamWriter,
-    ZMQPublisher,
-    ZMQSubscriber,
-    process,
-)
 from xdas.signal import sosfilt
 from xdas.synthetics import wavelet_wavefronts
 
 
 class TestDataArrayLoader:
-
     def test_init(self):
         da = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
-        dl = DataArrayLoader(da, {"time": 100})
+        dl = xp.DataArrayLoader(da, {"time": 100})
         assert dl.da is da
         assert dl.chunk_dim == "time"
         assert dl.chunk_size == 100
-        assert dl.prefetch == 1
+        assert dl.max_buffers == 1
         assert dl.max_workers == 1
         assert len(dl) == 10
 
     @pytest.mark.parametrize(
-        "prefetch,max_workers",
+        "max_buffers,max_workers",
         [
-            (0, 1),
             (1, 1),
             (2, 2),
             (4, 2),
             (8, 4),
         ],
     )
-    def test_chunks_integrity(self, prefetch, max_workers):
+    def test_chunks_integrity(self, max_buffers, max_workers):
         da = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
-        dl = DataArrayLoader(da, {"time": 100}, prefetch, max_workers)
+        dl = xp.DataArrayLoader(da, {"time": 100}, max_buffers, max_workers)
         chunks = [chunk for chunk in dl]
         result = xd.concatenate(chunks)
         assert result.equals(da)
@@ -57,13 +46,49 @@ class TestDataArrayLoader:
     def test_error_handling(self):
         da = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
         with pytest.raises(TypeError):
-            DataArrayLoader(None, None)
+            xp.DataArrayLoader(None, None)
         with pytest.raises(TypeError):
-            DataArrayLoader(da, 100)
+            xp.DataArrayLoader(da, 100)
         with pytest.raises(ValueError):
-            DataArrayLoader(da, {"space": 100})
+            xp.DataArrayLoader(da, {"space": 100})
         with pytest.raises(ValueError):
-            DataArrayLoader(da, {"time": 2000})
+            xp.DataArrayLoader(da, {"time": 2000})
+
+
+class TestDataArrayWriter:
+    def test_init(self, tmp_path):
+        dw = xp.DataArrayWriter(tmp_path)
+        assert dw.dirpath == str(tmp_path)
+
+    @pytest.mark.parametrize(
+        "max_buffers,max_workers",
+        [
+            (1, 1),
+            (2, 2),
+            (4, 2),
+            (8, 4),
+        ],
+    )
+    def test_chunk_integrity(self, max_buffers, max_workers, tmp_path):
+        expected = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
+        dw = xp.DataArrayWriter(tmp_path, None, max_buffers, max_workers)
+        chunks = xd.split(expected, 10, dim="time")
+        for chunk in chunks:
+            dw.submit(chunk)
+        result = dw.result()
+        result = result.load()
+        assert result.equals(expected)
+
+    def test_missing_directory(self, tmp_path):
+        with pytest.raises(OSError):
+            xp.DataArrayWriter("not_a_directory")
+        dirpath = tmp_path / "some_directory"
+        xp.DataArrayWriter(dirpath, create_dirs=True)
+
+    def test_passing_wrong_input(self, tmp_path):
+        dw = xp.DataArrayWriter(tmp_path, create_dirs=True)
+        with pytest.raises(TypeError):
+            dw.submit(None)
 
 
 class TestProcessing:
@@ -82,9 +107,9 @@ class TestProcessing:
         result1 = sequence(da)
 
         # chunked processing
-        data_loader = DataArrayLoader(da, chunks={"time": 100})
-        data_writer = DataArrayWriter(tmp_path)
-        result2 = process(
+        data_loader = xp.DataArrayLoader(da, chunks={"time": 100})
+        data_writer = xp.DataArrayWriter(tmp_path)
+        result2 = xp.process(
             sequence, data_loader, data_writer
         )  # resets the sequence by default
 
@@ -108,11 +133,11 @@ class TestProcessing:
         result1 = sequence(da)
 
         # chunked processing
-        data_loader = DataArrayLoader(da, chunks={"time": 100})
+        data_loader = xp.DataArrayLoader(da, chunks={"time": 100})
         for da in data_loader:
             pass
-        # data_writer = DataArrayWriter(tmp_path)
-        # result2 = process(
+        # data_writer = xp.DataArrayWriter(tmp_path)
+        # result2 = xp.process(
         #     sequence, data_loader, data_writer
         # )  # resets the sequence by default
 
@@ -122,8 +147,8 @@ class TestProcessing:
 
 class TestDataFrameWriter:
     def test_write_and_result(self, tmp_path):
-        # Create a DataFrameWriter instance
-        writer = DataFrameWriter(tmp_path / "output.csv")
+        # Create a xp.DataFrameWriter instance
+        writer = xp.DataFrameWriter(tmp_path / "output.csv")
 
         # Create a DataFrame to write
         df = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
@@ -145,8 +170,8 @@ class TestDataFrameWriter:
         assert output_df.equals(df)
 
     def test_write_multiple_dataframes(self, tmp_path):
-        # Create a DataFrameWriter instance
-        writer = DataFrameWriter(tmp_path / "output.csv")
+        # Create a xp.DataFrameWriter instance
+        writer = xp.DataFrameWriter(tmp_path / "output.csv")
 
         # Create multiple DataFrames to write
         df1 = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
@@ -171,8 +196,8 @@ class TestDataFrameWriter:
         assert output_df.equals(expected_result)
 
     def test_write_empty_dataframe(self, tmp_path):
-        # Create a DataFrameWriter instance
-        writer = DataFrameWriter(tmp_path / "output.csv")
+        # Create a xp.DataFrameWriter instance
+        writer = xp.DataFrameWriter(tmp_path / "output.csv")
 
         # Create an empty DataFrame to write
         df = pd.DataFrame()
@@ -190,9 +215,9 @@ class TestDataFrameWriter:
         assert Path(writer.path).exists()
 
     def test_write_and_result_with_existing_file(self, tmp_path):
-        # Create a DataFrameWriter instance
+        # Create a xp.DataFrameWriter instance
         output_path = tmp_path / "output.csv"
-        writer = DataFrameWriter(output_path)
+        writer = xp.DataFrameWriter(output_path)
 
         # Create a DataFrame to write
         df = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
@@ -217,7 +242,7 @@ class TestDataFrameWriter:
         new_df = pd.DataFrame({"A": [7, 8, 9], "B": [10, 11, 12]})
 
         # Create new Writer instance with the same output file
-        writer = DataFrameWriter(output_path)
+        writer = xp.DataFrameWriter(output_path)
 
         # Write the new DataFrame asynchronously
         writer.write(new_df)
@@ -236,7 +261,7 @@ class TestDataFrameWriter:
 
 class TestZMQ:
     def _publish_and_subscribe(self, packets, address, encoding=None):
-        publisher = ZMQPublisher(address, encoding)
+        publisher = xp.ZMQPublisher(address, encoding)
 
         def publish():
             for packet in packets:
@@ -245,7 +270,7 @@ class TestZMQ:
 
         threading.Thread(target=publish).start()
 
-        subscriber = ZMQSubscriber(address)
+        subscriber = xp.ZMQSubscriber(address)
         result = []
         for n, packet in enumerate(subscriber, start=1):
             result.append(packet)
@@ -299,11 +324,11 @@ class TestStreamWriter:
             dim={"distance": "time"},
         )
 
-        data_loader = DataArrayLoader(da, chunks={"time": 100})
+        data_loader = xp.DataArrayLoader(da, chunks={"time": 100})
 
         kw_merge = {"method": 1}
         kw_write = {"reclen": 4096}
-        data_writer = StreamWriter(
+        data_writer = xp.StreamWriter(
             tmp_path, "M", kw_merge, kw_write, output_format="SDS"
         )
 
@@ -356,11 +381,11 @@ class TestStreamWriter:
             dim={"distance": "time"},
         )
 
-        data_loader = DataArrayLoader(da, chunks={"time": 100})
+        data_loader = xp.DataArrayLoader(da, chunks={"time": 100})
 
         kw_merge = {"method": 1}
         kw_write = {"reclen": 4096}
-        data_writer = StreamWriter(
+        data_writer = xp.StreamWriter(
             tmp_path, "M", kw_merge, kw_write, output_format="SDS"
         )
 
@@ -414,12 +439,14 @@ class TestStreamWriter:
             dim={"distance": "time"},
         )
 
-        data_loader = DataArrayLoader(da, chunks={"time": 100})
+        data_loader = xp.DataArrayLoader(da, chunks={"time": 100})
 
         path = tmp_path / "flat_output.mseed"
         kw_merge = {"method": 1}
         kw_write = {"reclen": 4096}
-        data_writer = StreamWriter(path, "M", kw_merge, kw_write, output_format="flat")
+        data_writer = xp.StreamWriter(
+            path, "M", kw_merge, kw_write, output_format="flat"
+        )
 
         st = xp.process(atom, data_loader, data_writer)
 
