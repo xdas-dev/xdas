@@ -79,7 +79,7 @@ class DataArrayLoader:
         ``{"dim": int}``. The key correspond with the dimension (usually "time"),
         and the value is an integer indicating the size of the chunk (in samples)
         along that dimension.
-    prefetch : int, default=1
+    max_buffers : int, default=1
         The maximum number of chunks to load into memory at the same time.
     max_workers : int, default=1
         The maximum number of thread used to load the chunks.
@@ -210,17 +210,25 @@ class DataArrayWriter:
         to exist and be empty.
     encoding : dict
         The encoding to use when dumping the DataArrays to bytes.
+    max_buffers : int, default=1
+        The maximum number of chunks to load into memory at the same time.
+    max_workers : int, default=1
+        The maximum number of thread used to load the chunks.
+    create_dirs : bool, optional
+        Whether to create parent directories if they do not exist. Default is False.
 
     Examples
     --------
-    >>> import os, shutil
-    >>> from xdas.processing import DataArrayWriter
+    >>> import xdas.processing as xp
 
-    >>> dirpath = "output"
-    >>> if not os.path.exists(dirpath):
-    ...     os.makedirs(dirpath) # doctest: +SKIP
+    >>> expected = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
 
-    >>> dw = DataArrayWriter(dirpath) # doctest: +SKIP
+    >>> dw = DataArrayWriter("some_path") 
+    >>> for chunk in chunks:
+    ...     dw.submit(chunk)
+    >>> result = dw.result 
+
+    >>> assert result.equals(expected)
 
     """
 

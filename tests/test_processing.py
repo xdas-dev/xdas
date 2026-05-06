@@ -76,7 +76,6 @@ class TestDataArrayWriter:
         for chunk in chunks:
             dw.submit(chunk)
         result = dw.result()
-        result = result.load()
         assert result.equals(expected)
 
     def test_missing_directory(self, tmp_path):
