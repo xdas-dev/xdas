@@ -49,6 +49,18 @@ class TestDataArrayLoader:
         result = xd.concatenate(chunks)
         assert result.equals(da)
 
+    @pytest.mark.timeout(1)
+    def test_error_handling(self):
+        da = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
+        with pytest.raises(TypeError):
+            DataArrayLoader(None, None)
+        with pytest.raises(TypeError):
+            DataArrayLoader(da, 100)
+        with pytest.raises(ValueError):
+            DataArrayLoader(da, {"space": 100})
+        with pytest.raises(ValueError):
+            DataArrayLoader(da, {"time": 2000})
+
 
 class TestProcessing:
     def test_stateful(self, tmp_path):

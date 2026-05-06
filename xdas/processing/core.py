@@ -13,6 +13,7 @@ import zmq
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+from ..core.dataarray import DataArray
 from ..core.routines import concatenate, open_dataarray
 from .monitor import Monitor
 
@@ -90,7 +91,7 @@ class DataArrayLoader:
 
     Iterate over the chunks
 
-    >>> for chunk in dl:
+    >>> for chunk in dl:  # doctest: +SKIP
     >>>     process(chunk)  # doctest: +SKIP
 
     Do not forget to stop it if you do not iterate over all chunks
@@ -98,16 +99,37 @@ class DataArrayLoader:
     >>> dl.close()  # doctest: +SKIP
 
     For greater safety it is best to use it within a context manager:
-    >>> with DataArrayLoader(da, chunks) as dl:
-    >>>     for chunk in dl:
+    >>> with DataArrayLoader(da, chunks) as dl:  # doctest: +SKIP
+    >>>     for chunk in dl:  # doctest: +SKIP
     >>>         process(chunk)  # doctest: +SKIP
 
     """
 
     def __init__(self, da, chunks):
         # parse
+        if not isinstance(da, DataArray):
+            raise TypeError(f"`da` must by a DataArray object, not a {type(da)}")
+        if not isinstance(chunks, dict) and len(chunks) == 1:
+            raise TypeError(
+                "`chunks` must be a dict that maps a unique "
+                "dimension to a unique size: {'dim': size}"
+            )
+        ((chunk_dim, chunk_size),) = chunks.items()
+        chunk_dim = str(chunk_dim)
+        chunk_size = int(chunk_size)
+        if chunk_dim not in da.dims:
+            raise ValueError(
+                f"chunking dimension {chunk_dim} not "
+                f"found in `da` dimensions {da.dims}"
+            )
+        if chunk_size > da.sizes[chunk_dim]:
+            raise ValueError(
+                f"chunking size {chunk_size} is greater than `da` "
+                f"size {da.sizes[chunk_dim]} along dim {chunk_dim}"
+            )
         self.da = da
-        ((self.chunk_dim, self.chunk_size),) = chunks.items()
+        self.chunk_dim = chunk_dim
+        self.chunk_size = chunk_size
 
         # state
         self._condition = threading.Condition()
