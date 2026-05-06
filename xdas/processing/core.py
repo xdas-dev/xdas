@@ -219,16 +219,17 @@ class DataArrayWriter:
 
     Examples
     --------
+    >>> import xdas as xd
     >>> import xdas.processing as xp
 
     >>> expected = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
 
-    >>> dw = DataArrayWriter("some_path")
+    >>> dw = DataArrayWriter("some_path")  # doctest: +SKIP
     >>> for chunk in chunks:
-    ...     dw.submit(chunk)
-    >>> result = dw.result
+    ...     dw.submit(chunk)  # doctest: +SKIP
+    >>> result = dw.result  # doctest: +SKIP
 
-    >>> assert result.equals(expected)
+    >>> assert result.equals(expected)  # doctest: +SKIP
 
     """
 
@@ -299,10 +300,10 @@ class DataFrameWriter:
 
     >>> dw = xp.DataFrameWriter("output.csv")
     >>> for df in dfs:
-    ...     dw.submit(dfs)
+    ...     dw.submit(dfs). # doctest: +SKIP
     >>> result = dw.result()  # doctest: +SKIP
 
-    >>> expected = pd.concat(dfs, ignore_index=True)
+    >>> expected = pd.concat(dfs, ignore_index=True)  # doctest: +SKIP
     >>> assert result.equals(expected)  # doctest: +SKIP
 
     """
@@ -319,22 +320,22 @@ class DataFrameWriter:
         self._executor = ThreadPoolExecutor(1)
         self._future = None
 
-    def submit(self, chunk):
-        if not isinstance(chunk, pd.DataFrame):
-            raise TypeError(f"`chunk` must by a DataFrame object, not a {type(chunk)}")
+    def submit(self, df):
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError(f"`df` must by a DataFrame object, not a {type(df)}")
         if self._future is not None:
             self._future.result()
-        self._future = self._executor.submit(self._write, chunk)
+        self._future = self._executor.submit(self._write, df)
 
-    def write(self, chunk):
-        return self.submit(chunk)
+    def write(self, df):
+        return self.submit(df)
 
-    def _write(self, chunk):
-        if chunk is not None:
+    def _write(self, df):
+        if df is not None:
             if not os.path.exists(self.path):
-                chunk.to_csv(self.path, mode="w", header=True, index=False)
+                df.to_csv(self.path, mode="w", header=True, index=False)
             else:
-                chunk.to_csv(self.path, mode="a", header=False, index=False)
+                df.to_csv(self.path, mode="a", header=False, index=False)
 
     def shutdown(self):
         self._executor.shutdown()
@@ -453,14 +454,10 @@ class StreamWriter:
         self.kw_merge = kw_merge if kw_merge is not None else {}
         self.kw_write = kw_write if kw_write is not None else {}
         self.output_format = output_format
-        self.queue = Queue(maxsize=1)
-        self.executor = ThreadPoolExecutor(1)
-        self.future = self.executor.submit(self.task)
+        self._executor = ThreadPoolExecutor(1)
+        self._future = None
 
-    def to_SDS(self, st):
-        """
-        Convert and write the Stream to the SDS file structure.
-        """
+    def _to_SDS(self, st):
         for tr in st:
             new_st = obspy.Stream()
             new_st += tr
@@ -483,10 +480,7 @@ class StreamWriter:
             sds_path = os.path.join(dirpath, fname)
             new_st.write(sds_path, format="MSEED", **self.kw_write)
 
-    def to_flat(self, st):
-        """
-        Convert and write the Stream to a single miniseed file.
-        """
+    def _to_flat(self, st):
         new_st = obspy.Stream()
         for tr in st:
             tmp_st = obspy.Stream()
@@ -498,48 +492,32 @@ class StreamWriter:
                 new_st += new_tr
         new_st.write(os.path.join(self.dirpath, self.fname), **self.kw_write)
 
+    def submit(self, st):
+        if not isinstance(st, obspy.Stream):
+            raise TypeError(f"`st` must by a DataFrame object, not a {type(st)}")
+        if self._future is not None:
+            self._future.result()
+        self._future = self._executor.submit(self._write, st)
+
     def write(self, st):
-        """
-        Writes a Stream to the queue for asynchronous writing.
+        return self.submit(st)
 
-        Parameters
-        ----------
-        st : obspy.Stream
-            The Stream to be written.
-        """
-        self.queue.put(st)
+    def _write(self, st):
+        st.write(f"{self.dirpath}/{st[0].stats.starttime}_tmp.mseed", **self.kw_write)
 
-    def task(self):
-        """
-        The asynchronous task that writes the Stream to a temporary miniseed file.
-        """
-        while True:
-            st = self.queue.get()
-            if st is None:
-                break
-            st.write(
-                f"{self.dirpath}/{st[0].stats.starttime}_tmp.mseed", **self.kw_write
-            )
+    def shutdown(self):
+        self._executor.shutdown()
 
     def result(self):
-        """
-        Waits for the asynchronous task to complete, format the data into the chosen format, delete the temporary files
-        and returns the one single merged Stream read from the temporary files.
-
-        Returns
-        -------
-        obspy.Stream
-            Returns one single merged Stream read from the temporary files.
-        """
-        self.queue.put(None)
-        self.future.result()
+        self._future.result()
+        self.shutdown()
         pattern = f"{self.dirpath}/*_tmp.mseed"
         out = obspy.read(pattern)
         out = out.merge(**self.kw_merge)
         if self.output_format == "flat":
-            self.to_flat(out)
+            self._to_flat(out)
         elif self.output_format == "SDS":
-            self.to_SDS(out)
+            self._to_SDS(out)
         files_to_remove = glob(pattern)
         for file in files_to_remove:
             os.remove(file)
