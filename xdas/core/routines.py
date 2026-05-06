@@ -503,14 +503,23 @@ def open_mfdataarray(
             else:
                 iterator = as_completed(futures_to_paths)
             objs = []
+            failures = []
             for future in iterator:
                 try:
                     obj = future.result()
                 except Exception as e:
                     path = futures_to_paths[future]
+                    failures.append((path, e))
                     warnings.warn(f"could not open {path}: {e}", RuntimeWarning)
                 else:
                     objs.append(obj)
+    if len(objs) == 0:
+        if failures:
+            path, error = failures[0]
+            raise RuntimeError(
+                f"could not open any file with; first failure was {path}: {error}"
+            ) from error
+        raise FileNotFoundError("no file to open")
     return combine_by_coords(objs, dim, tolerance, squeeze, None, verbose)
 
 

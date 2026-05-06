@@ -370,3 +370,11 @@ class TestOpen:  # TODO: those tests are weirdly slow...
         ]
         result = xd.open(file_paths)
         assert result.equals(expected)
+
+    def test_raise_if_all_files_corrupted(self, tmp_path):
+        with (tmp_path / "corrupted1.nc").open("wb") as f:
+            f.write(b"corrupted")
+        with (tmp_path / "corrupted2.nc").open("wb") as f:
+            f.write(b"corrupted")
+        with pytest.raises(RuntimeError):
+            xd.open_mfdataarray(str(tmp_path / "*.nc"))
