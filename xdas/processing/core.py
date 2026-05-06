@@ -97,6 +97,11 @@ class DataArrayLoader:
 
     >>> dl.close()  # doctest: +SKIP
 
+    For greater safety it is best to use it within a context manager:
+    >>> with DataArrayLoader(da, chunks) as dl:
+    >>>     for chunk in dl:
+    >>>         process(chunk)  # doctest: +SKIP
+
     """
 
     def __init__(self, da, chunks):
