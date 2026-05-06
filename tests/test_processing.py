@@ -197,6 +197,17 @@ class TestDataFrameWriter:
         result = pd.read_csv(tmp_path / "output.csv")
         assert result.equals(expected)
 
+    def test_missing_directory(self, tmp_path):
+        with pytest.raises(OSError):
+            xp.DataFrameWriter(tmp_path / "not_a_directory" / "output.csv")
+        dirpath = tmp_path / "some_directory" / "output.csv"
+        xp.DataFrameWriter(dirpath, create_dirs=True)
+
+    def test_passing_wrong_input(self, tmp_path):
+        dw = xp.DataFrameWriter(tmp_path / "output.csv")
+        with pytest.raises(TypeError):
+            dw.submit(None)
+
 
 class TestZMQ:
     def _publish_and_subscribe(self, packets, address, encoding=None):
