@@ -1,10 +1,10 @@
 import os
-import threading
 from concurrent.futures import ThreadPoolExecutor
 from glob import glob
 from pathlib import Path
 from queue import Empty, Full, Queue
 from tempfile import TemporaryDirectory
+from threading import Condition, Thread
 
 import numpy as np
 import obspy
@@ -91,17 +91,17 @@ class DataArrayLoader:
 
     Iterate over the chunks
 
-    >>> for chunk in dl:  # doctest: +SKIP
-    >>>     process(chunk)  # doctest: +SKIP
+    >>> for chunk in dl:
+    ...     process(chunk)  # doctest: +SKIP
 
     Do not forget to stop it if you do not iterate over all chunks
 
     >>> dl.close()  # doctest: +SKIP
 
     For greater safety it is best to use it within a context manager:
-    >>> with DataArrayLoader(da, chunks) as dl:  # doctest: +SKIP
-    >>>     for chunk in dl:  # doctest: +SKIP
-    >>>         process(chunk)  # doctest: +SKIP
+    >>> with DataArrayLoader(da, chunks) as dl:
+    ...     for chunk in dl:
+    ...         process(chunk)  # doctest: +SKIP
 
     """
 
@@ -132,12 +132,12 @@ class DataArrayLoader:
         self.chunk_size = chunk_size
 
         # state
-        self._condition = threading.Condition()
+        self._condition = Condition()
         self._queue = Queue(maxsize=1)
         self._stop = False
 
         # initialize
-        self._thread = threading.Thread(target=self._produce)
+        self._thread = Thread(target=self._produce)
         self._thread.start()
 
     def __len__(self):
@@ -162,8 +162,8 @@ class DataArrayLoader:
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc, tb):
-        self.stop()
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.shutdown()
 
     @property
     def nbytes(self):
@@ -204,11 +204,14 @@ class DataArrayLoader:
             except Empty:
                 break
 
-    def stop(self):
+    def shutdown(self):
         self._stop = True
         with self._condition:
             self._condition.notify()
         self._thread.join()
+
+
+
 
 
 class RealTimeLoader(Observer):

@@ -33,7 +33,7 @@ class TestDataArrayLoader:
         assert dl.chunk_dim == "time"
         assert dl.chunk_size == 100
         assert len(dl) == 10
-        dl.stop()
+        dl.shutdown()
 
     @pytest.mark.timeout(1)
     def test_context_manager(self):
