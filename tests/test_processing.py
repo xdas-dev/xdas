@@ -6,6 +6,7 @@ import hdf5plugin
 import numpy as np
 import obspy
 import pandas as pd
+import pytest
 import scipy.signal as sp
 
 import xdas as xd
@@ -22,6 +23,16 @@ from xdas.processing import (
 )
 from xdas.signal import sosfilt
 from xdas.synthetics import wavelet_wavefronts
+
+
+class TestDataArrayLoader:
+    @pytest.mark.timeout(1)
+    def test_init_and_stop(self):
+        da = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
+        dl = DataArrayLoader(da, {"time": 100})
+        assert dl.chunk_dim == "time"
+        assert dl.chunk_size == 100
+        dl.stop()
 
 
 class TestProcessing:
@@ -48,6 +59,34 @@ class TestProcessing:
 
         # test
         assert result1.equals(result2)
+
+    def test_small_last_chunk(self, tmp_path):
+        da = xd.DataArray(
+            data=np.random.randn(1001, 100),
+            coords={
+                "time": xd.Coordinate["interpolated"].from_block(0, 1001, 0.01),
+                "distance": xd.Coordinate["interpolated"].from_block(0, 100, 10.0),
+            },
+        )
+
+        # declare processing sequence
+        sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
+        sequence = Sequential([Partial(sosfilt, sos, ..., dim="time", zi=...)])
+
+        # monolithic processing
+        result1 = sequence(da)
+
+        # chunked processing
+        data_loader = DataArrayLoader(da, chunks={"time": 100})
+        for da in data_loader:
+            pass
+        # data_writer = DataArrayWriter(tmp_path)
+        # result2 = process(
+        #     sequence, data_loader, data_writer
+        # )  # resets the sequence by default
+
+        # # test
+        # assert result1.equals(result2)
 
 
 class TestDataFrameWriter:

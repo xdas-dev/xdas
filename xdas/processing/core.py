@@ -1,8 +1,9 @@
 import os
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from glob import glob
 from pathlib import Path
-from queue import Queue
+from queue import Queue, Empty, Full
 from tempfile import TemporaryDirectory
 
 import numpy as np
@@ -87,19 +88,24 @@ class DataArrayLoader:
     >>> chunks = {"time": 1000}
     >>> dl = DataArrayLoader(da, chunks)  # doctest: +SKIP
 
-    Create chunks along both dimensions
-
-    >>> chunks2 = {"time": 1000, "distance": 10}
-    >>> dl2 = DataArrayLoader(da, chunks2)  # doctest: +SKIP
+    Do not forget to stop it if you do not iterate over all chunks
+    >>> dl.close()  # doctest: +SKIP
 
     """
 
     def __init__(self, da, chunks):
+        # parse
         self.da = da
         ((self.chunk_dim, self.chunk_size),) = chunks.items()
-        self.queue = Queue(maxsize=1)
-        self.executor = ThreadPoolExecutor(1)
-        self.future = self.executor.submit(self.task)
+
+        # state
+        self._condition = threading.Condition()
+        self._queue = Queue(maxsize=1)
+        self._stop = False
+
+        # initialize
+        self._thread = threading.Thread(target=self._produce)
+        self._thread.start()
 
     def __len__(self):
         div, mod = divmod(self.da.sizes[self.chunk_dim], self.chunk_size)
@@ -118,21 +124,52 @@ class DataArrayLoader:
         return self
 
     def __next__(self):
-        chunk = self.queue.get()
-        if chunk is None:
-            raise StopIteration
-        else:
-            return chunk
+        return self._consume()
 
     @property
     def nbytes(self):
         return self.da.nbytes
 
-    def task(self):
+    def _produce(self):
         for idx in range(len(self)):
-            data = self[idx]
-            self.queue.put(data)
-        self.queue.put(None)
+            chunk = self[idx]
+
+            with self._condition:
+                while True:
+                    if self._stop:
+                        self._clear()
+                        break
+                    try:
+                        self._queue.put_nowait(chunk)
+                        break
+                    except Full:
+                        self._condition.wait()
+
+        self._queue.put(None)
+
+    def _consume(self):
+        chunk = self._queue.get()
+
+        if chunk is None:
+            raise StopIteration
+
+        with self._condition:
+            self._condition.notify()
+
+        return chunk
+
+    def _clear(self):
+        while True:
+            try:
+                self._queue.get_nowait()
+            except Empty:
+                break
+
+    def stop(self):
+        self._stop = True
+        with self._condition:
+            self._condition.notify()
+        self._thread.join()
 
 
 class RealTimeLoader(Observer):
