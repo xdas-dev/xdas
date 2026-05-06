@@ -145,117 +145,57 @@ class TestProcessing:
 
 
 class TestDataFrameWriter:
-    def test_write_and_result(self, tmp_path):
-        # Create a xp.DataFrameWriter instance
-        writer = xp.DataFrameWriter(tmp_path / "output.csv")
+    def test_init(self, tmp_path):
+        dw = xp.DataFrameWriter(tmp_path / "output.csv")
+        assert dw.path == str(tmp_path / "output.csv")
+        assert dw.parse_dates is None
 
-        # Create a DataFrame to write
-        df = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
+    def test_single_dataframe(self, tmp_path):
+        dw = xp.DataFrameWriter(tmp_path / "output.csv")
+        expected = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
+        dw.submit(expected)
+        result = dw.result()
+        assert result.equals(expected)
+        assert Path(dw.path).exists()
+        result = pd.read_csv(dw.path)
+        assert result.equals(expected)
 
-        # Write the DataFrame asynchronously
-        writer.write(df)
-
-        # Get the result (wait for the asynchronous task to complete)
-        result = writer.result()
-
-        # Check if the result matches the original DataFrame
-        assert result.equals(df)
-
-        # Check if the output file exists
-        assert Path(writer.path).exists()
-
-        # Check if the output file contains the correct data
-        output_df = pd.read_csv(writer.path)
-        assert output_df.equals(df)
-
-    def test_write_multiple_dataframes(self, tmp_path):
-        # Create a xp.DataFrameWriter instance
-        writer = xp.DataFrameWriter(tmp_path / "output.csv")
-
-        # Create multiple DataFrames to write
+    def test_multiple_dataframes(self, tmp_path):
+        dw = xp.DataFrameWriter(tmp_path / "output.csv")
         df1 = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
         df2 = pd.DataFrame({"A": [7, 8, 9], "B": [10, 11, 12]})
-
-        # Write the DataFrames asynchronously
-        writer.write(df1)
-        writer.write(df2)
-
-        # Get the result (wait for the asynchronous task to complete)
-        result = writer.result()
-
-        # Check if the result matches the concatenated DataFrames
-        expected_result = pd.concat([df1, df2], ignore_index=True)
-        assert result.equals(expected_result)
-
-        # Check if the output file exists
-        assert Path(writer.path).exists()
-
-        # Check if the output file contains the correct data
-        output_df = pd.read_csv(writer.path)
-        assert output_df.equals(expected_result)
+        dw.submit(df1)
+        dw.submit(df2)
+        result = dw.result()
+        expected = pd.concat([df1, df2], ignore_index=True)
+        assert result.equals(expected)
+        assert Path(dw.path).exists()
+        result = pd.read_csv(dw.path)
+        assert result.equals(expected)
 
     def test_write_empty_dataframe(self, tmp_path):
-        # Create a xp.DataFrameWriter instance
-        writer = xp.DataFrameWriter(tmp_path / "output.csv")
+        dw = xp.DataFrameWriter(tmp_path / "output.csv")
+        expected = pd.DataFrame()
+        dw.submit(expected)
+        result = dw.result()
+        assert result.equals(expected)
+        assert Path(dw.path).exists()
 
-        # Create an empty DataFrame to write
-        df = pd.DataFrame()
+    def test_with_existing_file(self, tmp_path):
+        dw1 = xp.DataFrameWriter(tmp_path / "output.csv")
+        df1 = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
+        dw1.submit(df1)
+        result = dw1.result()
 
-        # Write the DataFrame asynchronously
-        writer.write(df)
+        dw2 = xp.DataFrameWriter(tmp_path / "output.csv")
+        df2 = pd.DataFrame({"A": [7, 8, 9], "B": [10, 11, 12]})
+        dw2.submit(df2)
+        result = dw2.result()
 
-        # Get the result (wait for the asynchronous task to complete)
-        result = writer.result()
-
-        # Check if the result matches the original DataFrame
-        assert result.equals(df)
-
-        # Check if the output file exists
-        assert Path(writer.path).exists()
-
-    def test_write_and_result_with_existing_file(self, tmp_path):
-        # Create a xp.DataFrameWriter instance
-        output_path = tmp_path / "output.csv"
-        writer = xp.DataFrameWriter(output_path)
-
-        # Create a DataFrame to write
-        df = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
-
-        # Write the DataFrame asynchronously
-        writer.write(df)
-
-        # Get the result (wait for the asynchronous task to complete)
-        result = writer.result()
-
-        # Check if the result matches the original DataFrame
-        assert result.equals(df)
-
-        # Check if the output file exists
-        assert Path(writer.path).exists()
-
-        # Check if the output file contains the correct data
-        output_df = pd.read_csv(writer.path)
-        assert output_df.equals(df)
-
-        # Create a new DataFrame to write
-        new_df = pd.DataFrame({"A": [7, 8, 9], "B": [10, 11, 12]})
-
-        # Create new Writer instance with the same output file
-        writer = xp.DataFrameWriter(output_path)
-
-        # Write the new DataFrame asynchronously
-        writer.write(new_df)
-
-        # Get the result (wait for the asynchronous task to complete)
-        result = writer.result()
-
-        # Check if the result matches the concatenated DataFrames
-        expected_result = pd.concat([df, new_df], ignore_index=True)
-        assert result.equals(expected_result)
-
-        # Check if the output file contains the correct data
-        output_df = pd.read_csv(writer.path)
-        assert output_df.equals(expected_result)
+        expected = pd.concat([df1, df2], ignore_index=True)
+        assert result.equals(expected)
+        result = pd.read_csv(tmp_path / "output.csv")
+        assert result.equals(expected)
 
 
 class TestZMQ:

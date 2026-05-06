@@ -223,10 +223,10 @@ class DataArrayWriter:
 
     >>> expected = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
 
-    >>> dw = DataArrayWriter("some_path") 
+    >>> dw = DataArrayWriter("some_path")
     >>> for chunk in chunks:
     ...     dw.submit(chunk)
-    >>> result = dw.result 
+    >>> result = dw.result
 
     >>> assert result.equals(expected)
 
@@ -286,78 +286,52 @@ class DataFrameWriter:
     Parameters
     ----------
     path : str
-        The path to the CSV file.
-
-    Attributes
-    ----------
-    path : str
-        The path to the CSV file.
-    parse_dates : list or bool
-        A list of columns to parse as dates.
-    queue : Queue
-        A queue to hold the DataFrames to be written.
-    executor : ThreadPoolExecutor
-        A thread pool executor for asynchronous writing.
-    future : Future
-        A future object representing the result of the asynchronous task.
-
-    Methods
-    -------
-    write(df)
-        Writes a DataFrame to the queue for asynchronous writing.
-    task()
-        The asynchronous task that writes the DataFrames to the CSV file.
-    result()
-        Waits for the asynchronous task to complete and returns the DataFrame read from the CSV file.
+        The path to the csv file.
+    parse_dates : bool, int, optional
+        Weather to parse dates when reopening the csv file a the end of the process
+    create_dirs : bool, optional
+        Whether to create parent directories if they do not exist. Default is False.
     """
 
-    def __init__(self, path, parse_dates=False):
+    def __init__(self, path, parse_dates=None, create_dirs=False):
+        dirpath = os.path.dirname(path)
+        if create_dirs:
+            if dirpath:
+                os.makedirs(dirpath, exist_ok=True)
+        if dirpath and not os.path.exists(dirpath):
+            raise OSError(f"no directory {dirpath}")
         self.path = str(path) if isinstance(path, Path) else path
         self.parse_dates = parse_dates
-        self.queue = Queue(maxsize=1)
-        self.executor = ThreadPoolExecutor(1)
-        self.future = self.executor.submit(self.task)
+        self._executor = ThreadPoolExecutor(1)
+        self._future = None
 
-    def write(self, df):
-        """
-        Writes a DataFrame to the queue for asynchronous writing.
+    def submit(self, chunk):
+        if not isinstance(chunk, pd.DataFrame):
+            raise TypeError(f"`chunk` must by a DataFrame object, not a {type(chunk)}")
+        if self._future is not None:
+            self._future.result()
+        self._future = self._executor.submit(self._write, chunk)
 
-        Parameters
-        ----------
-        df : pandas.DataFrame
-            The DataFrame to be written.
-        """
-        self.queue.put(df)
+    def write(self, chunk):
+        return self.submit(chunk)
 
-    def task(self):
-        """
-        The asynchronous task that writes the DataFrames to the CSV file.
-        """
-        while True:
-            df = self.queue.get()
-            if df is None:
-                break
+    def _write(self, chunk):
+        if chunk is not None:
             if not os.path.exists(self.path):
-                df.to_csv(self.path, mode="w", header=True, index=False)
+                chunk.to_csv(self.path, mode="w", header=True, index=False)
             else:
-                df.to_csv(self.path, mode="a", header=False, index=False)
+                chunk.to_csv(self.path, mode="a", header=False, index=False)
+
+    def shutdown(self):
+        self._executor.shutdown()
 
     def result(self):
-        """
-        Waits for the asynchronous task to complete and returns the DataFrame read from the CSV file.
-
-        Returns
-        -------
-        pandas.DataFrame
-            The DataFrame read from the CSV file.
-        """
-        self.queue.put(None)
-        self.future.result()
+        self._future.result()
+        self.shutdown()
         try:
-            out = pd.read_csv(self.path, parse_dates=self.parse_dates)
+            return pd.read_csv(self.path, parse_dates=self.parse_dates)
         except pd.errors.EmptyDataError:
-            out = pd.DataFrame()
-        return out
+            return pd.DataFrame()
 
 
 class StreamWriter:
