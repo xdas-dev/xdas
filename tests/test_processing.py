@@ -26,30 +26,34 @@ from xdas.synthetics import wavelet_wavefronts
 
 
 class TestDataArrayLoader:
-    @pytest.mark.timeout(1)
-    def test_init_and_stop(self):
+
+    def test_init(self):
         da = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
         dl = DataArrayLoader(da, {"time": 100})
+        assert dl.da is da
         assert dl.chunk_dim == "time"
         assert dl.chunk_size == 100
+        assert dl.prefetch == 1
+        assert dl.max_workers == 1
         assert len(dl) == 10
-        dl.shutdown()
 
-    @pytest.mark.timeout(1)
-    def test_context_manager(self):
+    @pytest.mark.parametrize(
+        "prefetch,max_workers",
+        [
+            (0, 1),
+            (1, 1),
+            (2, 2),
+            (4, 2),
+            (8, 4),
+        ],
+    )
+    def test_chunks_integrity(self, prefetch, max_workers):
         da = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
-        with DataArrayLoader(da, {"time": 100}) as dl:
-            assert dl.da is da
-
-    @pytest.mark.timeout(1)
-    def test_chunks_integrity(self):
-        da = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
-        dl = DataArrayLoader(da, {"time": 100})
+        dl = DataArrayLoader(da, {"time": 100}, prefetch, max_workers)
         chunks = [chunk for chunk in dl]
         result = xd.concatenate(chunks)
         assert result.equals(da)
 
-    @pytest.mark.timeout(1)
     def test_error_handling(self):
         da = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
         with pytest.raises(TypeError):

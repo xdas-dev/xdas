@@ -2,9 +2,8 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from glob import glob
 from pathlib import Path
-from queue import Empty, Full, Queue
+from queue import Queue
 from tempfile import TemporaryDirectory
-from threading import Condition, Thread
 
 import numpy as np
 import obspy
@@ -68,15 +67,22 @@ class DataArrayLoader:
     """
     A class to handle data chunked data ingestion.
 
+    To optimize I/O latencies, chunks are loaded before they are used asynchronously
+    in a buffer as soon as the iterator is created.
+
     Parameters
     ----------
-    da : ``DataArray``, ``DataCollection``
-        The (virtual) DataArray or DataCollection that contains the data to be chunked
+    da : ``DataArray``
+        The (virtual) DataArray that contains the data to be chunked
     chunks : dict
         The sizes of the chunks along each dimension. Needs to be of the form:
-        ``{"dim": int}``. Each key needs to correspond with a dimension (either "time"
-        or "distance"), and each value is an integer indicating the size of the chunk
-        (in samples) along that dimension.
+        ``{"dim": int}``. The key correspond with the dimension (usually "time"),
+        and the value is an integer indicating the size of the chunk (in samples)
+        along that dimension.
+    prefetch : int, default=1
+        The maximum number of chunks to load into memory at the same time.
+    max_workers : int, default=1
+        The maximum number of thread used to load the chunks.
 
     Examples
     --------
@@ -94,25 +100,15 @@ class DataArrayLoader:
     >>> for chunk in dl:
     ...     process(chunk)  # doctest: +SKIP
 
-    Do not forget to stop it if you do not iterate over all chunks
-
-    >>> dl.close()  # doctest: +SKIP
-
-    For greater safety it is best to use it within a context manager:
-    >>> with DataArrayLoader(da, chunks) as dl:
-    ...     for chunk in dl:
-    ...         process(chunk)  # doctest: +SKIP
-
     """
 
-    def __init__(self, da, chunks):
-        # parse
+    def __init__(self, da, chunks, prefetch=1, max_workers=1):
         if not isinstance(da, DataArray):
             raise TypeError(f"`da` must by a DataArray object, not a {type(da)}")
         if not isinstance(chunks, dict) and len(chunks) == 1:
             raise TypeError(
                 "`chunks` must be a dict that maps a unique "
-                "dimension to a unique size: {'dim': size}"
+                "dimension to a unique size: {'dim': int}"
             )
         ((chunk_dim, chunk_size),) = chunks.items()
         chunk_dim = str(chunk_dim)
@@ -130,15 +126,8 @@ class DataArrayLoader:
         self.da = da
         self.chunk_dim = chunk_dim
         self.chunk_size = chunk_size
-
-        # state
-        self._condition = Condition()
-        self._queue = Queue(maxsize=1)
-        self._stop = False
-
-        # initialize
-        self._thread = Thread(target=self._produce)
-        self._thread.start()
+        self.prefetch = prefetch
+        self.max_workers = max_workers
 
     def __len__(self):
         div, mod = divmod(self.da.sizes[self.chunk_dim], self.chunk_size)
@@ -154,64 +143,30 @@ class DataArrayLoader:
         return self.da[query].load()
 
     def __iter__(self):
-        return self
+        with ThreadPoolExecutor(self.max_workers) as executor:
+            it = iter(range(len(self)))
 
-    def __next__(self):
-        return self._consume()
+            futures = []
+            try:
+                for _ in range(self.prefetch):
+                    futures.append(executor.submit(self.__getitem__, next(it)))
+            except StopIteration:
+                pass
 
-    def __enter__(self):
-        return self
+            while futures:
+                future = futures.pop(0)
+                result = future.result()
 
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.shutdown()
+                try:
+                    futures.append(executor.submit(self.__getitem__, next(it)))
+                except StopIteration:
+                    pass
+
+                yield result
 
     @property
     def nbytes(self):
         return self.da.nbytes
-
-    def _produce(self):
-        for idx in range(len(self)):
-            chunk = self[idx]
-
-            with self._condition:
-                while True:
-                    if self._stop:
-                        self._clear()
-                        break
-                    try:
-                        self._queue.put_nowait(chunk)
-                        break
-                    except Full:
-                        self._condition.wait()
-
-        self._queue.put(None)
-
-    def _consume(self):
-        chunk = self._queue.get()
-
-        if chunk is None:
-            raise StopIteration
-
-        with self._condition:
-            self._condition.notify()
-
-        return chunk
-
-    def _clear(self):
-        while True:
-            try:
-                self._queue.get_nowait()
-            except Empty:
-                break
-
-    def shutdown(self):
-        self._stop = True
-        with self._condition:
-            self._condition.notify()
-        self._thread.join()
-
-
-
 
 
 class RealTimeLoader(Observer):
