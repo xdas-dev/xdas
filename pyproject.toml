@@ -30,7 +30,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["black", "build", "isort", "twine"]
+dev = [
+    "black",
+    "build",
+    "isort",
+    "twine",
+]
 docs = [
     "ipykernel",
     "matplotlib",
@@ -40,7 +45,14 @@ docs = [
     "sphinx-copybutton",
     "sphinx",
 ]
-tests = ["dascore", "pytest", "pytest-cov", "seisbench", "torch"]
+tests = [
+    "dascore",
+    "pytest",
+    "pytest-cov",
+    "psutils",
+    "seisbench",
+    "torch",
+]
 
 [tool.isort]
 profile = "black"
