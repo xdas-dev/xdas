@@ -9,16 +9,16 @@
 
 ### Improvements
 - New `io.Engine` backend system to register different file formats (@atrabattoni).
-- Make `open_mfdataarray` raise `RuntimeError` when openning all files fails (@asladen). 
+- Most `xdas.open_*` functions now have a `create_dirs` argument to creating intermediate directories if necessary (@aurelienfalco).
+- Make `open_mfdataarray` raise `RuntimeError` when opening all files fails (@asladen). 
 - Add "prodml" engine (@atrabattoni) and make "optasense" and "sintela" aliases of it (@atrabattoni). 
 
 ### Bugs Fixed
-- Fix Memory accumulation when slicing multiple times data arrays, e.g. when using atoms (@atrabattoni).
+- Fix **memory accumulation** when slicing multiple times data arrays, e.g. when using atoms (@atrabattoni) (@atrabattoni).
+- Fix **non-terminating loaders and writers** in `xdas.processing` (@atrabattoni).
 - Fix/improve distance handling for: "apsensing", "febus", "optasense", "silixa", and "sintela" (@atrabattoni).
 - Add dim swapping handling for the "prodml" based engines with the `swapped_dims=False` kwarg (@atrabattoni).
 - Fix ASN ROI handling (@asladen).
-
-## 0.2.5
 
 ## 0.2.5
 - Add SampleCoordinate for more SEED-like coordinates and refactor the coordinate backend (@atrabattoni).

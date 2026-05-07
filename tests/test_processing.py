@@ -6,22 +6,88 @@ import hdf5plugin
 import numpy as np
 import obspy
 import pandas as pd
+import pytest
 import scipy.signal as sp
 
 import xdas as xd
 import xdas.processing as xp
 from xdas.atoms import Partial, Sequential
-from xdas.processing import (
-    DataArrayLoader,
-    DataArrayWriter,
-    DataFrameWriter,
-    StreamWriter,
-    ZMQPublisher,
-    ZMQSubscriber,
-    process,
-)
 from xdas.signal import sosfilt
 from xdas.synthetics import wavelet_wavefronts
+
+
+class TestDataArrayLoader:
+    def test_init(self):
+        da = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
+        dl = xp.DataArrayLoader(da, {"time": 100})
+        assert dl.da is da
+        assert dl.chunk_dim == "time"
+        assert dl.chunk_size == 100
+        assert dl.max_buffers == 1
+        assert dl.max_workers == 1
+        assert len(dl) == 10
+
+    @pytest.mark.parametrize(
+        "max_buffers,max_workers",
+        [
+            (1, 1),
+            (2, 2),
+            (4, 2),
+            (8, 4),
+        ],
+    )
+    def test_chunks_integrity(self, max_buffers, max_workers):
+        da = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
+        dl = xp.DataArrayLoader(da, {"time": 100}, max_buffers, max_workers)
+        chunks = [chunk for chunk in dl]
+        result = xd.concatenate(chunks)
+        assert result.equals(da)
+
+    def test_error_handling(self):
+        da = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
+        with pytest.raises(TypeError):
+            xp.DataArrayLoader(None, None)
+        with pytest.raises(TypeError):
+            xp.DataArrayLoader(da, 100)
+        with pytest.raises(ValueError):
+            xp.DataArrayLoader(da, {"space": 100})
+        with pytest.raises(ValueError):
+            xp.DataArrayLoader(da, {"time": 2000})
+
+
+class TestDataArrayWriter:
+    def test_init(self, tmp_path):
+        dw = xp.DataArrayWriter(tmp_path)
+        assert dw.dirpath == str(tmp_path)
+
+    @pytest.mark.parametrize(
+        "max_buffers,max_workers",
+        [
+            (1, 1),
+            (2, 2),
+            (4, 2),
+            (8, 4),
+        ],
+    )
+    def test_chunk_integrity(self, max_buffers, max_workers, tmp_path):
+        expected = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
+        dw = xp.DataArrayWriter(tmp_path, None, max_buffers, max_workers)
+        chunks = xd.split(expected, 10, dim="time")
+        for chunk in chunks:
+            dw.submit(chunk)
+        result = dw.result()
+        assert result.equals(expected)
+
+    def test_missing_directory(self, tmp_path):
+        with pytest.raises(OSError):
+            xp.DataArrayWriter("not_a_directory")
+        dirpath = tmp_path / "some_directory"
+        xp.DataArrayWriter(dirpath, create_dirs=True)
+
+    def test_passing_wrong_input(self, tmp_path):
+        dw = xp.DataArrayWriter(tmp_path, create_dirs=True)
+        with pytest.raises(TypeError):
+            dw.submit(None)
 
 
 class TestProcessing:
@@ -40,133 +106,112 @@ class TestProcessing:
         result1 = sequence(da)
 
         # chunked processing
-        data_loader = DataArrayLoader(da, chunks={"time": 100})
-        data_writer = DataArrayWriter(tmp_path)
-        result2 = process(
+        data_loader = xp.DataArrayLoader(da, chunks={"time": 100})
+        data_writer = xp.DataArrayWriter(tmp_path)
+        result2 = xp.process(
             sequence, data_loader, data_writer
         )  # resets the sequence by default
 
         # test
         assert result1.equals(result2)
 
+    def test_small_last_chunk(self, tmp_path):
+        da = xd.DataArray(
+            data=np.random.randn(1001, 100),
+            coords={
+                "time": xd.Coordinate["interpolated"].from_block(0, 1001, 0.01),
+                "distance": xd.Coordinate["interpolated"].from_block(0, 100, 10.0),
+            },
+        )
+
+        # declare processing sequence
+        sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
+        sequence = Sequential([Partial(sosfilt, sos, ..., dim="time", zi=...)])
+
+        # monolithic processing
+        result1 = sequence(da)
+
+        # chunked processing
+        data_loader = xp.DataArrayLoader(da, chunks={"time": 100})
+        for da in data_loader:
+            pass
+        # data_writer = xp.DataArrayWriter(tmp_path)
+        # result2 = xp.process(
+        #     sequence, data_loader, data_writer
+        # )  # resets the sequence by default
+
+        # # test
+        # assert result1.equals(result2)
+
 
 class TestDataFrameWriter:
-    def test_write_and_result(self, tmp_path):
-        # Create a DataFrameWriter instance
-        writer = DataFrameWriter(tmp_path / "output.csv")
+    def test_init(self, tmp_path):
+        dw = xp.DataFrameWriter(tmp_path / "output.csv")
+        assert dw.path == str(tmp_path / "output.csv")
+        assert dw.parse_dates is None
 
-        # Create a DataFrame to write
-        df = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
+    def test_single_dataframe(self, tmp_path):
+        dw = xp.DataFrameWriter(tmp_path / "output.csv")
+        expected = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
+        dw.submit(expected)
+        result = dw.result()
+        assert result.equals(expected)
+        assert Path(dw.path).exists()
+        result = pd.read_csv(dw.path)
+        assert result.equals(expected)
 
-        # Write the DataFrame asynchronously
-        writer.write(df)
-
-        # Get the result (wait for the asynchronous task to complete)
-        result = writer.result()
-
-        # Check if the result matches the original DataFrame
-        assert result.equals(df)
-
-        # Check if the output file exists
-        assert Path(writer.path).exists()
-
-        # Check if the output file contains the correct data
-        output_df = pd.read_csv(writer.path)
-        assert output_df.equals(df)
-
-    def test_write_multiple_dataframes(self, tmp_path):
-        # Create a DataFrameWriter instance
-        writer = DataFrameWriter(tmp_path / "output.csv")
-
-        # Create multiple DataFrames to write
+    def test_multiple_dataframes(self, tmp_path):
+        dw = xp.DataFrameWriter(tmp_path / "output.csv")
         df1 = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
         df2 = pd.DataFrame({"A": [7, 8, 9], "B": [10, 11, 12]})
-
-        # Write the DataFrames asynchronously
-        writer.write(df1)
-        writer.write(df2)
-
-        # Get the result (wait for the asynchronous task to complete)
-        result = writer.result()
-
-        # Check if the result matches the concatenated DataFrames
-        expected_result = pd.concat([df1, df2], ignore_index=True)
-        assert result.equals(expected_result)
-
-        # Check if the output file exists
-        assert Path(writer.path).exists()
-
-        # Check if the output file contains the correct data
-        output_df = pd.read_csv(writer.path)
-        assert output_df.equals(expected_result)
+        dw.submit(df1)
+        dw.submit(df2)
+        result = dw.result()
+        expected = pd.concat([df1, df2], ignore_index=True)
+        assert result.equals(expected)
+        assert Path(dw.path).exists()
+        result = pd.read_csv(dw.path)
+        assert result.equals(expected)
 
     def test_write_empty_dataframe(self, tmp_path):
-        # Create a DataFrameWriter instance
-        writer = DataFrameWriter(tmp_path / "output.csv")
+        dw = xp.DataFrameWriter(tmp_path / "output.csv")
+        expected = pd.DataFrame()
+        dw.submit(expected)
+        result = dw.result()
+        assert result.equals(expected)
+        assert Path(dw.path).exists()
 
-        # Create an empty DataFrame to write
-        df = pd.DataFrame()
+    def test_with_existing_file(self, tmp_path):
+        dw1 = xp.DataFrameWriter(tmp_path / "output.csv")
+        df1 = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
+        dw1.submit(df1)
+        result = dw1.result()
 
-        # Write the DataFrame asynchronously
-        writer.write(df)
+        dw2 = xp.DataFrameWriter(tmp_path / "output.csv")
+        df2 = pd.DataFrame({"A": [7, 8, 9], "B": [10, 11, 12]})
+        dw2.submit(df2)
+        result = dw2.result()
 
-        # Get the result (wait for the asynchronous task to complete)
-        result = writer.result()
+        expected = pd.concat([df1, df2], ignore_index=True)
+        assert result.equals(expected)
+        result = pd.read_csv(tmp_path / "output.csv")
+        assert result.equals(expected)
 
-        # Check if the result matches the original DataFrame
-        assert result.equals(df)
+    def test_missing_directory(self, tmp_path):
+        with pytest.raises(OSError):
+            xp.DataFrameWriter(tmp_path / "not_a_directory" / "output.csv")
+        dirpath = tmp_path / "some_directory" / "output.csv"
+        xp.DataFrameWriter(dirpath, create_dirs=True)
 
-        # Check if the output file exists
-        assert Path(writer.path).exists()
-
-    def test_write_and_result_with_existing_file(self, tmp_path):
-        # Create a DataFrameWriter instance
-        output_path = tmp_path / "output.csv"
-        writer = DataFrameWriter(output_path)
-
-        # Create a DataFrame to write
-        df = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
-
-        # Write the DataFrame asynchronously
-        writer.write(df)
-
-        # Get the result (wait for the asynchronous task to complete)
-        result = writer.result()
-
-        # Check if the result matches the original DataFrame
-        assert result.equals(df)
-
-        # Check if the output file exists
-        assert Path(writer.path).exists()
-
-        # Check if the output file contains the correct data
-        output_df = pd.read_csv(writer.path)
-        assert output_df.equals(df)
-
-        # Create a new DataFrame to write
-        new_df = pd.DataFrame({"A": [7, 8, 9], "B": [10, 11, 12]})
-
-        # Create new Writer instance with the same output file
-        writer = DataFrameWriter(output_path)
-
-        # Write the new DataFrame asynchronously
-        writer.write(new_df)
-
-        # Get the result (wait for the asynchronous task to complete)
-        result = writer.result()
-
-        # Check if the result matches the concatenated DataFrames
-        expected_result = pd.concat([df, new_df], ignore_index=True)
-        assert result.equals(expected_result)
-
-        # Check if the output file contains the correct data
-        output_df = pd.read_csv(writer.path)
-        assert output_df.equals(expected_result)
+    def test_passing_wrong_input(self, tmp_path):
+        dw = xp.DataFrameWriter(tmp_path / "output.csv")
+        with pytest.raises(TypeError):
+            dw.submit(None)
 
 
 class TestZMQ:
     def _publish_and_subscribe(self, packets, address, encoding=None):
-        publisher = ZMQPublisher(address, encoding)
+        publisher = xp.ZMQPublisher(address, encoding)
 
         def publish():
             for packet in packets:
@@ -175,7 +220,7 @@ class TestZMQ:
 
         threading.Thread(target=publish).start()
 
-        subscriber = ZMQSubscriber(address)
+        subscriber = xp.ZMQSubscriber(address)
         result = []
         for n, packet in enumerate(subscriber, start=1):
             result.append(packet)
@@ -229,11 +274,11 @@ class TestStreamWriter:
             dim={"distance": "time"},
         )
 
-        data_loader = DataArrayLoader(da, chunks={"time": 100})
+        data_loader = xp.DataArrayLoader(da, chunks={"time": 100})
 
         kw_merge = {"method": 1}
         kw_write = {"reclen": 4096}
-        data_writer = StreamWriter(
+        data_writer = xp.StreamWriter(
             tmp_path, "M", kw_merge, kw_write, output_format="SDS"
         )
 
@@ -286,11 +331,11 @@ class TestStreamWriter:
             dim={"distance": "time"},
         )
 
-        data_loader = DataArrayLoader(da, chunks={"time": 100})
+        data_loader = xp.DataArrayLoader(da, chunks={"time": 100})
 
         kw_merge = {"method": 1}
         kw_write = {"reclen": 4096}
-        data_writer = StreamWriter(
+        data_writer = xp.StreamWriter(
             tmp_path, "M", kw_merge, kw_write, output_format="SDS"
         )
 
@@ -344,12 +389,14 @@ class TestStreamWriter:
             dim={"distance": "time"},
         )
 
-        data_loader = DataArrayLoader(da, chunks={"time": 100})
+        data_loader = xp.DataArrayLoader(da, chunks={"time": 100})
 
         path = tmp_path / "flat_output.mseed"
         kw_merge = {"method": 1}
         kw_write = {"reclen": 4096}
-        data_writer = StreamWriter(path, "M", kw_merge, kw_write, output_format="flat")
+        data_writer = xp.StreamWriter(
+            path, "M", kw_merge, kw_write, output_format="flat"
+        )
 
         st = xp.process(atom, data_loader, data_writer)
 
