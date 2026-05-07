@@ -955,10 +955,8 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
     list of DataArray
         The splitted data array.
     """
-    if isinstance(indices_or_sections, str) and (
-        indices_or_sections == "discontinuities"
-    ):
-        indices_or_sections = da[dim].get_split_indices(tolerance)
+    if isinstance(indices_or_sections, str):
+        indices_or_sections = da[dim].get_split_indices(indices_or_sections, tolerance)
 
     if isinstance(indices_or_sections, int):
         nsamples = da.sizes[dim]

@@ -300,7 +300,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
             dict(tie_indices=tie_indices, tie_values=tie_values), self.dim
         )
 
-    def get_split_indices(self, tolerance=None):
+    def get_split_indices(self, kind=None, tolerance=None):
         (indices,) = np.nonzero(np.diff(self.tie_indices) == 1)
         indices += 1
         if tolerance is not None:
