@@ -1,6 +1,13 @@
+import numpy as np
 from dask.array import Array
 
 from . import serial
+
+
+def create_variable(arr, file, name, dims=None, dtype=None):
+    variable = file.create_variable(name, dims, dtype)
+    variable.attrs.update({"__dask_array__": np.frombuffer(dumps(arr), "uint8")})
+    return variable
 
 
 def dumps(arr):

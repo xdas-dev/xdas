@@ -1,4 +1,4 @@
-# Data Structure
+# Data Structures
 
 Xdas leverages two main data structures. 
 

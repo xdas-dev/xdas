@@ -1,15 +1,13 @@
 import os
-from glob import glob
-from tempfile import TemporaryDirectory
 
 import dask
 import hdf5plugin
 import numpy as np
+import psutil
 import pytest
 
-import xdas
-from xdas.core.coordinates import Coordinates, DenseCoordinate, InterpCoordinate
-from xdas.core.dataarray import DataArray
+import xdas as xd
+from xdas.coordinates import Coordinates, DenseCoordinate, InterpCoordinate
 from xdas.synthetics import wavelet_wavefronts
 
 
@@ -20,12 +18,12 @@ class TestDataArray:
         else:
             coords = {"dim": {"tie_indices": [0, 8], "tie_values": [100.0, 900.0]}}
         data = 0.1 * np.arange(9)
-        da = xdas.DataArray(data, coords)
+        da = xd.DataArray(data, coords)
         return da
 
     def test_init_without_coords(self):
         data = np.arange(2 * 3 * 5).reshape(2, 3, 5)
-        da = xdas.DataArray(data)
+        da = xd.DataArray(data)
         assert np.array_equal(da.data, data)
         assert da.dims == ("dim_0", "dim_1", "dim_2")
         assert da.coords == {}
@@ -53,27 +51,30 @@ class TestDataArray:
         assert da.dtype == np.float64
         da = self.generate(dense=True)
         assert isinstance(da["dim"], DenseCoordinate)
-        da = DataArray()
+        da = xd.DataArray()
         assert np.array_equal(da.values, np.array(np.nan), equal_nan=True)
         assert da.coords == {}
         assert da.dims == tuple()
-        da = DataArray([[]])
+        da = xd.DataArray([[]])
         assert da.dims == ("dim_0", "dim_1")
         assert da.ndim == 2
-        da = DataArray(1)
+        da = xd.DataArray(1)
         assert da.dims == tuple()
         assert da.ndim == 0
 
     def test_raises_on_data_and_coords_mismatch(self):
         with pytest.raises(ValueError, match="different number of dimensions"):
-            DataArray(np.zeros(3), dims=("time", "distance"))
-        with pytest.raises(ValueError, match="infered dimension number from `coords`"):
-            DataArray(np.zeros(3), coords={"time": [1], "distance": [1]})
+            xd.DataArray(np.zeros(3), dims=("time", "distance"))
+        with pytest.raises(
+            ValueError,
+            match="inferred number of dimensions 2 from `coords` does not match `data` dimensionality of 1",
+        ):
+            xd.DataArray(np.zeros(3), coords={"time": [1], "distance": [1]})
         with pytest.raises(ValueError, match="conflicting sizes for dimension"):
-            DataArray(np.zeros((2, 3)), coords={"time": [1, 2], "distance": [1, 2]})
+            xd.DataArray(np.zeros((2, 3)), coords={"time": [1, 2], "distance": [1, 2]})
 
     def test_coords_setter(self):
-        da = xdas.DataArray(np.arange(3 * 11).reshape(3, 11))
+        da = xd.DataArray(np.arange(3 * 11).reshape(3, 11))
         da["dim_0"] = [1, 2, 4]
         da["dim_1"] = {"tie_indices": [0, 10], "tie_values": [0.0, 100.0]}
         da["dim_0"] = [1, 2, 3]
@@ -88,9 +89,9 @@ class TestDataArray:
         with pytest.raises(ValueError, match="conflicting sizes"):
             da["dim_1"] = [1]
         coords = da.coords.copy()
-        assert coords._parent is None
+        assert coords.parent is None
         da.coords = coords
-        assert da.coords._parent is da
+        assert da.coords.parent is da
         coords = da.coords.copy()
         del coords["dim_1"]
         da.coords = coords
@@ -160,7 +161,7 @@ class TestDataArray:
         assert "distance" not in result.coords
 
     def test_better_error_when_sel_with_overlaps(self):
-        da = DataArray(
+        da = xd.DataArray(
             np.arange(80).reshape(20, 4),
             {
                 "time": {
@@ -192,7 +193,7 @@ class TestDataArray:
             result = da.to_xarray()
             assert np.array_equal(result.values, da.values)
             assert np.array_equal(result["dim"].values, da["dim"].values)
-            da = da.sel(dim=slice(1000, 2000))  # empty dataarray
+            da = da.sel(dim=slice(1000, 2000))  # empty xd.dataarray
             result = da.to_xarray()
             assert np.array_equal(result.values, da.values)
             assert np.array_equal(result["dim"].values, da["dim"].values)
@@ -200,7 +201,7 @@ class TestDataArray:
     def test_from_xarray(self):
         da = self.generate()
         da = da.to_xarray()
-        result = DataArray.from_xarray(da)
+        result = xd.DataArray.from_xarray(da)
         assert np.array_equal(result.values, da.values)
         assert np.array_equal(result["dim"].values, da["dim"].values)
 
@@ -216,7 +217,7 @@ class TestDataArray:
         assert st[0].stats.npts == da.sizes["time"]
         assert np.datetime64(st[0].stats.starttime.datetime) == da["time"][0].values
         assert np.datetime64(st[0].stats.endtime.datetime) == da["time"][-1].values
-        result = DataArray.from_stream(st)
+        result = xd.DataArray.from_stream(st)
         assert np.array_equal(result.values.T, da.values)
         assert result.sizes == {
             "channel": da.sizes["distance"],
@@ -228,10 +229,10 @@ class TestDataArray:
         coord = [f"D{k}" for k in range(9)]
         coords = Coordinates({"dim": coord})
         data = 0.1 * np.arange(9)
-        DataArray(data, coords)
+        xd.DataArray(data, coords)
 
     def test_single_index_selection(self):
-        da = DataArray(
+        da = xd.DataArray(
             np.arange(12).reshape(3, 4),
             {
                 "time": {"tie_values": [0.0, 1.0], "tie_indices": [0, 2]},
@@ -241,7 +242,7 @@ class TestDataArray:
         da_getitem = da[1]
         da_isel = da.isel(time=1)
         da_sel = da.sel(time=0.5)
-        da_expected = DataArray(
+        da_expected = xd.DataArray(
             np.array([4, 5, 6, 7]),
             {"time": (None, 0.5), "distance": [0.0, 10.0, 20.0, 30.0]},
         )
@@ -251,7 +252,7 @@ class TestDataArray:
         da_getitem = da[:, 1]
         da_isel = da.isel(distance=1)
         da_sel = da.sel(distance=10.0)
-        da_expected = DataArray(
+        da_expected = xd.DataArray(
             np.array([1, 5, 9]),
             {
                 "time": {"tie_values": [0.0, 1.0], "tie_indices": [0, 2]},
@@ -263,7 +264,7 @@ class TestDataArray:
         assert da_sel.equals(da_expected)
 
     def test_assign_coords(self):
-        da = DataArray(
+        da = xd.DataArray(
             data=np.zeros(3),
             coords={"time": np.array([3, 4, 5])},
         )
@@ -274,7 +275,7 @@ class TestDataArray:
         assert np.array_equal(result["relative_time"].values, [0, 1, 2])
 
     def test_swap_dims(self):
-        da = DataArray(
+        da = xd.DataArray(
             data=[0, 1],
             coords={"x": ["a", "b"], "y": ("x", [0, 1])},
         )
@@ -291,7 +292,7 @@ class TestDataArray:
             da.swap_dims({"z": "x"})
 
     def test_to_xarray_non_dimensional(self):
-        da = DataArray(
+        da = xd.DataArray(
             data=np.zeros(3),
             coords={
                 "time": np.array([3, 4, 5]),
@@ -304,28 +305,27 @@ class TestDataArray:
         assert np.array_equal(result["relative_time"], [0, 1, 2])
         assert result.dims == da.dims
 
-    def test_netcdf_non_dimensional(self):
-        da = DataArray(
+    def test_netcdf_non_dimensional(self, tmp_path):
+        da = xd.DataArray(
             data=np.zeros(3),
             coords={
                 "time": np.array([3, 4, 5]),
                 "relative_time": ("time", np.array([0, 1, 2])),
             },
         )
-        with TemporaryDirectory() as dirpath:
-            path = os.path.join(dirpath, "tmp.nc")
-            da.to_netcdf(path)
-            result = xdas.open_dataarray(path)
-            assert result.equals(da)
-        with TemporaryDirectory() as dirpath:
-            path = os.path.join(dirpath, "da.nc")
-            da = wavelet_wavefronts().assign_coords(lon=("distance", np.arange(401)))
-            da.to_netcdf(path)
-            tmp = xdas.open_dataarray(path)
-            path = path = os.path.join(dirpath, "vds.nc")
-            tmp.to_netcdf(path)
-            result = xdas.open_dataarray(path)
-            assert result.equals(da)
+        path = tmp_path / "tmp.nc"
+        da.to_netcdf(path)
+        result = xd.open_dataarray(path)
+        assert result.equals(da)
+
+        da_path = tmp_path / "da.nc"
+        da = wavelet_wavefronts().assign_coords(lon=("distance", np.arange(401)))
+        da.to_netcdf(da_path)
+        tmp = xd.open_dataarray(da_path)
+        vds_path = tmp_path / "vds.nc"
+        tmp.to_netcdf(vds_path)
+        result = xd.open_dataarray(vds_path)
+        assert result.equals(da)
 
     def test_transpose(self):
         da = wavelet_wavefronts()
@@ -342,119 +342,121 @@ class TestDataArray:
             da.transpose("space", "frequency")
 
     def test_expand_dims(self):
-        da = DataArray([1.0, 2.0, 3.0], {"x": [0, 1, 2]})
+        da = xd.DataArray([1.0, 2.0, 3.0], {"x": [0, 1, 2]})
         result = da.expand_dims("y", 0)
         assert result.dims == ("y", "x")
         assert result.shape == (1, 3)
 
-        da = DataArray([1.0, 2.0, 3.0], {"x": [0, 1, 2], "y": 0}, dims=("x",))
+        da = xd.DataArray([1.0, 2.0, 3.0], {"x": [0, 1, 2], "y": 0}, dims=("x",))
         result = da.expand_dims("y")
         assert result.dims == ("y", "x")
         assert result.shape == (1, 3)
-        assert result["y"].equals(xdas.Coordinate([0], dim="y"))
+        assert result["y"].equals(xd.Coordinate([0], dim="y"))
 
-    def test_io(self):
+    def test_io(self, tmp_path):
         # both coords interpolated
         da = wavelet_wavefronts()
-        with TemporaryDirectory() as dirpath:
-            path = os.path.join(dirpath, "tmp.nc")
-            da.to_netcdf(path)
-            da_recovered = DataArray.from_netcdf(path)
-            assert da.equals(da_recovered)
+        path = tmp_path / "interp.nc"
+        da.to_netcdf(path)
+        da_recovered = xd.DataArray.from_netcdf(path)
+        assert da.equals(da_recovered)
 
         # mixed interpolated and dense
         da["time"] = np.asarray(da["time"])
-        with TemporaryDirectory() as dirpath:
-            path = os.path.join(dirpath, "tmp.nc")
-            da.to_netcdf(path)
-            da_recovered = DataArray.from_netcdf(path)
-            assert da.equals(da_recovered)
+        path = tmp_path / "mixed.nc"
+        da.to_netcdf(path)
+        da_recovered = xd.DataArray.from_netcdf(path)
+        assert da.equals(da_recovered)
 
         # only dense coords
         da["distance"] = np.asarray(da["distance"])
-        with TemporaryDirectory() as dirpath:
-            path = os.path.join(dirpath, "tmp.nc")
-            da.to_netcdf(path)
-            da_recovered = DataArray.from_netcdf(path)
-            assert da.equals(da_recovered)
+        path = tmp_path / "dense.nc"
+        da.to_netcdf(path)
+        da_recovered = xd.DataArray.from_netcdf(path)
+        assert da.equals(da_recovered)
 
-    def test_io_with_zfp_compression(self):
-        da = DataArray(np.random.rand(101, 101))
-        with TemporaryDirectory() as tmpdir:
-            tmpfile_uncompressed = os.path.join(tmpdir, "uncompressed.nc")
-            da.to_netcdf(tmpfile_uncompressed)
-            tmpfile_compressed = os.path.join(tmpdir, "compressed.nc")
-            da.to_netcdf(tmpfile_compressed, encoding=hdf5plugin.Zfp(accuracy=0.001))
-            tmpfile_chunk_compressed = os.path.join(tmpdir, "chunk_compressed.nc")
-            da.to_netcdf(
-                tmpfile_chunk_compressed,
-                encoding={"chunks": (10, 10), **hdf5plugin.Zfp(accuracy=0.001)},
-            )
-            uncompressed_size = os.path.getsize(tmpfile_uncompressed)
-            compressed_size = os.path.getsize(tmpfile_compressed)
-            chunk_compressed_size = os.path.getsize(tmpfile_chunk_compressed)
-            assert chunk_compressed_size < uncompressed_size
-            assert compressed_size < chunk_compressed_size
-            _da = DataArray.from_netcdf(tmpfile_compressed)
-            assert np.abs(da - _da).max().values < 0.001
+    def test_io_with_zfp_compression(self, tmp_path):
+        da = xd.DataArray(np.random.rand(101, 101))
+        tmpfile_uncompressed = tmp_path / "uncompressed.nc"
+        da.to_netcdf(tmpfile_uncompressed)
+        tmpfile_compressed = tmp_path / "compressed.nc"
+        da.to_netcdf(tmpfile_compressed, encoding=hdf5plugin.Zfp(accuracy=0.001))
+        tmpfile_chunk_compressed = tmp_path / "chunk_compressed.nc"
+        da.to_netcdf(
+            tmpfile_chunk_compressed,
+            encoding={"chunks": (10, 10), **hdf5plugin.Zfp(accuracy=0.001)},
+        )
+        uncompressed_size = tmpfile_uncompressed.stat().st_size
+        compressed_size = tmpfile_compressed.stat().st_size
+        chunk_compressed_size = tmpfile_chunk_compressed.stat().st_size
+        assert chunk_compressed_size < uncompressed_size
+        assert compressed_size < chunk_compressed_size
+        _da = xd.DataArray.from_netcdf(tmpfile_compressed)
+        assert np.abs(da - _da).max().values < 0.001
 
-    def test_io_dask(self):
-        with TemporaryDirectory() as tmpdir:
-            values = np.random.rand(3, 10)
-            chunks = np.split(values, 5, axis=1)
-            for idx, chunk in enumerate(chunks):
-                np.save(os.path.join(tmpdir, f"chunk_{idx}.npy"), chunk)
-            paths = glob(os.path.join(tmpdir, "*.npy"))
-            chunks = [dask.delayed(np.load)(path) for path in paths]
-            chunks = [
-                dask.array.from_delayed(chunk, shape=(3, 2), dtype=values.dtype)
-                for chunk in chunks
-            ]
-            data = dask.array.concatenate(chunks, axis=1)
-            expected = DataArray(
-                data,
-                coords={"time": np.arange(3), "distance": np.arange(10)},
-                attrs={"version": "1.0"},
-                name="data",
-            )
-            fname = os.path.join(tmpdir, "tmp.nc")
-            expected.to_netcdf(fname)
-            result = xdas.open_dataarray(fname)
-            assert isinstance(result.data, dask.array.Array)
-            assert np.array_equal(expected.values, result.values)
-            assert expected.dtype == result.dtype
-            assert expected.coords.equals(result.coords)
-            assert expected.dims == result.dims
-            assert expected.name == result.name
-            assert expected.attrs == result.attrs
+    def test_io_dask(self, tmp_path):
+        values = np.random.rand(3, 10)
+        chunks = np.split(values, 5, axis=1)
+        for idx, chunk in enumerate(chunks):
+            np.save(tmp_path / f"chunk_{idx}.npy", chunk)
+        paths = sorted(tmp_path.glob("*.npy"))
+        chunks = [dask.delayed(np.load)(str(path)) for path in paths]
+        chunks = [
+            dask.array.from_delayed(chunk, shape=(3, 2), dtype=values.dtype)
+            for chunk in chunks
+        ]
+        data = dask.array.concatenate(chunks, axis=1)
+        expected = xd.DataArray(
+            data,
+            coords={"time": np.arange(3), "distance": np.arange(10)},
+            attrs={"version": "1.0"},
+            name="data",
+        )
+        fname = tmp_path / "tmp.nc"
+        expected.to_netcdf(fname)
+        result = xd.open_dataarray(fname)
+        assert isinstance(result.data, dask.array.Array)
+        assert np.array_equal(expected.values, result.values)
+        assert expected.dtype == result.dtype
+        assert expected.coords.equals(result.coords)
+        assert expected.dims == result.dims
+        assert expected.name == result.name
+        assert expected.attrs == result.attrs
 
-    def test_io_non_dimensional(self):
-        expected = DataArray(coords={"dim": 0}, dims=())
-        with TemporaryDirectory() as dirpath:
-            path = os.path.join(dirpath, "tmp.nc")
-            expected.to_netcdf(path)
-            result = DataArray.from_netcdf(path)
-            assert expected.equals(result)
+    def test_io_non_dimensional(self, tmp_path):
+        expected = xd.DataArray(coords={"dim": 0}, dims=())
+        path = tmp_path / "tmp.nc"
+        expected.to_netcdf(path)
+        result = xd.DataArray.from_netcdf(path)
+        assert expected.equals(result)
 
-    def test_io_attrs(self):
+    def test_io_attrs(self, tmp_path):
         attrs = {"description": "test"}
-        da = DataArray(
+        da = xd.DataArray(
             np.arange(3),
             coords={"time": np.array([3, 4, 5])},
             attrs=attrs,
         )
-        with TemporaryDirectory() as dirpath:
-            path = os.path.join(dirpath, "tmp.nc")
+        path = tmp_path / "tmp.nc"
+        da.to_netcdf(path)
+        result = xd.DataArray.from_netcdf(path)
+        assert result.attrs == attrs
+        assert result.equals(da)
+        da = xd.open_dataarray(path)
+        path = tmp_path / "vds.nc"
+        da.to_netcdf(path)
+        result = xd.open_dataarray(path)
+        assert result.attrs == attrs
+        assert result.equals(da)
+
+    def test_io_create_dirs(self, tmp_path):
+        da = xd.DataArray(np.arange(3))
+        path = tmp_path / "subdir" / "tmp.nc"
+        with pytest.raises(FileNotFoundError, match="No such file or directory"):
             da.to_netcdf(path)
-            result = DataArray.from_netcdf(path)
-            assert result.attrs == attrs
-            assert result.equals(da)
-            da = xdas.open_dataarray(path)
-            path = os.path.join(dirpath, "vds.nc")
-            da.to_netcdf(path)
-            result = xdas.open_dataarray(path)
-            assert result.attrs == attrs
-            assert result.equals(da)
+        da.to_netcdf(path, create_dirs=True)
+        result = xd.DataArray.from_netcdf(path)
+        assert result.equals(da)
 
     def test_ufunc(self):
         da = wavelet_wavefronts()
@@ -483,3 +485,64 @@ class TestDataArray:
         assert np.array_equal(result.data, da.data + da.data)
         result = da + da.isel(time=0, drop=True)
         assert np.array_equal(result.data, da.data + da.data[0])
+
+
+class TestGarbadgeCollection:
+
+    process = psutil.Process(os.getpid())
+
+    nchunk = 10
+    chunk_size = 1000
+    other_size = 1000
+
+    def mem_mb(self):
+        return self.process.memory_info().rss / 1024**2
+
+    def test_from_data(self):
+        baseline = self.mem_mb()
+        previous = baseline
+        deltas = []
+        for _ in range(self.nchunk):
+            data = np.random.rand(self.chunk_size, self.other_size)
+            _ = xd.DataArray(data)
+            current = self.mem_mb()
+            deltas.append(current - previous)
+            previous = current
+        assert np.median(deltas) == 0.0
+
+    def test_from_file(self, tmp_path):
+        # generate files
+        for idx in range(self.nchunk):
+            t0 = 10.0 * idx
+            da = xd.DataArray(
+                data=np.random.rand(self.chunk_size, self.other_size),
+                coords={
+                    "time": {
+                        "tie_values": [t0],
+                        "tie_lengths": [self.chunk_size],
+                        "sampling_interval": 0.01,
+                    },
+                    "distance": {
+                        "tie_values": [0.0],
+                        "tie_lengths": [self.other_size],
+                        "sampling_interval": 10.0,
+                    },
+                },
+            )
+            da.to_netcdf(tmp_path / "data" / "chunk_{idx:03d}.nc", create_dirs=True)
+        da = xd.open(tmp_path / "data" / "chunk_*.nc", squeeze=True)
+        da.to_netcdf(tmp_path / "dataarray.nc")
+        da = xd.open(tmp_path / "dataarray.nc")
+
+        # read and check no memory leak
+        baseline = self.mem_mb()
+        previous = baseline
+        deltas = []
+        for idx in range(self.nchunk):
+            start = idx * self.chunk_size
+            end = (idx + 1) * self.chunk_size
+            _ = da.isel(time=slice(start, end)).load()
+            current = self.mem_mb()
+            deltas.append(current - previous)
+            previous = current
+        assert np.median(deltas) == 0.0

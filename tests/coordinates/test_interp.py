@@ -1,227 +1,7 @@
 import numpy as np
-import pandas as pd
 import pytest
 
-import xdas
-from xdas.core.coordinates import DenseCoordinate, InterpCoordinate, ScalarCoordinate
-
-
-class TestScalarCoordinate:
-    valid = [
-        1,
-        np.array(1),
-        1.0,
-        np.array(1.0),
-        "label",
-        np.array("label"),
-        np.datetime64(1, "s"),
-    ]
-    invalid = [[1], np.array([1]), {"key": "value"}]
-
-    def test_isvalid(self):
-        for data in self.valid:
-            assert ScalarCoordinate.isvalid(data)
-        for data in self.invalid:
-            assert not ScalarCoordinate.isvalid(data)
-
-    def test_init(self):
-        coord = ScalarCoordinate(1)
-        assert coord.data == 1
-        assert coord.dim is None
-        coord = ScalarCoordinate(1, None)
-        assert coord.dim is None
-        with pytest.raises(ValueError):
-            ScalarCoordinate(1, "dim")
-        for data in self.valid:
-            assert ScalarCoordinate(data).data == np.array(data)
-        for data in self.invalid:
-            with pytest.raises(TypeError):
-                ScalarCoordinate(data)
-
-    def test_getitem(self):
-        assert ScalarCoordinate(1)[...].equals(ScalarCoordinate(1))
-        with pytest.raises(IndexError):
-            ScalarCoordinate(1)[:]
-        with pytest.raises(IndexError):
-            ScalarCoordinate(1)[0]
-
-    def test_len(self):
-        with pytest.raises(TypeError):
-            len(ScalarCoordinate(1))
-
-    def test_repr(self):
-        for data in self.valid:
-            assert ScalarCoordinate(data).__repr__() == np.array2string(
-                np.asarray(data), threshold=0, edgeitems=1
-            )
-
-    def test_array(self):
-        for data in self.valid:
-            assert ScalarCoordinate(data).__array__() == np.array(data)
-
-    def test_dtype(self):
-        for data in self.valid:
-            assert ScalarCoordinate(data).dtype == np.array(data).dtype
-
-    def test_values(self):
-        for data in self.valid:
-            assert ScalarCoordinate(data).values == np.array(data)
-
-    def test_equals(self):
-        for data in self.valid:
-            coord = ScalarCoordinate(data)
-            assert coord.equals(coord)
-        assert ScalarCoordinate(1).equals(ScalarCoordinate(np.array(1)))
-
-    def test_to_index(self):
-        with pytest.raises(NotImplementedError):
-            ScalarCoordinate(1).to_index("item")
-
-    def test_isinstance(self):
-        assert ScalarCoordinate(1).isscalar()
-        assert not ScalarCoordinate(1).isdense()
-        assert not ScalarCoordinate(1).isinterp()
-
-    def test_to_from_dict(self):
-        for data in self.valid:
-            coord = ScalarCoordinate(data)
-            assert ScalarCoordinate.from_dict(coord.to_dict()).equals(coord)
-
-    def test_empty(self):
-        with pytest.raises(TypeError, match="cannot be empty"):
-            ScalarCoordinate()
-
-
-class TestDenseCoordinate:
-    valid = [
-        [1, 2, 3],
-        np.array([1, 2, 3]),
-        [1.0, 2.0, 3.0],
-        np.array([1.0, 2.0, 3.0]),
-        ["a", "b", "c"],
-        np.array(["a", "b", "c"]),
-        np.array([1, 2, 3], dtype="datetime64[s]"),
-    ]
-    invalid = [
-        1,
-        np.array(1),
-        1.0,
-        np.array(1.0),
-        "label",
-        np.array("label"),
-        np.datetime64(1, "s"),
-        {"key": "value"},
-    ]
-
-    def test_isvalid(self):
-        for data in self.valid:
-            assert DenseCoordinate.isvalid(data)
-        for data in self.invalid:
-            assert not DenseCoordinate.isvalid(data)
-
-    def test_init(self):
-        coord = DenseCoordinate([1, 2, 3])
-        assert np.array_equiv(coord.data, [1, 2, 3])
-        assert coord.dim is None
-        coord = DenseCoordinate([1, 2, 3], "dim")
-        assert coord.dim == "dim"
-        for data in self.valid:
-            assert np.array_equiv(DenseCoordinate(data).data, data)
-        for data in self.invalid:
-            with pytest.raises(TypeError):
-                DenseCoordinate(data)
-
-    def test_getitem(self):
-        assert np.array_equiv(DenseCoordinate([1, 2, 3])[...].values, [1, 2, 3])
-        assert isinstance(DenseCoordinate([1, 2, 3])[...], DenseCoordinate)
-        assert np.array_equiv(DenseCoordinate([1, 2, 3])[:].values, [1, 2, 3])
-        assert isinstance(DenseCoordinate([1, 2, 3])[:], DenseCoordinate)
-        assert np.array_equiv(DenseCoordinate([1, 2, 3])[1].values, 2)
-        assert isinstance(DenseCoordinate([1, 2, 3])[1], ScalarCoordinate)
-        assert np.array_equiv(DenseCoordinate([1, 2, 3])[1:].values, [2, 3])
-        assert isinstance(DenseCoordinate([1, 2, 3])[1:], DenseCoordinate)
-
-    def test_len(self):
-        for data in self.valid:
-            assert len(DenseCoordinate(data)) == 3
-
-    def test_repr(self):
-        for data in self.valid:
-            assert DenseCoordinate(data).__repr__() == np.array2string(
-                np.asarray(data), threshold=0, edgeitems=1
-            )
-
-    def test_array(self):
-        for data in self.valid:
-            assert np.array_equiv(DenseCoordinate(data).__array__(), data)
-
-    def test_dtype(self):
-        for data in self.valid:
-            assert DenseCoordinate(data).dtype == np.array(data).dtype
-
-    def test_values(self):
-        for data in self.valid:
-            assert np.array_equiv(DenseCoordinate(data).values, data)
-
-    def test_index(self):
-        for data in self.valid:
-            assert DenseCoordinate(data).index.equals(pd.Index(data))
-
-    def test_equals(self):
-        for data in self.valid:
-            coord = DenseCoordinate(data)
-            assert coord.equals(coord)
-        assert DenseCoordinate([1, 2, 3]).equals(DenseCoordinate([1, 2, 3]))
-
-    def test_isinstance(self):
-        assert not DenseCoordinate([1, 2, 3]).isscalar()
-        assert DenseCoordinate([1, 2, 3]).isdense()
-        assert not DenseCoordinate([1, 2, 3]).isinterp()
-
-    def test_get_indexer(self):
-        assert DenseCoordinate([1, 2, 3]).get_indexer(2) == 1
-        assert np.array_equiv(DenseCoordinate([1, 2, 3]).get_indexer([2, 3]), [1, 2])
-        assert DenseCoordinate([1, 2, 3]).get_indexer(2.1, method="nearest") == 1
-        assert DenseCoordinate([1, 2, 3]).get_indexer(2.1, method="ffill") == 1
-        assert DenseCoordinate([1, 2, 3]).get_indexer(2.1, method="bfill") == 2
-
-    def test_get_slice_indexer(self):
-        assert np.array_equiv(
-            DenseCoordinate([1, 2, 3]).slice_indexer(start=2), slice(1, 3)
-        )
-
-    def test_to_index(self):
-        assert DenseCoordinate([1, 2, 3]).to_index(2) == 1
-        assert np.array_equiv(DenseCoordinate([1, 2, 3]).to_index([2, 3]), [1, 2])
-        assert np.array_equiv(
-            DenseCoordinate([1, 2, 3]).to_index(slice(2, None)), slice(1, 3)
-        )
-
-    def test_to_from_dict(self):
-        for data in self.valid:
-            coord = DenseCoordinate(data)
-            assert DenseCoordinate.from_dict(coord.to_dict()).equals(coord)
-
-    def test_empty(self):
-        coord = DenseCoordinate()
-        assert coord.empty
-
-    def test_append(self):
-        coord0 = DenseCoordinate()
-        coord1 = DenseCoordinate([1, 2, 3])
-        coord2 = DenseCoordinate([4, 5, 6])
-
-        result = coord1.append(coord2)
-        expected = DenseCoordinate([1, 2, 3, 4, 5, 6])
-        assert result.equals(expected)
-
-        result = coord2.append(coord1)
-        expected = DenseCoordinate([4, 5, 6, 1, 2, 3])
-        assert result.equals(expected)
-
-        assert coord0.append(coord0).empty
-        assert coord0.append(coord1).equals(coord1)
-        assert coord1.append(coord0).equals(coord1)
+from xdas.coordinates import InterpCoordinate, ScalarCoordinate
 
 
 class TestInterpCoordinate:
@@ -367,10 +147,6 @@ class TestInterpCoordinate:
         # TODO
         pass
 
-    def test_format_index_slice(self):
-        # TODO
-        pass
-
     def test_get_value(self):
         coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert coord.get_value(0) == 100.0
@@ -509,6 +285,21 @@ class TestInterpCoordinate:
         coord = InterpCoordinate({"tie_indices": xp, "tie_values": yp})
         assert len(coord.simplify(1.0).tie_indices) == 2
 
+    def test_simplify_datetime(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        xp = np.sort(np.random.choice(10000, 1000, replace=False))
+        xp[0] = 0
+        xp[-1] = 10000
+        yp = (
+            t0
+            + xp.astype("timedelta64[s]")
+            + np.random.randint(-500, 500, size=1000).astype("timedelta64[ms]")
+        )
+        coord = InterpCoordinate({"tie_indices": xp, "tie_values": yp})
+        assert len(coord.simplify(np.timedelta64(1, "s")).tie_indices) == 2
+        assert len(coord.simplify(np.timedelta64(1000, "ms")).tie_indices) == 2
+        assert len(coord.simplify(1.0).tie_indices) == 2
+
     def test_singleton(self):
         coord = InterpCoordinate({"tie_indices": [0], "tie_values": [1.0]})
         assert coord[0].values == 1.0
@@ -536,91 +327,3 @@ class TestInterpCoordinate:
         assert coord0.append(coord0).empty
         assert coord0.append(coord1).equals(coord1)
         assert coord1.append(coord0).equals(coord1)
-
-
-class TestCoordinate:
-    def test_new(self):
-        assert xdas.Coordinate(1).isscalar()
-        assert xdas.Coordinate([1]).isdense()
-        assert xdas.Coordinate({"tie_values": [], "tie_indices": []}).isinterp()
-        coord = xdas.Coordinate(xdas.Coordinate([1]), "dim")
-        assert coord.isdense()
-        assert coord.dim == "dim"
-
-    def test_to_dataarray(self):
-        coord = xdas.Coordinate([1, 2, 3], "dim")
-        result = coord.to_dataarray()
-        expected = xdas.DataArray([1, 2, 3], {"dim": [1, 2, 3]}, name="dim")
-        assert result.equals(expected)
-
-    def test_empty(self):
-        with pytest.raises(TypeError, match="cannot infer coordinate type"):
-            xdas.Coordinate()
-
-
-class TestCoordinates:
-    def test_init(self):
-        coords = xdas.Coordinates(
-            {"dim": ("dim", {"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})}
-        )
-        coord = coords["dim"]
-        assert coord.isinterp()
-        assert np.allclose(coord.tie_indices, [0, 8])
-        assert np.allclose(coord.tie_values, [100.0, 900.0])
-        assert coords.isdim("dim")
-        coords = xdas.Coordinates({"dim": [1.0, 2.0, 3.0]})
-        coord = coords["dim"]
-        assert coord.isdense()
-        assert np.allclose(coord.values, [1.0, 2.0, 3.0])
-        assert coords.isdim("dim")
-        coords = xdas.Coordinates(
-            {
-                "dim_0": (
-                    "dim_0",
-                    {"tie_indices": [0, 8], "tie_values": [100.0, 900.0]},
-                ),
-                "dim_1": (
-                    "dim_0",
-                    {"tie_indices": [0, 8], "tie_values": [100.0, 900.0]},
-                ),
-            }
-        )
-        assert coords.isdim("dim_0")
-        assert not coords.isdim("dim_1")
-        coords = xdas.Coordinates()
-        assert coords == dict()
-        assert coords.dims == tuple()
-
-    def test_first_last(self):
-        coords = xdas.Coordinates({"dim_0": [1.0, 2.0, 3.0], "dim_1": [1.0, 2.0, 3.0]})
-        assert coords["first"].dim == "dim_0"
-        assert coords["last"].dim == "dim_1"
-
-    def test_setitem(self):
-        coords = xdas.Coordinates()
-        coords["dim_0"] = [1, 2, 4]
-        assert coords.dims == ("dim_0",)
-        coords["dim_1"] = {"tie_indices": [0, 10], "tie_values": [0.0, 100.0]}
-        assert coords.dims == ("dim_0", "dim_1")
-        coords["dim_0"] = [1, 2, 3]
-        assert coords.dims == ("dim_0", "dim_1")
-        coords["metadata"] = 0
-        assert coords.dims == ("dim_0", "dim_1")
-        coords["non-dimensional"] = ("dim_0", [-1, -1, -1])
-        assert coords.dims == ("dim_0", "dim_1")
-        coords["other_dim"] = ("dim_2", [0])
-        assert coords.dims == ("dim_0", "dim_1", "dim_2")
-        with pytest.raises(TypeError, match="must be of type str"):
-            coords[0] = ...
-
-    def test_to_from_dict(self):
-        starttime = np.datetime64("2020-01-01T00:00:00.000")
-        endtime = np.datetime64("2020-01-01T00:00:10.000")
-        coords = {
-            "time": {"tie_indices": [0, 999], "tie_values": [starttime, endtime]},
-            "distance": np.linspace(0, 1000, 3),
-            "channel": ("distance", ["DAS01", "DAS02", "DAS03"]),
-            "interrogator": (None, "SRN"),
-        }
-        coords = xdas.Coordinates(coords)
-        assert xdas.Coordinates.from_dict(coords.to_dict()).equals(coords)

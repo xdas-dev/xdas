@@ -12,6 +12,8 @@
    DataArrayLoader
    RealTimeLoader
    DataArrayWriter
+   DataFrameWriter
+   StreamWriter
    ZMQPublisher
    ZMQSubscriber
 ```

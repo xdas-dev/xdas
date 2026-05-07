@@ -3,10 +3,10 @@
 ```{toctree}
 :maxdepth: 1
 
-data-structure/index
+data-structures/index
+coordinates/index
 data-formats
 virtual-datasets
-interpolated-coordinates
 miniseed
 convert-displacement
 atoms

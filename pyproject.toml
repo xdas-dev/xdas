@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xdas"
-version = "0.2.2"
+version = "0.2.6"
 requires-python = ">= 3.10"
 authors = [
     { name = "Alister Trabattoni", email = "alister.trabattoni@gmail.com" },
@@ -20,6 +20,7 @@ dependencies = [
     "obspy",
     "pandas",
     "plotly",
+    "setuptools<82.0.0",
     "scipy",
     "tqdm",
     "watchdog",
@@ -29,7 +30,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["black", "build", "isort", "twine"]
+dev = [
+    "black",
+    "build",
+    "isort",
+    "twine",
+]
 docs = [
     "ipykernel",
     "matplotlib",
@@ -39,7 +45,15 @@ docs = [
     "sphinx-copybutton",
     "sphinx",
 ]
-tests = ["pytest", "pytest-cov", "seisbench", "torch"]
+tests = [
+    "dascore",
+    "pytest",
+    "pytest-cov",
+    "pytest-timeout",
+    "psutil",
+    "seisbench",
+    "torch",
+]
 
 [tool.isort]
 profile = "black"

@@ -455,7 +455,7 @@ class TdmsReader(object):
             self._seg2_length = 0
         else:
             self._tdms_file.seek(nso + 12, 0)
-            (seg2_nso, seg2_rdo) = struct.unpack("<qq", self._tdms_file.read(2 * 8))
+            seg2_nso, seg2_rdo = struct.unpack("<qq", self._tdms_file.read(2 * 8))
             self._seg2_length = (
                 (seg2_nso - seg2_rdo) / nch / np.dtype(self._data_type).itemsize
             )

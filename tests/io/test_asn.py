@@ -2,6 +2,7 @@ import json
 import threading
 import time
 
+import h5py
 import numpy as np
 import zmq
 
@@ -36,6 +37,31 @@ da_int16 = xd.DataArray(
 )
 
 
+class TestASNEngine:
+    def test_read_handles_exclusive_roi_end(self, tmp_path):
+        path = tmp_path / "sample_asn.hdf5"
+        with h5py.File(path, "w") as file:
+            header = file.create_group("header")
+            header["time"] = 0.0
+            header["dt"] = 0.1
+            header["dx"] = 10.0
+
+            file.create_dataset("data", data=np.zeros((4, 4), dtype=np.float32))
+
+            cable_spec = file.create_group("cableSpec")
+            cable_spec["sensorDistances"] = np.array([0.0, 10.0, 20.0, 30.0])
+
+            demod_spec = file.create_group("demodSpec")
+            demod_spec["roiStart"] = np.array([0])
+            demod_spec["roiEnd"] = np.array([4])
+
+        da = xd.open_dataarray(path, engine="asn")
+
+        assert da.shape == (4, 4)
+        assert da["distance"][0].values == 0.0
+        assert da["distance"][-1].values == 30.0
+
+
 class TestZMQPublisher:
     def test_get_header(self):
         header = ZMQPublisher._get_header(da_float32)
@@ -55,27 +81,33 @@ class TestZMQPublisher:
         address = get_free_local_address()
         pub = ZMQPublisher(address)
         pub.submit(da_float32)
+        time.sleep(0.001)
         assert pub.header == ZMQPublisher._get_header(da_float32)
 
     def test_send_header(self):
         address = get_free_local_address()
         pub = ZMQPublisher(address)
         pub.submit(da_float32)
+        time.sleep(0.001)
         socket = self.get_socket(address)
         pub.submit(da_float32)  # a packet must be sent once subscriber is connected
+        time.sleep(0.001)
         assert socket.recv() == json.dumps(pub.header).encode("utf-8")
 
     def test_send_data(self):
         address = get_free_local_address()
         pub = ZMQPublisher(address)
         pub.submit(da_float32)
+        time.sleep(0.001)
         socket = self.get_socket(address)
         pub.submit(da_float32)  # a packet must be sent once subscriber is connected
+        time.sleep(0.001)
         socket.recv()  # header
         message = socket.recv()
         assert message[:8] == da_float32["time"][0].values.astype("M8[ns]").tobytes()
         assert message[8:] == da_float32.data.tobytes()
         pub.submit(da_int16)
+        time.sleep(0.001)
         socket.recv()  # header
         message = socket.recv()
         assert message[:8] == da_int16["time"][0].values.astype("M8[ns]").tobytes()
@@ -135,8 +167,8 @@ class TestZMQPublisher:
             time.sleep(0.001)
         for chunk in chunks[5:]:
             pub.submit(chunk.isel(distance=slice(0, 5)))
-            header2 = pub.header
             time.sleep(0.001)
+            header2 = pub.header
         assert socket.recv() == json.dumps(header1).encode("utf-8")
         for chunk in chunks[1:5]:  # first was sent before subscriber connected
             message = socket.recv()
@@ -223,6 +255,66 @@ class TestZMQSubscriber:
             result = next(sub)
             assert result.equals(chunk)
 
+    def test_roiDec(self):
+        address = get_free_local_address()
+        pub = ZMQPublisher(address)
+        chunks = [da_float32]
+        threading.Thread(target=self.publish, args=(pub, chunks)).start()
+        sub = ZMQSubscriber(address)
+        message = (
+            b"{\n"
+            b'    "bytesPerPackage": 64008,\n'
+            b'    "dataScale": 1,\n'
+            b'    "dataType": "float",\n'
+            b'    "dt": 0.01,\n'
+            b'    "dtUnit": "s",\n'
+            b'    "dx": 10.213001907746815,\n'
+            b'    "dxUnit": "m",\n'
+            b'    "experiment": "monaco-das-lig2024",\n'
+            b'    "gaugeLength": 20.42600381549363,\n'
+            b'    "gaugeLengthUnit": "m",\n'
+            b'    "instrument": "fsic036.fsi.lan",\n'
+            b'    "measurement": "monaco-longterm2025",\n'
+            b'    "measurementStartTime": "2025-07-08T12:08:31.709Z",\n'
+            b'    "muxPositions": [\n'
+            b"        {\n"
+            b'            "rx": 0,\n'
+            b'            "tx": 0\n'
+            b"        }\n"
+            b"    ],\n"
+            b'    "nChannels": 16002,\n'
+            b'    "nPackagesPerMessage": 10,\n'
+            b'    "roiTable": [\n'
+            b"        {\n"
+            b'            "roiDec": 10,\n'
+            b'            "roiEnd": 160010,\n'
+            b'            "roiStart": 0\n'
+            b"        }\n"
+            b"    ],\n"
+            b'    "sensitivities": [\n'
+            b"        {\n"
+            b'            "factor": 9112677.961649183,\n'
+            b'            "unit": "rad/(strain*m)"\n'
+            b"        }\n"
+            b"    ],\n"
+            b'    "sensorType": "D",\n'
+            b'    "spatialUnwrapRange": 615.21435546875,\n'
+            b'    "sweepLength": 0.0001,\n'
+            b'    "sweepLengthUnit": "s",\n'
+            b'    "switchChannel": 0,\n'
+            b'    "triggeredMeasurement": false,\n'
+            b'    "trustedTimeSource": false,\n'
+            b'    "unit": "rad/(s*m)",\n'
+            b'    "version": 2\n'
+            b"}\n"
+        )
+        sub._update_header(message)
+        assert sub.shape == (10, 16002)
+        assert sub.distance == {
+            "tie_indices": [0, 16001],
+            "tie_values": [0.0, 163418.2435258568],
+        }
+
     def test_iter(self):
         address = get_free_local_address()
         pub = ZMQPublisher(address)
@@ -234,6 +326,7 @@ class TestZMQSubscriber:
         assert result.equals(da_float32)
 
     def publish(self, pub, chunks):
+        time.sleep(0.001)
         for chunk in chunks:
-            time.sleep(0.001)
             pub.submit(chunk)
+            time.sleep(0.001)

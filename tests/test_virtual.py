@@ -1,11 +1,8 @@
-import os
-import tempfile
-
 import h5py
 import numpy as np
 import pytest
 
-import xdas
+import xdas as xd
 from xdas.synthetics import wavelet_wavefronts
 from xdas.virtual import (
     Selection,
@@ -19,37 +16,32 @@ from xdas.virtual import (
 
 
 class TestFunctional:  # TODO: move elsewhere
-    def test_all(self):
-        with tempfile.TemporaryDirectory() as dirpath:
-            expected = wavelet_wavefronts()
-            chunks = xdas.split(expected, 3)
-            for index, chunk in enumerate(chunks, start=1):
-                chunk.to_netcdf(os.path.join(dirpath, f"{index:03d}.nc"))
+    def test_all(self, tmp_path):
+        expected = wavelet_wavefronts()
+        chunks = xd.split(expected, 3)
+        for index, chunk in enumerate(chunks, start=1):
+            chunk.to_netcdf(tmp_path / f"{index:03d}.nc")
 
-            da = xdas.open_dataarray(os.path.join(dirpath, "002.nc"))
-            datasource = da.data
-            assert np.allclose(np.asarray(datasource[0]), da.load().values[0])
-            assert np.allclose(np.asarray(datasource[0][1]), da.load().values[0][1])
-            assert np.allclose(
-                np.asarray(datasource[:, 0][1]), da.load().values[:, 0][1]
-            )
-            assert np.allclose(
-                np.asarray(datasource[:, 0][1]), da.load().values[:, 0][1]
-            )
-            assert np.allclose(np.asarray(datasource[10:][1]), da.load().values[10:][1])
-            with pytest.raises(IndexError):
-                datasource[1, 2, 3]
-            assert np.allclose(np.asarray(datasource[10:][1]), da.load().values[10:][1])
-            assert array_identical(da.load().data, da.load().data)
-            da1 = da.sel(
-                time=slice("2023-01-01T00:00:03", None),
-                distance=slice(1000, None),
-            ).load()
-            da2 = da.load().sel(
-                time=slice("2023-01-01T00:00:03", None),
-                distance=slice(1000, None),
-            )
-            assert da1.equals(da2)
+        da = xd.open(tmp_path / "002.nc")
+        datasource = da.data
+        assert np.allclose(np.asarray(datasource[0]), da.load().values[0])
+        assert np.allclose(np.asarray(datasource[0][1]), da.load().values[0][1])
+        assert np.allclose(np.asarray(datasource[:, 0][1]), da.load().values[:, 0][1])
+        assert np.allclose(np.asarray(datasource[:, 0][1]), da.load().values[:, 0][1])
+        assert np.allclose(np.asarray(datasource[10:][1]), da.load().values[10:][1])
+        with pytest.raises(IndexError):
+            datasource[1, 2, 3]
+        assert np.allclose(np.asarray(datasource[10:][1]), da.load().values[10:][1])
+        assert array_identical(da.load().data, da.load().data)
+        da1 = da.sel(
+            time=slice("2023-01-01T00:00:03", None),
+            distance=slice(1000, None),
+        ).load()
+        da2 = da.load().sel(
+            time=slice("2023-01-01T00:00:03", None),
+            distance=slice(1000, None),
+        )
+        assert da1.equals(da2)
 
     def test_dtypes(self, tmp_path):
         dtypes = (
@@ -68,9 +60,9 @@ class TestFunctional:  # TODO: move elsewhere
             np.complex128,
         )
         for dtype in dtypes:
-            expected = xdas.DataArray(np.zeros((3, 5), dtype=dtype))
+            expected = xd.DataArray(np.zeros((3, 5), dtype=dtype))
             expected.to_netcdf(tmp_path / "data.nc")
-            result = xdas.open_dataarray(tmp_path / "data.nc")
+            result = xd.open(tmp_path / "data.nc")
             assert result.equals(expected)
 
 

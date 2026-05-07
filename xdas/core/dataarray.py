@@ -1,20 +1,14 @@
 import copy
-import json
-import re
-import warnings
 from functools import partial
 
-import h5netcdf
-import h5py
-import hdf5plugin
 import numpy as np
 import xarray as xr
 from dask.array import Array as DaskArray
 from numpy.lib.mixins import NDArrayOperatorsMixin
 
-from ..dask.core import dumps, from_dict, loads, to_dict
-from ..virtual import VirtualArray, VirtualSource, _to_human
-from .coordinates import Coordinate, Coordinates, get_sampling_interval
+from ..coordinates import Coordinates
+from ..dask.core import from_dict, to_dict
+from ..virtual import VirtualArray, _to_human
 
 HANDLED_NUMPY_FUNCTIONS = {}
 HANDLED_METHODS = {}
@@ -131,7 +125,8 @@ class DataArray(NDArrayOperatorsMixin):
             return self.data.__array__(dtype)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        from .routines import broadcast_coords, broadcast_to  # TODO: circular import
+        from .routines import broadcast_coords  # TODO: circular import
+        from .routines import broadcast_to
 
         if not method == "__call__":
             return NotImplemented
@@ -762,36 +757,9 @@ class DataArray(NDArrayOperatorsMixin):
             the obspy stream version of the data array.
 
         """
-        dimdist, dimtime = dim.copy().popitem()
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                from obspy import Stream, Trace, UTCDateTime
-        except ImportError:
-            raise ImportError("obspy is not installed. Please install it.")
-        if not self.ndim == 2:
-            raise ValueError("the data array must be 2D")
-        starttime = UTCDateTime(str(self[dimtime][0].values))
-        delta = get_sampling_interval(self, dimtime)
-        band_code = get_band_code(1.0 / delta)
-        if "{" in channel and "}" in channel:
-            channel = channel.format(band_code)
-        header = {
-            "network": network,
-            "location": location,
-            "channel": channel,
-            "starttime": starttime,
-            "delta": delta,
-        }
-        return Stream(
-            [
-                Trace(
-                    data=self.isel({dimdist: idx}).values,
-                    header=header | {"station": station.format(idx + 1)},
-                )
-                for idx in range(len(self[dimdist]))
-            ]
-        )
+        from ..io.miniseed import to_stream
+
+        return to_stream(self, network, station, location, channel, dim)
 
     @classmethod
     def from_stream(cls, st, dims=("channel", "time")):
@@ -815,18 +783,19 @@ class DataArray(NDArrayOperatorsMixin):
         DataArray:
             The consolidated data array.
         """
-        data = np.stack([tr.data for tr in st])
-        channel = [tr.id for tr in st]
-        time = {
-            "tie_indices": [0, st[0].stats.npts - 1],
-            "tie_values": [
-                np.datetime64(st[0].stats.starttime.datetime),
-                np.datetime64(st[0].stats.endtime.datetime),
-            ],
-        }
-        return cls(data, {dims[0]: channel, dims[1]: time})
+        from ..io.miniseed import from_stream
 
-    def to_netcdf(self, fname, mode="w", group=None, virtual=None, encoding=None):
+        return from_stream(st, dims)
+
+    def to_netcdf(
+        self,
+        fname,
+        mode="w",
+        group=None,
+        virtual=None,
+        encoding=None,
+        create_dirs=False,
+    ):
         """
         Write DataArray contents to a netCDF file.
 
@@ -850,6 +819,8 @@ class DataArray(NDArrayOperatorsMixin):
             the `h5netcdf` engine to write the data. If you want to use a specific plugin
             for compression, you can use the `hdf5plugin` package. For example, to use the
             ZFP compression, you can use the `hdf5plugin.Zfp` class.
+        create_dirs : bool, optional
+            Whether to create parent directories if they do not exist. Default is False.
 
         Examples
         --------
@@ -872,78 +843,9 @@ class DataArray(NDArrayOperatorsMixin):
         ...     da.to_netcdf(tmpfile, encoding=encoding)
 
         """
-        if virtual is None:
-            virtual = isinstance(self.data, (VirtualArray, DaskArray))
-        ds = xr.Dataset(attrs={"Conventions": "CF-1.9"})
-        mappings = []
-        for name, coord in self.coords.items():
-            if coord.isinterp():
-                mappings.append(f"{name}: {name}_indices {name}_values")
-                tie_indices = coord.tie_indices
-                tie_values = (
-                    coord.tie_values.astype("M8[ns]")
-                    if np.issubdtype(coord.tie_values.dtype, np.datetime64)
-                    else coord.tie_values
-                )
-                attrs = {
-                    "interpolation_name": "linear",
-                    "tie_points_mapping": f"{name}_points: {name}_indices {name}_values",
-                }
-                ds.update(
-                    {
-                        f"{name}_interpolation": ((), np.nan, attrs),
-                        f"{name}_indices": (f"{name}_points", tie_indices),
-                        f"{name}_values": (f"{name}_points", tie_values),
-                    }
-                )
-            else:
-                ds = ds.assign_coords(
-                    {name: (coord.dim, coord.values) if coord.dim else coord.values}
-                )
-        mapping = " ".join(mappings)
-        attrs = {} if self.attrs is None else self.attrs
-        attrs |= {"coordinate_interpolation": mapping} if mapping else attrs
-        name = "__values__" if self.name is None else self.name
-        with h5netcdf.File(fname, mode=mode) as file:
-            if group is not None and group not in file:
-                file.create_group(group)
-            file = file if group is None else file[group]
-            file.dimensions.update(self.sizes)
-            if not virtual:
-                encoding = {} if encoding is None else encoding
-                variable = file.create_variable(
-                    name,
-                    self.dims,
-                    self.dtype,
-                    data=self.values,
-                    **encoding,
-                )
-            else:
-                if encoding is not None:
-                    raise ValueError("cannot use `encoding` with in virtual mode")
-                if isinstance(self.data, VirtualArray):
-                    self.data.to_dataset(file._h5group, name)
-                    variable = file._variable_cls(file, name, self.dims)
-                    file._variables[name] = variable
-                    variable._attach_dim_scales()
-                    variable._attach_coords()
-                    variable._ensure_dim_id()
-                elif isinstance(self.data, DaskArray):
-                    variable = file.create_variable(
-                        name,
-                        self.dims,
-                        self.dtype,
-                    )
-                    variable.attrs.update(
-                        {"__dask_array__": np.frombuffer(dumps(self.data), "uint8")}
-                    )
-                else:
-                    raise ValueError(
-                        "can only use `virtual=True` with a virtual array as data"
-                    )
-            if attrs:
-                variable.attrs.update(attrs)
-        ds.to_netcdf(fname, mode="a", group=group, engine="h5netcdf")
+        from ..io.xdas import save_dataarray
+
+        save_dataarray(self, fname, mode, group, virtual, encoding, create_dirs)
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
@@ -962,70 +864,9 @@ class DataArray(NDArrayOperatorsMixin):
         DataArray
             The openend data array.
         """
-        with xr.open_dataset(fname, group=group, engine="h5netcdf") as ds:
-            if not ("Conventions" in ds.attrs and "CF" in ds.attrs["Conventions"]):
-                raise TypeError(
-                    "file format not recognized. please provide the file format "
-                    "with the `engine` keyword argument"
-                )
-            if len(ds) == 1:
-                name, da = next(iter(ds.items()))
-                coords = {
-                    name: (
-                        (
-                            coord.dims[0],
-                            (
-                                coord.values.astype("U")
-                                if coord.dtype == np.dtype("O")
-                                else coord.values
-                            ),
-                        )
-                        if coord.dims
-                        else coord.values
-                    )
-                    for name, coord in da.coords.items()
-                }
-            else:
-                data_vars = [
-                    var
-                    for var in ds.values()
-                    if "coordinate_interpolation" in var.attrs
-                ]
-                if len(data_vars) == 1:
-                    da = data_vars[0]
-                else:
-                    raise ValueError("several possible data arrays detected")
-                coords = {
-                    name: (
-                        (
-                            coord.dims[0],
-                            (
-                                coord.values.astype("U")
-                                if coord.dtype == np.dtype("O")
-                                else coord.values
-                            ),
-                        )
-                        if coord.dims
-                        else coord.values
-                    )
-                    for name, coord in da.coords.items()
-                }
-                mapping = da.attrs.pop("coordinate_interpolation")
-                matches = re.findall(r"(\w+): (\w+) (\w+)", mapping)
-                for match in matches:
-                    dim, indices, values = match
-                    data = {"tie_indices": ds[indices], "tie_values": ds[values]}
-                    coords[dim] = Coordinate(data, dim)
-        with h5py.File(fname) as file:
-            if group:
-                file = file[group]
-            name = "__values__" if da.name is None else da.name
-            variable = file[name]
-            if "__dask_array__" in variable.attrs:
-                data = loads(da.attrs.pop("__dask_array__"))
-            else:
-                data = VirtualSource(file[name])
-        return cls(data, coords, da.dims, da.name, None if da.attrs == {} else da.attrs)
+        from ..io.xdas import open_dataarray
+
+        return open_dataarray(fname, group)
 
     def to_dict(self):
         """Convert the DataArray to a dictionary."""
@@ -1110,13 +951,3 @@ class DimSizer(dict):
         if key == "last":
             key = list(self.keys())[-1]
         return super().__getitem__(key)
-
-
-def get_band_code(sampling_rate):
-    band_code = ["T", "P", "R", "U", "V", "L", "M", "B", "H", "C", "F"]
-    limits = [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 80, 250, 1000, 5000]
-    index = np.searchsorted(limits, sampling_rate, "right") - 1
-    if index < 0 or index >= len(band_code):
-        return "X"
-    else:
-        return band_code[index]

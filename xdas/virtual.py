@@ -49,6 +49,15 @@ class VirtualArray:
         else:
             return 0
 
+    def create_variable(self, file, name, dims=None, dtype=None):
+        self.to_dataset(file._h5group, name)
+        variable = file._variable_cls(file, name, dims)
+        file._variables[name] = variable
+        variable._attach_dim_scales()
+        variable._attach_coords()
+        variable._ensure_dim_id()
+        return variable
+
 
 class VirtualStack(VirtualArray):
     def __init__(self, sources=[], axis=0):
@@ -379,7 +388,11 @@ class VirtualSource(VirtualArray):
         return self
 
     def __array__(self, dtype=None):
-        return self._to_layout().__array__(dtype)
+        with h5py.File(self.vsource.path) as file:
+            dataset = file[self.vsource.name]
+            return dataset[self._sel.get_indexer()].__array__(dtype)
+        # We used to create an temporary file:
+        # return self._to_layout().__array__(dtype)
 
     @property
     def vsource(self):

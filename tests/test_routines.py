@@ -2,9 +2,7 @@ import numpy as np
 import pytest
 
 import xdas as xd
-from xdas.core.coordinates import Coordinates
-from xdas.core.dataarray import DataArray
-from xdas.core.routines import Bag, CompatibilityError, combine_by_coords
+from xdas.core.routines import Bag, CompatibilityError
 
 
 class TestBag:
@@ -14,30 +12,30 @@ class TestBag:
         assert bag.objs == []
 
     def test_bag_append_initializes(self):
-        da = DataArray(
+        da = xd.DataArray(
             np.random.rand(10, 5), {"time": np.arange(10), "space": np.arange(5)}
         )
         bag = Bag(dim="time")
         bag.append(da)
         assert len(bag.objs) == 1
         assert bag.objs[0] is da
-        assert bag.subcoords.equals(Coordinates({"space": np.arange(5)}))
+        assert bag.subcoords.equals(xd.Coordinates({"space": np.arange(5)}))
         assert bag.subshape == (5,)
         assert bag.dims == ("time", "space")
         assert bag.delta
 
     def test_bag_append_compatible(self):
-        da1 = DataArray(np.random.rand(10, 5), dims=("time", "space"))
-        da2 = DataArray(np.random.rand(10, 5), dims=("time", "space"))
+        da1 = xd.DataArray(np.random.rand(10, 5), dims=("time", "space"))
+        da2 = xd.DataArray(np.random.rand(10, 5), dims=("time", "space"))
         bag = Bag(dim="time")
         bag.append(da1)
         bag.append(da2)
         assert len(bag.objs) == 2
         assert bag.objs[1] is da2
-        da1 = DataArray(
+        da1 = xd.DataArray(
             np.random.rand(10, 5), {"time": np.arange(10), "space": np.arange(5)}
         )
-        da2 = DataArray(
+        da2 = xd.DataArray(
             np.random.rand(10, 5), {"time": np.arange(10, 20), "space": np.arange(5)}
         )
         bag = Bag(dim="time")
@@ -47,36 +45,38 @@ class TestBag:
         assert bag.objs[1] is da2
 
     def test_bag_append_incompatible_dims(self):
-        da1 = DataArray(np.random.rand(10, 5), dims=("time", "space"))
-        da2 = DataArray(np.random.rand(10, 5), dims=("space", "time"))
+        da1 = xd.DataArray(np.random.rand(10, 5), dims=("time", "space"))
+        da2 = xd.DataArray(np.random.rand(10, 5), dims=("space", "time"))
         bag = Bag(dim="time")
         bag.append(da1)
         with pytest.raises(CompatibilityError):
             bag.append(da2)
 
     def test_bag_append_incompatible_shape(self):
-        da1 = DataArray(np.random.rand(10, 5), dims=("time", "space"))
-        da2 = DataArray(np.random.rand(10, 6), dims=("time", "space"))
+        da1 = xd.DataArray(np.random.rand(10, 5), dims=("time", "space"))
+        da2 = xd.DataArray(np.random.rand(10, 6), dims=("time", "space"))
         bag = Bag(dim="time")
         bag.append(da1)
         with pytest.raises(CompatibilityError):
             bag.append(da2)
 
     def test_bag_append_incompatible_dtype(self):
-        da1 = DataArray(np.random.rand(10, 5), dims=("time", "space"))
-        da2 = DataArray(np.random.randint(0, 10, size=(10, 5)), dims=("time", "space"))
+        da1 = xd.DataArray(np.random.rand(10, 5), dims=("time", "space"))
+        da2 = xd.DataArray(
+            np.random.randint(0, 10, size=(10, 5)), dims=("time", "space")
+        )
         bag = Bag(dim="time")
         bag.append(da1)
         with pytest.raises(CompatibilityError):
             bag.append(da2)
 
     def test_bag_append_incompatible_coords(self):
-        da1 = DataArray(
+        da1 = xd.DataArray(
             np.random.rand(10, 5),
             dims=("time", "space"),
             coords={"space": np.arange(5)},
         )
-        da2 = DataArray(
+        da2 = xd.DataArray(
             np.random.rand(10, 5),
             dims=("time", "space"),
             coords={"space": np.arange(5) + 1},
@@ -87,12 +87,12 @@ class TestBag:
             bag.append(da2)
 
     def test_bag_append_incompatible_sampling_interval(self):
-        da1 = DataArray(
+        da1 = xd.DataArray(
             np.random.rand(10, 5),
             dims=("time", "space"),
             coords={"time": np.arange(10)},
         )
-        da2 = DataArray(
+        da2 = xd.DataArray(
             np.random.rand(10, 5),
             dims=("time", "space"),
             coords={"time": np.arange(10) * 2},
@@ -106,91 +106,93 @@ class TestBag:
 class TestCombineByCoords:
     def test_basic(self):
         # without coords
-        da1 = DataArray(np.random.rand(10, 5), dims=("time", "space"))
-        da2 = DataArray(np.random.rand(10, 5), dims=("time", "space"))
-        combined = combine_by_coords([da1, da2], dim="time", squeeze=True)
+        da1 = xd.DataArray(np.random.rand(10, 5), dims=("time", "space"))
+        da2 = xd.DataArray(np.random.rand(10, 5), dims=("time", "space"))
+        combined = xd.combine_by_coords([da1, da2], dim="time", squeeze=True)
         assert combined.shape == (20, 5)
 
         # with coords
-        da1 = DataArray(
+        da1 = xd.DataArray(
             np.random.rand(10, 5),
             coords={"time": np.arange(10), "space": np.arange(5)},
         )
-        da2 = DataArray(
+        da2 = xd.DataArray(
             np.random.rand(10, 5),
             coords={"time": np.arange(10, 20), "space": np.arange(5)},
         )
-        combined = combine_by_coords([da1, da2], dim="time", squeeze=True)
+        combined = xd.combine_by_coords([da1, da2], dim="time", squeeze=True)
         assert combined.shape == (20, 5)
 
     def test_incompatible_shape(self):
-        da1 = DataArray(np.random.rand(10, 5), dims=("time", "space"))
-        da2 = DataArray(np.random.rand(10, 6), dims=("time", "space"))
-        dc = combine_by_coords([da1, da2], dim="time")
+        da1 = xd.DataArray(np.random.rand(10, 5), dims=("time", "space"))
+        da2 = xd.DataArray(np.random.rand(10, 6), dims=("time", "space"))
+        dc = xd.combine_by_coords([da1, da2], dim="time")
         assert len(dc) == 2
         assert dc[0].equals(da1)
         assert dc[1].equals(da2)
 
     def test_incompatible_dims(self):
-        da1 = DataArray(np.random.rand(10, 5), dims=("time", "space"))
-        da2 = DataArray(np.random.rand(10, 5), dims=("space", "time"))
-        dc = combine_by_coords([da1, da2], dim="time")
+        da1 = xd.DataArray(np.random.rand(10, 5), dims=("time", "space"))
+        da2 = xd.DataArray(np.random.rand(10, 5), dims=("space", "time"))
+        dc = xd.combine_by_coords([da1, da2], dim="time")
         assert len(dc) == 2
         assert dc[0].equals(da1)
         assert dc[1].equals(da2)
 
     def test_incompatible_dtype(self):
-        da1 = DataArray(np.random.rand(10, 5), dims=("time", "space"))
-        da2 = DataArray(np.random.randint(0, 10, size=(10, 5)), dims=("time", "space"))
-        dc = combine_by_coords([da1, da2], dim="time")
+        da1 = xd.DataArray(np.random.rand(10, 5), dims=("time", "space"))
+        da2 = xd.DataArray(
+            np.random.randint(0, 10, size=(10, 5)), dims=("time", "space")
+        )
+        dc = xd.combine_by_coords([da1, da2], dim="time")
         assert len(dc) == 2
         assert dc[0].equals(da1)
         assert dc[1].equals(da2)
 
     def test_incompatible_coords(self):
-        da1 = DataArray(
+        da1 = xd.DataArray(
             np.random.rand(10, 5),
             dims=("time", "space"),
             coords={"space": np.arange(5)},
         )
-        da2 = DataArray(
+        da2 = xd.DataArray(
             np.random.rand(10, 5),
             dims=("time", "space"),
             coords={"space": np.arange(5) + 1},
         )
-        dc = combine_by_coords([da1, da2], dim="time")
+        dc = xd.combine_by_coords([da1, da2], dim="time")
         assert len(dc) == 2
         assert dc[0].equals(da1)
         assert dc[1].equals(da2)
 
     def test_incompatible_sampling_interval(self):
-        da1 = DataArray(
+        da1 = xd.DataArray(
             np.random.rand(10, 5),
             dims=("time", "space"),
             coords={"time": np.arange(10)},
         )
-        da2 = DataArray(
+        da2 = xd.DataArray(
             np.random.rand(10, 5),
             dims=("time", "space"),
             coords={"time": np.arange(10) * 2},
         )
-        dc = combine_by_coords([da1, da2], dim="time")
+        dc = xd.combine_by_coords([da1, da2], dim="time")
         assert len(dc) == 2
         assert dc[0].equals(da1)
         assert dc[1].equals(da2)
 
     def test_expand_scalar_coordinate(self):
-        da1 = DataArray(
+        da1 = xd.DataArray(
             np.random.rand(10),
             dims=("time",),
             coords={"time": np.arange(10), "space": 0},
         )
-        da2 = DataArray(
+        da2 = xd.DataArray(
             np.random.rand(10),
             dims=("time",),
             coords={"time": np.arange(10), "space": 1},
         )
-        dc = combine_by_coords([da1, da2], dim="space", squeeze=True)
+        dc = xd.combine_by_coords([da1, da2], dim="space", squeeze=True)
         assert dc.shape == (2, 10)
         assert dc.dims == ("space", "time")
         assert dc.coords["space"].values.tolist() == [0, 1]
@@ -198,7 +200,7 @@ class TestCombineByCoords:
 
 class TestOpenMFDataArray:
     def test_warn_on_corrupted_files(self, tmp_path):
-        expected = DataArray(
+        expected = xd.DataArray(
             np.random.rand(10, 5),
             coords={
                 "time": np.arange(10),
@@ -207,10 +209,172 @@ class TestOpenMFDataArray:
         )
         for index, chunk in enumerate(xd.split(expected, 3, "time"), start=1):
             chunk.to_netcdf(tmp_path / f"chunk_{index}.nc")
-        result = xd.open_mfdataarray(str(tmp_path / "*.nc"))  # TODO: should accept Path
+        result = xd.open_mfdataarray(tmp_path / "*.nc")
         assert result.equals(expected)
         with (tmp_path / "corrupted.nc").open("wb") as f:
             f.write(b"corrupted")
         with pytest.warns(RuntimeWarning):
-            result = xd.open_mfdataarray(str(tmp_path / "*.nc"))
+            result = xd.open_mfdataarray(tmp_path / "*.nc")
         assert result.equals(expected)
+
+
+class TestOpen:  # TODO: those tests are weirdly slow...
+    def test_open_single_dataarray(self, tmp_path):
+        expected = xd.DataArray(
+            np.random.rand(10, 5),
+            coords={
+                "time": np.arange(10),
+                "space": np.arange(5),
+            },
+        )
+
+        path = tmp_path / "dataarray.nc"
+        expected.to_netcdf(path)
+
+        result = xd.open(path)
+        assert result.equals(expected)
+
+    def test_open_multiple_file_dataarray(self, tmp_path):
+        expected = xd.DataArray(
+            np.random.rand(10, 5),
+            coords={
+                "time": np.arange(10),
+                "space": np.arange(5),
+            },
+        )
+
+        file_paths = []
+        for index, chunk in enumerate(xd.split(expected, 3, "time"), start=1):
+            file_path = tmp_path / f"chunk_{index}.nc"
+            chunk.to_netcdf(file_path)
+            file_paths.append(file_path)
+
+        # glob patterns
+        result = xd.open(tmp_path / "*.nc")
+        assert result.equals(expected)
+        result = xd.open(tmp_path / "chunk_[1-3].nc")
+        assert result.equals(expected)
+        result = xd.open(tmp_path / "chunk_?.nc")
+        assert result.equals(expected)
+
+        # list of paths
+        result = xd.open(file_paths)
+        assert result.equals(expected)
+
+    def test_open_multiple_file_tree(self, tmp_path):
+        expected = xd.DataCollection(
+            {
+                "DAS01": xd.DataCollection(
+                    [
+                        xd.DataArray(
+                            np.random.rand(10, 5),
+                            coords={
+                                "time": np.arange(10),
+                                "space": np.arange(5),
+                            },
+                        )
+                    ],
+                    name="acquisition",
+                ),
+                "DAS02": xd.DataCollection(
+                    [
+                        xd.DataArray(
+                            np.random.rand(7, 3),
+                            coords={
+                                "time": np.arange(7),
+                                "space": np.arange(3),
+                            },
+                        )
+                    ],
+                    name="acquisition",
+                ),
+            },
+            name="station",
+        )
+
+        for station in expected:
+            dirpath = tmp_path / station
+            dirpath.mkdir()
+            for index, chunk in enumerate(
+                xd.split(expected[station][0], 3, "time"), start=1
+            ):
+                chunk.to_netcdf(dirpath / f"chunk_{index}.nc")
+
+        result = xd.open(tmp_path / "{station}" / "[acquisition].nc")
+        assert result.equals(expected)
+
+    def test_open_single_datacollection(self, tmp_path):
+        expected = xd.DataCollection(
+            [
+                xd.DataArray(
+                    np.random.rand(10, 5),
+                    coords={
+                        "time": np.arange(10),
+                        "space": np.arange(5),
+                    },
+                )
+            ]
+        )
+
+        expected.to_netcdf(tmp_path / "collection.nc")
+
+        result = xd.open(tmp_path / "collection.nc")
+        assert result.equals(expected)
+
+    def test_open_multiple_datacollection_with_glob(self, tmp_path):
+        expected = xd.DataCollection(
+            {
+                "DAS01": xd.DataCollection(
+                    [
+                        xd.DataArray(
+                            np.random.rand(10, 5),
+                            coords={
+                                "time": np.arange(10),
+                                "space": np.arange(5),
+                            },
+                        )
+                    ],
+                    name="acquisition",
+                ),
+                "DAS02": xd.DataCollection(
+                    [
+                        xd.DataArray(
+                            np.random.rand(7, 3),
+                            coords={
+                                "time": np.arange(7),
+                                "space": np.arange(3),
+                            },
+                        )
+                    ],
+                    name="acquisition",
+                ),
+            },
+            name="station",
+        )
+
+        expected.isel(time=slice(None, 3)).to_netcdf(tmp_path / "datacollection_1.nc")
+        expected.isel(time=slice(3, None)).to_netcdf(tmp_path / "datacollection_2.nc")
+
+        # glob patterns
+        result = xd.open(tmp_path / "datacollection_*.nc")
+        assert result.equals(expected)
+        result = xd.open(tmp_path / "datacollection_[1-2].nc")
+        assert result.equals(expected)
+        result = xd.open(tmp_path / "datacollection_?.nc")
+        assert result.equals(expected)
+
+        # list of paths
+        file_paths = [
+            tmp_path / "datacollection_1.nc",
+            tmp_path / "datacollection_2.nc",
+        ]
+        result = xd.open(file_paths)
+        assert result.equals(expected)
+
+    def test_raise_if_all_files_corrupted(self, tmp_path):
+        with (tmp_path / "corrupted1.nc").open("wb") as f:
+            f.write(b"corrupted")
+        with (tmp_path / "corrupted2.nc").open("wb") as f:
+            f.write(b"corrupted")
+        with pytest.raises(RuntimeError):
+            xd.open_mfdataarray(str(tmp_path / "*.nc"))

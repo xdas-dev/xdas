@@ -4,6 +4,8 @@ import warnings
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from glob import glob
+from itertools import pairwise
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -11,10 +13,163 @@ import plotly.express as px
 import xarray as xr
 from tqdm import tqdm
 
+from ..coordinates.core import Coordinates, get_sampling_interval
 from ..virtual import VirtualSource, VirtualStack
-from .coordinates import Coordinates, InterpCoordinate, get_sampling_interval
 from .dataarray import DataArray
 from .datacollection import DataCollection, DataMapping, DataSequence
+
+
+def open(
+    paths,
+    dim="first",
+    tolerance=None,
+    squeeze=None,
+    engine=None,
+    verbose=False,
+    **kwargs,
+):
+    """
+    Open one or several files as a data array or collection.
+
+    Automatically dispatches to the appropriate reader based on the shape of `paths`:
+
+    - **Single file** (plain path string): tries to open as a data collection first,
+      falls back to a data array if the file does not contain a data collection.
+    - **Multi-file** (wildcarded string with ``*``, ``?``, or ``[…]``, or a list of
+      paths): tries to open and combine as a multi-file data collection first, falls
+      back to a multi-file data array if the files are not data collections.
+    - **Tree-like** (string containing ``{field}`` placeholders):
+      opens a directory tree as a nested data collection using
+      :func:`open_mfdatatree`.
+
+    Parameters
+    ----------
+    paths : str or list of str
+        The path(s) to open. Can be:
+
+        - A plain file path (single file).
+        - A shell-style wildcard string (``*``, ``?``, ``[…]``) matching multiple
+          files.
+        - A list of explicit file paths.
+        - A tree descriptor string containing ``{field}`` (dict level) and
+          ``[field]`` (list level) placeholders.
+    dim : str, optional
+        The dimension along which multiple files are concatenated. Ignored when
+        opening a single file. Default is ``"first"``.
+    tolerance : float or timedelta64, optional
+        Maximum gap or overlap allowed between consecutive files to still be
+        considered continuous. For time coordinates, numeric values are interpreted
+        as seconds. Ignored when opening a single file. Default is zero tolerance.
+    squeeze : bool or None, optional
+        Whether to return a DataArray instead of a DataCollection when the result
+        contains only one data array. When ``None`` (default), the behaviour depends
+        on the dispatch path: ``True`` for multi-file data arrays, ``False``
+        otherwise. Ignored when opening a single file.
+    engine : str or callable, optional
+        The file format engine to use, or a custom read callable. When ``None``
+        (default), the xdas NetCDF format is assumed. Providing an engine skips the
+        automatic DataCollection detection.
+    verbose : bool, optional
+        Whether to display a progress bar while reading metadata. Ignored when
+        opening a single file. Default is ``False``.
+    **kwargs
+        Additional keyword arguments forwarded to the underlying engine read
+        function. Only used when `engine` is not ``None``.
+
+    Returns
+    -------
+    DataArray or DataCollection
+        The opened data. The exact type depends on the dispatch path and the
+        ``squeeze`` setting.
+
+    Raises
+    ------
+    ValueError
+        If `paths` is neither a string nor a list.
+    FileNotFoundError
+        If no file matching `paths` can be found.
+
+    See Also
+    --------
+    open_dataarray : Open a single DataArray file.
+    open_datacollection : Open a single DataCollection file.
+    open_mfdataarray : Open and combine multiple DataArray files.
+    open_mfdatacollection : Open and combine multiple DataCollection files.
+    open_mfdatatree : Open a directory tree as a nested DataCollection.
+
+    Examples
+    --------
+    Open a single file (auto-detects DataCollection vs DataArray):
+
+    >>> import xdas as xd
+    >>> da = xd.open("path/to/file.nc")  # doctest: +SKIP
+
+    Open multiple files with a wildcard:
+
+    >>> da = xd.open("path/to/files/*.nc")  # doctest: +SKIP
+
+    Open a list of explicit paths:
+
+    >>> da = xd.open(["file1.nc", "file2.nc"])  # doctest: +SKIP
+
+    Open a directory tree:
+
+    >>> dc = xd.open("/data/{node}/[acq].nc", engine="asn")  # doctest: +SKIP
+
+    """
+    paths = _ensure_str_paths(paths)
+    if isinstance(paths, str):
+        if "{" in paths:
+            method = "tree-like"
+        elif "*" in paths or "?" in paths or "[" in paths:
+            method = "multi-file"
+        else:
+            method = "single-file"
+    elif isinstance(paths, list):
+        method = "multi-file"
+    else:
+        raise Exception(
+            f"`paths` must be either a string or a list, found {type(paths)}"
+        )
+    match method:
+        case "single-file":
+            if engine is None:
+                try:
+                    return open_datacollection(paths)
+                except Exception:
+                    pass
+            return open_dataarray(paths, engine=engine, **kwargs)
+        case "multi-file":
+            if engine is None:
+                try:
+                    return open_mfdatacollection(
+                        paths,
+                        dim,
+                        tolerance,
+                        squeeze=False if squeeze is None else squeeze,
+                        verbose=verbose,
+                    )
+                except Exception:
+                    pass
+            return open_mfdataarray(
+                paths,
+                dim,
+                tolerance,
+                squeeze=True if squeeze is None else squeeze,
+                engine=engine,
+                verbose=verbose,
+                **kwargs,
+            )
+        case "tree-like":
+            return open_mfdatatree(
+                paths,
+                dim,
+                tolerance,
+                squeeze=False if squeeze is None else squeeze,
+                engine=engine,
+                verbose=verbose,
+                **kwargs,
+            )
 
 
 def open_mfdatacollection(
@@ -39,7 +194,8 @@ def open_mfdatacollection(
         The dimension along which the data arrays are concatenated. Default to "first".
     tolerance : float of timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
-        continuous with beginning of the following one. Default to zero tolerance.
+        continuous with beginning of the following one. For time coordinates, numeric
+        values are considered as seconds. Default to zero tolerance.
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
@@ -52,6 +208,8 @@ def open_mfdatacollection(
         The combined data collection
 
     """
+    paths = _ensure_str_paths(paths)
+
     if isinstance(paths, str):
         paths = sorted(glob(paths))
     elif isinstance(paths, list):
@@ -117,7 +275,8 @@ def open_mfdatatree(
         The dimension along which the data arrays are concatenated. Default to "first".
     tolerance : float of timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
-        continuous with beginning of the following one. Default to zero tolerance.
+        continuous with beginning of the following one. For time coordinates, numeric
+        values are considered as seconds. Default to zero tolerance.
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
@@ -158,6 +317,8 @@ def open_mfdatatree(
 
 
     """
+    paths = _ensure_str_paths(paths)
+
     placeholders = re.findall(r"[\{\[].*?[\}\]]", paths)
 
     seen = set()
@@ -216,7 +377,8 @@ def collect(
         The dimension along which the data arrays are concatenated. Default to "first".
     tolerance : float of timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
-        continuous with beginning of the following one. Default to zero tolerance.
+        continuous with beginning of the following one. For time coordinates, numeric
+        values are considered as seconds. Default to zero tolerance.
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
@@ -283,7 +445,8 @@ def open_mfdataarray(
         The dimension along which the data arrays are concatenated. Default to "first".
     tolerance : float of timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
-        continuous with beginning of the following one. Default to zero tolerance.
+        continuous with beginning of the following one. For time coordinates, numeric
+        values are considered as seconds. Default to zero tolerance.
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
@@ -305,6 +468,7 @@ def open_mfdataarray(
     FileNotFound
         If no file can be found.
     """
+    paths = _ensure_str_paths(paths)
     if isinstance(paths, str):
         paths = sorted(glob(paths))
     elif isinstance(paths, list):
@@ -322,33 +486,44 @@ def open_mfdataarray(
             "The maximum number of file that can be opened at once is for now limited "
             "to 100 000."
         )
-    max_workers = 1 if engine == "miniseed" else None  # TODO: dirty fix
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures_to_paths = {
-            executor.submit(open_dataarray, path, engine=engine, **kwargs): path
-            for path in paths
-        }
-        if verbose:
-            iterator = tqdm(
-                as_completed(futures_to_paths),
-                total=len(futures_to_paths),
-                desc="Fetching metadata from files",
-            )
-        else:
-            iterator = as_completed(futures_to_paths)
-        objs = []
-        for future in iterator:
-            try:
-                obj = future.result()
-            except Exception as e:
-                path = futures_to_paths[future]
-                warnings.warn(f"could not open {path}: {e}", RuntimeWarning)
+    if engine == "miniseed":  # TODO: dirty fix
+        objs = [open_dataarray(path, engine=engine, **kwargs) for path in paths]
+    else:
+        with ProcessPoolExecutor() as executor:
+            futures_to_paths = {
+                executor.submit(open_dataarray, path, engine=engine, **kwargs): path
+                for path in paths
+            }
+            if verbose:
+                iterator = tqdm(
+                    as_completed(futures_to_paths),
+                    total=len(futures_to_paths),
+                    desc="Fetching metadata from files",
+                )
             else:
-                objs.append(obj)
+                iterator = as_completed(futures_to_paths)
+            objs = []
+            failures = []
+            for future in iterator:
+                try:
+                    obj = future.result()
+                except Exception as e:
+                    path = futures_to_paths[future]
+                    failures.append((path, e))
+                    warnings.warn(f"could not open {path}: {e}", RuntimeWarning)
+                else:
+                    objs.append(obj)
+    if len(objs) == 0:
+        if failures:
+            path, error = failures[0]
+            raise RuntimeError(
+                f"could not open any file with; first failure was {path}: {error}"
+            ) from error
+        raise FileNotFoundError("no file to open")
     return combine_by_coords(objs, dim, tolerance, squeeze, None, verbose)
 
 
-def open_dataarray(fname, group=None, engine=None, **kwargs):
+def open_dataarray(fname, engine=None, vtype=None, ctype=None, **kwargs):
     """
     Open a dataarray.
 
@@ -356,9 +531,6 @@ def open_dataarray(fname, group=None, engine=None, **kwargs):
     ----------
     fname : str
         The path of the dataarray.
-    group : str, optional
-        The file group where the dataarray is located, by default None which corresponds
-        to the root of the file.
     engine: str of callable, optional
         The type of file to open or a read function. Default to xdas netcdf format.
     **kwargs
@@ -372,24 +544,26 @@ def open_dataarray(fname, group=None, engine=None, **kwargs):
     Raises
     ------
     ValueError
-        If the engine si not recognized.
+        If the engine is not recognized.
 
     Raises
     ------
     FileNotFound
         If no file can be found.
     """
+    # parse & checks
+    fname = _ensure_str_paths(fname)
     if not os.path.exists(fname):
         raise FileNotFoundError("no file to open")
-    if engine is None:
-        return DataArray.from_netcdf(fname, group=group)
+
+    # dispatch & open
+    if engine is None or isinstance(engine, str):
+        from ..io.core import Engine
+
+        engine = Engine[engine](vtype=vtype, ctype=ctype)
+        return engine.open_dataarray(fname, **kwargs)
     elif callable(engine):
         return engine(fname, **kwargs)
-    elif isinstance(engine, str):
-        from .. import io
-
-        module = getattr(io, engine)
-        return module.read(fname, **kwargs)
     else:
         raise ValueError("engine not recognized")
 
@@ -413,6 +587,7 @@ def open_datacollection(fname, group=None):
     FileNotFound
         If no file can be found.
     """
+    fname = _ensure_str_paths(fname)
     if not os.path.exists(fname):
         raise FileNotFoundError("no file to open")
     return DataCollection.from_netcdf(fname, group)
@@ -429,8 +604,9 @@ def asdataarray(obj, tolerance=None):
     obj : object
         The objected to convert
     tolerance : float or datetime64, optional
-        For dense coordinates, tolerance error for interpolation representation, by
-        default zero.
+        For dense coordinates, tolerance error for interpolation representation.
+        For time coordinates, numeric values are considered as seconds.
+        Zero by default.
 
     Returns
     -------
@@ -471,7 +647,8 @@ def combine_by_field(
         The dimension along which concatenate. Default to "first".
     tolerance : float of timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
-        the following, zero by default.
+        the following. For time coordinates, numeric  values are considered as seconds.
+        Zero by default.
     squeeze : bool, optional
         Whether to return a Database instead of a DataCollection if the combinatison
         results in a data collection containing a unique Database.
@@ -534,7 +711,8 @@ def combine_by_coords(
         The dimension along which concatenate. Default to "first".
     tolerance : float of timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
-        the following, zero by default.
+        the following. For time coordinates, numeric values are considered as seconds.
+        Zero by default.
     squeeze : bool, optional
         Whether to return a Database instead of a DataCollection if the combination
         results in a data collection containing a unique Database.
@@ -612,9 +790,9 @@ class Bag:
             if self.dim in self.dims
             else da.coords.drop_coords(self.dim)
         )
-        try:
+        if self.dim in da.coords:
             self.delta = get_sampling_interval(da, self.dim)
-        except (ValueError, KeyError):
+        else:
             self.delta = None
         self.dtype = da.dtype
 
@@ -672,7 +850,8 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         The dimension along which concatenate.
     tolerance : float of timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
-        the following, zero by default.
+        the following, For time coordinates, numeric values are considered as seconds.
+        Zero by default.
     virtual : bool, optional
         Whether to create a virtual dataset. It requires that all concatenated
         data arrays are virtual. By default tries to create a virtual dataset if possible.
@@ -768,7 +947,8 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
         The dimension along which to split, by default "first"
     tolerance : float or timedelta64, optional
         If `indices_or_sections="discontinuities"` split will only occur on gaps and
-        overlaps that are bigger than `tolerance`. Zero tolerance by default.
+        overlaps that are bigger than `tolerance`. For time coordinates, numeric
+        values are considered as seconds. Zero tolerance by default.
 
     Returns
     -------
@@ -778,17 +958,9 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
     if isinstance(indices_or_sections, str) and (
         indices_or_sections == "discontinuities"
     ):
-        if isinstance(da[dim], InterpCoordinate):
-            coord = da[dim].simplify(tolerance)
-            (points,) = np.nonzero(np.diff(coord.tie_indices, prepend=[0]) == 1)
-            div_points = [coord.tie_indices[point] for point in points]
-            div_points = [0] + div_points + [da.sizes[dim]]
-        else:
-            raise TypeError(
-                "discontinuities can only be found on dimension that have as type "
-                "`InterpCoordinate`."
-            )
-    elif isinstance(indices_or_sections, int):
+        indices_or_sections = da[dim].get_split_indices(tolerance)
+
+    if isinstance(indices_or_sections, int):
         nsamples = da.sizes[dim]
         nchunk = indices_or_sections
         if nchunk <= 0:
@@ -799,12 +971,9 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
         chunks = extras * [chunk_size + 1] + (nchunk - extras) * [chunk_size]
         div_points = np.cumsum([0] + chunks, dtype=np.int64)
     else:
-        div_points = [0] + indices_or_sections + [da.sizes[dim]]
+        div_points = np.concatenate([[0], indices_or_sections, [da.sizes[dim]]])
     return DataCollection(
-        [
-            da.isel({dim: slice(div_points[idx], div_points[idx + 1])})
-            for idx in range(len(div_points) - 1)
-        ]
+        [da.isel({dim: slice(start, stop)}) for start, stop in pairwise(div_points)]
     )
 
 
@@ -1034,3 +1203,11 @@ def _get_timeline_dataframe(obj, dim="first", name=None):
             f"`obj` must be a DataArray of a DataCollection, found {type(obj)}"
         )
     return dataframe
+
+
+def _ensure_str_paths(paths):
+    if isinstance(paths, Path):
+        paths = str(paths)
+    if isinstance(paths, list):
+        paths = [str(path) if isinstance(path, Path) else path for path in paths]
+    return paths
