@@ -606,7 +606,7 @@ def parse(data, dim=None):
 def parse_tolerance(tolerance, dtype):
     if np.issubdtype(dtype, np.datetime64):
         if tolerance is None:
-            tolerance = np.timedelta64(0, "ns")
+            tolerance = np.timedelta64(0)
         elif isinstance(tolerance, (int, float)):
             tolerance = np.timedelta64(round(tolerance * 1e9), "ns")
     else:
@@ -644,7 +644,7 @@ def isscalar(data):
 
 def is_strictly_increasing(x):
     if np.issubdtype(x.dtype, np.datetime64):
-        return np.all(np.diff(x) > np.timedelta64(0, "ns"))
+        return np.all(np.diff(x) > np.timedelta64(0))
     else:
         return np.all(np.diff(x) > 0)
 

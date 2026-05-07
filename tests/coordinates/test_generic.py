@@ -5,7 +5,6 @@ import xdas as xd
 
 
 class TestGetSplitIndices:
-
     @pytest.mark.parametrize("ctype", ["interpolated"])
     def test_float(self, ctype):
         blocks = [
@@ -38,7 +37,7 @@ class TestGetSplitIndices:
 
         # gap
         indices = coord.get_split_indices(kind="gap", tolerance=False)
-        # assert np.array_equal(indices, [3, 9, 12]) # TODO
+        assert np.array_equal(indices, [3, 9, 12])  # continuity is gap
         indices = coord.get_split_indices(kind="gap", tolerance=None)
         assert np.array_equal(indices, [9, 12])
         indices = coord.get_split_indices(kind="gap", tolerance=0.25)
@@ -54,7 +53,7 @@ class TestGetSplitIndices:
 
         # overlap
         indices = coord.get_split_indices(kind="overlap", tolerance=False)
-        # assert np.array_equal(indices, [3, 9, 12]) # TODO
+        assert np.array_equal(indices, [6, 15])  # continuity is not overlap
         indices = coord.get_split_indices(kind="overlap", tolerance=None)
         assert np.array_equal(indices, [6, 15])
         indices = coord.get_split_indices(kind="overlap", tolerance=0.25)

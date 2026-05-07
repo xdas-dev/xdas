@@ -301,28 +301,43 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         )
 
     def get_split_indices(self, kind="discontinuities", tolerance=False):
+        valid_kinds = {"discontinuities", "gap", "overlap"}
+        if kind not in valid_kinds:
+            raise ValueError(f"`kind` must be one of {valid_kinds}; got {kind!r}")
+
         (indices,) = np.nonzero(np.diff(self.tie_indices) == 1)
         indices += 1
-        if tolerance is not False:
+
+        # Fast path: no filtering requested
+        if kind == "discontinuities" and tolerance is False:
+            return self.tie_indices[indices]
+
+        sampling_interval = self.get_sampling_interval(cast=False)
+        deltas = (
+            self.tie_values[indices] - self.tie_values[indices - 1] - sampling_interval
+        )
+
+        if tolerance is False:
+            zero = np.timedelta64(0) if np.issubdtype(self.dtype, np.datetime64) else 0
+
+            match kind:
+                case "gap":
+                    mask = deltas >= zero
+                case "overlap":
+                    mask = deltas < zero
+
+        else:
             tolerance = parse_tolerance(tolerance, self.dtype)
-            deltas = (
-                self.tie_values[indices]
-                - self.tie_values[indices - 1]
-                - self.get_sampling_interval(cast=False)
-            )
+
             match kind:
                 case "discontinuities":
-                    indices = indices[np.abs(deltas) > tolerance]
+                    mask = np.abs(deltas) > tolerance
                 case "gap":
-                    indices = indices[deltas > tolerance]
+                    mask = deltas > tolerance
                 case "overlap":
-                    indices = indices[deltas < -tolerance]
-                case _:
-                    raise ValueError(
-                        f"`kind` must be 'discontinuities', 'gap' or 'overlap'; "
-                        f"got {kind}"
-                    )
-        return np.array(self.tie_indices[indices], dtype=self.tie_indices.dtype)
+                    mask = deltas < -tolerance
+
+        return self.tie_indices[indices[mask]]
 
     @classmethod
     def from_array(cls, arr, dim=None, tolerance=None):
