@@ -300,16 +300,29 @@ class InterpCoordinate(Coordinate, name="interpolated"):
             dict(tie_indices=tie_indices, tie_values=tie_values), self.dim
         )
 
-    def get_split_indices(self, kind=None, tolerance=None):
+    def get_split_indices(self, kind="discontinuities", tolerance=False):
         (indices,) = np.nonzero(np.diff(self.tie_indices) == 1)
         indices += 1
-        if tolerance is not None:
+        if tolerance is not False:
             tolerance = parse_tolerance(tolerance, self.dtype)
-            deltas = self.tie_values[indices + 1] - self.tie_values[indices]
-            indices = indices[np.abs(deltas) >= tolerance]
-        return np.array(
-            [self.tie_indices[index] for index in indices], dtype=self.tie_indices.dtype
-        )
+            deltas = (
+                self.tie_values[indices]
+                - self.tie_values[indices - 1]
+                - self.get_sampling_interval(cast=False)
+            )
+            match kind:
+                case "discontinuities":
+                    indices = indices[np.abs(deltas) > tolerance]
+                case "gap":
+                    indices = indices[deltas > tolerance]
+                case "overlap":
+                    indices = indices[deltas < -tolerance]
+                case _:
+                    raise ValueError(
+                        f"`kind` must be 'discontinuities', 'gap' or 'overlap'; "
+                        f"got {kind}"
+                    )
+        return np.array(self.tie_indices[indices], dtype=self.tie_indices.dtype)
 
     @classmethod
     def from_array(cls, arr, dim=None, tolerance=None):

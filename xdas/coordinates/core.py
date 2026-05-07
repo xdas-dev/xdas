@@ -427,7 +427,7 @@ class Coordinate:
     def append(self, other):
         raise NotImplementedError(f"append is not implemented for {self.__class__}")
 
-    def get_split_indices(self, kind=None, tolerance=None):
+    def get_split_indices(self, kind="discontinuities", tolerance=False):
         raise NotImplementedError(
             f"get_split_indices is not implemented for {self.__class__}"
         )

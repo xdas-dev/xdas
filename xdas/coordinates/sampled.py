@@ -409,7 +409,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
             self.dim,
         )
 
-    def get_split_indices(self, kind=None, tolerance=None):
+    def get_split_indices(self, kind="discontinuities", tolerance=False):
         indices = self.tie_indices[1:]
         if tolerance is not None:
             tolerance = parse_tolerance(tolerance, self.dtype)
