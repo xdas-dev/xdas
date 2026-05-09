@@ -410,6 +410,42 @@ class SampledCoordinate(Coordinate, name="sampled"):
         )
 
     def get_split_indices(self, kind="discontinuities", tolerance=False):
+        valid_kinds = {"discontinuities", "gap", "overlap"}
+        if kind not in valid_kinds:
+            raise ValueError(f"`kind` must be one of {valid_kinds}; got {kind!r}")
+
+        indices = self.tie_indices[1:]
+
+        # Fast path: no filtering requested
+        if kind == "discontinuities" and tolerance is False:
+            return indices
+
+        deltas = self.tie_values[1:] - (
+            self.tie_values[:-1] + self.sampling_interval * self.tie_lengths[:-1]
+        )
+
+        if tolerance is False:
+            zero = np.timedelta64(0) if np.issubdtype(self.dtype, np.datetime64) else 0
+
+            match kind:
+                case "gap":
+                    mask = deltas >= zero
+                case "overlap":
+                    mask = deltas < zero
+
+        else:
+            tolerance = parse_tolerance(tolerance, self.dtype)
+
+            match kind:
+                case "discontinuities":
+                    mask = np.abs(deltas) > tolerance
+                case "gap":
+                    mask = deltas > tolerance
+                case "overlap":
+                    mask = deltas < -tolerance
+
+        return indices[mask]
+
         indices = self.tie_indices[1:]
         if tolerance is not None:
             tolerance = parse_tolerance(tolerance, self.dtype)

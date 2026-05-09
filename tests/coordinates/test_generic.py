@@ -14,6 +14,10 @@ class TestFromBlock:
             1, "timedelta64" if np.issubdtype(dtype, np.datetime64) else dtype
         )
         coord = xd.Coordinate[ctype].from_block(start, size, step, "dim")
+        assert isinstance(coord, xd.Coordinate[ctype])
+        assert coord[0].values == start
+        assert len(coord) == size
+        assert coord.get_sampling_interval(cast=False) == step
 
 
 @pytest.fixture
@@ -41,12 +45,13 @@ class TestAppend:
     @pytest.mark.parametrize("ctype", ["interpolated", "sampled"])
     @pytest.mark.parametrize("dtype", [int, float, "datetime64[s]"])
     def test_generic(self, coord, dtype, ctype):
-        assert coord.dtype == dtype
         assert isinstance(coord, xd.Coordinate[ctype])
+        assert coord.dtype == dtype
+        assert len(coord) == 60
 
 
 class TestGetSplitIndices:
-    @pytest.mark.parametrize("ctype", ["interpolated"])
+    @pytest.mark.parametrize("ctype", ["interpolated", "sampled"])
     @pytest.mark.parametrize("dtype", [int, float, "datetime64[s]"])
     @pytest.mark.parametrize(
         "kind,tolerance,expected",
@@ -59,14 +64,14 @@ class TestGetSplitIndices:
             ("discontinuities", 8, []),
             ("discontinuities", 20, []),
             ("gap", False, [10, 30, 40]),
-            ("gap", None, [30, 40]),
+            ("gap", None, [30, 40]),  # # continuity is a gap
             ("gap", 1, [30, 40]),
             ("gap", 2, [40]),
             ("gap", 4, [40]),
             ("gap", 8, []),
             ("gap", 20, []),
             ("overlap", False, [20, 50]),
-            ("overlap", None, [20, 50]),
+            ("overlap", None, [20, 50]),  # continuity is not an overlap
             ("overlap", 1, [20, 50]),
             ("overlap", 2, [50]),
             ("overlap", 4, [50]),
@@ -78,7 +83,7 @@ class TestGetSplitIndices:
         indices = coord.get_split_indices(kind=kind, tolerance=tolerance)
         np.testing.assert_array_equal(indices, expected)
 
-    @pytest.mark.parametrize("ctype", ["interpolated"])
+    @pytest.mark.parametrize("ctype", ["interpolated", "sampled"])
     def test_wrong_kind(self, ctype):
         with pytest.raises(ValueError):
             xd.Coordinate[ctype]().get_split_indices("wrong_kind")
