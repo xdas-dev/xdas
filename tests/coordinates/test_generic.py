@@ -58,3 +58,8 @@ class TestGetSplitIndices:
     def test_generic(self, coord, kind, tolerance, expected):
         indices = coord.get_split_indices(kind=kind, tolerance=tolerance)
         np.testing.assert_array_equal(indices, expected)
+
+    @pytest.mark.parametrize("ctype", ["interpolated"])
+    def test_wrong_kind(self, ctype):
+        with pytest.raises(ValueError):
+            xd.Coordinate[ctype]().get_split_indices("wrong_kind")
