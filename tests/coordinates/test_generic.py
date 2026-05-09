@@ -4,6 +4,18 @@ import pytest
 import xdas as xd
 
 
+class TestFromBlock:
+    @pytest.mark.parametrize("ctype", ["interpolated", "sampled"])
+    @pytest.mark.parametrize("dtype", [int, float, "datetime64[s]"])
+    def test_generic(self, dtype, ctype):
+        start = np.array(0, dtype)
+        size = 10
+        step = np.array(
+            1, "timedelta64" if np.issubdtype(dtype, np.datetime64) else dtype
+        )
+        coord = xd.Coordinate[ctype].from_block(start, size, step, "dim")
+
+
 @pytest.fixture
 def coord(dtype, ctype):
     starts = np.array(
@@ -34,7 +46,6 @@ class TestAppend:
 
 
 class TestGetSplitIndices:
-
     @pytest.mark.parametrize("ctype", ["interpolated"])
     @pytest.mark.parametrize("dtype", [int, float, "datetime64[s]"])
     @pytest.mark.parametrize(

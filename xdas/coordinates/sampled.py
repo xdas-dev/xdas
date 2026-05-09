@@ -83,7 +83,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
                 raise ValueError("`tie_lengths` must be strictly positive integers")
 
             # sampling_interval
-            if not np.isscalar(sampling_interval):
+            if not np.ndim(sampling_interval) == 0:
                 raise ValueError("`sampling_interval` must be a scalar value")
             sampling_interval = np.asarray(sampling_interval)[()]  # ensure numpy scalar
             if np.issubdtype(tie_values.dtype, np.datetime64):
