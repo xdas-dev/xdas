@@ -7,17 +7,21 @@ import xdas as xd
 class TestGetSplitIndices:
     @pytest.fixture
     def float_coord(self, ctype):
-        blocks = [
-            xd.Coordinate[ctype].from_block(0.0, 3, 1.0, "time"),  # 0 - initial block
-            xd.Coordinate[ctype].from_block(3.0, 3, 1.0, "time"),  # 3 - continuous
-            xd.Coordinate[ctype].from_block(5.5, 3, 1.0, "time"),  # 6 - 0.5 overlap
-            xd.Coordinate[ctype].from_block(9.0, 3, 1.0, "time"),  # 9 - 0.5 gap
-            xd.Coordinate[ctype].from_block(14.0, 3, 1.0, "time"),  # 12 - 2 gap
-            xd.Coordinate[ctype].from_block(15.0, 3, 1.0, "time"),  # 15 - 2 overlap
+        starts = [
+            0.0,  # 0 - initial block
+            3.0,  # 3 - continuous
+            5.5,  # 6 - 0.5 overlap
+            9.0,  # 9 - 0.5 gap
+            14.0,  # 12 - 2 gap
+            15.0,  # 15 - 2 overlap
         ]
-        coord = xd.Coordinate[ctype](data=None, dim="time", dtype=float)
-        for block in blocks:
-            coord = coord.append(block)
+        size = 3
+        step = 1.0
+        coord = xd.Coordinate[ctype](data=None, dim="dim", dtype=float)
+        for start in starts:
+            coord = coord.append(
+                xd.Coordinate[ctype].from_block(start, size, step, "dim")
+            )
         return coord
 
     @pytest.mark.parametrize("ctype", ["interpolated"])
