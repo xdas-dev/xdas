@@ -4,28 +4,36 @@ import pytest
 import xdas as xd
 
 
+@pytest.fixture
+def coord(dtype, ctype):
+    starts = np.array(
+        [
+            0,  # 0 - initial block
+            10,  # 10 - continuous
+            18,  # 20 - 2 overlap
+            30,  # 30 - 2 gap
+            48,  # 40 - 8 gap
+            50,  # 50 - 8 overlap
+        ],
+        dtype,
+    )
+    size = 10
+    step = np.array(1, "timedelta64" if np.issubdtype(dtype, np.datetime64) else dtype)
+    out = xd.Coordinate[ctype](data=None, dim="dim", dtype=float)
+    for start in starts:
+        out = out.append(xd.Coordinate[ctype].from_block(start, size, step, "dim"))
+    return out
+
+
+class TestAppend:
+    @pytest.mark.parametrize("ctype", ["interpolated", "sampled"])
+    @pytest.mark.parametrize("dtype", [int, float, "datetime64[s]"])
+    def test_generic(self, coord, dtype, ctype):
+        assert coord.dtype == dtype
+        assert isinstance(coord, xd.Coordinate[ctype])
+
+
 class TestGetSplitIndices:
-    @pytest.fixture
-    def coord(self, dtype, ctype):
-        starts = np.array(
-            [
-                0,  # 0 - initial block
-                10,  # 10 - continuous
-                18,  # 20 - 2 overlap
-                30,  # 30 - 2 gap
-                48,  # 40 - 8 gap
-                50,  # 50 - 8 overlap
-            ],
-            dtype,
-        )
-        size = 10
-        step = np.array(
-            1, "timedelta64" if np.issubdtype(dtype, np.datetime64) else dtype
-        )
-        out = xd.Coordinate[ctype](data=None, dim="dim", dtype=float)
-        for start in starts:
-            out = out.append(xd.Coordinate[ctype].from_block(start, size, step, "dim"))
-        return out
 
     @pytest.mark.parametrize("ctype", ["interpolated"])
     @pytest.mark.parametrize("dtype", [int, float, "datetime64[s]"])
