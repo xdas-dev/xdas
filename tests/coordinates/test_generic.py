@@ -6,51 +6,55 @@ import xdas as xd
 
 class TestGetSplitIndices:
     @pytest.fixture
-    def float_coord(self, ctype):
-        starts = [
-            0.0,  # 0 - initial block
-            3.0,  # 3 - continuous
-            5.5,  # 6 - 0.5 overlap
-            9.0,  # 9 - 0.5 gap
-            14.0,  # 12 - 2 gap
-            15.0,  # 15 - 2 overlap
-        ]
-        size = 3
-        step = 1.0
-        coord = xd.Coordinate[ctype](data=None, dim="dim", dtype=float)
+    def coord(self, dtype, ctype):
+        starts = np.array(
+            [
+                0,  # 0 - initial block
+                10,  # 10 - continuous
+                18,  # 20 - 2 overlap
+                30,  # 30 - 2 gap
+                48,  # 40 - 8 gap
+                50,  # 50 - 8 overlap
+            ],
+            dtype,
+        )
+        size = 10
+        step = np.array(
+            1, "timedelta64" if np.issubdtype(dtype, np.datetime64) else dtype
+        )
+        out = xd.Coordinate[ctype](data=None, dim="dim", dtype=float)
         for start in starts:
-            coord = coord.append(
-                xd.Coordinate[ctype].from_block(start, size, step, "dim")
-            )
-        return coord
+            out = out.append(xd.Coordinate[ctype].from_block(start, size, step, "dim"))
+        return out
 
     @pytest.mark.parametrize("ctype", ["interpolated"])
+    @pytest.mark.parametrize("dtype", [int, float, "datetime64[s]"])
     @pytest.mark.parametrize(
         "kind,tolerance,expected",
         [
-            ("discontinuities", False, [3, 6, 9, 12, 15]),
-            ("discontinuities", None, [6, 9, 12, 15]),
-            ("discontinuities", 0.25, [6, 9, 12, 15]),
-            ("discontinuities", 0.5, [12, 15]),
-            ("discontinuities", 1.0, [12, 15]),
-            ("discontinuities", 2.0, []),
-            ("discontinuities", 5.0, []),
-            ("gap", False, [3, 9, 12]),
-            ("gap", None, [9, 12]),
-            ("gap", 0.25, [9, 12]),
-            ("gap", 0.5, [12]),
-            ("gap", 1.0, [12]),
-            ("gap", 2.0, []),
-            ("gap", 5.0, []),
-            ("overlap", False, [6, 15]),
-            ("overlap", None, [6, 15]),
-            ("overlap", 0.25, [6, 15]),
-            ("overlap", 0.5, [15]),
-            ("overlap", 1.0, [15]),
-            ("overlap", 2.0, []),
-            ("overlap", 5.0, []),
+            ("discontinuities", False, [10, 20, 30, 40, 50]),
+            ("discontinuities", None, [20, 30, 40, 50]),
+            ("discontinuities", 1, [20, 30, 40, 50]),
+            ("discontinuities", 2, [40, 50]),
+            ("discontinuities", 4, [40, 50]),
+            ("discontinuities", 8, []),
+            ("discontinuities", 20, []),
+            ("gap", False, [10, 30, 40]),
+            ("gap", None, [30, 40]),
+            ("gap", 1, [30, 40]),
+            ("gap", 2, [40]),
+            ("gap", 4, [40]),
+            ("gap", 8, []),
+            ("gap", 20, []),
+            ("overlap", False, [20, 50]),
+            ("overlap", None, [20, 50]),
+            ("overlap", 1, [20, 50]),
+            ("overlap", 2, [50]),
+            ("overlap", 4, [50]),
+            ("overlap", 8, []),
+            ("overlap", 20, []),
         ],
     )
-    def test_float(self, float_coord, kind, tolerance, expected):
-        indices = float_coord.get_split_indices(kind=kind, tolerance=tolerance)
+    def test_generic(self, coord, kind, tolerance, expected):
+        indices = coord.get_split_indices(kind=kind, tolerance=tolerance)
         np.testing.assert_array_equal(indices, expected)
