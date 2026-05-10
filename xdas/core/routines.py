@@ -878,15 +878,16 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         dims = (dim, *objs[0].dims)
         objs = [da.expand_dims(dim) for da in objs]
 
-    coords = objs[0].coords.copy()
-    name = objs[0].name
-    attrs = objs[0].attrs
-
-    dim_has_coords = dim in coords
+    dim_has_coords = dim in objs[0].coords
 
     if dim_has_coords:
         objs = sorted(objs, key=lambda da: da[dim][0].values)
-        coord = coords[dim].__class__(data=None, dim=dim, dtype=coords[dim].dtype)
+        coord = objs[0][dim].__class__(data=None, dim=dim, dtype=objs[0][dim].dtype)
+    coords = {
+        name: coord for name, coord in objs[0].coords.items() if not coord.dim == dim
+    }
+    name = objs[0].name
+    attrs = objs[0].attrs
 
     iterator = tqdm(objs, desc="Linking dataarray") if verbose else objs
     data = []
@@ -897,26 +898,32 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         else:
             data.append(da.data)
 
-        if dim in coords:
+        if dim_has_coords:
             coord = coord.append(da[dim])
 
     if virtual:
         data = VirtualStack(data, axis)
     else:
         data = np.concatenate(data, axis)
-    if tolerance is not False:
-        if dim_has_coords:
-            if hasattr(coord, "simplify"):
+
+    if dim_has_coords:
+        if tolerance is not False:
+            try:
                 coord = coord.simplify(tolerance)
-            else:
-                if tolerance is not None:
+            except NotImplementedError:
+                if (
+                    tolerance is not None
+                ):  # TODO: Default to False and remove this condition here?
                     raise TypeError(
-                        "tolerance can only be used with interpolated coordinates"
+                        "`tolerance` can only be used with coordinates "
+                        "that implements `simplify`"
                     )
-            coords[dim] = coord
-        else:
-            if tolerance is not None:
-                raise TypeError("cannot use tolerance on non-existing coordinates")
+        coords[dim] = coord
+    else:
+        if not (
+            tolerance is None or tolerance is False
+        ):  # TODO: Default to False and remove None here?
+            raise TypeError("cannot use tolerance on non-existing coordinates")
 
     return DataArray(data, coords, dims, name, attrs)
 

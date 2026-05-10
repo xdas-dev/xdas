@@ -363,7 +363,8 @@ class Coordinate:
         else:
             return self.parent.isdim(self.name)
 
-    def equals(self, other): ...
+    def equals(self, other):
+        raise NotImplementedError
 
     def to_index(self, item, method=None, endpoint=True):
         if isinstance(item, slice):
@@ -426,6 +427,9 @@ class Coordinate:
 
     def append(self, other):
         raise NotImplementedError(f"append is not implemented for {self.__class__}")
+
+    def simplify(self, tolerance=None):
+        raise NotImplementedError(f"simplify is not implemented for {self.__class__}")
 
     def get_split_indices(self, kind="discontinuities", tolerance=False):
         raise NotImplementedError(
