@@ -378,3 +378,44 @@ class TestOpen:  # TODO: those tests are weirdly slow...
             f.write(b"corrupted")
         with pytest.raises(RuntimeError):
             xd.open_mfdataarray(str(tmp_path / "*.nc"))
+
+
+class TestSplit:
+    def test_from_integer(self):
+        da = xd.DataArray(np.random.rand(7, 3))
+        assert xd.concatenate(xd.split(da, 3)).equals(da)
+
+    @pytest.fixture
+    def coord(self, dtype, ctype):
+        starts = np.array(
+            [
+                0,  # 0 - initial block
+                10,  # 10 - continuous
+                18,  # 20 - 2 overlap
+                30,  # 30 - 2 gap
+                48,  # 40 - 8 gap
+                50,  # 50 - 8 overlap
+            ],
+            dtype,
+        )
+        size = 10
+        step = np.array(
+            1, "timedelta64" if np.issubdtype(dtype, np.datetime64) else dtype
+        )
+        out = xd.Coordinate[ctype](data=None, dim="dim", dtype=float)
+        for start in starts:
+            out = out.append(xd.Coordinate[ctype].from_block(start, size, step, "dim"))
+        return out
+
+    # from tests.coordinates.test_generic import TestGetSplitIndices
+
+    # CASES = TestGetSplitIndices.CASES
+
+    @pytest.mark.parametrize("ctype", ["interpolated", "sampled"])
+    @pytest.mark.parametrize("dtype", [int, float, "datetime64[s]"])
+    def test_from_coord(self, coord):
+        expected = xd.DataArray(np.random.rand(60), {"dim": coord})
+        assert xd.split(expected, tolerance=20.0)[0].equals(expected)
+        chunks = xd.split(expected)
+        result = xd.concatenate(chunks, tolerance=False)
+        assert result.equals(expected)
