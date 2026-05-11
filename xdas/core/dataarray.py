@@ -372,7 +372,7 @@ class DataArray(NDArrayOperatorsMixin):
 
                 chunks = [
                     chunk.sel(indexers, method, endpoint, drop)
-                    for chunk in split(self, "overlaps")
+                    for chunk in split(self, "overlaps", dim, False)
                 ]
                 return concatenate(chunks, dim, False)
 

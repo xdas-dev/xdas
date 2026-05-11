@@ -165,19 +165,43 @@ class TestSelection:
         result = da.sel(distance=0, method="nearest", drop=True)
         assert "distance" not in result.coords
 
-    def test_warn_when_sel_with_overlaps(self):
+    def test_with_overlaps(self):
         da = xd.DataArray(
             np.arange(80).reshape(20, 4),
             {
                 "time": {
-                    "tie_values": [0.0, 0.5, 0.4, 1.0],
+                    "tie_values": [0.0, 0.9, 0.5, 1.4],
                     "tie_indices": [0, 9, 10, 19],
                 },
                 "distance": [0.0, 10.0, 20.0, 30.0],
             },
         )
+        data = da.values[2:-2]
+        expected = xd.DataArray(
+            data,
+            {
+                "time": {
+                    "tie_values": [0.2, 0.9, 0.5, 1.2],
+                    "tie_indices": [0, 7, 8, 15],
+                },
+                "distance": [0.0, 10.0, 20.0, 30.0],
+            },
+        )
         with pytest.warns(match="overlap"):
-            da.sel(time=slice(0.1, 0.6))
+            result = da.sel(time=slice(0.15, 1.25))
+        np.testing.assert_array_equal(result, expected)
+        np.testing.assert_array_max_ulp(result["time"], expected["time"])
+        np.testing.assert_array_equal(result["distance"], expected["distance"])
+        assert result.dims == expected.dims
+
+        da = da.transpose("distance", "time")
+        expected = expected.transpose("distance", "time")
+        with pytest.warns(match="overlap"):
+            result = da.sel(time=slice(0.15, 1.25))
+        np.testing.assert_array_equal(result, expected)
+        np.testing.assert_array_max_ulp(result["time"], expected["time"])
+        np.testing.assert_array_equal(result["distance"], expected["distance"])
+        assert result.dims == expected.dims
 
     def test_isel(self):
         da = wavelet_wavefronts()
