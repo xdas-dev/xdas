@@ -9,7 +9,7 @@
 
 ### Improvements
 - Most `xdas.open_*` functions now have a `create_dirs` argument to creating intermediate directories if necessary (@aurelienfalco).
-- Make `DataArray.sel` handle overlaps when slicing (@atrabattoni).
+- Make `DataArray.sel` handle overlaps when slicing, `xdas.split` can split on overlaps or gaps now (@atrabattoni).
 - New `io.Engine` backend system to register different file formats (@atrabattoni).
 - Make `open_mfdataarray` raise `RuntimeError` when opening all files fails (@asladen). 
 - Add "prodml" engine (@atrabattoni) and make "optasense" and "sintela" aliases of it (@atrabattoni). 
