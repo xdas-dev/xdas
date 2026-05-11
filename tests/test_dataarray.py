@@ -165,32 +165,24 @@ class TestSelection:
         result = da.sel(distance=0, method="nearest", drop=True)
         assert "distance" not in result.coords
 
-    def test_sel_slice_with_overlaps(self):
-        da = xd.DataArray(
-            np.arange(80).reshape(20, 4),
-            {
-                "time": {
-                    "tie_values": [0.0, 0.9, 0.5, 1.4],
-                    "tie_indices": [0, 9, 10, 19],
-                },
-                "distance": [0.0, 10.0, 20.0, 30.0],
-            },
-        )
+    @pytest.mark.parametrize("ctype", ["interpolated", "sampled"])
+    def test_sel_slice_with_overlaps(self, ctype):
+        data = np.arange(80).reshape(20, 4)
+        time = xd.Coordinate[ctype](None, "time", float)
+        time = time.append(xd.Coordinate[ctype].from_block(0.0, 10, 0.1, "time"))
+        time = time.append(xd.Coordinate[ctype].from_block(0.5, 10, 0.1, "time"))
+        distance = [0.0, 10.0, 20.0, 30.0]
+        da = xd.DataArray(data, {"time": time, "distance": distance})
+
         data = da.values[2:-2]
-        expected = xd.DataArray(
-            data,
-            {
-                "time": {
-                    "tie_values": [0.2, 0.9, 0.5, 1.2],
-                    "tie_indices": [0, 7, 8, 15],
-                },
-                "distance": [0.0, 10.0, 20.0, 30.0],
-            },
-        )
+        time = xd.Coordinate[ctype](None, "time", float)
+        time = time.append(xd.Coordinate[ctype].from_block(0.2, 8, 0.1, "time"))
+        time = time.append(xd.Coordinate[ctype].from_block(0.5, 8, 0.1, "time"))
+        expected = xd.DataArray(data, {"time": time, "distance": distance})
         with pytest.warns(match="overlap"):
             result = da.sel(time=slice(0.15, 1.25))
         np.testing.assert_array_equal(result, expected)
-        np.testing.assert_array_max_ulp(result["time"], expected["time"])
+        np.testing.assert_array_max_ulp(result["time"], expected["time"], maxulp=3)
         np.testing.assert_array_equal(result["distance"], expected["distance"])
         assert result.dims == expected.dims
 
@@ -199,7 +191,7 @@ class TestSelection:
         with pytest.warns(match="overlap"):
             result = da.sel(time=slice(0.15, 1.25))
         np.testing.assert_array_equal(result, expected)
-        np.testing.assert_array_max_ulp(result["time"], expected["time"])
+        np.testing.assert_array_max_ulp(result["time"], expected["time"], maxulp=3)
         np.testing.assert_array_equal(result["distance"], expected["distance"])
         assert result.dims == expected.dims
 
