@@ -171,7 +171,7 @@ class TestDataArray:
                 "distance": [0.0, 10.0, 20.0, 30.0],
             },
         )
-        with pytest.raises(ValueError, match="overlaps were found"):
+        with pytest.warns(match="overlap"):
             da.sel(time=slice(0.1, 0.6))
 
     def test_isel(self):
