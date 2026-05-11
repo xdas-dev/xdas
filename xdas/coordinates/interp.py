@@ -7,7 +7,7 @@ from xinterp import forward, inverse
 from .core import (
     Coordinate,
     format_datetime,
-    is_strictly_increasing,
+    is_monotonic_increasing,
     parse,
     parse_tolerance,
 )
@@ -64,7 +64,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
                 raise ValueError("`tie_indices` must be integer-like")
             if not tie_indices[0] == 0:
                 raise ValueError("`tie_indices` must start with a zero")
-            if not is_strictly_increasing(tie_indices):
+            if not is_monotonic_increasing(tie_indices):
                 raise ValueError("`tie_indices` must be strictly increasing")
         if not (
             np.issubdtype(tie_values.dtype, np.number)

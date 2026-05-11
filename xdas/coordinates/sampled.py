@@ -5,7 +5,7 @@ import numpy as np
 from .core import (
     Coordinate,
     format_datetime,
-    is_strictly_increasing,
+    is_monotonic_increasing,
     parse,
     parse_tolerance,
 )
@@ -294,7 +294,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
             value = np.datetime64(value)
         else:
             value = np.asarray(value)
-        if not is_strictly_increasing(
+        if not is_monotonic_increasing(
             self.tie_values
         ):  # TODO: make it work even in this case
             raise ValueError("tie_values must be strictly increasing")

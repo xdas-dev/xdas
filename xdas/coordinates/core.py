@@ -357,6 +357,13 @@ class Coordinate:
             delta = delta / np.timedelta64(1, "s")
         return delta
 
+    def is_monotonic_increasing(self):
+        if np.issubdtype(self.dtype, np.datetime64):
+            zero = np.timedelta64(0)
+        else:
+            zero = 0
+        return np.all(np.diff(self.values) > zero)
+
     def isdim(self):
         if self.parent is None or self.name is None:
             return None
@@ -646,7 +653,7 @@ def isscalar(data):
     return (data.dtype != np.dtype(object)) and (data.ndim == 0)
 
 
-def is_strictly_increasing(x):
+def is_monotonic_increasing(x):
     if np.issubdtype(x.dtype, np.datetime64):
         return np.all(np.diff(x) > np.timedelta64(0))
     else:
