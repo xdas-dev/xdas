@@ -364,17 +364,23 @@ class DataArray(NDArrayOperatorsMixin):
         # handle not monotonic increasing coordinates
         for dim in indexers:
             if not self[dim].is_monotonic_increasing():
-                warnings.warn(
-                    f"dimension {dim} is not monotonic increasing, "
-                    f"spliting on overlaps, slicing and concatenating can be slow..."
-                )
-                from ..core.routines import concatenate, split
+                if isinstance(indexers[dim], slice):
+                    warnings.warn(
+                        f"dimension {dim} is not monotonic increasing, "
+                        f"spliting on overlaps, slicing and concatenating can be slow..."
+                    )
+                    from ..core.routines import concatenate, split
 
-                chunks = [
-                    chunk.sel(indexers, method, endpoint, drop)
-                    for chunk in split(self, "overlaps", dim, False)
-                ]
-                return concatenate(chunks, dim, False)
+                    chunks = [
+                        chunk.sel(indexers, method, endpoint, drop)
+                        for chunk in split(self, "overlaps", dim, False)
+                    ]
+                    return concatenate(chunks, dim, False)
+                else:
+                    raise NotImplementedError(
+                        f"cannot find specific coordinate value(s) because "
+                        f"dimension {dim} contains overlaps"
+                    )
 
         key = self.coords.to_index(indexers, method, endpoint)
         da = self[key]

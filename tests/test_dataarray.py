@@ -165,7 +165,7 @@ class TestSelection:
         result = da.sel(distance=0, method="nearest", drop=True)
         assert "distance" not in result.coords
 
-    def test_with_overlaps(self):
+    def test_sel_slice_with_overlaps(self):
         da = xd.DataArray(
             np.arange(80).reshape(20, 4),
             {
@@ -202,6 +202,20 @@ class TestSelection:
         np.testing.assert_array_max_ulp(result["time"], expected["time"])
         np.testing.assert_array_equal(result["distance"], expected["distance"])
         assert result.dims == expected.dims
+
+    def test_sel_item_with_overlaps(self):
+        da = xd.DataArray(
+            np.arange(80).reshape(20, 4),
+            {
+                "time": {
+                    "tie_values": [0.0, 0.9, 0.5, 1.4],
+                    "tie_indices": [0, 9, 10, 19],
+                },
+                "distance": [0.0, 10.0, 20.0, 30.0],
+            },
+        )
+        with pytest.raises(NotImplementedError):
+            da.sel(time=0.1, method="nearest")
 
     def test_isel(self):
         da = wavelet_wavefronts()
