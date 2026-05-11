@@ -303,7 +303,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         )
 
     def get_split_indices(self, kind="discontinuities", tolerance=False):
-        valid_kinds = {"discontinuities", "gap", "overlap"}
+        valid_kinds = {"discontinuities", "gaps", "overlaps"}
         if kind not in valid_kinds:
             raise ValueError(f"`kind` must be one of {valid_kinds}; got {kind!r}")
 
@@ -323,9 +323,9 @@ class InterpCoordinate(Coordinate, name="interpolated"):
             zero = np.timedelta64(0) if np.issubdtype(self.dtype, np.datetime64) else 0
 
             match kind:
-                case "gap":
+                case "gaps":
                     mask = deltas >= zero
-                case "overlap":
+                case "overlaps":
                     mask = deltas < zero
 
         else:
@@ -334,9 +334,9 @@ class InterpCoordinate(Coordinate, name="interpolated"):
             match kind:
                 case "discontinuities":
                     mask = np.abs(deltas) > tolerance
-                case "gap":
+                case "gaps":
                     mask = deltas > tolerance
-                case "overlap":
+                case "overlaps":
                     mask = deltas < -tolerance
 
         return self.tie_indices[indices[mask]]

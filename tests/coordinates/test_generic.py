@@ -60,20 +60,20 @@ class TestGetSplitIndices:
         ("discontinuities", 4, [40, 50]),
         ("discontinuities", 8, []),
         ("discontinuities", 20, []),
-        ("gap", False, [10, 30, 40]),
-        ("gap", None, [30, 40]),  # continuity is a gap
-        ("gap", 1, [30, 40]),
-        ("gap", 2, [40]),
-        ("gap", 4, [40]),
-        ("gap", 8, []),
-        ("gap", 20, []),
-        ("overlap", False, [20, 50]),
-        ("overlap", None, [20, 50]),  # continuity is not an overlap
-        ("overlap", 1, [20, 50]),
-        ("overlap", 2, [50]),
-        ("overlap", 4, [50]),
-        ("overlap", 8, []),
-        ("overlap", 20, []),
+        ("gaps", False, [10, 30, 40]),
+        ("gaps", None, [30, 40]),  # continuity is a gaps
+        ("gaps", 1, [30, 40]),
+        ("gaps", 2, [40]),
+        ("gaps", 4, [40]),
+        ("gaps", 8, []),
+        ("gaps", 20, []),
+        ("overlaps", False, [20, 50]),
+        ("overlaps", None, [20, 50]),  # continuity is not an overlaps
+        ("overlaps", 1, [20, 50]),
+        ("overlaps", 2, [50]),
+        ("overlaps", 4, [50]),
+        ("overlaps", 8, []),
+        ("overlaps", 20, []),
     ]
 
     @pytest.mark.parametrize("ctype", ["interpolated", "sampled"])
