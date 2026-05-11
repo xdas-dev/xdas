@@ -878,15 +878,16 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         dims = (dim, *objs[0].dims)
         objs = [da.expand_dims(dim) for da in objs]
 
-    coords = objs[0].coords.copy()
-    name = objs[0].name
-    attrs = objs[0].attrs
-
-    dim_has_coords = dim in coords
+    dim_has_coords = dim in objs[0].coords
 
     if dim_has_coords:
         objs = sorted(objs, key=lambda da: da[dim][0].values)
-        coord = coords[dim].__class__(data=None, dim=dim, dtype=coords[dim].dtype)
+        coord = objs[0][dim].__class__(data=None, dim=dim, dtype=objs[0][dim].dtype)
+    coords = {
+        name: coord for name, coord in objs[0].coords.items() if not coord.dim == dim
+    }
+    name = objs[0].name
+    attrs = objs[0].attrs
 
     iterator = tqdm(objs, desc="Linking dataarray") if verbose else objs
     data = []
@@ -897,26 +898,32 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         else:
             data.append(da.data)
 
-        if dim in coords:
+        if dim_has_coords:
             coord = coord.append(da[dim])
 
     if virtual:
         data = VirtualStack(data, axis)
     else:
         data = np.concatenate(data, axis)
-    if tolerance is not False:
-        if dim_has_coords:
-            if hasattr(coord, "simplify"):
+
+    if dim_has_coords:
+        if tolerance is not False:
+            try:
                 coord = coord.simplify(tolerance)
-            else:
-                if tolerance is not None:
+            except NotImplementedError:
+                if (
+                    tolerance is not None
+                ):  # TODO: Default to False and remove this condition here?
                     raise TypeError(
-                        "tolerance can only be used with interpolated coordinates"
+                        "`tolerance` can only be used with coordinates "
+                        "that implements `simplify`"
                     )
-            coords[dim] = coord
-        else:
-            if tolerance is not None:
-                raise TypeError("cannot use tolerance on non-existing coordinates")
+        coords[dim] = coord
+    else:
+        if not (
+            tolerance is None or tolerance is False
+        ):  # TODO: Default to False and remove None here?
+            raise TypeError("cannot use tolerance on non-existing coordinates")
 
     return DataArray(data, coords, dims, name, attrs)
 
@@ -925,40 +932,45 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
     """
     Split a data array along a dimension.
 
-    Splitting can either be performed at each discontinuity (along interpolated
-    coordinates), at a given set of indices (give as a list of int) or in order to get
-    a given number of equal sized chunks (if a single int is provided).
+    Splitting can either be performed at each discontinuity , at a given set of indices
+    (given as a list of int) or in order to get a given number of equal sized chunks
+    (if a single int is provided).
 
     Parameters
     ----------
     da : DataArray
         The data array to split
-    indices_or_sections : str, int or list of int, optional
-        If `indices_or_section` is an integer N, the array will be divided into N
+    indices_or_sections : str, int or list of int, default="discontinuities"
+        Describe how the splitting must be done:
+        - If `indices_or_section` is an integer N, the array will be divided into N
         almost equal (can differ by one element if the `dim` size is not a multiple of
-        N). If `indices_or_section` is a 1-D array of sorted integers, the entries
+        N).
+        - If `indices_or_section` is a 1-D array of sorted integers, the entries
         indicate where the array is split along `dim`. For example, `[2, 3]` would, for
-        `dim="first"`, result in [da[:2], da[2:3], da[3:]]. If `indices_or_section` is
-        "discontinuities", the `dim` must be an interpolated coordinate and splitting
-        will occurs at locations where they are two consecutive tie_indices with only
-        one index of difference and where the tie_values difference is greater than
-        `tolerance`. Default to "discontinuities".
+        `dim="first"`, result in [da[:2], da[2:3], da[3:]].
+        - If `indices_or_section` is one of "discontinuities", "gaps" or "overlaps",
+        splitting will occurs at the indices given by `Coordinate.get_split_indices`.
     dim : str, optional
         The dimension along which to split, by default "first"
     tolerance : float or timedelta64, optional
-        If `indices_or_sections="discontinuities"` split will only occur on gaps and
-        overlaps that are bigger than `tolerance`. For time coordinates, numeric
-        values are considered as seconds. Zero tolerance by default.
+        Passed to `Coordinate.get_split_indices` if `indices_or_section` is
+        "discontinuities", "gaps" or "overlaps" to determine what can be considered as
+        a discontiuity. For time coordinates, numeric values are considered as seconds.
+        Zero tolerance by default.
 
     Returns
     -------
     list of DataArray
         The splitted data array.
     """
-    if isinstance(indices_or_sections, str) and (
-        indices_or_sections == "discontinuities"
-    ):
-        indices_or_sections = da[dim].get_split_indices(tolerance)
+    if isinstance(indices_or_sections, str):
+        indices_or_sections = da[dim].get_split_indices(indices_or_sections, tolerance)
+    else:
+        if tolerance:
+            raise ValueError(
+                "`tolerance` cannot be used when `indices_or_sections` "
+                "is an integer or a list of indices"
+            )
 
     if isinstance(indices_or_sections, int):
         nsamples = da.sizes[dim]
@@ -972,6 +984,7 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
         div_points = np.cumsum([0] + chunks, dtype=np.int64)
     else:
         div_points = np.concatenate([[0], indices_or_sections, [da.sizes[dim]]])
+
     return DataCollection(
         [da.isel({dim: slice(start, stop)}) for start, stop in pairwise(div_points)]
     )

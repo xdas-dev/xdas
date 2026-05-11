@@ -357,13 +357,21 @@ class Coordinate:
             delta = delta / np.timedelta64(1, "s")
         return delta
 
+    def is_monotonic_increasing(self):
+        if np.issubdtype(self.dtype, np.datetime64):
+            zero = np.timedelta64(0)
+        else:
+            zero = 0
+        return np.all(np.diff(self.values) > zero)
+
     def isdim(self):
         if self.parent is None or self.name is None:
             return None
         else:
             return self.parent.isdim(self.name)
 
-    def equals(self, other): ...
+    def equals(self, other):
+        raise NotImplementedError
 
     def to_index(self, item, method=None, endpoint=True):
         if isinstance(item, slice):
@@ -427,7 +435,10 @@ class Coordinate:
     def append(self, other):
         raise NotImplementedError(f"append is not implemented for {self.__class__}")
 
-    def get_split_indices(self, tolerance=None):
+    def simplify(self, tolerance=None):
+        raise NotImplementedError(f"simplify is not implemented for {self.__class__}")
+
+    def get_split_indices(self, kind="discontinuities", tolerance=False):
         raise NotImplementedError(
             f"get_split_indices is not implemented for {self.__class__}"
         )
@@ -466,7 +477,7 @@ class Coordinate:
                     "type",
                 ]
             )
-        indices = self.get_split_indices(tolerance)
+        indices = self.get_split_indices("discontinuities", tolerance)
         records = []
         for index in indices:
             start_index = index
@@ -606,7 +617,7 @@ def parse(data, dim=None):
 def parse_tolerance(tolerance, dtype):
     if np.issubdtype(dtype, np.datetime64):
         if tolerance is None:
-            tolerance = np.timedelta64(0, "ns")
+            tolerance = np.timedelta64(0)
         elif isinstance(tolerance, (int, float)):
             tolerance = np.timedelta64(round(tolerance * 1e9), "ns")
     else:
@@ -642,9 +653,9 @@ def isscalar(data):
     return (data.dtype != np.dtype(object)) and (data.ndim == 0)
 
 
-def is_strictly_increasing(x):
+def is_monotonic_increasing(x):
     if np.issubdtype(x.dtype, np.datetime64):
-        return np.all(np.diff(x) > np.timedelta64(0, "ns"))
+        return np.all(np.diff(x) > np.timedelta64(0))
     else:
         return np.all(np.diff(x) > 0)
 

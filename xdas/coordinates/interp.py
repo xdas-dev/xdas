@@ -7,7 +7,7 @@ from xinterp import forward, inverse
 from .core import (
     Coordinate,
     format_datetime,
-    is_strictly_increasing,
+    is_monotonic_increasing,
     parse,
     parse_tolerance,
 )
@@ -64,7 +64,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
                 raise ValueError("`tie_indices` must be integer-like")
             if not tie_indices[0] == 0:
                 raise ValueError("`tie_indices` must start with a zero")
-            if not is_strictly_increasing(tie_indices):
+            if not is_monotonic_increasing(tie_indices):
                 raise ValueError("`tie_indices` must be strictly increasing")
         if not (
             np.issubdtype(tie_values.dtype, np.number)
@@ -292,6 +292,8 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         )
 
     def simplify(self, tolerance=None):
+        if tolerance is False:
+            return self  # TODO: copy
         tolerance = parse_tolerance(tolerance, self.dtype)
         tie_indices, tie_values = douglas_peucker(
             self.tie_indices, self.tie_values, tolerance
@@ -300,16 +302,44 @@ class InterpCoordinate(Coordinate, name="interpolated"):
             dict(tie_indices=tie_indices, tie_values=tie_values), self.dim
         )
 
-    def get_split_indices(self, tolerance=None):
+    def get_split_indices(self, kind="discontinuities", tolerance=False):
+        valid_kinds = {"discontinuities", "gaps", "overlaps"}
+        if kind not in valid_kinds:
+            raise ValueError(f"`kind` must be one of {valid_kinds}; got {kind!r}")
+
         (indices,) = np.nonzero(np.diff(self.tie_indices) == 1)
         indices += 1
-        if tolerance is not None:
-            tolerance = parse_tolerance(tolerance, self.dtype)
-            deltas = self.tie_values[indices + 1] - self.tie_values[indices]
-            indices = indices[np.abs(deltas) >= tolerance]
-        return np.array(
-            [self.tie_indices[index] for index in indices], dtype=self.tie_indices.dtype
+
+        # Fast path: no filtering requested
+        if kind == "discontinuities" and tolerance is False:
+            return self.tie_indices[indices]
+
+        sampling_interval = self.get_sampling_interval(cast=False)
+        deltas = (
+            self.tie_values[indices] - self.tie_values[indices - 1] - sampling_interval
         )
+
+        if tolerance is False:
+            zero = np.timedelta64(0) if np.issubdtype(self.dtype, np.datetime64) else 0
+
+            match kind:
+                case "gaps":
+                    mask = deltas >= zero
+                case "overlaps":
+                    mask = deltas < zero
+
+        else:
+            tolerance = parse_tolerance(tolerance, self.dtype)
+
+            match kind:
+                case "discontinuities":
+                    mask = np.abs(deltas) > tolerance
+                case "gaps":
+                    mask = deltas > tolerance
+                case "overlaps":
+                    mask = deltas < -tolerance
+
+        return self.tie_indices[indices[mask]]
 
     @classmethod
     def from_array(cls, arr, dim=None, tolerance=None):

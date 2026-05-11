@@ -13,6 +13,8 @@ from ..virtual import VirtualArray, _to_human
 HANDLED_NUMPY_FUNCTIONS = {}
 HANDLED_METHODS = {}
 
+import warnings
+
 
 class DataArray(NDArrayOperatorsMixin):
     """
@@ -358,6 +360,28 @@ class DataArray(NDArrayOperatorsMixin):
         if indexers is None:
             indexers = {}
         indexers.update(indexers_kwargs)
+
+        # handle not monotonic increasing coordinates
+        for dim in indexers:
+            if not self[dim].is_monotonic_increasing():
+                if isinstance(indexers[dim], slice):
+                    warnings.warn(
+                        f"dimension {dim} is not monotonic increasing, "
+                        f"spliting on overlaps, slicing and concatenating can be slow..."
+                    )
+                    from ..core.routines import concatenate, split
+
+                    chunks = [
+                        chunk.sel(indexers, method, endpoint, drop)
+                        for chunk in split(self, "overlaps", dim, False)
+                    ]
+                    return concatenate(chunks, dim, False)
+                else:
+                    raise NotImplementedError(
+                        f"cannot find specific coordinate value(s) because "
+                        f"dimension {dim} contains overlaps"
+                    )
+
         key = self.coords.to_index(indexers, method, endpoint)
         da = self[key]
         if drop:
