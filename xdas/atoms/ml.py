@@ -115,7 +115,12 @@ class MLPicker(Atom):
         else:
             da = concatenate([self.buffer, da], self.dim)
             out = self._process(da)
-            divpoint = out.sizes[self.dim]
+            try:
+                divpoint = out.sizes[self.dim]
+            except KeyError as e:
+                print("out.dims: ", out.dims)
+                print("dim: ", self.dim)
+                raise KeyError(e)
             self.buffer = State(da.isel({self.dim: slice(divpoint, None)}))
         return out
 
