@@ -964,6 +964,12 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
     """
     if isinstance(indices_or_sections, str):
         indices_or_sections = da[dim].get_split_indices(indices_or_sections, tolerance)
+    else:
+        if tolerance:
+            raise ValueError(
+                "`tolerance` cannot be used when `indices_or_sections` "
+                "is an integer or a list of indices"
+            )
 
     if isinstance(indices_or_sections, int):
         nsamples = da.sizes[dim]
@@ -977,6 +983,7 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
         div_points = np.cumsum([0] + chunks, dtype=np.int64)
     else:
         div_points = np.concatenate([[0], indices_or_sections, [da.sizes[dim]]])
+
     return DataCollection(
         [da.isel({dim: slice(start, stop)}) for start, stop in pairwise(div_points)]
     )

@@ -51,6 +51,7 @@ class TestAppend:
 
 
 class TestGetSplitIndices:
+    # kind, tolerance, split_indices
     CASES = [
         ("discontinuities", False, [10, 20, 30, 40, 50]),
         ("discontinuities", None, [20, 30, 40, 50]),

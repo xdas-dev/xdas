@@ -381,12 +381,8 @@ class TestOpen:  # TODO: those tests are weirdly slow...
 
 
 class TestSplit:
-    def test_from_integer(self):
-        da = xd.DataArray(np.random.rand(7, 3))
-        assert xd.concatenate(xd.split(da, 3)).equals(da)
-
     @pytest.fixture
-    def coord(self, dtype, ctype):
+    def dataarray(self, dtype, ctype):
         starts = np.array(
             [
                 0,  # 0 - initial block
@@ -402,20 +398,76 @@ class TestSplit:
         step = np.array(
             1, "timedelta64" if np.issubdtype(dtype, np.datetime64) else dtype
         )
-        out = xd.Coordinate[ctype](data=None, dim="dim", dtype=float)
+        coord = xd.Coordinate[ctype](data=None, dim="dim", dtype=float)
         for start in starts:
-            out = out.append(xd.Coordinate[ctype].from_block(start, size, step, "dim"))
-        return out
+            coord = coord.append(
+                xd.Coordinate[ctype].from_block(start, size, step, "dim")
+            )
+        return xd.DataArray(np.random.randn(len(coord)), {"dim": coord})
 
-    # from tests.coordinates.test_generic import TestGetSplitIndices
-
-    # CASES = TestGetSplitIndices.CASES
+    # kind, tolerance, split_indices
+    CASES = [
+        ("discontinuities", False, [10, 20, 30, 40, 50]),
+        ("discontinuities", None, [20, 30, 40, 50]),
+        ("discontinuities", 1, [20, 30, 40, 50]),
+        ("discontinuities", 2, [40, 50]),
+        ("discontinuities", 4, [40, 50]),
+        ("discontinuities", 8, []),
+        ("discontinuities", 20, []),
+        ("gap", False, [10, 30, 40]),
+        ("gap", None, [30, 40]),  # continuity is a gap
+        ("gap", 1, [30, 40]),
+        ("gap", 2, [40]),
+        ("gap", 4, [40]),
+        ("gap", 8, []),
+        ("gap", 20, []),
+        ("overlap", False, [20, 50]),
+        ("overlap", None, [20, 50]),  # continuity is not an overlap
+        ("overlap", 1, [20, 50]),
+        ("overlap", 2, [50]),
+        ("overlap", 4, [50]),
+        ("overlap", 8, []),
+        ("overlap", 20, []),
+    ]
 
     @pytest.mark.parametrize("ctype", ["interpolated", "sampled"])
     @pytest.mark.parametrize("dtype", [int, float, "datetime64[s]"])
-    def test_from_coord(self, coord):
-        expected = xd.DataArray(np.random.rand(60), {"dim": coord})
-        assert xd.split(expected, tolerance=20.0)[0].equals(expected)
-        chunks = xd.split(expected)
-        result = xd.concatenate(chunks, tolerance=False)
-        assert result.equals(expected)
+    def test_from_integer(self, dataarray):
+        chunks = xd.split(dataarray, 4)
+        assert len(chunks) == 4
+        result = xd.concatenate(chunks, tolerance=None)
+        np.testing.assert_array_equal(
+            result["dim"].values, dataarray["dim"].values, strict=True
+        )
+        np.testing.assert_array_equal(result.values, dataarray.values, strict=True)
+
+    @pytest.mark.parametrize("ctype", ["interpolated", "sampled"])
+    @pytest.mark.parametrize("dtype", [int, float, "datetime64[s]"])
+    def test_from_coord(self, dataarray):
+        for kind, tolerance, expected_split_indices in self.CASES:
+            chunks = xd.split(dataarray, kind, "dim", tolerance)
+            assert len(chunks) == len(expected_split_indices) + 1
+            result = xd.concatenate(chunks, "dim", tolerance=False)
+            np.testing.assert_array_equal(
+                result["dim"].values, dataarray["dim"].values, strict=True
+            )
+            np.testing.assert_array_equal(result.values, dataarray.values, strict=True)
+
+    @pytest.mark.parametrize("ctype", ["interpolated", "sampled"])
+    @pytest.mark.parametrize("dtype", [int, float, "datetime64[s]"])
+    def test_from_indices(self, dataarray):
+        split_indices = [11, 22, 33, 44, 55]
+        chunks = xd.split(dataarray, split_indices)
+        assert len(chunks) == len(split_indices) + 1
+        result = xd.concatenate(chunks, "dim", tolerance=False)
+        np.testing.assert_array_equal(
+            result["dim"].values, dataarray["dim"].values, strict=True
+        )
+        np.testing.assert_array_equal(result.values, dataarray.values, strict=True)
+
+    def test_raise_tolerance_not_used(self):
+        da = xd.DataArray()
+        with pytest.raises(ValueError):
+            xd.split(da, 3, tolerance=1)
+        with pytest.raises(ValueError):
+            xd.split(da, [10], tolerance=1)

@@ -390,6 +390,8 @@ class SampledCoordinate(Coordinate, name="sampled"):
         return self[::q]
 
     def simplify(self, tolerance=None):
+        if tolerance is False:
+            return self  # TODO: copy
         tolerance = parse_tolerance(tolerance, self.dtype)
         tie_values = [self.tie_values[0]]
         tie_lengths = [self.tie_lengths[0]]

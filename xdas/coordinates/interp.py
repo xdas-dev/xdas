@@ -292,6 +292,8 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         )
 
     def simplify(self, tolerance=None):
+        if tolerance is False:
+            return self  # TODO: copy
         tolerance = parse_tolerance(tolerance, self.dtype)
         tie_indices, tie_values = douglas_peucker(
             self.tie_indices, self.tie_values, tolerance
