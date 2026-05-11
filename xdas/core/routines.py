@@ -1319,6 +1319,12 @@ def concat(
         return objs[0] if objs else DataArray([])
     objs = non_empty
 
+    if virtual is None:
+        virtual = all(isinstance(da.data, (VirtualSource, VirtualStack)) for da in objs)
+
+    if len(objs) == 0:
+        return DataArray() # return empty dataarray
+    
     if dim in objs[0].dims + ("first", "last"):
         axis = objs[0].get_axis_num(dim)
         dim = objs[0].dims[axis]  # ensure not "first" or "last"
