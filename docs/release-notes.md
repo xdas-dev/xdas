@@ -6,6 +6,7 @@
 - Add `xdas.open` that automatically infer which `xdas.open_*` function to use (@atrabattoni, @yetinam).
 - Add automatic engine detection to every `xdas.open_*` functions (@atrabattoni, @yetinam).
 - Add `pathlib.Path` support as input for all Xdas file-related functions and methods (@atrabattoni).
+- Add `xdas.io.compressed` that compress a specific dataset in an HDF5 file while preserving the rest of the file structure and metadata (@marbail).
 
 ### Improvements
 - Most `xdas.open_*` functions now have a `create_dirs` argument to creating intermediate directories if necessary (@aurelienfalco).
@@ -13,6 +14,7 @@
 - New `io.Engine` backend system to register different file formats (@atrabattoni).
 - Make `open_mfdataarray` raise `RuntimeError` when opening all files fails (@asladen). 
 - Add "prodml" engine (@atrabattoni) and make "optasense" and "sintela" aliases of it (@atrabattoni). 
+- Add the `component_strategy` argument to the `xdas.atoms.MLPicker` to choose weather to use the same component on the 3 channels or to use one channel and set the others to 0 based (@marbail). 
 
 ### Bugs Fixed
 - Fix **memory accumulation** when slicing multiple times data arrays, e.g. when using atoms (@atrabattoni) (@atrabattoni).
@@ -20,6 +22,7 @@
 - Fix/improve distance handling for: "apsensing", "febus", "optasense", "silixa", and "sintela" (@atrabattoni).
 - Add dim swapping handling for the "prodml" based engines with the `swapped_dims=False` kwarg (@atrabattoni).
 - Fix ASN ROI handling (@asladen).
+- Use the `annotate_batch_pre` model's function to normalize in `xdas.atoms.MLPicker` (@marbail).
 
 ## 0.2.5
 - Add SampleCoordinate for more SEED-like coordinates and refactor the coordinate backend (@atrabattoni).

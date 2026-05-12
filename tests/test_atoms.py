@@ -247,9 +247,51 @@ class TestMLPicker:
         from seisbench.models import PhaseNet
 
         model = PhaseNet.from_pretrained("diting")
-        picker = MLPicker(model, "time", device="cpu")
+        picker = MLPicker(model, "time", device="cpu", component_strategy="Z")
         da = randn_wavefronts()
+        # da = da.isel(time=slice(0, 5000)) TODO: why not faster ?
         expected = picker(da)
         chunks = xd.split(da, 4, "time")
         result = xd.concatenate([picker(chunk, chunk_dim="time") for chunk in chunks])
         assert result.equals(expected)
+
+    def test_compare_with_seisbench(self):
+        import obspy
+        from seisbench.models import PhaseNet
+
+        model = PhaseNet.from_pretrained("original")  # works at 100 Hz
+        model.to_preferred_device()
+        picker = MLPicker(model, "time", component_strategy="clone")
+
+        # generate one trace
+        da = randn_wavefronts()  # 100 Hz
+        da = da.isel(distance=slice(0, 1))
+
+        # xdas
+        result = picker(da)
+
+        # convert to one stream with clonning
+        st = da.to_stream()
+        tr = st[0]
+        st = obspy.Stream()
+        for component in model.component_order:
+            _tr = tr.copy()
+            _tr.stats.component = component
+            st.append(_tr)
+
+        # seisbench
+        expected = model.annotate(st)
+        expected = xd.DataArray.from_stream(expected)
+
+        # align because of different overlap managment
+        _result = result.sel(time=slice(expected["time"][0].values, None))
+        _result = _result.isel(distance=0)
+        _expected = expected.sel(time=slice(None, result["time"][-1].values))
+        _expected = _expected.transpose("time", "channel")
+
+        # remove unfinished end part
+        _result = _result[:-1000]
+        _expected = _expected[:-1000]
+
+        # check equal by removing the
+        assert np.allclose(_result.values, _expected.values)
