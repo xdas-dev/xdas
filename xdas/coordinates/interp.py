@@ -406,6 +406,144 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         )
 
 
+class FixedInterpCoordinate(InterpCoordinate, name="fixinterp"):
+    """
+    Array-like object used to represent piecewise evenly spaced coordinates using the
+    CF convention.
+
+    The coordinate ticks are describes by the mean of tie points that are interpolated
+    when intermediate values are required. Coordinate objects provides label based
+    selections methods.
+
+    Parameters
+    ----------
+    tie_indices : sequence of integers
+        The indices of the tie points. Must include index 0 and be strictly increasing.
+    tie_values : sequence of float or datetime64
+        The values of the tie points. Must be strictly increasing to enable label-based
+        selection. The len of `tie_indices` and `tie_values` sizes must match.
+    sampling_interval : scalar
+        The fixed central sampling interval. Slight variations around that value are
+        authorized.
+    tolerance :
+        TODO
+    """
+
+    def __init__(self, data=None, dim=None, dtype=None):
+        # empty
+        if data is None:
+            data = {"tie_indices": [], "tie_values": [], "sampling_interval": None}
+
+        # parse data
+        data, dim = parse(data, dim)
+        sampling_interval = data.pop("sampling_interval")
+
+        # initialize
+        super().__init__(data, dim, dtype)
+
+        # check shape
+        if not np.ndim(sampling_interval) == 0:
+            raise ValueError("`sampling_interval` must be a scalar value")
+        sampling_interval = np.asarray(sampling_interval)[()]  # ensure numpy scalar
+
+        # check dtype
+        if np.issubdtype(self.dtype, np.datetime64):
+            if not np.issubdtype(sampling_interval.dtype, np.timedelta64):
+                raise ValueError(
+                    "`sampling_interval` must be timedelta64 for datetime64 `tie_values`"
+                )
+            else:
+                sampling_interval = sampling_interval.astype(dtype)
+
+        # assign
+        self.sampling_interval = sampling_interval
+
+    @property
+    def sampling_interval(self):
+        return self.data["sampling_interval"]
+
+    @sampling_interval.setter
+    def sampling_interval(self, value):
+        # check consistency
+        # TODO
+        self.data["sampling_interval"] = value
+
+    @staticmethod
+    def isvalid(data):
+        match data:
+            case {"tie_indices": _, "tie_values": _, "sampling_interval": _}:
+                return True
+            case _:
+                return False
+
+    def get_sampling_interval(self, cast=True):
+        delta = self.sampling_interval
+        if cast and np.issubdtype(delta.dtype, np.timedelta64):
+            delta = delta / np.timedelta64(1, "s")
+        return delta
+
+    def equals(self, other):
+        return super().equals(other) and (
+            self.sampling_interval == other.sampling_interval
+        )
+
+    def append(self, other):  # TODO
+        if not self.sampling_interval == other.sampling_interval:
+            raise ValueError(
+                "cannot append coordinate with different sampling interval"
+            )
+        return super().append(other)
+
+    def decimate(self, q):
+        coord = super().__init__(q)
+        coord.data["sampling_interval"] /= q  # TODO: what about interger-like
+        return coord
+
+    def simplify(self, tolerance=None):  # TODO: shoul ensure that still OK
+        return super().__init__(tolerance)
+
+    @classmethod
+    def from_array(cls, arr, dim=None, tolerance=None):
+        coord = super().__init__(arr, dim, tolerance)
+        # TODO: guess sampling_rate
+        # coord.data["sampling_rate"] = ...
+
+    def to_dict(self):
+        d = super().to_dict()
+        d["data"]["sampling_interval"] = self.sampling_interval
+        return d
+
+    def to_dataset(self, dataset, attrs):
+        dataset, attrs = super().to_dataset(dataset, attrs)
+        dataset[f"{self.name}_interpolation"].attrs[
+            "sampling_interval"
+        ] = self.sampling_interval
+        # TODO: what about datetime64 ?
+        return dataset, attrs
+
+    @classmethod
+    def from_dataset(cls, dataset, name): ...
+
+    # coords = super().from_dataset(dataset, name)
+    # for name, coord in coords.items():
+
+    # coords = {}
+    # mapping = dataset[name].attrs.pop("coordinate_interpolation", None)
+    # if mapping is not None:
+    #     matches = re.findall(r"(\w+): (\w+) (\w+)", mapping)
+    #     for match in matches:
+    #         dim, indices, values = match
+    #         data = {"tie_indices": dataset[indices], "tie_values": dataset[values]}
+    #         coords[dim] = Coordinate(data, dim)
+    # return coords
+
+    @classmethod
+    def from_block(cls, start, size, step, dim=None, dtype=None):  # TODO
+        coord = super().from_block(start, size, step, dim, dtype)
+        coord.sampling_interval = step
+        return coord
+
+
 def douglas_peucker(x, y, epsilon):
     mask = np.ones(len(x), dtype=bool)
     stack = [(0, len(x))]
