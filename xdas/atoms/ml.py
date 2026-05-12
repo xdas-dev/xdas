@@ -26,8 +26,6 @@ class LazyModule:
 
 torch = LazyModule("torch")
 
-_COMPONENT_CHANNEL = {"Z": 0, "N": 1, "E": 2}
-
 
 class MLPicker(Atom):
     def __init__(self, model, dim, device=None, component_strategy="clone"):

@@ -10,15 +10,15 @@ from xdas.io.utils import compress
 class TestCompression:
 
     TEST_FILES = [
-        # "ap_sensing_1.hdf5",
+        ("ap_sensing_1.hdf5", "DAS"),
         ("opto_das_1.hdf5", "data"),
-        # "febus_1.h5",
-        # "febus_2.h5",
-        # "opta_sense_quantx_v2.h5",
-        # "prodml_2.0.h5",
-        # "prodml_2.1.h5",
-        # "terra15_v5_test_file.hdf5",
-        # "terra15_v6_test_file.hdf5",
+        ("febus_1.h5", "fa1-21060063/Source1/Zone1/StrainRate"),
+        ("febus_2.h5", "fa1-24090193/Source1/Zone1/PSD [dB re 1 nStrain|sqrt(Hz)]"),
+        ("opta_sense_quantx_v2.h5", "Acquisition/Raw[0]/RawData"),
+        ("prodml_2.0.h5", "Acquisition/Raw[0]/RawData"),
+        ("prodml_2.1.h5", "Acquisition/Raw[0]/RawData"),
+        ("terra15_v5_test_file.hdf5", "data_product/data"),
+        ("terra15_v6_test_file.hdf5", "data_product/data"),
     ]
 
     @pytest.mark.parametrize("test_file, dataset_location", TEST_FILES)

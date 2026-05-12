@@ -12,6 +12,18 @@
    get_free_port
 ```
 
+```{eval-rst}
+.. currentmodule:: xdas.io.utils
+```
+
+# xdas.io.utils
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   compress
+```
 
 ```{eval-rst}
 .. currentmodule:: xdas.io.asn
