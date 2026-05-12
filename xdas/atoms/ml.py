@@ -28,15 +28,19 @@ torch = LazyModule("torch")
 
 
 class MLPicker(Atom):
-    def __init__(self, model, dim, device=None):
+    def __init__(self, model, dim, device=None, component_strategy="clone"):
         super().__init__()
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             device = torch.device(device)
+        valid = {"clone", *model.component_order}
+        if component_strategy not in valid:
+            raise ValueError(f"component_strategy must be one of {valid}")
         self.device = device
         self.model = model.eval().to(self.device)
         self.dim = dim
+        self.component_strategy = component_strategy
         self.buffer = State(...)
         self.batch_size = State(...)
         self.circular_input = State(...)
@@ -127,7 +131,12 @@ class MLPicker(Atom):
             self._roll(self.circular_input, data)
             self._roll(self.circular_counts, 0)
             self._roll(self.circular_output, 0.0)
-            self._normalize(self.circular_input, out=self.model_input[:, 1, :])
+            normalized = self.model.annotate_batch_pre(self.circular_input, {})
+            if self.component_strategy == "clone":
+                self.model_input[:] = normalized.unsqueeze(1)
+            else:
+                ch = list(self.model.component_order).index(self.component_strategy)
+                self.model_input[:, ch, :] = normalized
             self._run_model()
             data = self._pull_completed()
             chunk = self._attach_metadata(data, da, idx)
@@ -149,15 +158,6 @@ class MLPicker(Atom):
     def _roll(self, buffer, values):
         buffer[..., : self.noverlap] = buffer[..., self.step :]
         buffer[..., self.noverlap :] = values
-
-    @staticmethod
-    def _normalize(x, out=None):
-        if out is None:
-            out = torch.empty_like(x)
-        std, mean = torch.std_mean(x, dim=-1, keepdim=True)
-        torch.sub(x, mean, out=out)
-        torch.div(out, std, out=out)
-        return out
 
     def _run_model(self):
         with torch.no_grad():
