@@ -1,18 +1,16 @@
 import h5py
 import hdf5plugin
 
-def compress(file_path:str, 
-                save_path:str,
-                dataset_location:str,
-                encoding:dict):
+
+def compress(src_path: str, dst_path: str, dataset_location: str, encoding: dict):
     """
     Compress a specific dataset in an HDF5 file while preserving the rest of the file structure and metadata.
 
     Parameters
     ----------
-    file_path : str
+    src_path : str
         Path to the original .hdf5 file.
-    save_path : str
+    dst_path : str
         Path to save the compressed .hdf5 file.
     dataset_location : str
         Path to the dataset to compress inside the HDF5 file.
@@ -20,13 +18,13 @@ def compress(file_path:str,
         Dictionary of encoding options for the dataset.
         Should contain the following keys:
         - 'compression': the compression algorithm to use and its parameters, part of the hdf5plugin library
-        - 'chunks': the chunk size for the dataset, should be a tuple of integers, default to False for no chunking                 
+        - 'chunks': the chunk size for the dataset, should be a tuple of integers, default to False for no chunking
     """
 
     if "chunks" in encoding.keys() and not encoding["chunks"]:
         encoding.pop("chunks")
 
-    with h5py.File(file_path, 'r') as src_file, h5py.File(save_path, 'w') as dst_file:
+    with h5py.File(src_path, "r") as src_file, h5py.File(dst_path, "w") as dst_file:
 
         dataset_name = "/" + dataset_location.lstrip("/")
 
@@ -41,9 +39,8 @@ def compress(file_path:str,
                     ds = dst_group.create_dataset(name, data=data, **encoding)
                     for key, val in src_file[dataset_name].attrs.items():
                         ds.attrs[key] = val
-                    continue
                 # Copy the group
-                if isinstance(obj, h5py.Group):
+                elif isinstance(obj, h5py.Group):
                     grp = dst_group.create_group(name)
                     _copy(obj, grp, obj_path)
                 # Copy the rest
