@@ -2,15 +2,29 @@ import dascore
 import h5py
 import hdf5plugin
 import numpy as np
+import pytest
 
 from xdas.io.utils import compress
 
 
 class TestCompression:
-    def test_compression(self, tmp_path):
-        src_path = dascore.utils.downloader.fetch("opto_das_1.hdf5")
-        dst_path = tmp_path / "opto_das_1_compressed.hdf5"
-        dataset_location = "data"
+
+    TEST_FILES = [
+        # "ap_sensing_1.hdf5",
+        ("opto_das_1.hdf5", "data"),
+        # "febus_1.h5",
+        # "febus_2.h5",
+        # "opta_sense_quantx_v2.h5",
+        # "prodml_2.0.h5",
+        # "prodml_2.1.h5",
+        # "terra15_v5_test_file.hdf5",
+        # "terra15_v6_test_file.hdf5",
+    ]
+
+    @pytest.mark.parametrize("test_file, dataset_location", TEST_FILES)
+    def test_compression(self, tmp_path, test_file, dataset_location):
+        src_path = dascore.utils.downloader.fetch(test_file)
+        dst_path = tmp_path / f"{test_file}_compressed.hdf5"
         compress(
             src_path=src_path,
             dst_path=dst_path,

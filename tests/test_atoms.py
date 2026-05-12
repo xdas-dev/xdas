@@ -247,7 +247,7 @@ class TestMLPicker:
         from seisbench.models import PhaseNet
 
         model = PhaseNet.from_pretrained("diting")
-        picker = MLPicker(model, "time", device="cpu")
+        picker = MLPicker(model, "time", device="cpu", component_strategy="Z")
         da = randn_wavefronts()
         # da = da.isel(time=slice(0, 5000)) TODO: why not faster ?
         expected = picker(da)
