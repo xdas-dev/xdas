@@ -1,6 +1,6 @@
 import numpy as np
 
-from .core import Coordinate, parse
+from .core import Coordinate, parse_data_dim
 
 
 class ScalarCoordinate(Coordinate):
@@ -10,7 +10,7 @@ class ScalarCoordinate(Coordinate):
     def __init__(self, data=None, dim=None, dtype=None):
         if data is None:
             raise TypeError("scalar coordinate cannot be empty, please provide a value")
-        data, dim = parse(data, dim)
+        data, dim = parse_data_dim(data, dim)
         if dim is not None:
             raise ValueError("a scalar coordinate cannot be a dim")
         if not self.__class__.isvalid(data):

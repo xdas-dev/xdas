@@ -1,6 +1,6 @@
 import numpy as np
 
-from .core import Coordinate, isscalar, parse
+from .core import Coordinate, isscalar, parse_data_dim
 
 
 class DefaultCoordinate(Coordinate, name="default"):
@@ -13,7 +13,7 @@ class DefaultCoordinate(Coordinate, name="default"):
             data = {"size": 0}
 
         # parse data
-        data, dim = parse(data, dim)
+        data, dim = parse_data_dim(data, dim)
         if not self.isvalid(data):
             raise TypeError("`data` must be a mapping {'size': <int>}")
 

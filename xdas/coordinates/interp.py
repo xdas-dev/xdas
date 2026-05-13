@@ -8,8 +8,8 @@ from .core import (
     Coordinate,
     format_datetime,
     is_monotonic_increasing,
-    parse,
-    parse_tolerance,
+    parse_data_dim,
+    parse_scalar_delta,
 )
 
 
@@ -40,8 +40,8 @@ class InterpCoordinate(Coordinate, name="interpolated"):
             data = {"tie_indices": [], "tie_values": []}
 
         # parse data
-        data, dim = parse(data, dim)
-        if not self.__class__.isvalid(data):
+        data, dim = parse_data_dim(data, dim)
+        if not InterpCoordinate.isvalid(data):
             raise TypeError("`data` must be dict-like")
         if not set(data) == {"tie_indices", "tie_values"}:
             raise ValueError(
@@ -294,7 +294,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
     def simplify(self, tolerance=None):
         if tolerance is False:
             return self  # TODO: copy
-        tolerance = parse_tolerance(tolerance, self.dtype)
+        tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
         tie_indices, tie_values = douglas_peucker(
             self.tie_indices, self.tie_values, tolerance
         )
@@ -329,7 +329,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
                     mask = deltas < zero
 
         else:
-            tolerance = parse_tolerance(tolerance, self.dtype)
+            tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
 
             match kind:
                 case "discontinuities":

@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from .core import Coordinate, parse
+from .core import Coordinate, parse_data_dim
 
 
 class DenseCoordinate(Coordinate, name="dense"):
@@ -14,7 +14,7 @@ class DenseCoordinate(Coordinate, name="dense"):
             data = []
 
         # parse data
-        data, dim = parse(data, dim)
+        data, dim = parse_data_dim(data, dim)
         if not self.isvalid(data):
             raise TypeError("`data` must be array-like")
 

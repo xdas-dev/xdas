@@ -6,8 +6,8 @@ from .core import (
     Coordinate,
     format_datetime,
     is_monotonic_increasing,
-    parse,
-    parse_tolerance,
+    parse_data_dim,
+    parse_scalar_delta,
 )
 
 CODE_TO_UNITS = {
@@ -47,7 +47,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
             empty = False
 
         # parse data
-        data, dim = parse(data, dim)
+        data, dim = parse_data_dim(data, dim)
         if not self.__class__.isvalid(data):
             raise ValueError(
                 "`data` must be dict-like and contain `tie_values`, `tie_lengths`, and "
@@ -392,7 +392,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
     def simplify(self, tolerance=None):
         if tolerance is False:
             return self  # TODO: copy
-        tolerance = parse_tolerance(tolerance, self.dtype)
+        tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
         tie_values = [self.tie_values[0]]
         tie_lengths = [self.tie_lengths[0]]
         for value, length in zip(self.tie_values[1:], self.tie_lengths[1:]):
@@ -436,7 +436,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
                     mask = deltas < zero
 
         else:
-            tolerance = parse_tolerance(tolerance, self.dtype)
+            tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
 
             match kind:
                 case "discontinuities":
@@ -447,15 +447,6 @@ class SampledCoordinate(Coordinate, name="sampled"):
                     mask = deltas < -tolerance
 
         return indices[mask]
-
-        indices = self.tie_indices[1:]
-        if tolerance is not None:
-            tolerance = parse_tolerance(tolerance, self.dtype)
-            deltas = self.tie_values[1:] - (
-                self.tie_values[:-1] + self.sampling_interval * self.tie_lengths[:-1]
-            )
-            indices = indices[np.abs(deltas) > tolerance]
-        return indices
 
     @classmethod
     def from_array(cls, arr, dim=None, sampling_interval=None):

@@ -270,7 +270,7 @@ class Coordinate:
     def __new__(cls, data=None, dim=None, dtype=None):
         if data is None:
             raise TypeError("cannot infer coordinate type if no `data` is provided")
-        data, dim = parse(data, dim)
+        data, dim = parse_data_dim(data, dim)
         for subcls in cls.__subclasses__():
             if subcls.isvalid(data):
                 return object.__new__(subcls)
@@ -601,7 +601,7 @@ class Coordinate:
         raise NotImplementedError
 
 
-def parse(data, dim=None):
+def parse_data_dim(data, dim=None):
     if isinstance(data, tuple):
         if dim is None:
             dim, data = data
@@ -613,18 +613,35 @@ def parse(data, dim=None):
         data = data.data
     return data, dim
 
+def parse_scalar_delta(value, dtype, default_zero=False):
+    # check shape
+    if not np.ndim(value) == 0:
+        raise ValueError("`value` must be a scalar value")
+    
+    # default
+    if value is None and default_zero:
+        if np.issubdtype(dtype, np.datetime64):
+            value = np.timedelta64(0)
+        elif dtype == np.float16:
+            value = 1e-2
+        elif dtype == np.float32:
+            value = 1e-5
+        elif dtype == np.float64:
+            value = 1e-8
+        else:
+            value = 0
 
-def parse_tolerance(tolerance, dtype):
+    # ensure numpy scalar
+    value = np.asarray(value)[()]
+
+    # check dtype
     if np.issubdtype(dtype, np.datetime64):
-        if tolerance is None:
-            tolerance = np.timedelta64(0)
-        elif isinstance(tolerance, (int, float)):
-            tolerance = np.timedelta64(round(tolerance * 1e9), "ns")
+        if not np.issubdtype(value.dtype, np.timedelta64):
+            value = np.timedelta64(round(value * 1e9), "ns")  # TODO: not `dtype`
     else:
-        if tolerance is None:
-            tolerance = 0
-    return tolerance
+        value = value.astype(dtype)
 
+    return value
 
 def get_sampling_interval(da, dim, cast=True):
     """
