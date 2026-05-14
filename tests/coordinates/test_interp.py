@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from xdas.coordinates import InterpCoordinate, ScalarCoordinate
+from xdas.coordinates import FixedInterpCoordinate, InterpCoordinate, ScalarCoordinate
 
 
 class TestInterpCoordinate:
@@ -327,3 +327,22 @@ class TestInterpCoordinate:
         assert coord0.append(coord0).empty
         assert coord0.append(coord1).equals(coord1)
         assert coord1.append(coord0).equals(coord1)
+
+
+class TestFixedInterpCoordinate:
+    valid = [
+        {
+            "tie_indices": [0, 5, 9, 10, 19],
+            "tie_values": [0.0, 0.5, 0.9, 2.0, 2.9],
+            "sampling_interval": 0.1,
+        }
+    ]
+
+    def test_isvalid(self):
+        for data in self.valid:
+            assert FixedInterpCoordinate.isvalid(data)
+
+    def test_init(self):
+        for data in self.valid:
+            coord = FixedInterpCoordinate(data, "dim")
+            assert coord.sampling_interval == data["sampling_interval"]

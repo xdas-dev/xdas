@@ -1,7 +1,6 @@
 import re
 
 import numpy as np
-import pandas as pd
 from xinterp import forward, inverse
 
 from .core import (
@@ -191,6 +190,22 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         if cast and np.issubdtype(delta.dtype, np.timedelta64):
             delta = delta / np.timedelta64(1, "s")
         return delta
+
+    def is_valid_sampling_interval(self, sampling_interval, tolerance=None):
+        if len(self) < 2:
+            valid = True
+        else:
+            num = np.diff(self.tie_values)
+            den = np.diff(self.tie_indices)
+            mask = den != 1
+            num = num[mask]
+            den = den[mask]
+            dmin = (num - 2 * tolerance) / den
+            dmax = (num + 2 * tolerance) / den
+            print(dmin, dmax, sampling_interval)
+            valid = np.all((dmin <= sampling_interval) & (sampling_interval <= dmax))
+            print(sampling_interval <= dmax)
+        return valid
 
     def equals(self, other):
         return (
@@ -409,7 +424,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
 class FixedInterpCoordinate(InterpCoordinate, name="fixinterp"):
     """
     Array-like object used to represent piecewise evenly spaced coordinates using the
-    CF convention.
+    CF convention augmented by a sampling interval proper definition.
 
     The coordinate ticks are describes by the mean of tie points that are interpolated
     when intermediate values are required. Coordinate objects provides label based
@@ -423,55 +438,65 @@ class FixedInterpCoordinate(InterpCoordinate, name="fixinterp"):
         The values of the tie points. Must be strictly increasing to enable label-based
         selection. The len of `tie_indices` and `tie_values` sizes must match.
     sampling_interval : scalar
-        The fixed central sampling interval. Slight variations around that value are
-        authorized.
-    tolerance :
-        TODO
+        The acquisition sampling interval. Slight sampling variations around that
+        value are authorized (see below). This parameters is somehow redudent with the
+        `tie_indices` and `tie_values` but ensure proper sampling rate definition to
+        pass to further signal processing routines.
+    tolerance : scalar
+        The tolerated jitter defined as the variation in sampling around the ideal
+        value. This parameter is used to check the sampling_interval consistency.
     """
 
     def __init__(self, data=None, dim=None, dtype=None):
-        # empty
         if data is None:
-            data = {"tie_indices": [], "tie_values": [], "sampling_interval": None}
+            data = {
+                "tie_indices": [],
+                "tie_values": [],
+                "sampling_interval": None,
+                "tolerance": None,
+            }
 
-        # parse data
-        data, dim = parse(data, dim)
-        sampling_interval = data.pop("sampling_interval")
+        data, dim = parse_data_dim(data, dim)
+        sampling_interval = data["sampling_interval"]
+        tolerance = data.get("tolerance", None)
+        data = {
+            k: v for k, v in data.items() if k not in ("sampling_interval", "tolerance")
+        }
 
-        # initialize
         super().__init__(data, dim, dtype)
 
-        # check shape
-        if not np.ndim(sampling_interval) == 0:
-            raise ValueError("`sampling_interval` must be a scalar value")
-        sampling_interval = np.asarray(sampling_interval)[()]  # ensure numpy scalar
+        self.assign_sampling_interval(sampling_interval, tolerance)
 
-        # check dtype
-        if np.issubdtype(self.dtype, np.datetime64):
-            if not np.issubdtype(sampling_interval.dtype, np.timedelta64):
-                raise ValueError(
-                    "`sampling_interval` must be timedelta64 for datetime64 `tie_values`"
-                )
-            else:
-                sampling_interval = sampling_interval.astype(dtype)
+    def assign_sampling_interval(self, sampling_interval, tolerance=None):
+        sampling_interval = parse_scalar_delta(sampling_interval, self.dtype)
+        tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
 
-        # assign
-        self.sampling_interval = sampling_interval
+        if self.is_valid_sampling_interval(sampling_interval, tolerance):
+            self.data["sampling_interval"] = sampling_interval
+            self.data["tolerance"] = tolerance
+        else:
+            raise ValueError(
+                "`sampling_interval`and `tolerance` are not consistent with "
+                "the `tie_indices` and `tie_values`"
+            )
 
     @property
     def sampling_interval(self):
         return self.data["sampling_interval"]
 
-    @sampling_interval.setter
-    def sampling_interval(self, value):
-        # check consistency
-        # TODO
-        self.data["sampling_interval"] = value
+    @property
+    def tolerance(self):
+        return self.data["tolerance"]
 
     @staticmethod
     def isvalid(data):
         match data:
-            case {"tie_indices": _, "tie_values": _, "sampling_interval": _}:
+            case {
+                "tie_indices": _,
+                "tie_values": _,
+                "sampling_interval": _,
+                **rest,
+            } if set(rest) <= {"tolerance"}:
                 return True
             case _:
                 return False
@@ -487,16 +512,21 @@ class FixedInterpCoordinate(InterpCoordinate, name="fixinterp"):
             self.sampling_interval == other.sampling_interval
         )
 
-    def append(self, other):  # TODO
+    def append(self, other):
         if not self.sampling_interval == other.sampling_interval:
             raise ValueError(
                 "cannot append coordinate with different sampling interval"
             )
-        return super().append(other)
+        coord = super().append(other)
+        coord.data["sampling_interval"] = self.sampling_interval
+        coord.data["tolerance"] = self.tolerance
+        return coord
 
     def decimate(self, q):
         coord = super().__init__(q)
-        coord.data["sampling_interval"] /= q  # TODO: what about interger-like
+        sampling_interval = self.sampling_interval / q  # TODO: what about interger-like
+        coord.data["sampling_interval"] = sampling_interval
+        coord.data["tolerance"] = self.tolerance
         return coord
 
     def simplify(self, tolerance=None):  # TODO: shoul ensure that still OK
@@ -505,8 +535,8 @@ class FixedInterpCoordinate(InterpCoordinate, name="fixinterp"):
     @classmethod
     def from_array(cls, arr, dim=None, tolerance=None):
         coord = super().__init__(arr, dim, tolerance)
-        # TODO: guess sampling_rate
-        # coord.data["sampling_rate"] = ...
+        coord.sampling_rate = coord.get_sampling_rate(cast=False)
+        return coord
 
     def to_dict(self):
         d = super().to_dict()
@@ -538,9 +568,9 @@ class FixedInterpCoordinate(InterpCoordinate, name="fixinterp"):
     # return coords
 
     @classmethod
-    def from_block(cls, start, size, step, dim=None, dtype=None):  # TODO
+    def from_block(cls, start, size, step, dim=None, dtype=None):
         coord = super().from_block(start, size, step, dim, dtype)
-        coord.sampling_interval = step
+        coord.data["sampling_interval"] = step
         return coord
 
 

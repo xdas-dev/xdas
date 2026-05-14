@@ -613,11 +613,12 @@ def parse_data_dim(data, dim=None):
         data = data.data
     return data, dim
 
+
 def parse_scalar_delta(value, dtype, default_zero=False):
     # check shape
     if not np.ndim(value) == 0:
         raise ValueError("`value` must be a scalar value")
-    
+
     # default
     if value is None and default_zero:
         if np.issubdtype(dtype, np.datetime64):
@@ -642,6 +643,7 @@ def parse_scalar_delta(value, dtype, default_zero=False):
         value = value.astype(dtype)
 
     return value
+
 
 def get_sampling_interval(da, dim, cast=True):
     """
