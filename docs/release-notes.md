@@ -15,6 +15,7 @@
 - Make `open_mfdataarray` raise `RuntimeError` when opening all files fails (@asladen). 
 - Add "prodml" engine (@atrabattoni) and make "optasense" and "sintela" aliases of it (@atrabattoni). 
 - Add the `component_strategy` argument to the `xdas.atoms.MLPicker` to choose weather to use the same component on the 3 channels or to use one channel and set the others to 0 based (@marbail). 
+- Make `DataArray.rename` capable of renaming `dims` and `coords` (@atrabattoni). 
 
 ### Bugs Fixed
 - Fix **memory accumulation** when slicing multiple times data arrays, e.g. when using atoms (@atrabattoni) (@atrabattoni).

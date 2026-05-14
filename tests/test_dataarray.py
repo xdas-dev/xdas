@@ -341,6 +341,65 @@ class TestManipulation:
         assert np.array_equal(result.data, da.data + da.data[0])
 
 
+class TestRename:
+    @pytest.fixture
+    def dataarray(self):
+        return xd.DataArray(
+            data=np.ones((3, 7)),
+            coords={
+                "distance": np.arange(7),
+                "gain": ("distance", np.ones(7)),
+                "time": np.arange(3),
+            },
+            dims=("time", "distance"),
+            name="name",
+            attrs={"key": "value"},
+        )
+
+    def test_do_nothing(self, dataarray):
+        renamed = dataarray.rename()
+        assert renamed.equals(dataarray)
+
+    def test_new_name(self, dataarray):
+        renamed = dataarray.rename("other_name")
+        assert renamed.name == "other_name"
+        renamed = renamed.rename(dataarray.name)
+        assert renamed.equals(dataarray)
+
+    def test_new_dim(self, dataarray):
+        renamed = dataarray.rename({"distance": "space"})
+        assert renamed.dims == ("time", "space")
+        assert tuple(renamed.coords) == ("space", "gain", "time")
+        assert renamed["space"].dim == "space"
+        assert renamed["gain"].dim == "space"
+        renamed = renamed.rename({"space": "distance"})
+        assert renamed.equals(dataarray)
+
+    def test_new_coord_name(self, dataarray):
+        renamed = dataarray.rename({"gain": "sensitivity"})
+        assert tuple(renamed.coords) == ("distance", "sensitivity", "time")
+        renamed = renamed.rename({"sensitivity": "gain"})
+        assert renamed.equals(dataarray)
+
+    def test_kwargs_renaming(self, dataarray):
+        renamed = dataarray.rename(distance="space")
+        assert renamed.dims == ("time", "space")
+        assert tuple(renamed.coords) == ("space", "gain", "time")
+        assert renamed["space"].dim == "space"
+        assert renamed["gain"].dim == "space"
+        renamed = renamed.rename(space="distance")
+        assert renamed.equals(dataarray)
+
+    def test_args_and_kwargs_renaming(self, dataarray):
+        renamed = dataarray.rename({"gain": "sensitivity"}, distance="space")
+        assert renamed.dims == ("time", "space")
+        assert tuple(renamed.coords) == ("space", "sensitivity", "time")
+        assert renamed["space"].dim == "space"
+        assert renamed["sensitivity"].dim == "space"
+        renamed = renamed.rename({"sensitivity": "gain"}, space="distance")
+        assert renamed.equals(dataarray)
+
+
 class TestIO:
     def test_to_xarray(self):
         for dense in [True, False]:

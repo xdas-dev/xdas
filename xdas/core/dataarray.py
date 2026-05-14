@@ -438,10 +438,43 @@ class DataArray(NDArrayOperatorsMixin):
             copy_fn(self.attrs),
         )
 
-    def rename(self, name):
-        da = self.copy(deep=False)
-        da.name = name
-        return da
+    def rename(self, new_name_or_name_dict=None, **names):
+        """
+        Returns a new DataArray with renamed coordinates, dimensions or a new name.
+
+        Parameters
+        ----------
+        new_name_or_name_dict : str or dict-like, optional
+            If the argument is dict-like, it used as a mapping from old
+            names to new names for coordinates or dimensions. Otherwise,
+            use the argument as the new name for this array.
+        **names : Hashable, optional
+            The keyword arguments form of a mapping from old names to
+            new names for coordinates or dimensions.
+            One of new_name_or_name_dict or names must be provided.
+
+        Returns
+        -------
+        DataArray
+            Renamed array or array with renamed coordinates.
+
+        """
+        if new_name_or_name_dict is None:
+            new_name = self.name
+            name_dict = names
+        elif isinstance(new_name_or_name_dict, dict):
+            new_name = self.name
+            name_dict = new_name_or_name_dict | names
+        else:
+            new_name = new_name_or_name_dict
+            name_dict = names
+        new_dims = tuple(name_dict.get(dim, dim) for dim in self.dims)
+        new_coords = {}
+        for name, coord in self.coords.items():
+            dim = name_dict.get(coord.dim, coord.dim)
+            name = name_dict.get(name, name)
+            new_coords[name] = coord.__class__(coord.data, dim, coord.dtype)
+        return self.__class__(self.data, new_coords, new_dims, new_name, self.attrs)
 
     def load(self):
         return self.copy(data=self.data.__array__())
