@@ -398,11 +398,12 @@ class TestSplit:
         step = np.array(
             1, "timedelta64" if np.issubdtype(dtype, np.datetime64) else dtype
         )
-        coord = xd.Coordinate[ctype](data=None, dim="dim", dtype=float)
-        for start in starts:
-            coord = coord.concat(
+        coord = xd.concat_coords(
+            [
                 xd.Coordinate[ctype].from_block(start, size, step, "dim")
-            )
+                for start in starts
+            ]
+        )
         return xd.DataArray(np.random.randn(len(coord)), {"dim": coord})
 
     # kind, tolerance, split_indices
