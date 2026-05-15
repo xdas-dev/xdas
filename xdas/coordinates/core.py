@@ -224,11 +224,7 @@ class Coordinates(dict):
         return cls(Coordinate.from_dataset(dataset, name))
 
     def copy(self, deep=True):
-        if deep:
-            func = deepcopy
-        else:
-            func = copy
-        return self.__class__({key: func(value) for key, value in self.items()})
+        return self.__class__({key: value.copy(deep) for key, value in self.items()})
 
     @wraps_first_last
     def drop_dims(self, *dims):
@@ -369,6 +365,13 @@ class Coordinate:
             return None
         else:
             return self.parent.isdim(self.name)
+
+    def copy(self, deep=True):
+        if deep:
+            func = deepcopy
+        else:
+            func = copy
+        return self.__class__(func(self.data), func(self.dim), func(self.dtype))
 
     def equals(self, other):
         raise NotImplementedError
