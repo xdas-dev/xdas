@@ -878,35 +878,16 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         dims = (dim, *objs[0].dims)
         objs = [da.expand_dims(dim) for da in objs]
 
+    coords = objs[0].coords.drop_dims(dim)
+    name = objs[0].name
+    attrs = objs[0].attrs
     dim_has_coords = dim in objs[0].coords
 
     if dim_has_coords:
-        objs = sorted(objs, key=lambda da: da[dim][0].values)
-        coord = objs[0][dim].__class__(data=None, dim=dim, dtype=objs[0][dim].dtype)
-    coords = {
-        name: coord for name, coord in objs[0].coords.items() if not coord.dim == dim
-    }
-    name = objs[0].name
-    attrs = objs[0].attrs
-
-    iterator = tqdm(objs, desc="Linking dataarray") if verbose else objs
-    data = []
-    for da in iterator:
-        if isinstance(da.data, VirtualStack):
-            for source in da.data.sources:
-                data.append(source)
-        else:
-            data.append(da.data)
-
-        if dim_has_coords:
-            coord = coord.concat(da[dim])
-
-    if virtual:
-        data = VirtualStack(data, axis)
-    else:
-        data = np.concatenate(data, axis)
-
-    if dim_has_coords:
+        coord, order = concat_coords(
+            [obj[dim] for obj in objs], sort=True, return_order=True
+        )
+        objs = [objs[idx] for idx in order]
         if tolerance is not False:
             try:
                 coord = coord.simplify(tolerance)
@@ -919,13 +900,40 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
                         "that implements `simplify`"
                     )
         coords[dim] = coord
+
+    iterator = tqdm(objs, desc="Linking dataarray") if verbose else objs
+    data = []
+    for da in iterator:
+        if isinstance(da.data, VirtualStack):
+            for source in da.data.sources:
+                data.append(source)
+        else:
+            data.append(da.data)
+
+    if virtual:
+        data = VirtualStack(data, axis)
     else:
-        if not (
-            tolerance is None or tolerance is False
-        ):  # TODO: Default to False and remove None here?
-            raise TypeError("cannot use tolerance on non-existing coordinates")
+        data = np.concatenate(data, axis)
 
     return DataArray(data, coords, dims, name, attrs)
+
+
+def concat_coords(objs, *, sort=False, return_order=False):
+    # sort
+    order = list(range(len(objs)))
+    if sort:
+        order = sorted(order, key=lambda idx: objs[idx][0].values)
+        objs = [objs[index] for index in order]
+    out = objs[0]
+
+    # concat
+    for obj in objs[1:]:
+        out = out.concat(obj)
+
+    if return_order:
+        return out, order
+
+    return out
 
 
 def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None):
