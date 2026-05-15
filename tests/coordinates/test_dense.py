@@ -124,14 +124,14 @@ class TestDenseCoordinate:
         coord1 = DenseCoordinate([1, 2, 3])
         coord2 = DenseCoordinate([4, 5, 6])
 
-        result = coord1.append(coord2)
+        result = coord1.concat(coord2)
         expected = DenseCoordinate([1, 2, 3, 4, 5, 6])
         assert result.equals(expected)
 
-        result = coord2.append(coord1)
+        result = coord2.concat(coord1)
         expected = DenseCoordinate([4, 5, 6, 1, 2, 3])
         assert result.equals(expected)
 
-        assert coord0.append(coord0).empty
-        assert coord0.append(coord1).equals(coord1)
-        assert coord1.append(coord0).equals(coord1)
+        assert coord0.concat(coord0).empty
+        assert coord0.concat(coord1).equals(coord1)
+        assert coord1.concat(coord0).equals(coord1)

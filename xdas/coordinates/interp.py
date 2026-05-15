@@ -258,17 +258,17 @@ class InterpCoordinate(Coordinate, name="interpolated"):
                 raise e
         return indexer
 
-    def append(self, other):
+    def concat(self, other):
         if not isinstance(other, self.__class__):
-            raise TypeError(f"cannot append {type(other)} to {self.__class__}")
+            raise TypeError(f"cannot concatenate {type(other)} to {self.__class__}")
         if not self.dim == other.dim:
-            raise ValueError("cannot append coordinate with different dimension")
+            raise ValueError("cannot concatenate coordinate with different dimension")
         if self.empty:
             return other
         if other.empty:
             return self
         if not self.dtype == other.dtype:
-            raise ValueError("cannot append coordinate with different dtype")
+            raise ValueError("cannot concatenate coordinate with different dtype")
         coord = self.__class__(
             {
                 "tie_indices": np.append(

@@ -400,7 +400,7 @@ class TestSplit:
         )
         coord = xd.Coordinate[ctype](data=None, dim="dim", dtype=float)
         for start in starts:
-            coord = coord.append(
+            coord = coord.concat(
                 xd.Coordinate[ctype].from_block(start, size, step, "dim")
             )
         return xd.DataArray(np.random.randn(len(coord)), {"dim": coord})

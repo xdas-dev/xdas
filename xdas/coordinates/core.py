@@ -435,8 +435,8 @@ class Coordinate:
     def issampled(self):
         return False
 
-    def append(self, other):
-        raise NotImplementedError(f"append is not implemented for {self.__class__}")
+    def concat(self, other):
+        raise NotImplementedError(f"concat is not implemented for {self.__class__}")
 
     def simplify(self, tolerance=None):
         raise NotImplementedError(f"simplify is not implemented for {self.__class__}")

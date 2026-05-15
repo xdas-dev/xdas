@@ -45,11 +45,11 @@ class MiniSEEDEngine(Engine, name="miniseed"):
                 if n == 0:
                     time = get_time_coord(tr, ignore_last_sample=False, ctype=ctype)
                 elif n == len(tmp_st) - 1:
-                    time = time.append(
+                    time = time.concat(
                         get_time_coord(tr, ignore_last_sample, ctype=ctype)
                     )
                 else:
-                    time = time.append(
+                    time = time.concat(
                         get_time_coord(tr, ignore_last_sample=False, ctype=ctype)
                     )
         else:

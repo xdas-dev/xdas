@@ -37,7 +37,7 @@ def coord(dtype, ctype):
     step = np.array(1, "timedelta64" if np.issubdtype(dtype, np.datetime64) else dtype)
     out = xd.Coordinate[ctype](data=None, dim="dim", dtype=float)
     for start in starts:
-        out = out.append(xd.Coordinate[ctype].from_block(start, size, step, "dim"))
+        out = out.concat(xd.Coordinate[ctype].from_block(start, size, step, "dim"))
     return out
 
 

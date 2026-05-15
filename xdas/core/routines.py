@@ -899,7 +899,7 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
             data.append(da.data)
 
         if dim_has_coords:
-            coord = coord.append(da[dim])
+            coord = coord.concat(da[dim])
 
     if virtual:
         data = VirtualStack(data, axis)
