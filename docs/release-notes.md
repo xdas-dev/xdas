@@ -7,7 +7,7 @@
 - Add automatic engine detection to every `xdas.open_*` functions (@atrabattoni, @yetinam).
 - Add `pathlib.Path` support as input for all Xdas file-related functions and methods (@atrabattoni).
 - Add `xdas.io.compressed` that compress a specific dataset in an HDF5 file while preserving the rest of the file structure and metadata (@marbail).
-- Add `xdas.concat_coords` to merge coordinates. Also `Coordinate.append`is now `Coordinate.concat` (avoid in-place confusion) and `xdas.concatenate` as now a preferred alias `xdas.concat` (atrabattoni).
+- Add `xdas.concat_coords` to merge coordinates. Also `Coordinate.append`is now `Coordinate.concat` (avoid in-place confusion) and `xdas.concatenate` has now a preferred alias `xdas.concat` (atrabattoni).
 
 ### Improvements
 - Most `xdas.open_*` functions now have a `create_dirs` argument to creating intermediate directories if necessary (@aurelienfalco).
