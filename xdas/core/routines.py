@@ -885,23 +885,17 @@ def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
 
     if dim_has_coords:
         coord, order = concat_coords(
-            [obj[dim] for obj in objs], sort=True, return_order=True
+            [obj[dim] for obj in objs],
+            sort=True,
+            return_order=True,
+            tolerance=tolerance,
         )
         objs = [objs[idx] for idx in order]
-        if tolerance is not False:
-            try:
-                coord = coord.simplify(tolerance)
-            except NotImplementedError:
-                if (
-                    tolerance is not None
-                ):  # TODO: Default to False and remove this condition here?
-                    raise TypeError(
-                        "`tolerance` can only be used with coordinates "
-                        "that implements `simplify`"
-                    )
         coords[dim] = coord
 
-    iterator = tqdm(objs, desc="Linking dataarray") if verbose else objs
+    iterator = (
+        tqdm(objs, desc="Linking dataarray") if verbose else objs
+    )  # TODO : remove tqdm?
     data = []
     for da in iterator:
         if isinstance(da.data, VirtualStack):
@@ -921,7 +915,7 @@ def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
 concatenate = concat  # TODO: deprecate it
 
 
-def concat_coords(objs, *, sort=False, return_order=False):
+def concat_coords(objs, *, sort=False, return_order=False, tolerance=False):
     """
     Concatenate coordinate objects.
 
@@ -934,7 +928,10 @@ def concat_coords(objs, *, sort=False, return_order=False):
     return_order : bool, optional
         If True, return `(coord, order)` where `order` is the list of
         indices used to sort the input objects.
-
+    tolerance : float of timedelta64, optional
+        The tolerance to consider that the end of a coordinate object is continuous
+        with beginning of the following, For time coordinates, numeric values are
+        considered as seconds. No simplification by default.
     Returns
     -------
     coord
@@ -953,6 +950,19 @@ def concat_coords(objs, *, sort=False, return_order=False):
     # concat
     for obj in objs[1:]:
         out = out.concat(obj)
+
+    # simplify
+    if tolerance is not False:
+        try:
+            out = out.simplify(tolerance)
+        except NotImplementedError:
+            if (
+                tolerance is not None
+            ):  # TODO: Default to False and remove this condition here?
+                raise TypeError(
+                    "`tolerance` can only be used with coordinates "
+                    "that implements `simplify`"
+                )
 
     if return_order:
         return out, order
