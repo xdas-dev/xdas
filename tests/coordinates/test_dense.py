@@ -119,7 +119,7 @@ class TestDenseCoordinate:
         coord = DenseCoordinate()
         assert coord.empty
 
-    def test_append(self):
+    def test_concat(self):
         coord0 = DenseCoordinate()
         coord1 = DenseCoordinate([1, 2, 3])
         coord2 = DenseCoordinate([4, 5, 6])

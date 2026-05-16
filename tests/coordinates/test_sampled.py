@@ -433,8 +433,8 @@ class TestSampledCoordinateValueBasedIndexing:
             coord.get_indexer(0.0, method="invalid")
 
 
-class TestSampledCoordinateAppend:
-    def test_append_two_coords(self):
+class TestSampledCoordinateConcat:
+    def test_concat_two_coords(self):
         coord1 = SampledCoordinate(
             {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
         )
@@ -447,7 +447,7 @@ class TestSampledCoordinateAppend:
         result = coord1.concat(coord2)
         assert result.equals(expected)
 
-    def test_append_two_datetime_coords(self):
+    def test_concat_two_datetime_coords(self):
         coord1 = SampledCoordinate(
             {
                 "tie_values": [np.datetime64("2000-01-01T00:00:00")],
@@ -475,7 +475,7 @@ class TestSampledCoordinateAppend:
         result = coord1.concat(coord2)
         assert result.equals(expected)
 
-    def test_append_empty(self):
+    def test_concat_empty(self):
         coord1 = SampledCoordinate(
             {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
         )
@@ -483,7 +483,7 @@ class TestSampledCoordinateAppend:
         assert coord1.concat(coord2).equals(coord1)
         assert coord2.concat(coord1).equals(coord1)
 
-    def test_append_sampling_interval_mismatch(self):
+    def test_concat_sampling_interval_mismatch(self):
         coord1 = SampledCoordinate(
             {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
         )
@@ -493,7 +493,7 @@ class TestSampledCoordinateAppend:
         with pytest.raises(ValueError):
             coord1.concat(coord2)
 
-    def test_append_dtype_mismatch(self):
+    def test_concat_dtype_mismatch(self):
         coord1 = SampledCoordinate(
             {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
         )
@@ -507,7 +507,7 @@ class TestSampledCoordinateAppend:
         with pytest.raises(ValueError):
             coord1.concat(coord2)
 
-    def test_append_type_mismatch(self):
+    def test_concat_type_mismatch(self):
         coord1 = SampledCoordinate(
             {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
         )
@@ -515,7 +515,7 @@ class TestSampledCoordinateAppend:
         with pytest.raises(TypeError):
             coord1.concat(coord2)
 
-    def test_append_dimension_mismatch(self):
+    def test_concat_dimension_mismatch(self):
         coord1 = SampledCoordinate(
             {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0},
             dim="time",

@@ -309,7 +309,7 @@ class TestInterpCoordinate:
             coord = InterpCoordinate(data)
             assert InterpCoordinate.from_dict(coord.to_dict()).equals(coord)
 
-    def test_append(self):
+    def test_concat(self):
         coord0 = InterpCoordinate()
         coord1 = InterpCoordinate({"tie_indices": [0, 2], "tie_values": [0, 20]})
         coord2 = InterpCoordinate({"tie_indices": [0, 2], "tie_values": [30, 50]})
