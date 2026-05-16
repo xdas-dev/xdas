@@ -33,6 +33,7 @@ from .core.routines import (
     broadcast_to,
     combine_by_coords,
     combine_by_field,
+    concat,
     concat_coords,
     concatenate,
     open,

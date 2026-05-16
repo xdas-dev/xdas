@@ -13,7 +13,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from ..core.dataarray import DataArray
-from ..core.routines import concatenate, open_dataarray
+from ..core.routines import concat, open_dataarray
 from .monitor import Monitor
 
 
@@ -87,7 +87,7 @@ class DataArrayLoader:
     Examples
     --------
     >>> import xdas as xd
-    >>> from xd.processing import DataArrayLoader
+    >>> from xdas.processing import DataArrayLoader
     >>> da = xd.open_dataarray(...)  # doctest: +SKIP
 
     Create chunks along the time dimension
@@ -277,7 +277,7 @@ class DataArrayWriter:
             result = future.result()
             self._results.append(result)
         self.shutdown()
-        return concatenate(self._results)
+        return concat(self._results)
 
 
 class DataFrameWriter:
@@ -378,7 +378,7 @@ class StreamWriter:
     >>> import obspy
     >>> import numpy as np
     >>> import xdas as xd
-    >>> import xd.processing as xp
+    >>> import xdas.processing as xp
 
     Generate some DataArray:
 
@@ -637,7 +637,7 @@ class ZMQSubscriber:
     ...     packets.append(da)
     ...     if n == 10:
     ...         break
-    >>> da = xd.concatenate(packets)
+    >>> da = xd.concat(packets)
     >>> assert da.equals(da)
     """
 

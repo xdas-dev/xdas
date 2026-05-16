@@ -27,7 +27,7 @@ class DataCollection:
     Examples
     --------
     >>> import xdas as xd
-    >>> from xd.synthetics import wavelet_wavefronts
+    >>> from xdas.synthetics import wavelet_wavefronts
     >>> da = wavelet_wavefronts()
     >>> dc = xd.DataCollection(
     ...     {

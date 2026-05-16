@@ -5,7 +5,7 @@ import numpy as np
 
 from ..coordinates.core import Coordinate
 from ..core.dataarray import DataArray
-from ..core.routines import concatenate
+from ..core.routines import concat
 from ..virtual import VirtualSource
 from .core import Engine
 
@@ -116,4 +116,4 @@ class FebusEngine(Engine, name="febus"):
             da = DataArray(chunk, {"time": time, "distance": distance}, name=name)
             dc.append(da)
 
-        return concatenate(dc, "time")
+        return concat(dc, "time")

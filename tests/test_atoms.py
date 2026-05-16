@@ -100,9 +100,7 @@ class TestFilters:
         atom = IIRFilter(4, 10.0, "lowpass", dim="time", stype="ba")
         monolithic = atom(da)
 
-        chunked = xd.concatenate(
-            [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
-        )
+        chunked = xd.concat([atom(chunk, chunk_dim="time") for chunk in chunks], "time")
 
         assert monolithic.equals(expected)
         assert chunked.equals(expected)
@@ -119,7 +117,7 @@ class TestFilters:
         #     atom_b.load_state(path)
         #     chunks_b = [atom_b(chunk, chunk_dim="time") for chunk in chunks[3:]]
 
-        #     result = xd.concatenate(chunks_a + chunks_b, "time")
+        #     result = xd.concat(chunks_a + chunks_b, "time")
         #     assert result.equals(expected)
 
     def test_sosfilter(self):
@@ -133,9 +131,7 @@ class TestFilters:
         atom = IIRFilter(4, 10.0, "lowpass", dim="time")
         monolithic = atom(da)
 
-        chunked = xd.concatenate(
-            [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
-        )
+        chunked = xd.concat([atom(chunk, chunk_dim="time") for chunk in chunks], "time")
 
         assert monolithic.equals(expected)
         assert chunked.equals(expected)
@@ -152,7 +148,7 @@ class TestFilters:
         #     atom_b.load_state(path)
         #     chunks_b = [atom_b(chunk, chunk_dim="time") for chunk in chunks[3:]]
 
-        #     result = xd.concatenate(chunks_a + chunks_b, "time")
+        #     result = xd.concat(chunks_a + chunks_b, "time")
         #     assert result.equals(expected)
 
     def test_downsample(self):
@@ -163,9 +159,7 @@ class TestFilters:
         result = atom(da)
         assert result.equals(expected)
         atom.reset()
-        result = xd.concatenate(
-            [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
-        )
+        result = xd.concat([atom(chunk, chunk_dim="time") for chunk in chunks], "time")
         assert result.equals(expected)
 
     def test_upsample(self):
@@ -183,9 +177,7 @@ class TestFilters:
         da = wavelet_wavefronts()
         chunks = xd.split(da, 6, "time")
         expected = atom(da)
-        result = xd.concatenate(
-            [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
-        )
+        result = xd.concat([atom(chunk, chunk_dim="time") for chunk in chunks], "time")
         assert result.equals(expected)
 
     def test_firfilter(self):
@@ -198,9 +190,7 @@ class TestFilters:
         result = atom(da)
         assert result.equals(expected)
 
-        result = xd.concatenate(
-            [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
-        )
+        result = xd.concat([atom(chunk, chunk_dim="time") for chunk in chunks], "time")
         assert np.allclose(result.values, expected.values, atol=1e-16, rtol=1e-11)
         assert result.coords.equals(expected.coords)
         assert result.attrs == expected.attrs
@@ -215,7 +205,7 @@ class TestResamplePoly:
         expected = xs.resample_poly(da, 5, 2, "time")
         atom = ResamplePoly(125, maxfactor=10, dim="time")
         result = atom(da)
-        result_chunked = xd.concatenate(
+        result_chunked = xd.concat(
             [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
         )
 
@@ -251,7 +241,7 @@ class TestMLPicker:
         # da = da.isel(time=slice(0, 5000)) TODO: why not faster ?
         expected = picker(da)
         chunks = xd.split(da, 4, "time")
-        result = xd.concatenate([picker(chunk, chunk_dim="time") for chunk in chunks])
+        result = xd.concat([picker(chunk, chunk_dim="time") for chunk in chunks])
         assert result.equals(expected)
 
     def test_compare_with_seisbench(self):

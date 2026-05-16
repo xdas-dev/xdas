@@ -369,13 +369,13 @@ class DataArray(NDArrayOperatorsMixin):
                         f"dimension {dim} is not monotonic increasing, "
                         f"spliting on overlaps, slicing and concatenating can be slow..."
                     )
-                    from ..core.routines import concatenate, split
+                    from ..core.routines import concat, split
 
                     chunks = [
                         chunk.sel(indexers, method, endpoint, drop)
                         for chunk in split(self, "overlaps", dim, False)
                     ]
-                    return concatenate(chunks, dim, False)
+                    return concat(chunks, dim, False)
                 else:
                     raise NotImplementedError(
                         f"cannot find specific coordinate value(s) because "

@@ -918,6 +918,9 @@ def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
     return DataArray(data, coords, dims, name, attrs)
 
 
+concatenate = concat  # TODO: deprecate it
+
+
 def concat_coords(objs, *, sort=False, return_order=False):
     """
     Concatenate coordinate objects.

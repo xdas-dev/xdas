@@ -40,7 +40,7 @@ class TestDataArrayLoader:
         da = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
         dl = xp.DataArrayLoader(da, {"time": 100}, max_buffers, max_workers)
         chunks = [chunk for chunk in dl]
-        result = xd.concatenate(chunks)
+        result = xd.concat(chunks)
         assert result.equals(da)
 
     def test_error_handling(self):
@@ -226,7 +226,7 @@ class TestZMQ:
             result.append(packet)
             if n == len(packets):
                 break
-        return xd.concatenate(result)
+        return xd.concat(result)
 
     def test_publish_and_subscribe(self):
         expected = xd.synthetics.dummy()

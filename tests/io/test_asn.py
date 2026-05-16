@@ -322,7 +322,7 @@ class TestZMQSubscriber:
         threading.Thread(target=self.publish, args=(pub, chunks)).start()
         sub = ZMQSubscriber(address)
         sub = (chunk for _, chunk in zip(range(5), sub))
-        result = xd.concatenate([chunk for chunk in sub])
+        result = xd.concat([chunk for chunk in sub])
         assert result.equals(da_float32)
 
     def publish(self, pub, chunks):
