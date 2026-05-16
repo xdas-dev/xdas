@@ -86,9 +86,9 @@ class DataArrayLoader:
 
     Examples
     --------
-    >>> import xdas
-    >>> from xdas.processing import DataArrayLoader
-    >>> da = xdas.open_dataarray(...)  # doctest: +SKIP
+    >>> import xdas as xd
+    >>> from xd.processing import DataArrayLoader
+    >>> da = xd.open_dataarray(...)  # doctest: +SKIP
 
     Create chunks along the time dimension
 
@@ -377,8 +377,8 @@ class StreamWriter:
     --------
     >>> import obspy
     >>> import numpy as np
-    >>> import xdas
-    >>> import xdas.processing as xp
+    >>> import xdas as xd
+    >>> import xd.processing as xp
 
     Generate some DataArray:
 
@@ -388,7 +388,7 @@ class StreamWriter:
     >>> starttime = np.datetime64("2023-01-01T00:00:00")
     >>> endtime = starttime + np.timedelta64(10, "ms") * (data.shape[0] - 1)
     >>> distance = 5.0 * np.arange(data.shape[1])
-    >>> da = xdas.DataArray(
+    >>> da = xd.DataArray(
     ...     data=data,
     ...     coords={
     ...         "time": {

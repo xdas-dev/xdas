@@ -294,9 +294,9 @@ def open_mfdatatree(
 
     Examples
     --------
-    >>> import xdas
+    >>> import xdas as xd
     >>> paths = "/data/{node}/{cable}/[acquisition]/proc/[acquisition].h5"
-    >>> xdas.open_mfdatatree(paths, engine="asn") # doctest: +SKIP
+    >>> xd.open_mfdatatree(paths, engine="asn") # doctest: +SKIP
     Node:
       CCN:
         Cable:
@@ -838,7 +838,7 @@ class Bag:
                 raise CompatibilityError("sampling intervals are not compatible")
 
 
-def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
+def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
     """
     Concatenate data arrays along a given dimension.
 

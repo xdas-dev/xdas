@@ -43,7 +43,7 @@ class Coordinates(dict):
 
     Examples
     --------
-    >>> import xdas
+    >>> import xdas as xd
 
     >>> coords = {
     ...     "time": {"tie_indices": [0, 999], "tie_values": [0.0, 10.0]},
@@ -51,7 +51,7 @@ class Coordinates(dict):
     ...     "channel": ("distance", ["DAS01", "DAS02", "DAS03"]),
     ...     "interrogator": (None, "SRN"),
     ... }
-    >>> xdas.Coordinates(coords)
+    >>> xd.Coordinates(coords)
     Coordinates:
       * time (time): 0.000 to 10.000
       * distance (distance): [0 ... 2]
@@ -185,9 +185,9 @@ class Coordinates(dict):
         Examples
         --------
 
-        >>> import xdas
+        >>> import xdas as xd
 
-        >>> coords = xdas.Coordinates(
+        >>> coords = xd.Coordinates(
         ...     {
         ...         "time": {"tie_indices": [0, 999], "tie_values": [0.0, 10.0]},
         ...         "distance": [0, 1, 2],

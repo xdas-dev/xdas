@@ -30,7 +30,7 @@ def wavelet_wavefronts(
     --------
 
     >>> import os
-    >>> import xdas
+    >>> import xdas as xd
     >>> from xdas.synthetics import wavelet_wavefronts
     >>> from tempfile import TemporaryDirectory
 
@@ -39,8 +39,8 @@ def wavelet_wavefronts(
     ...     wavelet_wavefronts().to_netcdf("sample.nc")
     ...     for idx, da in enumerate(wavelet_wavefronts(nchunk=3), start=1):
     ...         da.to_netcdf(f"{idx:03}.nc")
-    ...     da_monolithic = xdas.open_dataarray("sample.nc")
-    ...     da_chunked = xdas.open_mfdataarray("00*.nc")
+    ...     da_monolithic = xd.open_dataarray("sample.nc")
+    ...     da_chunked = xd.open_mfdataarray("00*.nc")
     ...     da_monolithic.equals(da_chunked)
     True
 
