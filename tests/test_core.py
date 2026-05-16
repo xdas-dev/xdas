@@ -100,22 +100,22 @@ class TestCore:
             "distance": da1["distance"],
         }
         expected = xd.DataArray(data, coords)
-        result = xd.concatenate([da1, da2])
+        result = xd.concat([da1, da2])
         assert result.equals(expected)
         # concatenate an empty data array
-        result = xd.concatenate([da1, da2.isel(time=slice(0, 0))])
+        result = xd.concat([da1, da2.isel(time=slice(0, 0))])
         assert result.equals(da1)
         # concat of sources and stacks
         da1.to_netcdf(tmp_path / "da1.nc")
         da2.to_netcdf(tmp_path / "da2.nc")
         da1 = xd.open_dataarray(tmp_path / "da1.nc")
         da2 = xd.open_dataarray(tmp_path / "da2.nc")
-        result = xd.concatenate([da1, da2])
+        result = xd.concat([da1, da2])
         assert isinstance(result.data, VirtualStack)
         assert result.equals(expected)
         da1.data = VirtualStack([da1.data])
         da2.data = VirtualStack([da2.data])
-        result = xd.concatenate([da1, da2])
+        result = xd.concat([da1, da2])
         assert isinstance(result.data, VirtualStack)
         assert result.equals(expected)
         # concat of 3D data arrays with unsorted coords:
@@ -145,7 +145,7 @@ class TestCore:
                 "phase": ["A", "B", "C"],
             },
         )
-        assert xd.concatenate((da1, da2), dim="time").equals(expected)
+        assert xd.concat((da1, da2), dim="time").equals(expected)
         # concat dense coordinates
         da1 = xd.DataArray(
             data=np.zeros((5, 4, 3)),
@@ -174,15 +174,15 @@ class TestCore:
             },
             dims=("time", "distance", "phase"),
         )
-        assert xd.concatenate((da1, da2), dim="time").equals(expected)
+        assert xd.concat((da1, da2), dim="time").equals(expected)
         # stack
         da = wavelet_wavefronts()
         objs = [obj for obj in da]
-        result = xd.concatenate(objs, dim="time")
+        result = xd.concat(objs, dim="time")
         result["time"] = InterpCoordinate.from_array(result["time"].values)
         assert result.equals(da)
         objs = [obj.drop_coords("time") for obj in da]
-        result = xd.concatenate(objs, dim="time")
+        result = xd.concat(objs, dim="time")
         assert result.equals(da.drop_coords("time"))
 
     def test_open_dataarray(self):

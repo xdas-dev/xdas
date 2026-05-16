@@ -4,6 +4,7 @@ import obspy
 
 from ..coordinates.core import Coordinate, Coordinates, get_sampling_interval
 from ..core.dataarray import DataArray
+from ..core.routines import concat_coords
 from .core import Engine
 
 
@@ -40,18 +41,16 @@ class MiniSEEDEngine(Engine, name="miniseed"):
         )
         if cond1 or cond2:
             method = "unsynchronized"
-            tmp_st = st.select(channel=channels[0])
-            for n, tr in enumerate(tmp_st):
-                if n == 0:
-                    time = get_time_coord(tr, ignore_last_sample=False, ctype=ctype)
-                elif n == len(tmp_st) - 1:
-                    time = time.append(
-                        get_time_coord(tr, ignore_last_sample, ctype=ctype)
-                    )
-                else:
-                    time = time.append(
-                        get_time_coord(tr, ignore_last_sample=False, ctype=ctype)
-                    )
+            first_channel_stream = st.select(channel=channels[0])
+            time = [
+                get_time_coord(
+                    tr,
+                    ignore_last_sample and idx == len(first_channel_stream) - 1,
+                    ctype=ctype,
+                )
+                for idx, tr in enumerate(first_channel_stream)
+            ]
+            time = concat_coords(time)
         else:
             method = "synchronized"
             time = get_time_coord(st[0], ignore_last_sample, ctype)

@@ -294,9 +294,9 @@ def open_mfdatatree(
 
     Examples
     --------
-    >>> import xdas
+    >>> import xdas as xd
     >>> paths = "/data/{node}/{cable}/[acquisition]/proc/[acquisition].h5"
-    >>> xdas.open_mfdatatree(paths, engine="asn") # doctest: +SKIP
+    >>> xd.open_mfdatatree(paths, engine="asn") # doctest: +SKIP
     Node:
       CCN:
         Cable:
@@ -838,7 +838,7 @@ class Bag:
                 raise CompatibilityError("sampling intervals are not compatible")
 
 
-def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
+def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
     """
     Concatenate data arrays along a given dimension.
 
@@ -878,18 +878,24 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         dims = (dim, *objs[0].dims)
         objs = [da.expand_dims(dim) for da in objs]
 
+    coords = objs[0].coords.drop_dims(dim)
+    name = objs[0].name
+    attrs = objs[0].attrs
     dim_has_coords = dim in objs[0].coords
 
     if dim_has_coords:
-        objs = sorted(objs, key=lambda da: da[dim][0].values)
-        coord = objs[0][dim].__class__(data=None, dim=dim, dtype=objs[0][dim].dtype)
-    coords = {
-        name: coord for name, coord in objs[0].coords.items() if not coord.dim == dim
-    }
-    name = objs[0].name
-    attrs = objs[0].attrs
+        coord, order = concat_coords(
+            [obj[dim] for obj in objs],
+            sort=True,
+            return_order=True,
+            tolerance=tolerance,
+        )
+        objs = [objs[idx] for idx in order]
+        coords[dim] = coord
 
-    iterator = tqdm(objs, desc="Linking dataarray") if verbose else objs
+    iterator = (
+        tqdm(objs, desc="Linking dataarray") if verbose else objs
+    )  # TODO : remove tqdm?
     data = []
     for da in iterator:
         if isinstance(da.data, VirtualStack):
@@ -898,34 +904,70 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         else:
             data.append(da.data)
 
-        if dim_has_coords:
-            coord = coord.append(da[dim])
-
     if virtual:
         data = VirtualStack(data, axis)
     else:
         data = np.concatenate(data, axis)
 
-    if dim_has_coords:
-        if tolerance is not False:
-            try:
-                coord = coord.simplify(tolerance)
-            except NotImplementedError:
-                if (
-                    tolerance is not None
-                ):  # TODO: Default to False and remove this condition here?
-                    raise TypeError(
-                        "`tolerance` can only be used with coordinates "
-                        "that implements `simplify`"
-                    )
-        coords[dim] = coord
-    else:
-        if not (
-            tolerance is None or tolerance is False
-        ):  # TODO: Default to False and remove None here?
-            raise TypeError("cannot use tolerance on non-existing coordinates")
-
     return DataArray(data, coords, dims, name, attrs)
+
+
+concatenate = concat  # TODO: deprecate it
+
+
+def concat_coords(objs, *, sort=False, return_order=False, tolerance=False):
+    """
+    Concatenate coordinate objects.
+
+    Parameters
+    ----------
+    objs : sequence
+        Sequence of coordinate-like objects to concatenate.
+    sort : bool, optional
+        If True, sort `objs` by the start value before concatenation.
+    return_order : bool, optional
+        If True, return `(coord, order)` where `order` is the list of
+        indices used to sort the input objects.
+    tolerance : float of timedelta64, optional
+        The tolerance to consider that the end of a coordinate object is continuous
+        with beginning of the following, For time coordinates, numeric values are
+        considered as seconds. No simplification by default.
+    Returns
+    -------
+    coord
+        The concatenated coordinate object.
+    order : list of int, optional
+        The sort order for `objs` when `return_order` is True.
+
+    """
+    # sort
+    order = list(range(len(objs)))
+    if sort:
+        order = sorted(order, key=lambda idx: objs[idx][0].values)
+        objs = [objs[index] for index in order]
+    out = objs[0]
+
+    # concat
+    for obj in objs[1:]:
+        out = out.concat(obj)
+
+    # simplify
+    if tolerance is not False:
+        try:
+            out = out.simplify(tolerance)
+        except NotImplementedError:
+            if (
+                tolerance is not None
+            ):  # TODO: Default to False and remove this condition here?
+                raise TypeError(
+                    "`tolerance` can only be used with coordinates "
+                    "that implements `simplify`"
+                )
+
+    if return_order:
+        return out, order
+
+    return out
 
 
 def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None):

@@ -85,11 +85,11 @@ class DefaultCoordinate(Coordinate, name="default"):
     def slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
         return slice(start, stop, step)
 
-    def append(self, other):
+    def concat(self, other):
         if not isinstance(other, self.__class__):
-            raise TypeError(f"cannot append {type(other)} to {self.__class__}")
+            raise TypeError(f"cannot concatenate {type(other)} to {self.__class__}")
         if not self.dim == other.dim:
-            raise ValueError("cannot append coordinate with different dimension")
+            raise ValueError("cannot concatenate coordinate with different dimension")
         return self.__class__({"size": len(self) + len(other)}, self.dim)
 
     def to_dict(self):

@@ -108,7 +108,7 @@ def test_miniseed(tmp_path):
     # manually concatenate several files (without gaps)
     paths = sorted(tmp_path.glob("*00.mseed"))
     objs = [xd.open(path, engine="miniseed") for path in paths]
-    da = xd.concatenate(objs, "station")
+    da = xd.concat(objs, "station")
     assert da.shape == (10, 3, 100)
     assert da.dims == ("station", "channel", "time")
     assert da.coords["station"].values.tolist() == [f"CH{i:03d}" for i in range(1, 11)]
@@ -122,7 +122,7 @@ def test_miniseed(tmp_path):
     # manually concatenate several files with gaps
     paths = sorted(tmp_path.glob("*gap.mseed"))
     objs = [xd.open(path, engine="miniseed") for path in paths]
-    da = xd.concatenate(objs, "station")
+    da = xd.concat(objs, "station")
     assert da.shape == (10, 3, 90)
     assert da.dims == ("station", "channel", "time")
     assert da.coords["station"].values.tolist() == [f"CH{i:03d}" for i in range(1, 11)]

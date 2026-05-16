@@ -309,24 +309,24 @@ class TestInterpCoordinate:
             coord = InterpCoordinate(data)
             assert InterpCoordinate.from_dict(coord.to_dict()).equals(coord)
 
-    def test_append(self):
+    def test_concat(self):
         coord0 = InterpCoordinate()
         coord1 = InterpCoordinate({"tie_indices": [0, 2], "tie_values": [0, 20]})
         coord2 = InterpCoordinate({"tie_indices": [0, 2], "tie_values": [30, 50]})
 
-        result = coord1.append(coord2).simplify()
+        result = coord1.concat(coord2).simplify()
         expected = InterpCoordinate({"tie_indices": [0, 5], "tie_values": [0, 50]})
         assert result.equals(expected)
 
-        result = coord2.append(coord1).simplify()
+        result = coord2.concat(coord1).simplify()
         expected = InterpCoordinate(
             {"tie_indices": [0, 2, 3, 5], "tie_values": [30, 50, 0, 20]}
         )
         assert result.equals(expected)
 
-        assert coord0.append(coord0).empty
-        assert coord0.append(coord1).equals(coord1)
-        assert coord1.append(coord0).equals(coord1)
+        assert coord0.concat(coord0).empty
+        assert coord0.concat(coord1).equals(coord1)
+        assert coord1.concat(coord0).equals(coord1)
 
 
 class TestFixedInterpCoordinate:

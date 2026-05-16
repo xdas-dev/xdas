@@ -29,7 +29,7 @@
    combine_by_coords
    combine_by_field
    concatenate
-   concatenate
+   concat_coords
    split
 ```
 

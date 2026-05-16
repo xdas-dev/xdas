@@ -43,7 +43,7 @@ class Coordinates(dict):
 
     Examples
     --------
-    >>> import xdas
+    >>> import xdas as xd
 
     >>> coords = {
     ...     "time": {"tie_indices": [0, 999], "tie_values": [0.0, 10.0]},
@@ -51,7 +51,7 @@ class Coordinates(dict):
     ...     "channel": ("distance", ["DAS01", "DAS02", "DAS03"]),
     ...     "interrogator": (None, "SRN"),
     ... }
-    >>> xdas.Coordinates(coords)
+    >>> xd.Coordinates(coords)
     Coordinates:
       * time (time): 0.000 to 10.000
       * distance (distance): [0 ... 2]
@@ -185,9 +185,9 @@ class Coordinates(dict):
         Examples
         --------
 
-        >>> import xdas
+        >>> import xdas as xd
 
-        >>> coords = xdas.Coordinates(
+        >>> coords = xd.Coordinates(
         ...     {
         ...         "time": {"tie_indices": [0, 999], "tie_values": [0.0, 10.0]},
         ...         "distance": [0, 1, 2],
@@ -224,11 +224,7 @@ class Coordinates(dict):
         return cls(Coordinate.from_dataset(dataset, name))
 
     def copy(self, deep=True):
-        if deep:
-            func = deepcopy
-        else:
-            func = copy
-        return self.__class__({key: func(value) for key, value in self.items()})
+        return self.__class__({key: value.copy(deep) for key, value in self.items()})
 
     @wraps_first_last
     def drop_dims(self, *dims):
@@ -370,6 +366,13 @@ class Coordinate:
         else:
             return self.parent.isdim(self.name)
 
+    def copy(self, deep=True):
+        if deep:
+            func = deepcopy
+        else:
+            func = copy
+        return self.__class__(func(self.data), func(self.dim), func(self.dtype))
+
     def equals(self, other):
         raise NotImplementedError
 
@@ -432,8 +435,8 @@ class Coordinate:
     def issampled(self):
         return False
 
-    def append(self, other):
-        raise NotImplementedError(f"append is not implemented for {self.__class__}")
+    def concat(self, other):
+        raise NotImplementedError(f"concat is not implemented for {self.__class__}")
 
     def simplify(self, tolerance=None):
         raise NotImplementedError(f"simplify is not implemented for {self.__class__}")

@@ -168,16 +168,22 @@ class TestSelection:
     @pytest.mark.parametrize("ctype", ["interpolated", "sampled"])
     def test_sel_slice_with_overlaps(self, ctype):
         data = np.arange(80).reshape(20, 4)
-        time = xd.Coordinate[ctype](None, "time", float)
-        time = time.append(xd.Coordinate[ctype].from_block(0.0, 10, 0.1, "time"))
-        time = time.append(xd.Coordinate[ctype].from_block(0.5, 10, 0.1, "time"))
+        time = xd.concat_coords(
+            [
+                xd.Coordinate[ctype].from_block(0.0, 10, 0.1, "time"),
+                xd.Coordinate[ctype].from_block(0.5, 10, 0.1, "time"),
+            ]
+        )
         distance = [0.0, 10.0, 20.0, 30.0]
         da = xd.DataArray(data, {"time": time, "distance": distance})
 
         data = da.values[2:-2]
-        time = xd.Coordinate[ctype](None, "time", float)
-        time = time.append(xd.Coordinate[ctype].from_block(0.2, 8, 0.1, "time"))
-        time = time.append(xd.Coordinate[ctype].from_block(0.5, 8, 0.1, "time"))
+        time = xd.concat_coords(
+            [
+                xd.Coordinate[ctype].from_block(0.2, 8, 0.1, "time"),
+                xd.Coordinate[ctype].from_block(0.5, 8, 0.1, "time"),
+            ]
+        )
         expected = xd.DataArray(data, {"time": time, "distance": distance})
         with pytest.warns(match="overlap"):
             result = da.sel(time=slice(0.15, 1.25))

@@ -360,20 +360,20 @@ class SampledCoordinate(Coordinate, name="sampled"):
                 offset = np.maximum(offset, 0)
         return self.tie_indices[reference] + offset
 
-    def append(self, other):
+    def concat(self, other):
         if not isinstance(other, self.__class__):
-            raise TypeError(f"cannot append {type(other)} to {self.__class__}")
+            raise TypeError(f"cannot concatenate {type(other)} to {self.__class__}")
         if not self.dim == other.dim:
-            raise ValueError("cannot append coordinate with different dimension")
+            raise ValueError("cannot concatenate coordinate with different dimension")
         if self.empty:
             return other
         if other.empty:
             return self
         if not self.dtype == other.dtype:
-            raise ValueError("cannot append coordinate with different dtype")
+            raise ValueError("cannot concatenate coordinate with different dtype")
         if not self.sampling_interval == other.sampling_interval:
             raise ValueError(
-                "cannot append coordinate with different sampling intervals"
+                "cannot concatenate coordinate with different sampling intervals"
             )
         tie_values = np.concatenate([self.tie_values, other.tie_values])
         tie_lengths = np.concatenate([self.tie_lengths, other.tie_lengths])

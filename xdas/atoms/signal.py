@@ -5,7 +5,7 @@ import scipy.signal as sp
 
 from ..coordinates.core import Coordinate, get_sampling_interval
 from ..core.dataarray import DataArray
-from ..core.routines import concatenate, split
+from ..core.routines import concat, split
 from ..parallel import parallelize
 from .core import Atom, State
 
@@ -463,7 +463,7 @@ class DownSample(Atom):
         if self.factor == 1:
             return da
         if self.buffer is not None:
-            da = concatenate([self.buffer, da], self.dim)
+            da = concat([self.buffer, da], self.dim)
             divpoint = da.sizes[self.dim] - da.sizes[self.dim] % self.factor
             da, buffer = split(da, [divpoint], self.dim)
             self.buffer = State(buffer)

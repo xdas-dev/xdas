@@ -398,11 +398,12 @@ class TestSplit:
         step = np.array(
             1, "timedelta64" if np.issubdtype(dtype, np.datetime64) else dtype
         )
-        coord = xd.Coordinate[ctype](data=None, dim="dim", dtype=float)
-        for start in starts:
-            coord = coord.append(
+        coord = xd.concat_coords(
+            [
                 xd.Coordinate[ctype].from_block(start, size, step, "dim")
-            )
+                for start in starts
+            ]
+        )
         return xd.DataArray(np.random.randn(len(coord)), {"dim": coord})
 
     # kind, tolerance, split_indices
@@ -435,7 +436,7 @@ class TestSplit:
     def test_from_integer(self, dataarray):
         chunks = xd.split(dataarray, 4)
         assert len(chunks) == 4
-        result = xd.concatenate(chunks, tolerance=None)
+        result = xd.concat(chunks, tolerance=None)
         np.testing.assert_array_equal(
             result["dim"].values, dataarray["dim"].values, strict=True
         )
@@ -447,7 +448,7 @@ class TestSplit:
         for kind, tolerance, expected_split_indices in self.CASES:
             chunks = xd.split(dataarray, kind, "dim", tolerance)
             assert len(chunks) == len(expected_split_indices) + 1
-            result = xd.concatenate(chunks, "dim", tolerance=False)
+            result = xd.concat(chunks, "dim", tolerance=False)
             np.testing.assert_array_equal(
                 result["dim"].values, dataarray["dim"].values, strict=True
             )
@@ -459,7 +460,7 @@ class TestSplit:
         split_indices = [11, 22, 33, 44, 55]
         chunks = xd.split(dataarray, split_indices)
         assert len(chunks) == len(split_indices) + 1
-        result = xd.concatenate(chunks, "dim", tolerance=False)
+        result = xd.concat(chunks, "dim", tolerance=False)
         np.testing.assert_array_equal(
             result["dim"].values, dataarray["dim"].values, strict=True
         )

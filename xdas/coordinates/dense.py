@@ -63,17 +63,17 @@ class DenseCoordinate(Coordinate, name="dense"):
             slc = slice(slc.start, slc.stop - 1, slc.step)
         return slc
 
-    def append(self, other):
+    def concat(self, other):
         if not isinstance(other, self.__class__):
-            raise TypeError(f"cannot append {type(other)} to {self.__class__}")
+            raise TypeError(f"cannot concatenate {type(other)} to {self.__class__}")
         if not self.dim == other.dim:
-            raise ValueError("cannot append coordinate with different dimension")
+            raise ValueError("cannot concatenate coordinate with different dimension")
         if self.empty:
             return other
         if other.empty:
             return self
         if not self.dtype == other.dtype:
-            raise ValueError("cannot append coordinate with different dtype")
+            raise ValueError("cannot concatenate coordinate with different dtype")
         return self.__class__(np.concatenate([self.data, other.data]), self.dim)
 
     def get_div_points(self, tolerance=None):

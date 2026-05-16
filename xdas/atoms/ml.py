@@ -3,7 +3,7 @@ import importlib
 import numpy as np
 
 from ..core.dataarray import DataArray
-from ..core.routines import concatenate
+from ..core.routines import concat
 from .core import Atom, State
 
 
@@ -117,7 +117,7 @@ class MLPicker(Atom):
         if self.buffer is None:
             out = self._process(da)
         else:
-            da = concatenate([self.buffer, da], self.dim)
+            da = concat([self.buffer, da], self.dim)
             out = self._process(da)
             divpoint = out.sizes[self.dim]
             self.buffer = State(da.isel({self.dim: slice(divpoint, None)}))
@@ -142,7 +142,7 @@ class MLPicker(Atom):
             chunk = self._attach_metadata(data, da, idx)
             chunk = chunk.transpose(self.dim, ...)  # TODO: does it make sense?
             chunks.append(chunk)
-        return concatenate(chunks, self.dim)
+        return concat(chunks, self.dim)
 
     def _initialize(self, da):
         chunk = da.isel({self.dim: slice(0, self.noverlap)})
