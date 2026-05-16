@@ -919,6 +919,27 @@ def concatenate(objs, dim="first", tolerance=None, virtual=None, verbose=None):
 
 
 def concat_coords(objs, *, sort=False, return_order=False):
+    """
+    Concatenate coordinate objects.
+
+    Parameters
+    ----------
+    objs : sequence
+        Sequence of coordinate-like objects to concatenate.
+    sort : bool, optional
+        If True, sort `objs` by the start value before concatenation.
+    return_order : bool, optional
+        If True, return `(coord, order)` where `order` is the list of
+        indices used to sort the input objects.
+
+    Returns
+    -------
+    coord
+        The concatenated coordinate object.
+    order : list of int, optional
+        The sort order for `objs` when `return_order` is True.
+
+    """
     # sort
     order = list(range(len(objs)))
     if sort:
