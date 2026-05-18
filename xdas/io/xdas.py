@@ -36,7 +36,7 @@ def open_dataarray(fname, group=None):
 
     # read metadata
     with xr.open_dataset(
-        fname, group=group, engine="h5netcdf", decode_timedelta=False
+        fname, group=group, engine="h5netcdf", decode_timedelta=False, phony_dims="sort"
     ) as dataset:
         # check file format
         if not (
