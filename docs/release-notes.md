@@ -19,7 +19,7 @@
 - Make `DataArray.rename` capable of renaming `dims` and `coords` (@atrabattoni). 
 - Add `parallel` argument to most `open*` functions to let the user choose the file opening strategy (@atrabattoni). 
 
-### Bug Fixe
+### Bug Fixes
 - Fix **memory accumulation** when slicing multiple times data arrays, e.g. when using atoms (@atrabattoni).
 - Fix **non-terminating loaders and writers** in `xdas.processing` (@atrabattoni).
 - Fix/improve distance handling for: "apsensing", "febus", "optasense", "silixa", and "sintela" (@atrabattoni).
