@@ -15,6 +15,7 @@ from loky import get_reusable_executor
 from tqdm import tqdm
 
 from ..coordinates.core import Coordinates, get_sampling_interval
+from ..parallel import get_workers_count
 from ..virtual import VirtualSource, VirtualStack
 from .dataarray import DataArray
 from .datacollection import DataCollection, DataMapping, DataSequence
@@ -26,6 +27,7 @@ def open(
     tolerance=None,
     squeeze=None,
     engine=None,
+    parallel=None,
     verbose=False,
     **kwargs,
 ):
@@ -70,6 +72,11 @@ def open(
         The file format engine to use, or a custom read callable. When ``None``
         (default), the xdas NetCDF format is assumed. Providing an engine skips the
         automatic DataCollection detection.
+    parallel: bool or int, optional
+        Whether to use multiprocessing to fetch file metadata. If False or 1,
+        runs in single-process mode. If an integer, use that many processes.
+        If True, use as many processes as available cores. If None, use the
+        global xdas configuration. Default to None.
     verbose : bool, optional
         Whether to display a progress bar while reading metadata. Ignored when
         opening a single file. Default is ``False``.
@@ -148,6 +155,7 @@ def open(
                         dim,
                         tolerance,
                         squeeze=False if squeeze is None else squeeze,
+                        parallel=parallel,
                         verbose=verbose,
                     )
                 except Exception:
@@ -158,6 +166,7 @@ def open(
                 tolerance,
                 squeeze=True if squeeze is None else squeeze,
                 engine=engine,
+                parallel=parallel,
                 verbose=verbose,
                 **kwargs,
             )
@@ -168,13 +177,14 @@ def open(
                 tolerance,
                 squeeze=False if squeeze is None else squeeze,
                 engine=engine,
+                parallel=parallel,
                 verbose=verbose,
                 **kwargs,
             )
 
 
 def open_mfdatacollection(
-    paths, dim="first", tolerance=None, squeeze=False, verbose=False
+    paths, dim="first", tolerance=None, squeeze=False, verbose=False, parallel=None
 ):
     """
     Open a multiple file DataCollection.
@@ -200,6 +210,11 @@ def open_mfdatacollection(
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
+    parallel: bool or int, optional
+        Whether to use multiprocessing to fetch file metadata. If False or 1,
+        runs in single-process mode. If an integer, use that many processes.
+        If True, use as many processes as available cores. If None, use the
+        global xdas configuration. Default to None.
     verbose: bool
         Whether to display a progress bar. Default to False.
 
@@ -228,17 +243,25 @@ def open_mfdatacollection(
             "The maximum number of file that can be opened at once is for now limited "
             "to 100 000."
         )
-    executor = get_reusable_executor()
-    futures = [executor.submit(open_datacollection, path) for path in paths]
-    if verbose:
-        iterator = tqdm(
-            as_completed(futures),
-            total=len(futures),
-            desc="Fetching metadata from files",
-        )
+    max_workers = get_workers_count(parallel)
+    if max_workers == 1:
+        if verbose:
+            iterator = tqdm(paths, desc="Fetching metadata from files")
+        else:
+            iterator = paths
+        objs = [open_datacollection(path) for path in iterator]
     else:
-        iterator = as_completed(futures)
-    objs = [future.result() for future in iterator]
+        executor = get_reusable_executor(max_workers)
+        futures = [executor.submit(open_datacollection, path) for path in paths]
+        if verbose:
+            iterator = tqdm(
+                as_completed(futures),
+                total=len(futures),
+                desc="Fetching metadata from files",
+            )
+        else:
+            iterator = as_completed(futures)
+        objs = [future.result() for future in iterator]
     return combine_by_field(objs, dim, tolerance, squeeze, True, verbose)
 
 
@@ -249,6 +272,7 @@ def open_mfdatatree(
     squeeze=False,
     engine=None,
     verbose=False,
+    parallel=None,
     **kwargs,
 ):
     """
@@ -283,6 +307,11 @@ def open_mfdatatree(
         results in a data collection containing a unique data array.
     engine: str of callable, optional
         The type of file to open or a read function. Default to xdas netcdf format.
+    parallel: bool or int, optional
+        Whether to use multiprocessing to fetch file metadata. If False or 1,
+        runs in single-process mode. If an integer, use that many processes.
+        If True, use as many processes as available cores. If None, use the
+        global xdas configuration. Default to None.
     verbose: bool
         Whether to display a progress bar. Default to False.
     **kwargs
@@ -352,7 +381,9 @@ def open_mfdatatree(
             bag = bag[match.group(field)]
         bag.append(fname)
 
-    return collect(tree, fields, dim, tolerance, squeeze, engine, verbose, **kwargs)
+    return collect(
+        tree, fields, dim, tolerance, squeeze, engine, parallel, verbose, **kwargs
+    )
 
 
 def collect(
@@ -362,6 +393,7 @@ def collect(
     tolerance=None,
     squeeze=False,
     engine=None,
+    parallel=None,
     verbose=False,
     **kwargs,
 ):
@@ -385,6 +417,11 @@ def collect(
         results in a data collection containing a unique data array.
     engine: str of callable, optional
         The type of file to open or a read function. Default to xdas netcdf format.
+    parallel: bool or int, optional
+        Whether to use multiprocessing to fetch file metadata. If False or 1,
+        runs in single-process mode. If an integer, use that many processes.
+        If True, use as many processes as available cores. If None, use the
+        global xdas configuration. Default to None.
     verbose: bool
         Whether to display a progress bar. Default to False.
     **kwargs
@@ -402,13 +439,21 @@ def collect(
     for key, value in tree.items():
         if isinstance(value, list):
             dc = open_mfdataarray(
-                value, dim, tolerance, squeeze, engine, verbose, **kwargs
+                value, dim, tolerance, squeeze, engine, parallel, verbose, **kwargs
             )
             dc.name = fields[0]
             collection[key] = dc
         else:
             collection[key] = collect(
-                value, fields, dim, tolerance, squeeze, engine, verbose
+                value,
+                fields,
+                dim,
+                tolerance,
+                squeeze,
+                engine,
+                parallel,
+                verbose,
+                **kwargs,
             )
     return collection
 
@@ -427,6 +472,7 @@ def open_mfdataarray(
     tolerance=None,
     squeeze=True,
     engine=None,
+    parallel=None,
     verbose=False,
     **kwargs,
 ):
@@ -453,6 +499,11 @@ def open_mfdataarray(
         results in a data collection containing a unique data array.
     engine: str of callable, optional
         The type of file to open or a read function. Default to xdas netcdf format.
+    parallel: bool or int, optional
+        Whether to use multiprocessing to fetch file metadata. If False or 1,
+        runs in single-process mode. If an integer, use that many processes.
+        If True, use as many processes as available cores. If None, use the
+        global xdas configuration. Default to None.
     verbose: bool
         Whether to display a progress bar. Default to False.
     **kwargs
@@ -487,10 +538,15 @@ def open_mfdataarray(
             "The maximum number of file that can be opened at once is for now limited "
             "to 100 000."
         )
-    if engine == "miniseed":  # TODO: dirty fix
-        objs = [open_dataarray(path, engine=engine, **kwargs) for path in paths]
+    max_workers = get_workers_count(parallel)
+    if (max_workers == 1) or (engine == "miniseed"):  # TODO: dirty miniseed fix
+        if verbose:
+            iterator = tqdm(paths, desc="Fetching metadata from files")
+        else:
+            iterator = paths
+        objs = [open_dataarray(path, engine=engine, **kwargs) for path in iterator]
     else:
-        executor = get_reusable_executor()
+        executor = get_reusable_executor(max_workers)
         futures_to_paths = {
             executor.submit(open_dataarray, path, engine=engine, **kwargs): path
             for path in paths

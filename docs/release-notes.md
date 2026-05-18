@@ -17,6 +17,7 @@
 - Add "prodml" engine (@atrabattoni) and make "optasense" and "sintela" aliases of it (@atrabattoni). 
 - Add the `component_strategy` argument to the `xdas.atoms.MLPicker` to choose weather to use the same component on the 3 channels or to use one channel and set the others to 0 based (@marbail). 
 - Make `DataArray.rename` capable of renaming `dims` and `coords` (@atrabattoni). 
+- Add `parallel` argument to most `open*` functions to let the used choose the file oppenning strategy (@atrabattoni). 
 
 ### Bugs Fixed
 - Fix **memory accumulation** when slicing multiple times data arrays, e.g. when using atoms (@atrabattoni) (@atrabattoni).
@@ -25,6 +26,7 @@
 - Add dim swapping handling for the "prodml" based engines with the `swapped_dims=False` kwarg (@atrabattoni).
 - Fix ASN ROI handling (@asladen).
 - Use the `annotate_batch_pre` model's function to normalize in `xdas.atoms.MLPicker` (@marbail).
+- Fix the RuntimeError encoutered when using `open_mf*` functions in scripts due to the use of multiprocessing by using the loky library (@atrabattoni)
 
 ## 0.2.5
 - Add SampleCoordinate for more SEED-like coordinates and refactor the coordinate backend (@atrabattoni).
