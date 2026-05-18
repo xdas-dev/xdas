@@ -39,7 +39,7 @@ class TestGenericIO:
                 assert isinstance(da, xd.DataArray)
                 assert da.dtype == patch.dtype
                 assert da.shape == patch.shape
-                assert np.array_equal(da.data, patch.data, equal_nan=True)
+                assert np.array_equal(da.values, patch.data, equal_nan=True)
                 assert da.dims == patch.dims
                 for dim in da.dims:
                     if dim == "distance" and fname in self.SKIP_DISTANCE_COMPARISON:
@@ -49,10 +49,10 @@ class TestGenericIO:
                     # assert result.dtype == expected.dtype
                     assert result.shape == expected.shape
                     if np.issubdtype(da[dim].dtype, np.datetime64):
-                        result = (
-                            (result - np.datetime64(0, "s")) / np.timedelta64(1, "s"),
+                        result = (result - np.datetime64(0, "s")) / np.timedelta64(
+                            1, "s"
                         )
-                        expected = (
-                            (expected - np.datetime64(0, "s")) / np.timedelta64(1, "s"),
+                        expected = (expected - np.datetime64(0, "s")) / np.timedelta64(
+                            1, "s"
                         )
                     assert np.allclose(result, expected)
