@@ -10,7 +10,7 @@
 - Add `xdas.concat_coords` to merge coordinates. Also `Coordinate.append` is now `Coordinate.concat` (avoid in-place confusion) and `xdas.concatenate` has now a preferred alias `xdas.concat` (@atrabattoni).
 
 ### Improvements
-- Most `xdas.open_*` functions now have a `create_dirs` argument to create intermediate directories if necessary (@aurelienfalco).
+- All `to_netcdf` methods now have a `create_dirs` argument to create intermediate directories if necessary (@aurelienfalco).
 - Make `DataArray.sel` handle overlaps when slicing, and `xdas.split` can split on overlaps or gaps now (@atrabattoni).
 - New `io.Engine` backend system to register different file formats (@atrabattoni).
 - Make `open_mfdataarray` raise `RuntimeError` when opening all files fails (@asladen). 
