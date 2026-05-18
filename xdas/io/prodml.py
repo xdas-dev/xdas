@@ -1,5 +1,6 @@
 import h5py
 import numpy as np
+import pandas as pd
 
 from ..coordinates.core import Coordinate
 from ..core.dataarray import DataArray
@@ -20,10 +21,18 @@ class ProdML(Engine, name="prodml", aliases=["optasense", "sintela"]):
             dx = acquisition.attrs["SpatialSamplingInterval"]
             x0 = dx * acquisition.attrs["StartLocusIndex"]
             rawdata = acquisition["Raw[0]"]["RawData"]
-            tstart = np.datetime64(
-                rawdata.attrs["PartStartTime"].decode().split("+")[0]
+            tstart = (
+                pd.Timestamp(rawdata.attrs["PartStartTime"].decode())
+                .tz_convert("UTC")
+                .tz_localize(None)
+                .to_numpy()
             )
-            tend = np.datetime64(rawdata.attrs["PartEndTime"].decode().split("+")[0])
+            tend = (
+                pd.Timestamp(rawdata.attrs["PartEndTime"].decode())
+                .tz_convert("UTC")
+                .tz_localize(None)
+                .to_numpy()
+            )
             data = VirtualSource(rawdata)
 
         if swapped_dims:

@@ -1,7 +1,5 @@
-from datetime import datetime, timezone
-
 import h5py
-import numpy as np
+import pandas as pd
 
 from ..coordinates.core import Coordinate
 from ..core.dataarray import DataArray
@@ -16,14 +14,20 @@ class Terra15Engine(Engine, name="terra15"):
         "distance": ["interpolated", "sampled", "dense"],
     }
 
-    def open_dataarray(self, fname, tz=timezone.utc):
+    def open_dataarray(self, fname, tz="UTC"):
         with h5py.File(fname, "r") as file:
-            ti = np.datetime64(
-                datetime.fromtimestamp(file["data_product"]["gps_time"][0], tz=tz)
-            ).astype("datetime64[ms]")
-            tf = np.datetime64(
-                datetime.fromtimestamp(file["data_product"]["gps_time"][-1], tz=tz)
-            ).astype("datetime64[ms]")
+            ti = (
+                pd.Timestamp(file["data_product"]["gps_time"][0], unit="s", tz=tz)
+                .tz_convert("UTC")
+                .tz_localize(None)
+                .to_numpy()
+            )
+            tf = (
+                pd.Timestamp(file["data_product"]["gps_time"][-1], unit="s", tz=tz)
+                .tz_convert("UTC")
+                .tz_localize(None)
+                .to_numpy()
+            )
             d0 = file.attrs["sensing_range_start"]
             dx = file.attrs["dx"]
             data = VirtualSource(file["data_product"]["data"])
