@@ -2,7 +2,7 @@ import os
 import re
 import warnings
 from collections import defaultdict
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from glob import glob
 from itertools import pairwise
 from pathlib import Path
@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import xarray as xr
+from loky import get_reusable_executor
 from tqdm import tqdm
 
 from ..coordinates.core import Coordinates, get_sampling_interval
@@ -227,17 +228,17 @@ def open_mfdatacollection(
             "The maximum number of file that can be opened at once is for now limited "
             "to 100 000."
         )
-    with ProcessPoolExecutor() as executor:
-        futures = [executor.submit(open_datacollection, path) for path in paths]
-        if verbose:
-            iterator = tqdm(
-                as_completed(futures),
-                total=len(futures),
-                desc="Fetching metadata from files",
-            )
-        else:
-            iterator = as_completed(futures)
-        objs = [future.result() for future in iterator]
+    executor = get_reusable_executor()
+    futures = [executor.submit(open_datacollection, path) for path in paths]
+    if verbose:
+        iterator = tqdm(
+            as_completed(futures),
+            total=len(futures),
+            desc="Fetching metadata from files",
+        )
+    else:
+        iterator = as_completed(futures)
+    objs = [future.result() for future in iterator]
     return combine_by_field(objs, dim, tolerance, squeeze, True, verbose)
 
 
@@ -489,30 +490,30 @@ def open_mfdataarray(
     if engine == "miniseed":  # TODO: dirty fix
         objs = [open_dataarray(path, engine=engine, **kwargs) for path in paths]
     else:
-        with ProcessPoolExecutor() as executor:
-            futures_to_paths = {
-                executor.submit(open_dataarray, path, engine=engine, **kwargs): path
-                for path in paths
-            }
-            if verbose:
-                iterator = tqdm(
-                    as_completed(futures_to_paths),
-                    total=len(futures_to_paths),
-                    desc="Fetching metadata from files",
-                )
+        executor = get_reusable_executor()
+        futures_to_paths = {
+            executor.submit(open_dataarray, path, engine=engine, **kwargs): path
+            for path in paths
+        }
+        if verbose:
+            iterator = tqdm(
+                as_completed(futures_to_paths),
+                total=len(futures_to_paths),
+                desc="Fetching metadata from files",
+            )
+        else:
+            iterator = as_completed(futures_to_paths)
+        objs = []
+        failures = []
+        for future in iterator:
+            try:
+                obj = future.result()
+            except Exception as e:
+                path = futures_to_paths[future]
+                failures.append((path, e))
+                warnings.warn(f"could not open {path}: {e}", RuntimeWarning)
             else:
-                iterator = as_completed(futures_to_paths)
-            objs = []
-            failures = []
-            for future in iterator:
-                try:
-                    obj = future.result()
-                except Exception as e:
-                    path = futures_to_paths[future]
-                    failures.append((path, e))
-                    warnings.warn(f"could not open {path}: {e}", RuntimeWarning)
-                else:
-                    objs.append(obj)
+                objs.append(obj)
     if len(objs) == 0:
         if failures:
             path, error = failures[0]
