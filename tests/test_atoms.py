@@ -283,4 +283,6 @@ class TestMLPicker:
         _expected = _expected[:-1000]
 
         # check equal by removing the
-        assert np.allclose(_result.values, _expected.values)
+        np.testing.assert_allclose(_result.values, _expected.values, rtol=1e-5, atol=1e-7)
+        np.testing.assert_array_max_ulp(_result.values, _expected.values, maxulp=300)
+
