@@ -209,10 +209,267 @@ class TestOpenMFDataArray:
         )
         for index, chunk in enumerate(xd.split(expected, 3, "time"), start=1):
             chunk.to_netcdf(tmp_path / f"chunk_{index}.nc")
-        result = xd.open_mfdataarray(str(tmp_path / "*.nc"))  # TODO: should accept Path
+        result = xd.open_mfdataarray(tmp_path / "*.nc")
         assert result.equals(expected)
         with (tmp_path / "corrupted.nc").open("wb") as f:
             f.write(b"corrupted")
         with pytest.warns(RuntimeWarning):
-            result = xd.open_mfdataarray(str(tmp_path / "*.nc"))
+            result = xd.open_mfdataarray(tmp_path / "*.nc")
         assert result.equals(expected)
+
+
+class TestOpen:  # TODO: those tests are weirdly slow...
+    def test_open_single_dataarray(self, tmp_path):
+        expected = xd.DataArray(
+            np.random.rand(10, 5),
+            coords={
+                "time": np.arange(10),
+                "space": np.arange(5),
+            },
+        )
+
+        path = tmp_path / "dataarray.nc"
+        expected.to_netcdf(path)
+
+        result = xd.open(path)
+        assert result.equals(expected)
+
+    def test_open_multiple_file_dataarray(self, tmp_path):
+        expected = xd.DataArray(
+            np.random.rand(10, 5),
+            coords={
+                "time": np.arange(10),
+                "space": np.arange(5),
+            },
+        )
+
+        file_paths = []
+        for index, chunk in enumerate(xd.split(expected, 3, "time"), start=1):
+            file_path = tmp_path / f"chunk_{index}.nc"
+            chunk.to_netcdf(file_path)
+            file_paths.append(file_path)
+
+        # glob patterns
+        result = xd.open(tmp_path / "*.nc")
+        assert result.equals(expected)
+        result = xd.open(tmp_path / "chunk_[1-3].nc")
+        assert result.equals(expected)
+        result = xd.open(tmp_path / "chunk_?.nc")
+        assert result.equals(expected)
+
+        # list of paths
+        result = xd.open(file_paths)
+        assert result.equals(expected)
+
+    def test_open_multiple_file_tree(self, tmp_path):
+        expected = xd.DataCollection(
+            {
+                "DAS01": xd.DataCollection(
+                    [
+                        xd.DataArray(
+                            np.random.rand(10, 5),
+                            coords={
+                                "time": np.arange(10),
+                                "space": np.arange(5),
+                            },
+                        )
+                    ],
+                    name="acquisition",
+                ),
+                "DAS02": xd.DataCollection(
+                    [
+                        xd.DataArray(
+                            np.random.rand(7, 3),
+                            coords={
+                                "time": np.arange(7),
+                                "space": np.arange(3),
+                            },
+                        )
+                    ],
+                    name="acquisition",
+                ),
+            },
+            name="station",
+        )
+
+        for station in expected:
+            dirpath = tmp_path / station
+            dirpath.mkdir()
+            for index, chunk in enumerate(
+                xd.split(expected[station][0], 3, "time"), start=1
+            ):
+                chunk.to_netcdf(dirpath / f"chunk_{index}.nc")
+
+        result = xd.open(tmp_path / "{station}" / "[acquisition].nc")
+        assert result.equals(expected)
+
+    def test_open_single_datacollection(self, tmp_path):
+        expected = xd.DataCollection(
+            [
+                xd.DataArray(
+                    np.random.rand(10, 5),
+                    coords={
+                        "time": np.arange(10),
+                        "space": np.arange(5),
+                    },
+                )
+            ]
+        )
+
+        expected.to_netcdf(tmp_path / "collection.nc")
+
+        result = xd.open(tmp_path / "collection.nc")
+        assert result.equals(expected)
+
+    def test_open_multiple_datacollection_with_glob(self, tmp_path):
+        expected = xd.DataCollection(
+            {
+                "DAS01": xd.DataCollection(
+                    [
+                        xd.DataArray(
+                            np.random.rand(10, 5),
+                            coords={
+                                "time": np.arange(10),
+                                "space": np.arange(5),
+                            },
+                        )
+                    ],
+                    name="acquisition",
+                ),
+                "DAS02": xd.DataCollection(
+                    [
+                        xd.DataArray(
+                            np.random.rand(7, 3),
+                            coords={
+                                "time": np.arange(7),
+                                "space": np.arange(3),
+                            },
+                        )
+                    ],
+                    name="acquisition",
+                ),
+            },
+            name="station",
+        )
+
+        expected.isel(time=slice(None, 3)).to_netcdf(tmp_path / "datacollection_1.nc")
+        expected.isel(time=slice(3, None)).to_netcdf(tmp_path / "datacollection_2.nc")
+
+        # glob patterns
+        result = xd.open(tmp_path / "datacollection_*.nc")
+        assert result.equals(expected)
+        result = xd.open(tmp_path / "datacollection_[1-2].nc")
+        assert result.equals(expected)
+        result = xd.open(tmp_path / "datacollection_?.nc")
+        assert result.equals(expected)
+
+        # list of paths
+        file_paths = [
+            tmp_path / "datacollection_1.nc",
+            tmp_path / "datacollection_2.nc",
+        ]
+        result = xd.open(file_paths)
+        assert result.equals(expected)
+
+    def test_raise_if_all_files_corrupted(self, tmp_path):
+        with (tmp_path / "corrupted1.nc").open("wb") as f:
+            f.write(b"corrupted")
+        with (tmp_path / "corrupted2.nc").open("wb") as f:
+            f.write(b"corrupted")
+        with pytest.warns(RuntimeWarning):
+            with pytest.raises(RuntimeError):
+                xd.open_mfdataarray(str(tmp_path / "*.nc"))
+
+
+class TestSplit:
+    @pytest.fixture
+    def dataarray(self, dtype, ctype):
+        starts = np.array(
+            [
+                0,  # 0 - initial block
+                10,  # 10 - continuous
+                18,  # 20 - 2 overlap
+                30,  # 30 - 2 gap
+                48,  # 40 - 8 gap
+                50,  # 50 - 8 overlap
+            ],
+            dtype,
+        )
+        size = 10
+        step = np.array(
+            1, "timedelta64" if np.issubdtype(dtype, np.datetime64) else dtype
+        )
+        coord = xd.concat_coords(
+            [
+                xd.Coordinate[ctype].from_block(start, size, step, "dim")
+                for start in starts
+            ]
+        )
+        return xd.DataArray(np.random.randn(len(coord)), {"dim": coord})
+
+    # kind, tolerance, split_indices
+    CASES = [
+        ("discontinuities", False, [10, 20, 30, 40, 50]),
+        ("discontinuities", None, [20, 30, 40, 50]),
+        ("discontinuities", 1, [20, 30, 40, 50]),
+        ("discontinuities", 2, [40, 50]),
+        ("discontinuities", 4, [40, 50]),
+        ("discontinuities", 8, []),
+        ("discontinuities", 20, []),
+        ("gaps", False, [10, 30, 40]),
+        ("gaps", None, [30, 40]),  # continuity is a gaps
+        ("gaps", 1, [30, 40]),
+        ("gaps", 2, [40]),
+        ("gaps", 4, [40]),
+        ("gaps", 8, []),
+        ("gaps", 20, []),
+        ("overlaps", False, [20, 50]),
+        ("overlaps", None, [20, 50]),  # continuity is not an overlaps
+        ("overlaps", 1, [20, 50]),
+        ("overlaps", 2, [50]),
+        ("overlaps", 4, [50]),
+        ("overlaps", 8, []),
+        ("overlaps", 20, []),
+    ]
+
+    @pytest.mark.parametrize("ctype", ["interpolated", "sampled"])
+    @pytest.mark.parametrize("dtype", [int, float, "datetime64[s]"])
+    def test_from_integer(self, dataarray):
+        chunks = xd.split(dataarray, 4)
+        assert len(chunks) == 4
+        result = xd.concat(chunks, tolerance=None)
+        np.testing.assert_array_equal(
+            result["dim"].values, dataarray["dim"].values, strict=True
+        )
+        np.testing.assert_array_equal(result.values, dataarray.values, strict=True)
+
+    @pytest.mark.parametrize("ctype", ["interpolated", "sampled"])
+    @pytest.mark.parametrize("dtype", [int, float, "datetime64[s]"])
+    def test_from_coord(self, dataarray):
+        for kind, tolerance, expected_split_indices in self.CASES:
+            chunks = xd.split(dataarray, kind, "dim", tolerance)
+            assert len(chunks) == len(expected_split_indices) + 1
+            result = xd.concat(chunks, "dim", tolerance=False)
+            np.testing.assert_array_equal(
+                result["dim"].values, dataarray["dim"].values, strict=True
+            )
+            np.testing.assert_array_equal(result.values, dataarray.values, strict=True)
+
+    @pytest.mark.parametrize("ctype", ["interpolated", "sampled"])
+    @pytest.mark.parametrize("dtype", [int, float, "datetime64[s]"])
+    def test_from_indices(self, dataarray):
+        split_indices = [11, 22, 33, 44, 55]
+        chunks = xd.split(dataarray, split_indices)
+        assert len(chunks) == len(split_indices) + 1
+        result = xd.concat(chunks, "dim", tolerance=False)
+        np.testing.assert_array_equal(
+            result["dim"].values, dataarray["dim"].values, strict=True
+        )
+        np.testing.assert_array_equal(result.values, dataarray.values, strict=True)
+
+    def test_raise_tolerance_not_used(self):
+        da = xd.DataArray()
+        with pytest.raises(ValueError):
+            xd.split(da, 3, tolerance=1)
+        with pytest.raises(ValueError):
+            xd.split(da, [10], tolerance=1)

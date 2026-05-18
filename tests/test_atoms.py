@@ -1,10 +1,8 @@
 import pickle
-import tempfile
 
 import numpy as np
 import scipy.signal as sp
 
-import xdas
 import xdas as xd
 import xdas.signal as xs
 from xdas.atoms import (
@@ -32,14 +30,13 @@ class TestPartialAtom:
             ]
         )
 
-    def test_pickable(self):
+    def test_pickable(self, tmp_path):
         atom = xs.integrate(..., dim="dim")
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmpfile_path = f"{tmpdir}/tempfile.pkl"
-            with open(tmpfile_path, "wb") as tmpfile:
-                pickle.dump(atom, tmpfile)
-            with open(tmpfile_path, "rb") as tmpfile:
-                result = pickle.load(tmpfile)
+        tmpfile_path = tmp_path / "tempfile.pkl"
+        with open(tmpfile_path, "wb") as tmpfile:
+            pickle.dump(atom, tmpfile)
+        with open(tmpfile_path, "rb") as tmpfile:
+            result = pickle.load(tmpfile)
         assert result.func.__module__ == atom.func.__module__
         assert result.func.__name__ == atom.func.__name__
         assert result.args == atom.args
@@ -59,14 +56,14 @@ class TestProcessing:
             [
                 Partial(np.abs),
                 Partial(np.square, name="some square"),
-                Partial(xdas.mean, dim="time"),
+                Partial(xd.mean, dim="time"),
             ]
         )
 
         # Sequence processing
         result1 = seq(da)
         # Manual processing
-        result2 = xdas.mean(np.abs(da) ** 2, dim="time")
+        result2 = xd.mean(np.abs(da) ** 2, dim="time")
 
         # Test
         assert np.allclose(result1.values, result2.values)
@@ -94,7 +91,7 @@ class TestDecorator:
 class TestFilters:
     def test_lfilter(self):
         da = wavelet_wavefronts()
-        chunks = xdas.split(da, 6, "time")
+        chunks = xd.split(da, 6, "time")
 
         b, a = sp.iirfilter(4, 10.0, btype="lowpass", fs=50.0)
         data = sp.lfilter(b, a, da.values, axis=0)
@@ -103,9 +100,7 @@ class TestFilters:
         atom = IIRFilter(4, 10.0, "lowpass", dim="time", stype="ba")
         monolithic = atom(da)
 
-        chunked = xdas.concatenate(
-            [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
-        )
+        chunked = xd.concat([atom(chunk, chunk_dim="time") for chunk in chunks], "time")
 
         assert monolithic.equals(expected)
         assert chunked.equals(expected)
@@ -122,12 +117,12 @@ class TestFilters:
         #     atom_b.load_state(path)
         #     chunks_b = [atom_b(chunk, chunk_dim="time") for chunk in chunks[3:]]
 
-        #     result = xdas.concatenate(chunks_a + chunks_b, "time")
+        #     result = xd.concat(chunks_a + chunks_b, "time")
         #     assert result.equals(expected)
 
     def test_sosfilter(self):
         da = wavelet_wavefronts()
-        chunks = xdas.split(da, 6, "time")
+        chunks = xd.split(da, 6, "time")
 
         sos = sp.iirfilter(4, 10.0, btype="lowpass", fs=50.0, output="sos")
         data = sp.sosfilt(sos, da.values, axis=0)
@@ -136,9 +131,7 @@ class TestFilters:
         atom = IIRFilter(4, 10.0, "lowpass", dim="time")
         monolithic = atom(da)
 
-        chunked = xdas.concatenate(
-            [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
-        )
+        chunked = xd.concat([atom(chunk, chunk_dim="time") for chunk in chunks], "time")
 
         assert monolithic.equals(expected)
         assert chunked.equals(expected)
@@ -155,27 +148,25 @@ class TestFilters:
         #     atom_b.load_state(path)
         #     chunks_b = [atom_b(chunk, chunk_dim="time") for chunk in chunks[3:]]
 
-        #     result = xdas.concatenate(chunks_a + chunks_b, "time")
+        #     result = xd.concat(chunks_a + chunks_b, "time")
         #     assert result.equals(expected)
 
     def test_downsample(self):
         da = wavelet_wavefronts()
-        chunks = xdas.split(da, 6, "time")
+        chunks = xd.split(da, 6, "time")
         expected = da.isel(time=slice(None, None, 3))
         atom = DownSample(3, "time")
         result = atom(da)
         assert result.equals(expected)
         atom.reset()
-        result = xdas.concatenate(
-            [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
-        )
+        result = xd.concat([atom(chunk, chunk_dim="time") for chunk in chunks], "time")
         assert result.equals(expected)
 
     def test_upsample(self):
-        da = xdas.DataArray(
+        da = xd.DataArray(
             [1, 1, 1], {"time": {"tie_indices": [0, 2], "tie_values": [0.0, 6.0]}}
         )
-        expected = xdas.DataArray(
+        expected = xd.DataArray(
             [3, 0, 0, 3, 0, 0, 3, 0, 0],
             {"time": {"tie_indices": [0, 8], "tie_values": [0.0, 8.0]}},
         )
@@ -184,16 +175,14 @@ class TestFilters:
         assert result.equals(expected)
 
         da = wavelet_wavefronts()
-        chunks = xdas.split(da, 6, "time")
+        chunks = xd.split(da, 6, "time")
         expected = atom(da)
-        result = xdas.concatenate(
-            [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
-        )
+        result = xd.concat([atom(chunk, chunk_dim="time") for chunk in chunks], "time")
         assert result.equals(expected)
 
     def test_firfilter(self):
         da = wavelet_wavefronts()
-        chunks = xdas.split(da, 6, "time")
+        chunks = xd.split(da, 6, "time")
         taps = sp.firwin(11, 0.4, pass_zero="lowpass")
         expected = xs.lfilter(taps, 1.0, da, "time")
         expected["time"] -= np.timedelta64(20, "ms") * 5
@@ -201,9 +190,7 @@ class TestFilters:
         result = atom(da)
         assert result.equals(expected)
 
-        result = xdas.concatenate(
-            [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
-        )
+        result = xd.concat([atom(chunk, chunk_dim="time") for chunk in chunks], "time")
         assert np.allclose(result.values, expected.values, atol=1e-16, rtol=1e-11)
         assert result.coords.equals(expected.coords)
         assert result.attrs == expected.attrs
@@ -213,12 +200,12 @@ class TestFilters:
 class TestResamplePoly:
     def test_up_down(self):
         da = wavelet_wavefronts()
-        chunks = xdas.split(da, 6, "time")
+        chunks = xd.split(da, 6, "time")
 
         expected = xs.resample_poly(da, 5, 2, "time")
         atom = ResamplePoly(125, maxfactor=10, dim="time")
         result = atom(da)
-        result_chunked = xdas.concatenate(
+        result_chunked = xd.concat(
             [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
         )
 
@@ -249,9 +236,54 @@ class TestMLPicker:
         from seisbench.models import PhaseNet
 
         model = PhaseNet.from_pretrained("diting")
-        picker = MLPicker(model, "time", device="cpu")
+        picker = MLPicker(model, "time", device="cpu", component_strategy="Z")
         da = randn_wavefronts()
+        # da = da.isel(time=slice(0, 5000)) TODO: why not faster ?
         expected = picker(da)
         chunks = xd.split(da, 4, "time")
-        result = xd.concatenate([picker(chunk, chunk_dim="time") for chunk in chunks])
+        result = xd.concat([picker(chunk, chunk_dim="time") for chunk in chunks])
         assert result.equals(expected)
+
+    def test_compare_with_seisbench(self):
+        import obspy
+        from seisbench.models import PhaseNet
+
+        model = PhaseNet.from_pretrained("original")  # works at 100 Hz
+        model.to_preferred_device()
+        picker = MLPicker(model, "time", component_strategy="clone")
+
+        # generate one trace
+        da = randn_wavefronts()  # 100 Hz
+        da = da.isel(distance=slice(0, 1))
+
+        # xdas
+        result = picker(da)
+
+        # convert to one stream with clonning
+        st = da.to_stream()
+        tr = st[0]
+        st = obspy.Stream()
+        for component in model.component_order:
+            _tr = tr.copy()
+            _tr.stats.component = component
+            st.append(_tr)
+
+        # seisbench
+        expected = model.annotate(st)
+        expected = xd.DataArray.from_stream(expected)
+
+        # align because of different overlap managment
+        _result = result.sel(time=slice(expected["time"][0].values, None))
+        _result = _result.isel(distance=0)
+        _expected = expected.sel(time=slice(None, result["time"][-1].values))
+        _expected = _expected.transpose("time", "channel")
+
+        # remove unfinished end part
+        _result = _result[:-1000]
+        _expected = _expected[:-1000]
+
+        # check equal by removing the
+        np.testing.assert_allclose(
+            _result.values, _expected.values, rtol=1e-5, atol=1e-7
+        )
+        np.testing.assert_array_max_ulp(_result.values, _expected.values, maxulp=300)

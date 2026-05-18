@@ -97,7 +97,7 @@ def concatenate(arrays, axis=0, out=None, dtype=None, n_workers=None):
         If provided, the destination to place the result. The shape must be correct,
         matching that of what concatenate would have returned if no out argument were
         specified.
-    dtype: str or dtype
+    dtype: str or numpy.dtype
         If provided, the destination array will have this dtype. Cannot be provided
         together with out.
 

@@ -1,6 +1,3 @@
-import os
-from tempfile import TemporaryDirectory
-
 import numpy as np
 import pytest
 
@@ -31,73 +28,66 @@ class TestCore:
 
     def test_open_mfdatacollection(self): ...  # TODO
 
-    def test_open_mfdatatree(self):
-        with TemporaryDirectory() as dirpath:
-            keys = ["LOC01", "LOC02"]
-            dirnames = [os.path.join(dirpath, key) for key in keys]
-            for dirname in dirnames:
-                os.mkdir(dirname)
-                for idx, da in enumerate(wavelet_wavefronts(nchunk=3), start=1):
-                    da.to_netcdf(os.path.join(dirname, f"{idx:03d}.nc"))
-            da = wavelet_wavefronts()
-            dc = xd.open_mfdatatree(
-                os.path.join(dirpath, "{node}", "00[acquisition].nc")
-            )
-            assert list(dc.keys()) == keys
-            for key in keys:
-                assert dc[key][0].load().equals(da)
-
-    def test_open_mfdataarray(self):
-        with TemporaryDirectory() as dirpath:
-            wavelet_wavefronts().to_netcdf(os.path.join(dirpath, "sample.nc"))
+    def test_open_mfdatatree(self, tmp_path):
+        keys = ["LOC01", "LOC02"]
+        dirnames = [tmp_path / key for key in keys]
+        for dirname in dirnames:
+            dirname.mkdir()
             for idx, da in enumerate(wavelet_wavefronts(nchunk=3), start=1):
-                da.to_netcdf(os.path.join(dirpath, f"{idx:03}.nc"))
-            da_monolithic = xd.open_dataarray(os.path.join(dirpath, "sample.nc"))
-            da_chunked = xd.open_mfdataarray(os.path.join(dirpath, "00*.nc"))
-            assert da_monolithic.equals(da_chunked)
-            da_chunked = xd.open_mfdataarray(
-                [
-                    os.path.join(dirpath, fname)
-                    for fname in ["001.nc", "002.nc", "003.nc"]
-                ]
-            )
-            assert da_monolithic.equals(da_chunked)
-        with pytest.raises(FileNotFoundError):
-            xd.open_mfdataarray("not_existing_files_*.nc")
-        with pytest.raises(FileNotFoundError):
-            xd.open_mfdataarray(["not_existing_file.nc"])
+                da.to_netcdf(dirname / f"{idx:03d}.nc")
+        da = wavelet_wavefronts()
+        dc = xd.open_mfdatatree(tmp_path / "{node}" / "00[acquisition].nc")
+        assert list(dc.keys()) == keys
+        for key in keys:
+            assert dc[key][0].load().equals(da)
 
-    def test_open_mfdataarray_grouping(self):
-        with TemporaryDirectory() as dirpath:
-            acqs = [
-                {
-                    "starttime": "2023-01-01T00:00:00",
-                    "resolution": (np.timedelta64(20, "ms"), 20.0),
-                    "nchunk": 10,
-                },
-                {
-                    "starttime": "2023-01-01T06:00:00",
-                    "resolution": (np.timedelta64(10, "ms"), 20.0),
-                    "nchunk": 10,
-                },
-                {
-                    "starttime": "2023-01-01T12:00:00",
-                    "resolution": (np.timedelta64(10, "ms"), 10.0),
-                    "nchunk": 10,
-                },
-            ]
-            count = 1
-            for acq in acqs:
-                for da in wavelet_wavefronts(**acq):
-                    da.to_netcdf(os.path.join(dirpath, f"{count:03d}.nc"))
-                    count += 1
-            dc = xd.open_mfdataarray(os.path.join(dirpath, "*.nc"))
-            assert len(dc) == 3
-            for da, acq in zip(dc, acqs):
-                acq |= {"nchunk": None}
-                assert da.equals(wavelet_wavefronts(**acq))
+    def test_open_mfdataarray(self, tmp_path):
+        wavelet_wavefronts().to_netcdf(tmp_path / "sample.nc")
+        for idx, da in enumerate(wavelet_wavefronts(nchunk=3), start=1):
+            da.to_netcdf(tmp_path / f"{idx:03}.nc")
+        da_monolithic = xd.open_dataarray(tmp_path / "sample.nc")
+        da_chunked = xd.open_mfdataarray(tmp_path / "00*.nc")
+        assert da_monolithic.equals(da_chunked)
+        da_chunked = xd.open_mfdataarray(
+            [tmp_path / fname for fname in ["001.nc", "002.nc", "003.nc"]]
+        )
+        assert da_monolithic.equals(da_chunked)
 
-    def test_concatenate(self):
+    with pytest.raises(FileNotFoundError):
+        xd.open_mfdataarray("not_existing_files_*.nc")
+    with pytest.raises(FileNotFoundError):
+        xd.open_mfdataarray(["not_existing_file.nc"])
+
+    def test_open_mfdataarray_grouping(self, tmp_path):
+        acqs = [
+            {
+                "starttime": "2023-01-01T00:00:00",
+                "resolution": (np.timedelta64(20, "ms"), 20.0),
+                "nchunk": 10,
+            },
+            {
+                "starttime": "2023-01-01T06:00:00",
+                "resolution": (np.timedelta64(10, "ms"), 20.0),
+                "nchunk": 10,
+            },
+            {
+                "starttime": "2023-01-01T12:00:00",
+                "resolution": (np.timedelta64(10, "ms"), 10.0),
+                "nchunk": 10,
+            },
+        ]
+        count = 1
+        for acq in acqs:
+            for da in wavelet_wavefronts(**acq):
+                da.to_netcdf(tmp_path / f"{count:03d}.nc")
+                count += 1
+        dc = xd.open_mfdataarray(tmp_path / "*.nc")
+        assert len(dc) == 3
+        for da, acq in zip(dc, acqs):
+            acq |= {"nchunk": None}
+            assert da.equals(wavelet_wavefronts(**acq))
+
+    def test_concatenate(self, tmp_path):
         # concatenate two data arrays
         da1 = wavelet_wavefronts(starttime="2023-01-01T00:00:00")
         da2 = wavelet_wavefronts(starttime="2023-01-01T00:00:06")
@@ -110,25 +100,24 @@ class TestCore:
             "distance": da1["distance"],
         }
         expected = xd.DataArray(data, coords)
-        result = xd.concatenate([da1, da2])
+        result = xd.concat([da1, da2])
         assert result.equals(expected)
         # concatenate an empty data array
-        result = xd.concatenate([da1, da2.isel(time=slice(0, 0))])
+        result = xd.concat([da1, da2.isel(time=slice(0, 0))])
         assert result.equals(da1)
         # concat of sources and stacks
-        with TemporaryDirectory() as tmp_path:
-            da1.to_netcdf(os.path.join(tmp_path, "da1.nc"))
-            da2.to_netcdf(os.path.join(tmp_path, "da2.nc"))
-            da1 = xd.open_dataarray(os.path.join(tmp_path, "da1.nc"))
-            da2 = xd.open_dataarray(os.path.join(tmp_path, "da2.nc"))
-            result = xd.concatenate([da1, da2])
-            assert isinstance(result.data, VirtualStack)
-            assert result.equals(expected)
-            da1.data = VirtualStack([da1.data])
-            da2.data = VirtualStack([da2.data])
-            result = xd.concatenate([da1, da2])
-            assert isinstance(result.data, VirtualStack)
-            assert result.equals(expected)
+        da1.to_netcdf(tmp_path / "da1.nc")
+        da2.to_netcdf(tmp_path / "da2.nc")
+        da1 = xd.open_dataarray(tmp_path / "da1.nc")
+        da2 = xd.open_dataarray(tmp_path / "da2.nc")
+        result = xd.concat([da1, da2])
+        assert isinstance(result.data, VirtualStack)
+        assert result.equals(expected)
+        da1.data = VirtualStack([da1.data])
+        da2.data = VirtualStack([da2.data])
+        result = xd.concat([da1, da2])
+        assert isinstance(result.data, VirtualStack)
+        assert result.equals(expected)
         # concat of 3D data arrays with unsorted coords:
         da1 = xd.DataArray(
             data=np.zeros((5, 4, 3)),
@@ -156,7 +145,7 @@ class TestCore:
                 "phase": ["A", "B", "C"],
             },
         )
-        assert xd.concatenate((da1, da2), dim="time").equals(expected)
+        assert xd.concat((da1, da2), dim="time").equals(expected)
         # concat dense coordinates
         da1 = xd.DataArray(
             data=np.zeros((5, 4, 3)),
@@ -185,15 +174,15 @@ class TestCore:
             },
             dims=("time", "distance", "phase"),
         )
-        assert xd.concatenate((da1, da2), dim="time").equals(expected)
+        assert xd.concat((da1, da2), dim="time").equals(expected)
         # stack
         da = wavelet_wavefronts()
         objs = [obj for obj in da]
-        result = xd.concatenate(objs, dim="time")
+        result = xd.concat(objs, dim="time")
         result["time"] = InterpCoordinate.from_array(result["time"].values)
         assert result.equals(da)
         objs = [obj.drop_coords("time") for obj in da]
-        result = xd.concatenate(objs, dim="time")
+        result = xd.concat(objs, dim="time")
         assert result.equals(da.drop_coords("time"))
 
     def test_open_dataarray(self):
@@ -223,43 +212,3 @@ class TestCore:
         da3 = xd.DataArray(np.arange(6).reshape(2, 3), {"x": [1, 2], "y": [2, 3, 4]})
         with pytest.raises(ValueError, match="differs from one data array to another"):
             xd.align(da1, da2, da3)
-
-
-class TestSplit:
-    def test_integer(self):
-        da = wavelet_wavefronts()
-        assert xd.concatenate(xd.split(da, 3)).equals(da)
-
-    def test_interp(self):
-        da = xd.DataArray(
-            np.ones(30),
-            {
-                "time": {
-                    "tie_indices": [0, 9, 10, 19, 20, 29],
-                    "tie_values": [0.0, 9.0, 20.0, 29.0, 40.0, 49.0],
-                },
-            },
-        )
-        assert xd.concatenate(xd.split(da)).equals(da)
-        assert xd.split(da, tolerance=20.0)[0].equals(da)
-
-    def test_interp_datetime(self):
-        da = xd.DataArray(
-            np.ones(30),
-            {
-                "time": {
-                    "tie_indices": [0, 9, 10, 19, 20, 29],
-                    "tie_values": [
-                        np.datetime64("2000-01-01T00:00:00"),
-                        np.datetime64("2000-01-01T00:00:09"),
-                        np.datetime64("2000-01-01T00:00:20"),
-                        np.datetime64("2000-01-01T00:00:29"),
-                        np.datetime64("2000-01-01T00:00:40"),
-                        np.datetime64("2000-01-01T00:00:49"),
-                    ],
-                },
-            },
-        )
-        assert xd.concatenate(xd.split(da)).equals(da)
-        assert xd.split(da, tolerance=np.timedelta64(20, "s"))[0].equals(da)
-        assert xd.split(da, tolerance=20.0)[0].equals(da)

@@ -433,8 +433,8 @@ class TestSampledCoordinateValueBasedIndexing:
             coord.get_indexer(0.0, method="invalid")
 
 
-class TestSampledCoordinateAppend:
-    def test_append_two_coords(self):
+class TestSampledCoordinateConcat:
+    def test_concat_two_coords(self):
         coord1 = SampledCoordinate(
             {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
         )
@@ -444,10 +444,10 @@ class TestSampledCoordinateAppend:
         expected = SampledCoordinate(
             {"tie_values": [0.0, 10.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
         )
-        result = coord1.append(coord2)
+        result = coord1.concat(coord2)
         assert result.equals(expected)
 
-    def test_append_two_datetime_coords(self):
+    def test_concat_two_datetime_coords(self):
         coord1 = SampledCoordinate(
             {
                 "tie_values": [np.datetime64("2000-01-01T00:00:00")],
@@ -472,18 +472,18 @@ class TestSampledCoordinateAppend:
                 "sampling_interval": np.timedelta64(1, "s"),
             }
         )
-        result = coord1.append(coord2)
+        result = coord1.concat(coord2)
         assert result.equals(expected)
 
-    def test_append_empty(self):
+    def test_concat_empty(self):
         coord1 = SampledCoordinate(
             {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
         )
         coord2 = SampledCoordinate()
-        assert coord1.append(coord2).equals(coord1)
-        assert coord2.append(coord1).equals(coord1)
+        assert coord1.concat(coord2).equals(coord1)
+        assert coord2.concat(coord1).equals(coord1)
 
-    def test_append_sampling_interval_mismatch(self):
+    def test_concat_sampling_interval_mismatch(self):
         coord1 = SampledCoordinate(
             {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
         )
@@ -491,9 +491,9 @@ class TestSampledCoordinateAppend:
             {"tie_values": [10.0], "tie_lengths": [2], "sampling_interval": 2.0}
         )
         with pytest.raises(ValueError):
-            coord1.append(coord2)
+            coord1.concat(coord2)
 
-    def test_append_dtype_mismatch(self):
+    def test_concat_dtype_mismatch(self):
         coord1 = SampledCoordinate(
             {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
         )
@@ -505,17 +505,17 @@ class TestSampledCoordinateAppend:
             }
         )
         with pytest.raises(ValueError):
-            coord1.append(coord2)
+            coord1.concat(coord2)
 
-    def test_append_type_mismatch(self):
+    def test_concat_type_mismatch(self):
         coord1 = SampledCoordinate(
             {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
         )
         coord2 = DenseCoordinate(np.array([10.0, 11.0]))
         with pytest.raises(TypeError):
-            coord1.append(coord2)
+            coord1.concat(coord2)
 
-    def test_append_dimension_mismatch(self):
+    def test_concat_dimension_mismatch(self):
         coord1 = SampledCoordinate(
             {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0},
             dim="time",
@@ -525,7 +525,7 @@ class TestSampledCoordinateAppend:
             dim="depth",
         )
         with pytest.raises(ValueError):
-            coord1.append(coord2)
+            coord1.concat(coord2)
 
 
 class TestSampledCoordinateDiscontinuitiesAvailabilities:
@@ -869,7 +869,7 @@ class TestSampledCoordinateToNetCDF:
 
         with tempfile.NamedTemporaryFile(suffix=".nc", delete=False) as file:
             expected.to_netcdf(file.name)
-            result = xd.open_dataarray(file.name)
+            result = xd.open(file.name)
             assert result.equals(expected)
 
 

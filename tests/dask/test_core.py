@@ -1,7 +1,3 @@
-import os
-from glob import glob
-from tempfile import TemporaryDirectory
-
 import dask
 import numpy as np
 
@@ -58,9 +54,9 @@ class TestIO:
         expected = np.random.rand(3, 10)
         chunks = np.split(expected, 5, axis=1)
         for idx, chunk in enumerate(chunks):
-            np.save(os.path.join(tmpdir, f"chunk_{idx}.npy"), chunk)
-        paths = sorted(glob(os.path.join(tmpdir, "*.npy")))
-        chunks = [dask.delayed(np.load)(path) for path in paths]
+            np.save(tmpdir / f"chunk_{idx}.npy", chunk)
+        paths = sorted(tmpdir.glob("*.npy"))
+        chunks = [dask.delayed(np.load)(str(path)) for path in paths]
         chunks = [
             dask.array.from_delayed(chunk, shape=(3, 2), dtype=expected.dtype)
             for chunk in chunks
@@ -69,18 +65,16 @@ class TestIO:
         assert np.array_equal(data.compute(), expected)
         return expected, data
 
-    def test_dict(self):
-        with TemporaryDirectory() as tmpdir:
-            expected, data = self.generate(tmpdir)
-            result = from_dict(to_dict(data))
-            assert np.array_equal(result.compute(), expected)
-            sliced = result[:, 0]
-            assert np.array_equal(sliced.compute(), expected[:, 0])
+    def test_dict(self, tmp_path):
+        expected, data = self.generate(tmp_path)
+        result = from_dict(to_dict(data))
+        assert np.array_equal(result.compute(), expected)
+        sliced = result[:, 0]
+        assert np.array_equal(sliced.compute(), expected[:, 0])
 
-    def test_serial(self):
-        with TemporaryDirectory() as tmpdir:
-            expected, data = self.generate(tmpdir)
-            result = loads(dumps(data))
-            assert np.array_equal(result.compute(), expected)
-            sliced = result[:, 0]
-            assert np.array_equal(sliced.compute(), expected[:, 0])
+    def test_serial(self, tmp_path):
+        expected, data = self.generate(tmp_path)
+        result = loads(dumps(data))
+        assert np.array_equal(result.compute(), expected)
+        sliced = result[:, 0]
+        assert np.array_equal(sliced.compute(), expected[:, 0])

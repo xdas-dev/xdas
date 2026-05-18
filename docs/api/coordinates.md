@@ -199,18 +199,18 @@ Methods
 .. autosummary::
    :toctree: ../_autosummary
 
-   SampledCoordinate.isvalid
-   SampledCoordinate.equals
-   SampledCoordinate.get_sampling_interval
-   SampledCoordinate.get_value
-   SampledCoordinate.slice_index
-   SampledCoordinate.get_indexer
-   SampledCoordinate.slice_indexer
-   SampledCoordinate.append
+   SampledCoordinate.concat
    SampledCoordinate.decimate
-   SampledCoordinate.simplify
-   SampledCoordinate.get_split_indices
+   SampledCoordinate.equals
    SampledCoordinate.from_array
-   SampledCoordinate.to_dict
    SampledCoordinate.from_block
+   SampledCoordinate.get_indexer
+   SampledCoordinate.get_sampling_interval
+   SampledCoordinate.get_split_indices
+   SampledCoordinate.get_value
+   SampledCoordinate.isvalid
+   SampledCoordinate.simplify
+   SampledCoordinate.slice_index
+   SampledCoordinate.slice_indexer
+   SampledCoordinate.to_dict
 ```

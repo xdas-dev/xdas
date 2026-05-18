@@ -1,3 +1,4 @@
+import weakref
 from copy import copy, deepcopy
 from functools import wraps
 from itertools import pairwise
@@ -42,7 +43,7 @@ class Coordinates(dict):
 
     Examples
     --------
-    >>> import xdas
+    >>> import xdas as xd
 
     >>> coords = {
     ...     "time": {"tie_indices": [0, 999], "tie_values": [0.0, 10.0]},
@@ -50,7 +51,7 @@ class Coordinates(dict):
     ...     "channel": ("distance", ["DAS01", "DAS02", "DAS03"]),
     ...     "interrogator": (None, "SRN"),
     ... }
-    >>> xdas.Coordinates(coords)
+    >>> xd.Coordinates(coords)
     Coordinates:
       * time (time): 0.000 to 10.000
       * distance (distance): [0 ... 2]
@@ -65,7 +66,6 @@ class Coordinates(dict):
                 dims = coords.dims
             coords = dict(coords)
         self._dims = () if dims is None else tuple(dims)
-        self._parent = None
         if coords is not None:
             for name in coords:
                 self[name] = coords[name]
@@ -83,7 +83,7 @@ class Coordinates(dict):
         coord = Coordinate(value)
         if coord.dim is None and not coord.isscalar():
             coord.dim = key
-        if self._parent is None:
+        if self.parent is None:
             if coord.dim is not None and coord.dim not in self.dims:
                 self._dims = self.dims + (coord.dim,)
         else:
@@ -92,13 +92,13 @@ class Coordinates(dict):
                     raise KeyError(
                         f"cannot add new dimension {coord.dim} to an existing DataArray"
                     )
-                size = self._parent.sizes[coord.dim]
+                size = self.parent.sizes[coord.dim]
                 if not len(coord) == size:
                     raise ValueError(
                         f"conflicting sizes for dimension {coord.dim}: size {len(coord)} "
                         f"in `coords` and size {size} in `data`"
                     )
-        coord._parent = self
+        coord._assign_parent(self)
         return super().__setitem__(key, coord)
 
     def __repr__(self):
@@ -114,11 +114,18 @@ class Coordinates(dict):
         return "\n".join(lines)
 
     def __reduce__(self):
-        return self.__class__, (dict(self), self.dims), {"_parent": self._parent}
+        return self.__class__, (dict(self), self.dims)
 
     @property
     def dims(self):
         return self._dims
+
+    @property
+    def parent(self):
+        if hasattr(self, "_parent"):
+            return self._parent()
+        else:
+            return None
 
     def isdim(self, name):
         return self[name].dim == name
@@ -178,9 +185,9 @@ class Coordinates(dict):
         Examples
         --------
 
-        >>> import xdas
+        >>> import xdas as xd
 
-        >>> coords = xdas.Coordinates(
+        >>> coords = xd.Coordinates(
         ...     {
         ...         "time": {"tie_indices": [0, 999], "tie_values": [0.0, 10.0]},
         ...         "distance": [0, 1, 2],
@@ -217,11 +224,7 @@ class Coordinates(dict):
         return cls(Coordinate.from_dataset(dataset, name))
 
     def copy(self, deep=True):
-        if deep:
-            func = deepcopy
-        else:
-            func = copy
-        return self.__class__({key: func(value) for key, value in self.items()})
+        return self.__class__({key: value.copy(deep) for key, value in self.items()})
 
     @wraps_first_last
     def drop_dims(self, *dims):
@@ -246,7 +249,7 @@ class Coordinates(dict):
                     f"conflicting sizes for dimension {dim}: size {len(self[dim])} "
                     f"in `coords` and size {size} in `data`"
                 )
-        self._parent = parent
+        self._parent = weakref.ref(parent)
 
 
 class Coordinate:
@@ -281,7 +284,7 @@ class Coordinate:
         return np.array2string(self.data, threshold=0, edgeitems=1)
 
     def __reduce__(self):
-        return self.__class__, (self.data, self.dim), {"_parent": self.parent}
+        return self.__class__, (self.data, self.dim)
 
     def __add__(self, other):
         return self.__class__(self.data + other, self.dim)
@@ -327,13 +330,19 @@ class Coordinate:
 
     @property
     def parent(self):
-        return getattr(self, "_parent", None)
+        if hasattr(self, "_parent"):
+            return self._parent()
+        else:
+            return None
 
     @property
     def name(self):
         if self.parent is None:
             return self.dim
         return next((name for name in self.parent if self.parent[name] is self), None)
+
+    def _assign_parent(self, parent):
+        self._parent = weakref.ref(parent)
 
     def get_sampling_interval(self, cast=True):
         if len(self) < 2:
@@ -344,13 +353,28 @@ class Coordinate:
             delta = delta / np.timedelta64(1, "s")
         return delta
 
+    def is_monotonic_increasing(self):
+        if np.issubdtype(self.dtype, np.datetime64):
+            zero = np.timedelta64(0)
+        else:
+            zero = 0
+        return np.all(np.diff(self.values) > zero)
+
     def isdim(self):
         if self.parent is None or self.name is None:
             return None
         else:
             return self.parent.isdim(self.name)
 
-    def equals(self, other): ...
+    def copy(self, deep=True):
+        if deep:
+            func = deepcopy
+        else:
+            func = copy
+        return self.__class__(func(self.data), func(self.dim), func(self.dtype))
+
+    def equals(self, other):
+        raise NotImplementedError
 
     def to_index(self, item, method=None, endpoint=True):
         if isinstance(item, slice):
@@ -411,10 +435,13 @@ class Coordinate:
     def issampled(self):
         return False
 
-    def append(self, other):
-        raise NotImplementedError(f"append is not implemented for {self.__class__}")
+    def concat(self, other):
+        raise NotImplementedError(f"concat is not implemented for {self.__class__}")
 
-    def get_split_indices(self, tolerance=None):
+    def simplify(self, tolerance=None):
+        raise NotImplementedError(f"simplify is not implemented for {self.__class__}")
+
+    def get_split_indices(self, kind="discontinuities", tolerance=False):
         raise NotImplementedError(
             f"get_split_indices is not implemented for {self.__class__}"
         )
@@ -453,7 +480,7 @@ class Coordinate:
                     "type",
                 ]
             )
-        indices = self.get_split_indices(tolerance)
+        indices = self.get_split_indices("discontinuities", tolerance)
         records = []
         for index in indices:
             start_index = index
@@ -593,7 +620,7 @@ def parse(data, dim=None):
 def parse_tolerance(tolerance, dtype):
     if np.issubdtype(dtype, np.datetime64):
         if tolerance is None:
-            tolerance = np.timedelta64(0, "ns")
+            tolerance = np.timedelta64(0)
         elif isinstance(tolerance, (int, float)):
             tolerance = np.timedelta64(round(tolerance * 1e9), "ns")
     else:
@@ -629,9 +656,9 @@ def isscalar(data):
     return (data.dtype != np.dtype(object)) and (data.ndim == 0)
 
 
-def is_strictly_increasing(x):
+def is_monotonic_increasing(x):
     if np.issubdtype(x.dtype, np.datetime64):
-        return np.all(np.diff(x) > np.timedelta64(0, "ns"))
+        return np.all(np.diff(x) > np.timedelta64(0))
     else:
         return np.all(np.diff(x) > 0)
 

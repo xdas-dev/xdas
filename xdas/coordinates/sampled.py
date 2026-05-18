@@ -5,7 +5,7 @@ import numpy as np
 from .core import (
     Coordinate,
     format_datetime,
-    is_strictly_increasing,
+    is_monotonic_increasing,
     parse,
     parse_tolerance,
 )
@@ -83,7 +83,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
                 raise ValueError("`tie_lengths` must be strictly positive integers")
 
             # sampling_interval
-            if not np.isscalar(sampling_interval):
+            if not np.ndim(sampling_interval) == 0:
                 raise ValueError("`sampling_interval` must be a scalar value")
             sampling_interval = np.asarray(sampling_interval)[()]  # ensure numpy scalar
             if np.issubdtype(tie_values.dtype, np.datetime64):
@@ -294,7 +294,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
             value = np.datetime64(value)
         else:
             value = np.asarray(value)
-        if not is_strictly_increasing(
+        if not is_monotonic_increasing(
             self.tie_values
         ):  # TODO: make it work even in this case
             raise ValueError("tie_values must be strictly increasing")
@@ -360,20 +360,20 @@ class SampledCoordinate(Coordinate, name="sampled"):
                 offset = np.maximum(offset, 0)
         return self.tie_indices[reference] + offset
 
-    def append(self, other):
+    def concat(self, other):
         if not isinstance(other, self.__class__):
-            raise TypeError(f"cannot append {type(other)} to {self.__class__}")
+            raise TypeError(f"cannot concatenate {type(other)} to {self.__class__}")
         if not self.dim == other.dim:
-            raise ValueError("cannot append coordinate with different dimension")
+            raise ValueError("cannot concatenate coordinate with different dimension")
         if self.empty:
             return other
         if other.empty:
             return self
         if not self.dtype == other.dtype:
-            raise ValueError("cannot append coordinate with different dtype")
+            raise ValueError("cannot concatenate coordinate with different dtype")
         if not self.sampling_interval == other.sampling_interval:
             raise ValueError(
-                "cannot append coordinate with different sampling intervals"
+                "cannot concatenate coordinate with different sampling intervals"
             )
         tie_values = np.concatenate([self.tie_values, other.tie_values])
         tie_lengths = np.concatenate([self.tie_lengths, other.tie_lengths])
@@ -390,6 +390,8 @@ class SampledCoordinate(Coordinate, name="sampled"):
         return self[::q]
 
     def simplify(self, tolerance=None):
+        if tolerance is False:
+            return self  # TODO: copy
         tolerance = parse_tolerance(tolerance, self.dtype)
         tie_values = [self.tie_values[0]]
         tie_lengths = [self.tie_lengths[0]]
@@ -409,7 +411,43 @@ class SampledCoordinate(Coordinate, name="sampled"):
             self.dim,
         )
 
-    def get_split_indices(self, tolerance=None):
+    def get_split_indices(self, kind="discontinuities", tolerance=False):
+        valid_kinds = {"discontinuities", "gaps", "overlaps"}
+        if kind not in valid_kinds:
+            raise ValueError(f"`kind` must be one of {valid_kinds}; got {kind!r}")
+
+        indices = self.tie_indices[1:]
+
+        # Fast path: no filtering requested
+        if kind == "discontinuities" and tolerance is False:
+            return indices
+
+        deltas = self.tie_values[1:] - (
+            self.tie_values[:-1] + self.sampling_interval * self.tie_lengths[:-1]
+        )
+
+        if tolerance is False:
+            zero = np.timedelta64(0) if np.issubdtype(self.dtype, np.datetime64) else 0
+
+            match kind:
+                case "gaps":
+                    mask = deltas >= zero
+                case "overlaps":
+                    mask = deltas < zero
+
+        else:
+            tolerance = parse_tolerance(tolerance, self.dtype)
+
+            match kind:
+                case "discontinuities":
+                    mask = np.abs(deltas) > tolerance
+                case "gaps":
+                    mask = deltas > tolerance
+                case "overlaps":
+                    mask = deltas < -tolerance
+
+        return indices[mask]
+
         indices = self.tie_indices[1:]
         if tolerance is not None:
             tolerance = parse_tolerance(tolerance, self.dtype)

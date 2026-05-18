@@ -1,5 +1,6 @@
 import os
 from fnmatch import fnmatch
+from pathlib import Path
 
 import h5py
 
@@ -25,10 +26,10 @@ class DataCollection:
 
     Examples
     --------
-    >>> import xdas
+    >>> import xdas as xd
     >>> from xdas.synthetics import wavelet_wavefronts
     >>> da = wavelet_wavefronts()
-    >>> dc = xdas.DataCollection(
+    >>> dc = xd.DataCollection(
     ...     {
     ...         "das1": ("acquisition", [da, da]),
     ...         "das2": ("acquisition", [da, da, da]),
@@ -88,10 +89,10 @@ class DataCollection:
 
         Examples
         --------
-        >>> import xdas
+        >>> import xdas as xd
         >>> from xdas.synthetics import wavelet_wavefronts
         >>> da = wavelet_wavefronts()
-        >>> dc = xdas.DataCollection(
+        >>> dc = xd.DataCollection(
         ...     {
         ...         "das1": ("acquisition", [da, da]),
         ...         "das2": ("acquisition", [da, da, da]),
@@ -172,6 +173,8 @@ class DataCollection:
             The opened data collection.
 
         """
+        if isinstance(fname, Path):
+            fname = str(fname)
         self = DataMapping.from_netcdf(fname, group)
         try:
             keys = [int(key) for key in self.keys()]
@@ -240,43 +243,15 @@ class DataMapping(DataCollection, dict):
         encoding=None,
         create_dirs=False,
     ):
-        if mode == "w" and group is None and os.path.exists(fname):
-            os.remove(fname)
-        for key in self:
-            name = self.name if self.name is not None else "collection"
-            location = "/".join([name, str(key)])
-            if group is not None:
-                location = "/".join([group, location])
-            if create_dirs:
-                dirname = os.path.dirname(fname)
-                if dirname:
-                    os.makedirs(dirname, exist_ok=True)
-            self[key].to_netcdf(
-                fname,
-                mode="a",
-                group=location,
-                virtual=virtual,
-                encoding=encoding,
-            )
+        from ..io.xdas import save_datamapping
+
+        save_datamapping(self, fname, mode, group, virtual, encoding, create_dirs)
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
-        with h5py.File(fname, "r") as file:
-            if group is None:
-                group = file[list(file.keys())[0]]
-            else:
-                group = file[group]
-            name = group.name.split("/")[-1]
-            keys = list(group.keys())
-            self = cls({}, name=None if name == "collection" else name)
-            for key in keys:
-                subgroup = group[key]
-                if get_depth(subgroup) == 0:
-                    self[key] = DataArray.from_netcdf(fname, subgroup.name)
-                else:
-                    subgroup = subgroup[list(subgroup.keys())[0]]
-                    self[key] = DataCollection.from_netcdf(fname, subgroup.name)
-        return self
+        from ..io.xdas import open_datamapping
+
+        return open_datamapping(fname, group)
 
     def equals(self, other):
         if not isinstance(other, self.__class__):

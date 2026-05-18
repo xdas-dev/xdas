@@ -1,4 +1,4 @@
-__version__ = "0.2.5"
+__version__ = "0.2.6"
 
 from . import (
     atoms,
@@ -33,7 +33,10 @@ from .core.routines import (
     broadcast_to,
     combine_by_coords,
     combine_by_field,
+    concat,
+    concat_coords,
     concatenate,
+    open,
     open_dataarray,
     open_datacollection,
     open_mfdataarray,

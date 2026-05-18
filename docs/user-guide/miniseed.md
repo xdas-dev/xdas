@@ -71,7 +71,7 @@ This part encourages experimenting with seismic data. Depending on the most comm
 
 We will start by exploring a synthetic dataset composed of 7 stations, each with 3 channels (HHZ, HHN, HHE). Each trace for each station and channel is stored in multiple one-minute-long files. Some files are missing, resulting in data gaps. The sampling rate is 100 Hz. The data is organized in a directory structure that groups files by station.
 
-To open the dataset, we will use the `open_mfdatatree` function. This function takes a pattern that describes the directory structure and file names. The pattern is a string containing placeholders for the network, station, location, channel, start time, and end time. Placeholders for named fields are enclosed in curly braces, while simple brackets are used for varying parts of the file name that will be concatenated into different acquisitions (meant for changes in acquisition parameters).
+To open the dataset, we will provide a pattern that describes the directory structure and file names to the `xdas.open` function. The pattern is a string containing placeholders for the network, station, location, channel, start time, and end time. Placeholders for named fields are enclosed in curly braces, while simple brackets are used for varying parts of the file name that will be concatenated into different acquisitions (meant for changes in acquisition parameters).
 
 Next, we will plot the availability of the dataset.
 
@@ -81,7 +81,7 @@ Next, we will plot the availability of the dataset.
 import xdas as xd
 
 pattern = "NX/{station}/NX.{station}.00.{channel}__[acquisition].mseed"
-dc = xd.open_mfdatatree(pattern, engine="miniseed")
+dc = xd.open(pattern, engine="miniseed")
 xd.plot_availability(dc, dim="time")
 ```
 ```{code-cell}

@@ -26,7 +26,7 @@ Other important attributes are:
 - `name`: the name of the array to specify the quantity stored (e.g., `"velocity"`).
 - `attribute`: a dictionary containing metadata. Note that *xdas* does not use those metadata. It tries to keep as much as possible the information stored there as the `DataArray` is manipulated but it is up to the user to update information there if needed.
 
-In the following examples, we use only one `DataArray`, if you have several `DataArray`s, please use the multi-file version of the opening function: {py:func}`~xdas.open_mfdataarray`. You will just have to adapt the paths argument.
+In the following examples, we use only one `DataArray`, if you have several `DataArray`s, you will just have to adapt the paths argument.
 
 ## Creating a DataArray
 
@@ -35,14 +35,14 @@ The user can wrap together an n-dimensional array and some related coordinates. 
 
 ```{code-cell}
 import numpy as np
-import xdas
+import xdas as xd
 
 data = np.zeros((6000, 1000))
 starttime = np.datetime64("2023-01-01T00:00:00")
 endtime = starttime + np.timedelta64(10, "ms") * (data.shape[0] - 1)
 distance = 5.0 * np.arange(data.shape[1])
 
-da = xdas.DataArray(
+da = xd.DataArray(
     data=data,
     coords={
         "time": {
@@ -65,12 +65,12 @@ da.to_netcdf("dataarray.nc", virtual=None)  # try to write virtual, here it's im
 
 ## Reading a DataArray from disk
 
-Xdas can read several DAS file format with {py:func}`~xdas.open_dataarray` along with its own format. Xdas uses the netCDF4 format with CF conventions. By default Xdas assumes that files are Xdas NetCDF format. If not the case the `engine` argument must be passed.
+Xdas can read several DAS file format with {py:func}`~xdas.open` along with its own format. Xdas uses the netCDF4 format with CF conventions. By default Xdas assumes that files are Xdas NetCDF format. If not the case the `engine` argument must be passed.
 
 To learn how to read your custom DAS data format with *xdas*, please see the chapter on [](../data-formats.md).
 
 ```{code-cell}
-da = xdas.open_dataarray("dataarray.nc", engine=None)  # by default Xdas NetCDF
+da = xd.open("dataarray.nc", engine=None)  # by default Xdas NetCDF
 da
 ```
 
@@ -92,7 +92,7 @@ da.to_netcdf("chunked_and_compressed.nc", virtual=False, encoding=encoding)
 Reading compressed data is completely transparent, you do not need to specify anything.
 
 ```{code-cell}
-xdas.open_dataarray("chunked_and_compressed.nc")
+xd.open("chunked_and_compressed.nc")
 ```
 
 Note that the indicated data size is the uncompressed data size.

@@ -30,17 +30,16 @@ def wavelet_wavefronts(
     --------
 
     >>> import os
-    >>> import xdas
+    >>> import xdas as xd
     >>> from xdas.synthetics import wavelet_wavefronts
     >>> from tempfile import TemporaryDirectory
 
     >>> with TemporaryDirectory() as dirpath:
-    ...     os.chdir(dirpath)
-    ...     wavelet_wavefronts().to_netcdf("sample.nc")
+    ...     wavelet_wavefronts().to_netcdf(os.path.join(dirpath, "sample.nc"))
     ...     for idx, da in enumerate(wavelet_wavefronts(nchunk=3), start=1):
-    ...         da.to_netcdf(f"{idx:03}.nc")
-    ...     da_monolithic = xdas.open_dataarray("sample.nc")
-    ...     da_chunked = xdas.open_mfdataarray("00*.nc")
+    ...         da.to_netcdf(os.path.join(dirpath, f"{idx:03}.nc"))
+    ...     da_monolithic = xd.open(os.path.join(dirpath, "sample.nc"))
+    ...     da_chunked = xd.open(os.path.join(dirpath, "00*.nc"))
     ...     da_monolithic.equals(da_chunked)
     True
 
