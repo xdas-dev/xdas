@@ -264,13 +264,22 @@ class Coordinate:
         return cls._registry[item]
 
     def __new__(cls, data=None, dim=None, dtype=None):
-        if data is None:
-            raise TypeError("cannot infer coordinate type if no `data` is provided")
-        data, dim = parse(data, dim)
-        for subcls in cls.__subclasses__():
-            if subcls.isvalid(data):
-                return object.__new__(subcls)
-        raise TypeError("could not parse `data`")
+        # class factory if instantiating Coordinate directly
+        if cls is Coordinate:
+            if data is None:
+                raise TypeError("cannot infer coordinate type if no `data` is provided")
+
+            data, dim = parse(data, dim)
+
+            for subcls in Coordinate._registry.values():
+                if subcls.isvalid(data):
+                    cls = subcls
+                    break
+            else:
+                raise TypeError("could not parse `data`")
+
+        # normal allocation
+        return super().__new__(cls)
 
     def __getitem__(self, item):
         data = self.data.__getitem__(item)

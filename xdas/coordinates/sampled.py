@@ -35,9 +35,6 @@ class SampledCoordinate(Coordinate, name="sampled"):
         The data type of the coordinate, by default None.
     """
 
-    def __new__(cls, *args, **kwargs):
-        return object.__new__(cls)
-
     def __init__(self, data=None, dim=None, dtype=None):
         # empty
         if data is None:

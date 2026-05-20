@@ -5,9 +5,6 @@ from .core import Coordinate, parse
 
 
 class DenseCoordinate(Coordinate, name="dense"):
-    def __new__(cls, *args, **kwargs):
-        return object.__new__(cls)
-
     def __init__(self, data=None, dim=None, dtype=None):
         # empty
         if data is None:

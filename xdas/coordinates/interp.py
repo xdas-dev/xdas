@@ -31,9 +31,6 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         selection. The len of `tie_indices` and `tie_values` sizes must match.
     """
 
-    def __new__(cls, *args, **kwargs):
-        return object.__new__(cls)
-
     def __init__(self, data=None, dim=None, dtype=None):
         # empty
         if data is None:
