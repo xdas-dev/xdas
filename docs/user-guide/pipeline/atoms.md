@@ -9,7 +9,7 @@ kernelspec:
 
 import os
 import xdas as xd
-os.chdir("../_data")
+os.chdir("../../_data")
 ```
 
 # Composing a processing sequence
@@ -84,4 +84,3 @@ class MyStatefulRoutine(Atom):
     # Apply routine to DataArray ``da``
     ...
 ```
-
