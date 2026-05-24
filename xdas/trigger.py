@@ -395,7 +395,7 @@ def _concat(list_of_coord):  # TODO: make it a public function/method
     idx = 0
     dim = list_of_coord[0].dim
     for coord in list_of_coord:
-        if not coord.isinterp:
+        if not coord.isinterp():
             raise ValueError("Only interpolated coordinates can be concatenated.")
         if not coord.dim == dim:
             raise ValueError("All coordinates must have the same dimension.")
@@ -552,7 +552,7 @@ def _find_picks_numeric(cft, thresh, axis=-1, buffer=None, offset=None):
     "Tuple((i8[:], i8[:], f8[:]))(f8[:, :], f8, f8, b1[:], i8[:], f8[:], i8)",
     cache=True,
 )
-def _trigger(
+def _trigger(  # pragma: no cover
     cft, thresh_on, thresh_off, buffer_status, buffer_index, buffer_value, offset
 ):
     """

@@ -166,7 +166,7 @@ def concatenate(arrays, axis=0, out=None, dtype=None, n_workers=None):
     if out is None:
         out = np.empty(shape, dtype=dtype)
     else:
-        if not (out.ndim == ndim and out.dtype == dtype, out.shape == shape):
+        if not (out.ndim == ndim and out.dtype == dtype and out.shape == shape):
             raise ValueError("`out` does not match with provided arrays.")
 
     div_points = np.cumsum([0] + section_sizes, dtype=int)

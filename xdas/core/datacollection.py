@@ -63,7 +63,7 @@ class DataCollection:
             return dict.__new__(DataMapping)
         elif isinstance(data, DataArray):
             if name is not None:
-                data.rename(name)
+                data = data.rename(name)
             return data
         else:
             return DataArray(data, name=name)
@@ -470,7 +470,7 @@ class DataSequence(DataCollection, list):
     @classmethod
     def from_netcdf(cls, fname, group=None):
         """Lazily read a :class:`DataSequence` from a NetCDF file."""
-        return DataMapping.from_netcdf(fname, group).from_mapping()
+        return cls.from_mapping(DataMapping.from_netcdf(fname, group))
 
     def equals(self, other):
         """Return ``True`` if *other* is a :class:`DataSequence` with identical elements."""

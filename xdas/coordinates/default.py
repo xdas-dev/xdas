@@ -123,5 +123,5 @@ class DefaultCoordinate(Coordinate, name="default"):
         return self.__class__({"size": len(self) + len(other)}, self.dim)
 
     def to_dict(self):
-        """Serialise to ``{"dim": ..., "data": ..., "dtype": ...}``."""
-        return {"dim": self.dim, "data": self.data.tolist(), "dtype": str(self.dtype)}
+        """Serialise to ``{"dim": ..., "data": ...}``."""
+        return {"dim": self.dim, "data": self.data}

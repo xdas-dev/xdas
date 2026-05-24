@@ -1,8 +1,9 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 import xdas as xd
-from xdas.trigger import Trigger, _find_picks_numeric, find_picks
+from xdas.trigger import Trigger, _concat, _find_picks_numeric, find_picks
 
 
 def test_trigger():
@@ -164,3 +165,41 @@ def test_find_picks():
         result.append(atom(chunk, chunk_dim="time"))
     result = pd.concat(result, ignore_index=True)
     assert result.equals(expected)
+
+
+def test_trigger_1d():
+    """1D input (no spatial dimension) covers the coords=() branch in _call_numeric."""
+    cft = xd.DataArray(
+        data=[0.0, 0.1, 0.9, 0.8, 0.2, 0.1, 0.6, 0.7, 0.3, 0.2],
+        coords={
+            "time": {"tie_indices": [0, 9], "tie_values": [0.0, 9.0]},
+        },
+    )
+    picks = Trigger(thresh=0.5, dim="time")(cft)
+    assert len(picks) == 2
+    assert list(picks["time"]) == [2.0, 7.0]
+
+
+def test_concat_non_interp_coord():
+    """_concat raises ValueError for non-interpolated coordinates."""
+    from xdas.coordinates.sampled import SampledCoordinate
+    coord1 = xd.Coordinate(
+        {"tie_indices": [0, 2], "tie_values": [10, 30]}, dim="dim"
+    )
+    coord_bad = SampledCoordinate(
+        {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}, "dim"
+    )
+    with pytest.raises(ValueError, match="interpolated"):
+        _concat([coord1, coord_bad])
+
+
+def test_concat_different_dims():
+    """_concat raises ValueError when coords have different dims."""
+    coord1 = xd.Coordinate(
+        {"tie_indices": [0, 2], "tie_values": [10, 30]}, dim="dim1"
+    )
+    coord2 = xd.Coordinate(
+        {"tie_indices": [0, 2], "tie_values": [40, 60]}, dim="dim2"
+    )
+    with pytest.raises(ValueError, match="same dimension"):
+        _concat([coord1, coord2])

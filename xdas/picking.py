@@ -118,7 +118,7 @@ def tapered_selection(da, start, end, window=None, size=None, dim="last"):
 
 
 @njit(parallel=True, cache=True)
-def _tapered_selection(data, sel, start, stop, size, window):
+def _tapered_selection(data, sel, start, stop, size, window):  # pragma: no cover
     out = np.zeros((sel.size, size), dtype=data.dtype)
     w = window.size // 2
     for i in prange(sel.size):
