@@ -60,5 +60,17 @@ tests = [
 profile = "black"
 
 [tool.pytest.ini_options]
-addopts = ["--doctest-modules", "--import-mode=importlib"]
+addopts = ["--doctest-modules", "--import-mode=importlib", "--cov=xdas", "--cov-report=term-missing"]
 doctest_optionflags = "NORMALIZE_WHITESPACE"
+markers = ["slow: marks tests as slow (run with --slow)"]
+
+[tool.coverage.run]
+source = ["xdas"]
+branch = true 
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_also = [
+    "raise NotImplementedError",
+]
