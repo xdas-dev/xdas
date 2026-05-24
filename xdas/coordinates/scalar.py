@@ -3,7 +3,7 @@ import numpy as np
 from .core import Coordinate, parse
 
 
-class ScalarCoordinate(Coordinate):
+class ScalarCoordinate(Coordinate, name="scalar"):
     def __init__(self, data=None, dim=None, dtype=None):
         if data is None:
             raise TypeError("scalar coordinate cannot be empty, please provide a value")
