@@ -27,6 +27,10 @@ def detrend(da, type="linear", dim="last", parallel=None):
         Either "linear" or "constant".
     dim : str
         The dimension along which to detrend the data.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
@@ -60,6 +64,10 @@ def taper(da, window="hann", fftbins=False, dim="last", parallel=None):
         Whether to use a periodic windowing, by default False
     dim : str, optional
         Dimension along which to taper, by default "last"
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
@@ -97,6 +105,10 @@ def filter(da, freq, btype, corners=4, zerophase=False, dim="last", parallel=Non
         the resulting filtered trace.
     dim: str, optional
         The dimension along which to filter.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
@@ -131,9 +143,10 @@ def hilbert(da, N=None, dim="last", parallel=None):
         Number of Fourier components. Default: `da.sizes[dim]`.
     dim: str, optional
         The dimension along which to transform. Default: last.
-    parallel: bool or int, optional
-        Whether to parallelize the function, if True all cores are used,
-        if False single core, if int: number of cores.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
@@ -194,6 +207,10 @@ def resample(da, num, dim="last", window=None, domain="time", parallel=None):
     domain: string, optional
         A string indicating the domain of the input x: `time` Consider the input da as
         time-domain (Default), `freq` Consider the input da as frequency-domain.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
@@ -284,6 +301,10 @@ def resample_poly(
         respectively of the array along the dimension.
     cval : float, optional
         Value to use if `padtype='constant'`. Default is zero.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Notes
     -----
@@ -365,9 +386,11 @@ def lfilter(b, a, da, dim="last", zi=None, parallel=None):
     zi : array_like or str, optional
         Initial conditions for the filter delays. If `zi` is None or ... then
         initial rest is assumed.
-    parallel: bool or int, optional
-        Whether to parallelize the function, if true: all cores are used, if false:
-        single core, if int: n cores are used.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
+
     Returns
     -------
     da : DataArray
@@ -477,6 +500,10 @@ def filtfilt(
         impulse response of the filter.  If `irlen` is None, no part
         of the impulse response is ignored.  For a long signal, specifying
         `irlen` can significantly improve the performance of the filter.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Notes
     -----
@@ -544,6 +571,10 @@ def sosfilt(sos, da, dim="last", zi=None, parallel=None):
         ``..., 2, ...`` denotes the shape of `da`, but with ``da.sizes[dim]``
         replaced by 2.  If `zi` is None,... , or is not given then initial rest
         (i.e. all zeros) is assumed.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
@@ -625,7 +656,7 @@ def sosfiltfilt(sos, da, dim="last", padtype="odd", padlen=None, parallel=None):
     padlen : int or None, optional
         The number of elements by which to extend `da` at both ends of
         `dim` before applying the filter.  This value must be less than
-        ``da.sizes[do,] - 1``.  ``padlen=0`` implies no padding.
+        ``da.sizes[dim] - 1``.  ``padlen=0`` implies no padding.
         The default value is::
 
             3 * (2 * len(sos) + 1 - min((sos[:, 2] == 0).sum(),
@@ -635,6 +666,10 @@ def sosfiltfilt(sos, da, dim="last", padtype="odd", padlen=None, parallel=None):
         and zeros at the origin (e.g. for odd-order filters) to yield
         equivalent estimates of `padlen` to those of `filtfilt` for
         second-order section filters built with `scipy.signal` functions.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
@@ -703,6 +738,10 @@ def decimate(da, q, n=None, ftype="iir", zero_phase=True, dim="last", parallel=N
         when using an IIR filter, and shifting the outputs back by the filter's
         group delay when using an FIR filter. The default value of ``True`` is
         recommended, since a phase shift is generally not desired.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
@@ -739,6 +778,10 @@ def integrate(da, midpoints=False, dim="last", parallel=None):
         Whether to move the coordinates by half a step, by default False.
     dim : str, optional
         The dimension along which to integrate, by default "last".
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
@@ -775,6 +818,10 @@ def differentiate(da, midpoints=False, dim="last", parallel=None):
         Whether to move the coordinates by half a step, by default False.
     dim : str, optional
         The dimension along which to differentiate, by default "last".
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
@@ -851,6 +898,10 @@ def sliding_mean_removal(
         Padding mode used, by default "reflect"
     dim : str, optional
         The dimension along which to remove the sliding mean, by default "last"
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
