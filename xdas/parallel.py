@@ -128,6 +128,9 @@ def concatenate(arrays, axis=0, out=None, dtype=None, n_workers=None):
     dtype: str or numpy.dtype
         If provided, the destination array will have this dtype. Cannot be provided
         together with out.
+    n_workers : int or None, optional
+        Number of threads to use for writing chunks. None defers to the global
+        xdas configuration. Default is None.
 
     Returns
     -------
