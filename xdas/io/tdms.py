@@ -31,6 +31,7 @@ import pandas as pd
 
 
 def load_property_map(xls_file):
+    """Load a tag-renaming map from the ``Sheet1`` of an Excel file."""
     prop_map = pd.read_excel(xls_file, sheetname="Sheet1")
     return (
         prop_map[["CurrentTag", "CorrectTag"]]
@@ -44,6 +45,7 @@ def load_property_map(xls_file):
 
 
 def write_property_dict(prop_dict, out_file):
+    """Write *prop_dict* as a Python-literal assignment to *out_file*."""
     from pprint import pformat
 
     f = open(out_file, "w")

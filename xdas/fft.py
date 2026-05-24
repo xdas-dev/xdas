@@ -1,3 +1,8 @@
+"""
+FFT functions that preserve :class:`DataArray` coordinates: :func:`fft`,
+:func:`ifft`, :func:`rfft`, :func:`irfft`, :func:`fftfreq`, :func:`rfftfreq`.
+"""
+
 import numpy as np
 
 from .atoms.core import atomized

@@ -1,3 +1,8 @@
+"""
+msgpack-based serialization for dask task graphs, handling tuples, slices,
+callables, ``methodcaller``, and ``itemgetter`` objects.
+"""
+
 import importlib
 
 import msgpack
@@ -13,6 +18,21 @@ codes = {
 
 
 def encode(obj):
+    """
+    msgpack *default* hook — encode non-native types as :class:`msgpack.ExtType`.
+
+    Handles ``tuple``, ``slice``, ``callable``, :class:`methodcaller`, and
+    :class:`itemgetter`.
+
+    Parameters
+    ----------
+    obj : object
+        Object to encode.
+
+    Returns
+    -------
+    msgpack.ExtType
+    """
     if isinstance(obj, tuple):
         code = codes["tuple"]
         obj = list(obj)
@@ -35,6 +55,21 @@ def encode(obj):
 
 
 def decode(code, data):
+    """
+    msgpack *ext_hook* — decode an :class:`msgpack.ExtType` back to the original object.
+
+    Parameters
+    ----------
+    code : int
+        Extension type code (one of the values in :data:`codes`).
+    data : bytes
+        Raw msgpack bytes for the payload.
+
+    Returns
+    -------
+    object
+        The decoded Python object.
+    """
     obj = loads(data)
     if code == codes["tuple"]:
         return tuple(obj)
@@ -51,8 +86,10 @@ def decode(code, data):
 
 
 def dumps(obj):
+    """Serialize *obj* to msgpack bytes, encoding extension types via :func:`encode`."""
     return msgpack.dumps(obj, default=encode, strict_types=True)
 
 
 def loads(obj):
+    """Deserialize msgpack *obj* bytes, restoring extension types via :func:`decode`."""
     return msgpack.loads(obj, strict_map_key=False, ext_hook=decode)

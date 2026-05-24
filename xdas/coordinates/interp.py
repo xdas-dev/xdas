@@ -1,3 +1,8 @@
+"""
+:class:`InterpCoordinate`: piecewise-linear coordinate defined by tie points,
+using ``xinterp`` for forward and inverse interpolation.
+"""
+
 import re
 
 import numpy as np
@@ -76,30 +81,37 @@ class InterpCoordinate(Coordinate, name="interpolated"):
 
     @property
     def tie_indices(self):
+        """Integer array of tie-point positions (starts at 0, strictly increasing)."""
         return self.data["tie_indices"]
 
     @property
     def tie_values(self):
+        """Array of tie-point values (numeric or datetime64, strictly increasing)."""
         return self.data["tie_values"]
 
     @property
     def dtype(self):
+        """Dtype of the tie values (and of all materialised coordinate values)."""
         return self.tie_values.dtype
 
     @property
     def empty(self):
+        """``True`` if no tie points have been set."""
         return self.tie_indices.shape == (0,)
 
     @property
     def ndim(self):
+        """Always 1."""
         return self.tie_values.ndim
 
     @property
     def shape(self):
+        """Shape tuple ``(len(self),)``."""
         return (len(self),)
 
     @property
     def indices(self):
+        """Full integer index array from 0 to the last tie-point index (inclusive)."""
         if self.empty:
             return np.array([], dtype="int")
         else:
@@ -107,6 +119,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
 
     @property
     def values(self):
+        """Materialised numpy array of all coordinate values via piecewise interpolation."""
         if self.empty:
             return np.array([], dtype=self.dtype)
         else:
@@ -114,6 +127,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
 
     @staticmethod
     def isvalid(data):
+        """Return ``True`` if *data* is a dict with ``tie_indices`` and ``tie_values`` keys."""
         match data:
             case {"tie_indices": _, "tie_values": _}:
                 return True
@@ -174,9 +188,23 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         raise NotImplementedError
 
     def isinterp(self):
+        """Return ``True`` (this is an :class:`InterpCoordinate`)."""
         return True
 
     def get_sampling_interval(self, cast=True):
+        """
+        Return the median sample spacing across all tie-point segments.
+
+        Parameters
+        ----------
+        cast : bool, optional
+            If ``True`` (default), cast timedelta64 to seconds.
+
+        Returns
+        -------
+        float or None
+            ``None`` if fewer than two elements.
+        """
         if len(self) < 2:
             return None
         num = np.diff(self.tie_values)
@@ -190,6 +218,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         return delta
 
     def equals(self, other):
+        """Return ``True`` if *other* has identical tie points, dim, and dtype."""
         return (
             np.array_equal(self.tie_indices, other.tie_indices)
             and np.array_equal(self.tie_values, other.tie_values)
@@ -198,10 +227,12 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         )
 
     def get_value(self, index):
+        """Interpolate coordinate values at integer position(s) *index*."""
         index = self.format_index(index)
         return forward(index, self.tie_indices, self.tie_values)
 
     def slice_index(self, index_slice):
+        """Return a new :class:`InterpCoordinate` for the integer slice *index_slice*."""
         start_index, stop_index, step_index = index_slice.indices(len(self))
         if step_index < 0:
             raise NotImplementedError("negative slice step is not implemented")
@@ -236,6 +267,20 @@ class InterpCoordinate(Coordinate, name="interpolated"):
             return coord
 
     def get_indexer(self, value, method=None):
+        """
+        Return the integer index for a label *value* via inverse interpolation.
+
+        Parameters
+        ----------
+        value : scalar, str (ISO datetime), or array-like
+            Label(s) to locate.
+        method : str, optional
+            Forwarded to ``xinterp.inverse`` (e.g. ``"ffill"``, ``"bfill"``).
+
+        Returns
+        -------
+        int or numpy.ndarray
+        """
         if isinstance(value, str):
             value = np.datetime64(value)
         else:
@@ -256,6 +301,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         return indexer
 
     def concat(self, other):
+        """Append *other* :class:`InterpCoordinate` after this one, shifting its tie indices."""
         if not isinstance(other, self.__class__):
             raise TypeError(f"cannot concatenate {type(other)} to {self.__class__}")
         if not self.dim == other.dim:
@@ -278,6 +324,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         return coord
 
     def decimate(self, q):
+        """Return a new coordinate keeping every *q*-th sample (integer decimation)."""
         tie_indices = (self.tie_indices // q) * q
         for k in range(1, len(tie_indices) - 1):
             if tie_indices[k] == tie_indices[k - 1]:
@@ -289,6 +336,15 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         )
 
     def simplify(self, tolerance=None):
+        """
+        Reduce the number of tie points using the Douglas-Peucker algorithm.
+
+        Parameters
+        ----------
+        tolerance : float, timedelta, or None
+            Maximum allowed deviation from the original piecewise-linear curve.
+            ``None`` uses zero tolerance (lossless).  ``False`` returns ``self`` unchanged.
+        """
         if tolerance is False:
             return self  # TODO: copy
         tolerance = parse_tolerance(tolerance, self.dtype)
@@ -300,6 +356,22 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         )
 
     def get_split_indices(self, kind="discontinuities", tolerance=False):
+        """
+        Return tie-point indices where consecutive segments are discontinuous.
+
+        Parameters
+        ----------
+        kind : {"discontinuities", "gaps", "overlaps"}, optional
+            Which type of split to detect. Default ``"discontinuities"``.
+        tolerance : float, timedelta, or ``False``
+            Minimum magnitude of gap/overlap to report.  ``False`` returns all
+            consecutive tie-point pairs regardless of size.
+
+        Returns
+        -------
+        numpy.ndarray
+            Integer positions (into the full coordinate array) of each split.
+        """
         valid_kinds = {"discontinuities", "gaps", "overlaps"}
         if kind not in valid_kinds:
             raise ValueError(f"`kind` must be one of {valid_kinds}; got {kind!r}")
@@ -340,11 +412,13 @@ class InterpCoordinate(Coordinate, name="interpolated"):
 
     @classmethod
     def from_array(cls, arr, dim=None, tolerance=None):
+        """Build an :class:`InterpCoordinate` from a full array *arr*, optionally simplified."""
         return cls(
             {"tie_indices": np.arange(len(arr)), "tie_values": arr}, dim
         ).simplify(tolerance)
 
     def to_dict(self):
+        """Serialise to ``{"dim": ..., "data": {"tie_indices": ..., "tie_values": ...}, "dtype": ...}``."""
         tie_indices = self.data["tie_indices"]
         tie_values = self.data["tie_values"]
         if np.issubdtype(tie_values.dtype, np.datetime64):
@@ -356,6 +430,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
 
     def to_dataset(self, dataset, attrs):
+        """Write tie points into an xarray *dataset* using CF coordinate interpolation conventions."""
         mapping = f"{self.name}: {self.name}_indices {self.name}_values"
         if "coordinate_interpolation" in attrs:
             attrs["coordinate_interpolation"] += " " + mapping
@@ -382,6 +457,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
 
     @classmethod
     def from_dataset(cls, dataset, name):
+        """Read interpolated coordinates from *dataset* using the ``coordinate_interpolation`` attribute."""
         coords = {}
         mapping = dataset[name].attrs.pop("coordinate_interpolation", None)
         if mapping is not None:
@@ -394,6 +470,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
 
     @classmethod
     def from_block(cls, start, size, step, dim=None, dtype=None):
+        """Build a two-point :class:`InterpCoordinate` covering [start, start + step*(size-1)]."""
         return cls(
             {
                 "tie_indices": [0, size - 1],
@@ -404,6 +481,26 @@ class InterpCoordinate(Coordinate, name="interpolated"):
 
 
 def douglas_peucker(x, y, epsilon):
+    """
+    Reduce the piecewise-linear curve *(x, y)* using the Douglas-Peucker algorithm.
+
+    Points are dropped when they deviate less than *epsilon* from the simplified
+    line connecting their neighbours.
+
+    Parameters
+    ----------
+    x : numpy.ndarray
+        Monotonically increasing sample positions (tie indices).
+    y : numpy.ndarray
+        Corresponding coordinate values (tie values).
+    epsilon : float or numpy.timedelta64
+        Maximum allowed deviation to retain a point.
+
+    Returns
+    -------
+    x_simplified : numpy.ndarray
+    y_simplified : numpy.ndarray
+    """
     mask = np.ones(len(x), dtype=bool)
     stack = [(0, len(x))]
     while stack:

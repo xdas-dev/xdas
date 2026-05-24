@@ -1,3 +1,9 @@
+"""
+Top-level routines for opening, concatenating, aligning, and splitting
+:class:`DataArray` and :class:`DataCollection` objects, including
+multi-file helpers (``open_mfdataarray``, ``open_mfdatacollection``).
+"""
+
 import os
 import re
 import warnings
@@ -829,6 +835,14 @@ class CompatibilityError(Exception):
 
 
 class Bag:
+    """
+    Accumulator that collects :class:`DataArray` objects for concatenation along *dim*.
+
+    Compatibility checks (dims, shape, coords, sampling interval, dtype) are run on
+    each appended object; incompatible objects raise :exc:`CompatibilityError` so the
+    caller can start a new bag.
+    """
+
     def __init__(self, dim):
         self.objs = []
         self.dim = dim
@@ -837,6 +851,7 @@ class Bag:
         return iter(self.objs)
 
     def initialize(self, da):
+        """Set *da* as the first element and record its shape, coords, sampling interval, and dtype."""
         self.objs = [da]
         self.dims = da.dims
         self.subshape = tuple(
@@ -854,6 +869,7 @@ class Bag:
         self.dtype = da.dtype
 
     def append(self, da):
+        """Add *da* after running all compatibility checks; initialises on first call."""
         if not self.objs:
             self.initialize(da)
         else:
@@ -865,19 +881,23 @@ class Bag:
             self.objs.append(da)
 
     def check_dims(self, da):
+        """Raise :exc:`CompatibilityError` if *da* has different dimensions."""
         if not self.dims == da.dims:
             raise CompatibilityError("dimensions are not compatible")
 
     def check_shape(self, da):
+        """Raise :exc:`CompatibilityError` if *da* has a different non-concat shape."""
         subshape = tuple(size for dim, size in da.sizes.items() if not dim == self.dim)
         if not self.subshape == subshape:
             raise CompatibilityError("shapes are not compatible")
 
     def check_dtype(self, da):
+        """Raise :exc:`CompatibilityError` if *da* has a different dtype."""
         if not self.dtype == da.dtype:
             raise CompatibilityError("data types are not compatible")
 
     def check_coords(self, da):
+        """Raise :exc:`CompatibilityError` if *da* has incompatible non-concat coordinates."""
         subcoords = (
             da.coords.drop_dims(self.dim)
             if self.dim in self.dims
@@ -887,6 +907,7 @@ class Bag:
             raise CompatibilityError("coordinates are not compatible")
 
     def check_sampling_interval(self, da):
+        """Raise :exc:`CompatibilityError` if *da* has a different sampling interval."""
         if self.delta is None:
             pass
         else:

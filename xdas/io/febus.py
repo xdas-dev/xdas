@@ -1,3 +1,7 @@
+"""
+I/O engine for Febus HDF5 files (:class:`FebusEngine`).
+"""
+
 import warnings
 
 import h5py
@@ -11,6 +15,8 @@ from .core import Engine
 
 
 class FebusEngine(Engine, name="febus"):
+    """Engine for reading Febus HDF5 files."""
+
     _supported_vtypes = ["hdf5"]
     _supported_ctypes = {
         "time": ["interpolated", "sampled", "dense"],

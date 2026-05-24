@@ -1,3 +1,9 @@
+"""
+Core processing infrastructure: :class:`DataArrayLoader`, :class:`DataArrayWriter`,
+:class:`DataFrameWriter`, :class:`StreamWriter`, :class:`ZMQPublisher`,
+:class:`ZMQSubscriber`, :class:`RealTimeLoader`, and the :func:`process` function.
+"""
+
 import os
 from concurrent.futures import ThreadPoolExecutor
 from glob import glob
@@ -166,10 +172,22 @@ class DataArrayLoader:
 
     @property
     def nbytes(self):
+        """Total bytes of the underlying :class:`DataArray`."""
         return self.da.nbytes
 
 
 class RealTimeLoader(Observer):
+    """
+    Real-time :class:`DataArray` loader that watches a directory for new files.
+
+    Parameters
+    ----------
+    path : str or Path
+        Directory to watch.
+    engine : str, optional
+        Engine used to open arriving files.  Defaults to ``"netcdf"``.
+    """
+
     def __init__(self, path, engine="netcdf"):
         super().__init__()
         self.path = str(path) if isinstance(path, Path) else path
@@ -190,11 +208,14 @@ class RealTimeLoader(Observer):
 
 
 class Handler(FileSystemEventHandler):
+    """Watchdog event handler that loads closed files into a queue."""
+
     def __init__(self, queue, engine):
         self.engine = engine
         self.queue = queue
 
     def on_closed(self, event):
+        """Load the newly-closed file and place it in the queue."""
         da = open_dataarray(event.src_path, engine=self.engine)
         self.queue.put(da.load())
 
@@ -251,6 +272,14 @@ class DataArrayWriter:
         self._count = 0
 
     def submit(self, chunk):
+        """
+        Asynchronously write *chunk* to disk and register the path for later concat.
+
+        Parameters
+        ----------
+        chunk : DataArray
+            Processed data chunk to persist.
+        """
         if not isinstance(chunk, DataArray):
             raise TypeError(f"`chunk` must by a DataArray object, not a {type(chunk)}")
         if not len(self._futures) < self.max_buffers:
@@ -261,6 +290,7 @@ class DataArrayWriter:
         self._count += 1
 
     def write(self, chunk):
+        """Alias for :meth:`submit`."""
         return self.submit(chunk)
 
     def _write(self, chunk, count):
@@ -269,9 +299,11 @@ class DataArrayWriter:
         return open_dataarray(path)
 
     def shutdown(self):
+        """Shut down the internal thread pool."""
         self._executor.shutdown()
 
     def result(self):
+        """Flush all pending writes and return the concatenated :class:`DataArray`."""
         while self._futures:
             future = self._futures.pop(0)
             result = future.result()
@@ -321,6 +353,14 @@ class DataFrameWriter:
         self._future = None
 
     def submit(self, df):
+        """
+        Asynchronously append *df* to the CSV file.
+
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            DataFrame chunk to write.
+        """
         if not isinstance(df, pd.DataFrame):
             raise TypeError(f"`df` must by a DataFrame object, not a {type(df)}")
         if self._future is not None:
@@ -328,6 +368,7 @@ class DataFrameWriter:
         self._future = self._executor.submit(self._write, df)
 
     def write(self, df):
+        """Alias for :meth:`submit`."""
         return self.submit(df)
 
     def _write(self, df):
@@ -338,9 +379,11 @@ class DataFrameWriter:
                 df.to_csv(self.path, mode="a", header=False, index=False)
 
     def shutdown(self):
+        """Shut down the internal thread pool."""
         self._executor.shutdown()
 
     def result(self):
+        """Flush pending writes and return the full CSV as a :class:`pandas.DataFrame`."""
         self._future.result()
         self.shutdown()
         try:
@@ -493,6 +536,14 @@ class StreamWriter:
         new_st.write(os.path.join(self.dirpath, self.fname), **self.kw_write)
 
     def submit(self, st):
+        """
+        Asynchronously write *st* to a temporary MiniSEED file.
+
+        Parameters
+        ----------
+        st : obspy.Stream
+            Stream chunk to persist.
+        """
         if not isinstance(st, obspy.Stream):
             raise TypeError(f"`st` must by a DataFrame object, not a {type(st)}")
         if self._future is not None:
@@ -500,15 +551,18 @@ class StreamWriter:
         self._future = self._executor.submit(self._write, st)
 
     def write(self, st):
+        """Alias for :meth:`submit`."""
         return self.submit(st)
 
     def _write(self, st):
         st.write(f"{self.dirpath}/{st[0].stats.starttime}_tmp.mseed", **self.kw_write)
 
     def shutdown(self):
+        """Shut down the internal thread pool."""
         self._executor.shutdown()
 
     def result(self):
+        """Merge all temporary MiniSEED files and write the final output."""
         self._future.result()
         self.shutdown()
         pattern = f"{self.dirpath}/*_tmp.mseed"
@@ -586,9 +640,11 @@ class ZMQPublisher:
         self._socket.send(tobytes(da, self.encoding))
 
     def write(self, da):
+        """Alias for :meth:`submit`."""
         self.submit(da)
 
     def result():
+        """Return ``None`` — ZMQPublisher has no aggregated result."""
         return None
 
 
@@ -657,6 +713,20 @@ class ZMQSubscriber:
 
 
 def tobytes(da, encoding=None):
+    """
+    Serialise *da* to raw NetCDF4 bytes via a temporary file.
+
+    Parameters
+    ----------
+    da : DataArray
+        DataArray to serialise.
+    encoding : dict, optional
+        HDF5/NetCDF4 encoding options forwarded to :meth:`DataArray.to_netcdf`.
+
+    Returns
+    -------
+    bytes
+    """
     with TemporaryDirectory() as tmpdir:
         path = os.path.join(tmpdir, "tmp.nc")
         da.to_netcdf(path, virtual=False, encoding=encoding)
@@ -665,6 +735,18 @@ def tobytes(da, encoding=None):
 
 
 def frombuffer(da):
+    """
+    Deserialise raw NetCDF4 *da* bytes into a loaded :class:`DataArray`.
+
+    Parameters
+    ----------
+    da : bytes
+        Raw bytes as produced by :func:`tobytes`.
+
+    Returns
+    -------
+    DataArray
+    """
     with TemporaryDirectory() as tmpdir:
         path = os.path.join(tmpdir, "tmp.nc")
         with open(path, "wb") as file:

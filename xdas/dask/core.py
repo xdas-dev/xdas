@@ -1,3 +1,8 @@
+"""
+Functions to store and restore dask arrays as HDF5 variables using msgpack
+serialization of the dask task graph.
+"""
+
 import numpy as np
 from dask.array import Array
 
@@ -5,6 +10,27 @@ from . import serial
 
 
 def create_variable(arr, file, name, dims=None, dtype=None):
+    """
+    Serialize *arr* and store it as an HDF5 variable attribute.
+
+    Parameters
+    ----------
+    arr : dask.array.Array
+        Dask array to persist.
+    file : netCDF4-like file handle
+        Open file in which to create the variable.
+    name : str
+        Variable name inside the file.
+    dims : sequence of str, optional
+        Dimension names for the variable.
+    dtype : dtype-like, optional
+        Data type for the variable.
+
+    Returns
+    -------
+    variable
+        The newly created file variable.
+    """
     variable = file.create_variable(name, dims, dtype)
     variable.attrs.update({"__dask_array__": np.frombuffer(dumps(arr), "uint8")})
     return variable
@@ -52,6 +78,7 @@ def fuse(graph):
 
 
 def iskey(obj):
+    """Return ``True`` if *obj* looks like a dask graph key (string or ``(str, int…)`` tuple)."""
     if isinstance(obj, str) and len(obj) > 0:
         return True
     elif (

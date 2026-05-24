@@ -1,3 +1,8 @@
+"""
+Plugin base class :class:`Engine` for file format handlers, plus
+:class:`AutoEngine` for format auto-detection and :func:`get_free_port`.
+"""
+
 import socket
 
 
@@ -86,15 +91,19 @@ class Engine:
             raise KeyError(f"Item '{item}' not found in registry or aliases")
 
     def open_dataarray(self, fname, **kwargs):
+        """Open *fname* and return a :class:`DataArray` (abstract)."""
         raise NotImplementedError
 
     def save_dataarray(self, da, fname, **kwargs):
+        """Write *da* to *fname* (abstract)."""
         raise NotImplementedError
 
     def open_datacollection(self, fname, **kwargs):
+        """Open *fname* and return a :class:`DataCollection` (abstract)."""
         raise NotImplementedError
 
     def save_datacollection(self, dc, fname, **kwargs):
+        """Write *dc* to *fname* (abstract)."""
         raise NotImplementedError
 
     def _parse_vtype(self, vtype):
@@ -187,6 +196,7 @@ class AutoEngine(Engine):
     _last_successful_engine = "xdas"
 
     def open_dataarray(self, fname, **kwargs):
+        """Try each registered engine in order and return the first successful result."""
         for engine in self._ordered_engines():
             try:
                 out = Engine[engine](vtype=self.vtype, ctype=self.ctype).open_dataarray(

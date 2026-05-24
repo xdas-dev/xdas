@@ -1,3 +1,8 @@
+"""
+Phase-pick utilities: tapered selection and cross-correlation based
+picking of onset times in :class:`DataArray` objects.
+"""
+
 import numpy as np
 from numba import njit, prange
 from scipy.fft import next_fast_len

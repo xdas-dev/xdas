@@ -1,3 +1,8 @@
+"""
+Registration helpers and implementations for :class:`DataArray` instance
+methods dispatched through ``HANDLED_METHODS``.
+"""
+
 import numpy as np
 
 from ..atoms.core import atomized
@@ -5,7 +10,17 @@ from .dataarray import HANDLED_METHODS
 
 
 def implements(name=None):
+    """
+    Register *func* in ``HANDLED_METHODS`` so it becomes available as a :class:`DataArray` method.
+
+    Parameters
+    ----------
+    name : str, optional
+        Method name to register under.  Defaults to ``func.__name__``.
+    """
+
     def decorator(func):
+        """Register *func* under *key* and return it unchanged."""
         key = name if name is not None else func.__name__
         HANDLED_METHODS[key] = func
         return func

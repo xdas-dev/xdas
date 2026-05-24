@@ -1,3 +1,8 @@
+"""
+HDF5 utility functions for compressing datasets while preserving file
+structure and metadata.
+"""
+
 import h5py
 import hdf5plugin
 

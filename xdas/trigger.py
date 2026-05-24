@@ -1,3 +1,8 @@
+"""
+Threshold-based triggering atom :class:`Trigger` for detecting phase
+arrivals in :class:`DataArray` objects using an on/off mechanism.
+"""
+
 import numpy as np
 import pandas as pd
 from numba import njit

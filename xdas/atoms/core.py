@@ -1,3 +1,8 @@
+"""
+Base classes for stateful processing atoms: :class:`Atom`, :class:`State`,
+:class:`Sequential`, :class:`Partial`, and the :func:`atomized` decorator.
+"""
+
 import importlib
 from collections.abc import Callable
 from functools import wraps
@@ -129,12 +134,14 @@ class Atom:
 
     @property
     def state(self):
+        """Dict of the current state, including nested atom states."""
         return self._state | {
             name: filter.state for name, filter in self._atoms.items() if filter.state
         }
 
     @property
     def initialized(self):
+        """``True`` if every state key has been initialised (no ``...`` sentinels remain)."""
         return all(value is not ... for value in self._state.values())
 
     def initialize(self, x, **flags): ...
@@ -153,15 +160,25 @@ class Atom:
         return y
 
     def reset(self):
+        """Reset all state entries to ``...`` (uninitialised sentinel)."""
         for key in self._state:
             setattr(self, key, State(...))
         for _, filter in self._atoms.items():
             filter.reset()
 
     def save_state(self, path):
+        """Serialise the current state to a NetCDF4 file at *path*."""
         DataCollection(self.state).to_netcdf(path)
 
     def set_state(self, state):
+        """
+        Restore the atom state from a previously saved state dict.
+
+        Parameters
+        ----------
+        state : dict
+            Mapping of state key → value as returned by :attr:`state`.
+        """
         for key, value in state.items():
             if isinstance(value, DataArray):
                 setattr(
@@ -173,6 +190,7 @@ class Atom:
                 filter.set_state(value)
 
     def load_state(self, path):
+        """Load the atom state from the NetCDF4 file at *path*."""
         state = open_datacollection(path).load()
         self.set_state(state)
 
@@ -266,6 +284,7 @@ class Sequential(Atom, list):
         self.name = name
 
     def call(self, x: Any, **flags) -> Any:
+        """Pass *x* through each atom in order and return the final result."""
         for atom in self:
             x = atom(x, **flags)
         return x
@@ -374,9 +393,11 @@ class Partial(Atom):
 
     @property
     def stateful(self):
+        """``True`` if any keyword argument is being passed as state."""
         return bool(self._state)
 
     def call(self, x: Any, **flags) -> Any:
+        """Call the wrapped function with *x* substituted at the ``...`` position."""
         args = tuple(x if arg is ... else arg for arg in self.args)
         kwargs = self.kwargs | self._state
         if self.stateful:
@@ -410,12 +431,14 @@ class Partial(Atom):
 
     @classmethod
     def from_state(cls, state):
+        """Reconstruct a :class:`Partial` from a serialised *state* dict."""
         func = getattr(
             importlib.import_module(state["func"]["module"]), state["func"]["name"]
         )
         return cls(func, *state["args"], name=state["name"], **state["kwargs"])
 
     def get_state(self):
+        """Return a JSON-serialisable dict describing the wrapped function and args."""
         return {
             "func": {"module": self.func.__module__, "name": self.func.__name__},
             "args": self.args,
@@ -493,6 +516,7 @@ def atomized(func):
 
     @wraps(func)
     def wrapper(*args, **kwargs):
+        """Dispatch to Partial/Sequential when ``...`` or an Atom is passed, else call directly."""
         if any(arg is ... for arg in args):
             return Partial(func, *args, **kwargs)
         elif objs := tuple(arg for arg in args if isinstance(arg, Atom)):

@@ -1,3 +1,7 @@
+"""
+I/O engine for APSensing HDF5 files (:class:`APSensingEngine`).
+"""
+
 import h5py
 import numpy as np
 
@@ -8,6 +12,8 @@ from .core import Engine
 
 
 class APSensingEngine(Engine, name="apsensing"):
+    """Engine for reading APSensing HDF5 files."""
+
     _supported_vtypes = ["hdf5"]
     _supported_ctypes = {
         "time": ["interpolated", "sampled", "dense"],
@@ -15,6 +21,7 @@ class APSensingEngine(Engine, name="apsensing"):
     }
 
     def open_dataarray(self, fname):
+        """Read an APSensing HDF5 file *fname* and return a virtual :class:`DataArray`."""
         with h5py.File(fname, "r") as file:
             t0 = file["Metadata"]["Timestamp"][()].item().decode()
             fs = file["ProcessingServer"]["DataRate"][()].item()

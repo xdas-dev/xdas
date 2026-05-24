@@ -1,3 +1,8 @@
+"""
+Spectral analysis functions for :class:`DataArray`: Short-Time Fourier
+Transform (:func:`stft`) and related helpers.
+"""
+
 import numpy as np
 from scipy.fft import fft, fftfreq, fftshift, rfft, rfftfreq
 from scipy.signal import get_window
@@ -91,6 +96,7 @@ def stft(
     freqs = {"tie_indices": [0, len(freqs) - 1], "tie_values": [freqs[0], freqs[-1]]}
 
     def func(x):
+        """Apply windowed FFT to produce the STFT output array."""
         if nperseg == 1 and noverlap == 0:
             result = x[..., np.newaxis]
         else:

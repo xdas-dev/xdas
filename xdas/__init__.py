@@ -1,3 +1,11 @@
+"""
+Xdas — labeled N-dimensional array library for Distributed Acoustic Sensing data.
+
+Provides :class:`DataArray` with lazy multi-file HDF5/NetCDF4 access, coordinate
+types for physical axes, multi-threaded signal processing pipelines, and I/O engines
+for common DAS instrument formats.
+"""
+
 __version__ = "0.2.6"
 
 from . import (

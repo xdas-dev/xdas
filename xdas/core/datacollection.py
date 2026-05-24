@@ -1,3 +1,8 @@
+"""
+:class:`DataCollection`, :class:`DataSequence`, and :class:`DataMapping`:
+nested tree structures for grouping multiple :class:`DataArray` objects.
+"""
+
 import os
 from fnmatch import fnmatch
 from pathlib import Path
@@ -65,6 +70,7 @@ class DataCollection:
 
     @property
     def empty(self):
+        """``True`` if the collection contains no elements."""
         return len(self) == 0
 
     def query(self, indexers=None, **indexers_kwargs):
@@ -150,9 +156,11 @@ class DataCollection:
             return self
 
     def issequence(self):
+        """Return ``True`` if this is a :class:`DataSequence`."""
         return isinstance(self, DataSequence)
 
     def ismapping(self):
+        """Return ``True`` if this is a :class:`DataMapping`."""
         return isinstance(self, DataMapping)
 
     @classmethod
@@ -229,6 +237,7 @@ class DataMapping(DataCollection, dict):
 
     @property
     def fields(self):
+        """Ordered, deduplicated tuple of node names at this level and its immediate children."""
         out = (self.name,) + tuple(
             value.name for value in self.values() if isinstance(value, DataCollection)
         )
@@ -243,17 +252,20 @@ class DataMapping(DataCollection, dict):
         encoding=None,
         create_dirs=False,
     ):
+        """Write this :class:`DataMapping` to a NetCDF file (see :func:`~xdas.io.xdas.save_datamapping`)."""
         from ..io.xdas import save_datamapping
 
         save_datamapping(self, fname, mode, group, virtual, encoding, create_dirs)
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
+        """Lazily read a :class:`DataMapping` from a NetCDF file (see :func:`~xdas.io.xdas.open_datamapping`)."""
         from ..io.xdas import open_datamapping
 
         return open_datamapping(fname, group)
 
     def equals(self, other):
+        """Return ``True`` if *other* is a :class:`DataMapping` with identical keys and values."""
         if not isinstance(other, self.__class__):
             return False
         if not self.name == other.name:
@@ -416,16 +428,19 @@ class DataSequence(DataCollection, list):
 
     @property
     def fields(self):
+        """Ordered, deduplicated tuple of node names at this level and its immediate children."""
         out = (self.name,) + tuple(
             value.name for value in self if isinstance(value, DataCollection)
         )
         return uniquifiy(out)
 
     def to_mapping(self):
+        """Convert to an integer-keyed :class:`DataMapping`."""
         return DataMapping({key: value for key, value in enumerate(self)}, self.name)
 
     @classmethod
     def from_mapping(cls, data):
+        """Build a :class:`DataSequence` from the values of a :class:`DataMapping`."""
         return cls(data.values(), data.name)
 
     def to_netcdf(
@@ -437,6 +452,7 @@ class DataSequence(DataCollection, list):
         encoding=None,
         create_dirs=False,
     ):
+        """Write this :class:`DataSequence` to a NetCDF file by converting to a mapping first."""
         self.to_mapping().to_netcdf(
             fname,
             mode=mode,
@@ -448,9 +464,11 @@ class DataSequence(DataCollection, list):
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
+        """Lazily read a :class:`DataSequence` from a NetCDF file."""
         return DataMapping.from_netcdf(fname, group).from_mapping()
 
     def equals(self, other):
+        """Return ``True`` if *other* is a :class:`DataSequence` with identical elements."""
         if not isinstance(other, self.__class__):
             return False
         if not self.name == other.name:
@@ -582,6 +600,12 @@ class DataSequence(DataCollection, list):
 
 
 def parse(data, name=None):
+    """
+    Normalise *(data, name)* inputs accepted by :class:`DataCollection` constructors.
+
+    Unpacks ``(name, data)`` tuples and propagates the name from an existing
+    :class:`DataCollection` when no explicit name is given.
+    """
     if isinstance(data, tuple):
         if name is None:
             name, data = data
@@ -593,6 +617,7 @@ def parse(data, name=None):
 
 
 def get_depth(group):
+    """Return the maximum nesting depth of an HDF5 *group* by counting ``"/"`` separators."""
     if not isinstance(group, h5py.Group):
         raise ValueError("not a group")
     depths = []
@@ -601,5 +626,6 @@ def get_depth(group):
 
 
 def uniquifiy(seq):
+    """Return a deduplicated tuple of *seq* elements in their original order."""
     seen = set()
     return tuple(x for x in seq if x not in seen and not seen.add(x))

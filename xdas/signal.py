@@ -1,3 +1,9 @@
+"""
+Signal processing functions for :class:`DataArray`: filtering, resampling,
+tapering, detrending, and spectral helpers, all coordinate-aware and
+multi-threaded via :func:`~xdas.parallel.parallelize`.
+"""
+
 import numpy as np
 import scipy.signal as sp
 

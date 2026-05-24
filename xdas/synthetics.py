@@ -1,3 +1,8 @@
+"""
+Synthetic DAS data generators used in doctests and test fixtures:
+:func:`wavelet_wavefronts` and :func:`randn_wavefronts`.
+"""
+
 import numpy as np
 import scipy.signal as sp
 
@@ -97,6 +102,18 @@ def wavelet_wavefronts(
 
 
 def randn_wavefronts():
+    """
+    Generate a large random-noise synthetic DAS :class:`DataArray`.
+
+    Returns a 200 s × 100 km array (10 Hz temporal, 100 m spatial sampling)
+    with step-onset noise bursts simulating P- and S-wave arrivals from a
+    single source located 20 km off-axis.
+
+    Returns
+    -------
+    DataArray
+        Synthetic DAS data with ``time`` and ``distance`` coordinates.
+    """
     # ensure reporducibility
     np.random.seed(42)
 
@@ -143,6 +160,20 @@ def randn_wavefronts():
 
 
 def dummy(shape=(1000, 100)):
+    """
+    Return a minimal random :class:`DataArray` for quick testing.
+
+    Parameters
+    ----------
+    shape : tuple of int, optional
+        ``(n_time, n_distance)`` shape.  Defaults to ``(1000, 100)``.
+
+    Returns
+    -------
+    DataArray
+        DataArray filled with Gaussian noise, sampled at 10 Hz over
+        ``[0, 1000]`` m with ``time`` starting at 2024-01-01.
+    """
     starttime = np.datetime64("2024-01-01T00:00:00.000000000")
     endtime = starttime + (shape[0] - 1) * np.timedelta64(100, "ms")
     time = {"tie_indices": [0, shape[0] - 1], "tie_values": [starttime, endtime]}

@@ -1,3 +1,8 @@
+"""
+I/O engine for ASN HDF5 files (:class:`ASNEngine`) and a ZMQ-based
+real-time subscriber (:class:`ZMQSubscriber`) for live ASN streams.
+"""
+
 import json
 from bisect import bisect_left, bisect_right
 
@@ -12,6 +17,8 @@ from .core import Engine
 
 
 class ASNEngine(Engine, name="asn"):
+    """Engine for reading ASN HDF5 files."""
+
     _supported_vtypes = ["hdf5"]
     _supported_ctypes = {
         "time": ["interpolated", "sampled", "dense"],
@@ -19,6 +26,7 @@ class ASNEngine(Engine, name="asn"):
     }
 
     def open_dataarray(self, fname):
+        """Read an ASN HDF5 file *fname* and return a virtual :class:`DataArray`."""
         with h5py.File(fname, "r") as file:
             header = file["header"]
             demod = file["demodSpec"]
@@ -82,6 +90,15 @@ type_map = {
 
 
 class ZMQSubscriber:
+    """
+    Iterator that pulls :class:`DataArray` chunks from a live ASN ZMQ publisher.
+
+    Parameters
+    ----------
+    address : str
+        ZMQ address of the publisher (e.g. ``"tcp://localhost:5555"``).
+    """
+
     def __init__(self, address):
         """
         Initializes a ZMQStream object.
@@ -213,17 +230,21 @@ class ZMQPublisher:
 
     @property
     def header(self):
+        """The last welcome-message header dict sent to new subscribers."""
         return self._header
 
     @header.setter
     def header(self, header):
+        """Set the welcome-message header and push it to the ZMQ socket option."""
         self._header = header
         self.socket.setsockopt(zmq.XPUB_WELCOME_MSG, json.dumps(header).encode("utf-8"))
 
     def submit(self, da):
+        """Publish *da* over ZMQ."""
         self._send(da)
 
     def write(self, da):
+        """Alias for :meth:`submit`."""
         self._send(da)
 
     def _connect(self, address):
