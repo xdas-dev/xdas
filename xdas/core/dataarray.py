@@ -626,7 +626,7 @@ class DataArray(NDArrayOperatorsMixin):
           * y (y): [0 1]
 
         Assign a new empy coordinate z as dimensional coordinate.
-        Use the **kwargs syntax this time:
+        Use the ``**kwargs`` syntax this time:
 
         >>> da.swap_dims(x="z")
         <xdas.DataArray (z: 2)>
