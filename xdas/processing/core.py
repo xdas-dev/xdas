@@ -321,7 +321,7 @@ class DataFrameWriter:
     path : str
         The path to the csv file.
     parse_dates : bool, int, optional
-        Weather to parse dates when reopening the csv file a the end of the process
+        Whether to parse dates when reopening the csv file at the end of the process
     create_dirs : bool, optional
         Whether to create parent directories if they do not exist. Default is False.
 

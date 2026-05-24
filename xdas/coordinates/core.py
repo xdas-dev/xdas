@@ -840,12 +840,12 @@ def get_sampling_interval(da, dim, cast=True):
 
     Parameters
     ----------
-    da : DataArray or DataArray or DataArray
+    da : DataArray
         The data from which extract the sample spacing.
     dim : str
         The dimension along which get the sample spacing.
     cast: bool, optional
-        Wether to cast datetime64 to seconds, by default True.
+        Whether to cast datetime64 to seconds, by default True.
 
     Returns
     -------

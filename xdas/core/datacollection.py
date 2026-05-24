@@ -280,7 +280,7 @@ class DataMapping(DataCollection, dict):
         """
         Perform index selection to each data array of the data collection.
 
-        If a selection results in a empty data array, the data array is discarted.
+        If a selection results in a empty data array, the data array is discarded.
 
         See `DataArray.isel` for more details.
 
@@ -312,7 +312,7 @@ class DataMapping(DataCollection, dict):
         """
         Perform labeled selection to each data array of the data collection.
 
-        If a selection results in a empty data array, the data array is discarted.
+        If a selection results in a empty data array, the data array is discarded.
 
         See DataArray.sel for more details.
 
@@ -321,13 +321,18 @@ class DataMapping(DataCollection, dict):
         indexers : dict, optional
             A dict with keys matching dimensions and values given by scalars, slices or
             arrays of tick labels.
+        method : str, optional
+            Method to use for inexact matches. None (default) means only exact matches.
+        endpoint : bool, optional
+            Whether to include the endpoint of a slice. Default is True.
         **indexers_kwargs : dict, optional
             The keyword arguments form of integers. Overwrite indexers input if both
             are provided.
 
         Returns
         -------
-        The selected data collection.
+        DataCollection
+            The selected data collection.
 
         """
         data = {
@@ -483,7 +488,7 @@ class DataSequence(DataCollection, list):
         """
         Perform index selection to each data array of the data collection.
 
-        If a selection results in a empty data array, the data array is discarted.
+        If a selection results in a empty data array, the data array is discarded.
 
         See `DataArray.isel` for more details.
 
@@ -513,7 +518,7 @@ class DataSequence(DataCollection, list):
         """
         Perform labeled selection to each data array of the data collection.
 
-        If a selection results in a empty data array, the data array is discarted.
+        If a selection results in a empty data array, the data array is discarded.
 
         See DataArray.sel for more details.
 
@@ -522,13 +527,18 @@ class DataSequence(DataCollection, list):
         indexers : dict, optional
             A dict with keys matching dimensions and values given by scalars, slices or
             arrays of tick labels.
+        method : str, optional
+            Method to use for inexact matches. None (default) means only exact matches.
+        endpoint : bool, optional
+            Whether to include the endpoint of a slice. Default is True.
         **indexers_kwargs : dict, optional
             The keyword arguments form of integers. Overwrite indexers input if both
             are provided.
 
         Returns
         -------
-        The selected data collection.
+        DataCollection
+            The selected data collection.
 
         """
         data = [

@@ -21,7 +21,7 @@ def detrend(da, type="linear", dim="last", parallel=None):
 
     Parameters
     ----------
-    da : DataArray or DataArray
+    da : DataArray
         The data to detrend.
     type : str
         Either "linear" or "constant".
@@ -30,7 +30,7 @@ def detrend(da, type="linear", dim="last", parallel=None):
 
     Returns
     -------
-    DataArray or DataArray
+    DataArray
         The detrended data.
 
     Notes
@@ -52,18 +52,18 @@ def taper(da, window="hann", fftbins=False, dim="last", parallel=None):
 
     Parameters
     ----------
-    da : DataArray or DataArray
+    da : DataArray
         The data to taper.
     window : str or tuple, optional
         The window to use, by default "hann"
     fftbins : bool, optional
-        Weather to use a periodic windowing, by default False
+        Whether to use a periodic windowing, by default False
     dim : str, optional
-        Dimension along the which to taper, by default "time"
+        Dimension along which to taper, by default "last"
 
     Returns
     -------
-    DataArray or DataArray
+    DataArray
         The tapered data.
     """
     axis = da.get_axis_num(dim)
@@ -268,7 +268,7 @@ def resample_poly(
         The upsampling factor.
     down : int
         The downsampling factor.
-    dim : int, optional
+    dim : str, optional
         The dimension of `da` that is resampled. Default is last.
     window : string, tuple, or array_like, optional
         Desired window to use to design the low-pass filter, or the FIR filter
@@ -453,7 +453,7 @@ def filtfilt(
         is not 1, then both `a` and `b` are normalized by ``a[0]``.
     da : DataArray
         The array of data to be filtered.
-    dim : srt, optional
+    dim : str, optional
         The dimension of `da` to which the filter is applied.
         Default is last.
     padtype : str or None, optional
@@ -684,7 +684,7 @@ def decimate(da, q, n=None, ftype="iir", zero_phase=True, dim="last", parallel=N
 
     Parameters
     ----------
-    da : DataArray or DataArray
+    da : DataArray
         The signal to be downsampled, as an N-dimensional dataarray.
     q : int
         The downsampling factor. When using IIR downsampling, it is recommended
@@ -706,7 +706,7 @@ def decimate(da, q, n=None, ftype="iir", zero_phase=True, dim="last", parallel=N
 
     Returns
     -------
-    DataArray or DataArray
+    DataArray
         The down-sampled signal.
 
     Notes
@@ -733,16 +733,16 @@ def integrate(da, midpoints=False, dim="last", parallel=None):
 
     Parameters
     ----------
-    da : DataArray or DataArray
+    da : DataArray
         The data to integrate.
     midpoints : bool, optional
         Whether to move the coordinates by half a step, by default False.
     dim : str, optional
-        The dimension along which to integrate, by default "distance".
+        The dimension along which to integrate, by default "last".
 
     Returns
     -------
-    DataArray or DataArray
+    DataArray
         The integrated data.
 
     Notes
@@ -769,17 +769,17 @@ def differentiate(da, midpoints=False, dim="last", parallel=None):
 
     Parameters
     ----------
-    da : DataArray or DataArray
-        The data to integrate.
+    da : DataArray
+        The data to differentiate.
     midpoints : bool, optional
         Whether to move the coordinates by half a step, by default False.
     dim : str, optional
-        The dimension along which to integrate, by default "distance".
+        The dimension along which to differentiate, by default "last".
 
     Returns
     -------
-    DataArray or DataArray
-        The integrated data.
+    DataArray
+        The differentiated data.
 
     Notes
     -----
@@ -805,18 +805,18 @@ def segment_mean_removal(da, limits, window="hann", dim="last"):  # TODO: parall
 
     Parameters
     ----------
-    da : DataArray or DataArray
+    da : DataArray
         The data that segment mean should be removed.
     limits : list of float
         The segments limits.
     window : str, optional
         The tapering windows to apply at each window, by default "hann".
     dim : str, optional
-        The axis along which remove the segment means, by default "distance".
+        The dimension along which to remove the segment means, by default "last".
 
     Returns
     -------
-    DataArray or DataArray
+    DataArray
         The data with segment means removed.
     """
     out = da.copy()
@@ -841,7 +841,7 @@ def sliding_mean_removal(
 
     Parameters
     ----------
-    da : DataArray or DataArray
+    da : DataArray
         The data that sliding mean should be removed.
     wlen : float
         Length of the sliding mean.
@@ -850,11 +850,11 @@ def sliding_mean_removal(
     pad_mode : str, optional
         Padding mode used, by default "reflect"
     dim : str, optional
-        The dimension along which remove the sliding mean, by default "distance"
+        The dimension along which to remove the sliding mean, by default "last"
 
     Returns
     -------
-    DataArray or DataArray
+    DataArray
         The data with sliding mean removed.
 
     Notes

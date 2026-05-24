@@ -17,19 +17,19 @@ def wavelet_wavefronts(
     nchunk=None,
 ):
     """
-    Generate some dummy files to bu used in code testing.
-
-    It generates a monolithic `sample.nc` file and a chunked files (`001.nc`, `002.nc`,
-    `003.nc`).
+    Generate a synthetic DAS :class:`DataArray` with wavelet wavefronts.
 
     Parameters
     ----------
-    dirpath : str, optional
-        Directory where files will be written. If None, not file will be written.
-    starttime : str
-        The starttime of the file, will be parsed by `np.datetime64(starttime)`.
-    resolution : (timedelta64, float)
-        The temporal and spatial sampling intervals.
+    starttime : str, optional
+        The starttime of the data, parsed by ``np.datetime64(starttime)``.
+        Default is ``"2023-01-01T00:00:00"``.
+    resolution : (timedelta64, float), optional
+        The temporal and spatial sampling intervals. Default is
+        ``(np.timedelta64(20, "ms"), 25.0)``.
+    nchunk : int, optional
+        If provided, splits the result into ``nchunk`` chunks and returns a
+        list of DataArrays instead of a single DataArray.
 
     Examples
     --------
@@ -119,7 +119,7 @@ def randn_wavefronts():
     # sampling
     resolution = (np.timedelta64(10, "ms"), 100.0)
     starttime = np.datetime64("2024-01-01T00:00:00").astype("datetime64[ns]")
-    span = (np.timedelta64(200, "s"), 100000.0)  # (100 s, 10 km)
+    span = (np.timedelta64(200, "s"), 100000.0)  # (200 s, 100 km)
     shape = (span[0] // resolution[0], int(span[1] // resolution[1]) + 1)
     t = np.arange(shape[0]) * resolution[0] / np.timedelta64(1, "s")  # time values [s]
     s = np.arange(shape[1]) * resolution[1]  # distance values [m]

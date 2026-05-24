@@ -209,7 +209,7 @@ def open_mfdatacollection(
         The path names given as a shell-style wildcards string or a list of paths.
     dim : str, optional
         The dimension along which the data arrays are concatenated. Default to "first".
-    tolerance : float of timedelta64, optional
+    tolerance : float or timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
         continuous with beginning of the following one. For time coordinates, numeric
         values are considered as seconds. Default to zero tolerance.
@@ -304,14 +304,14 @@ def open_mfdatatree(
         The path descriptor.
     dim : str, optional
         The dimension along which the data arrays are concatenated. Default to "first".
-    tolerance : float of timedelta64, optional
+    tolerance : float or timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
         continuous with beginning of the following one. For time coordinates, numeric
         values are considered as seconds. Default to zero tolerance.
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
-    engine: str of callable, optional
+    engine: str or callable, optional
         The type of file to open or a read function. Default to xdas netcdf format.
     parallel: bool or int, optional
         Whether to use multiprocessing to fetch file metadata. If False or 1,
@@ -414,14 +414,14 @@ def collect(
         The names of the levels of the tree hierarchy.
     dim : str, optional
         The dimension along which the data arrays are concatenated. Default to "first".
-    tolerance : float of timedelta64, optional
+    tolerance : float or timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
         continuous with beginning of the following one. For time coordinates, numeric
         values are considered as seconds. Default to zero tolerance.
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
-    engine: str of callable, optional
+    engine: str or callable, optional
         The type of file to open or a read function. Default to xdas netcdf format.
     parallel: bool or int, optional
         Whether to use multiprocessing to fetch file metadata. If False or 1,
@@ -496,14 +496,14 @@ def open_mfdataarray(
         The path names given as a shell-style wildcards string or a list of paths.
     dim : str, optional
         The dimension along which the data arrays are concatenated. Default to "first".
-    tolerance : float of timedelta64, optional
+    tolerance : float or timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
         continuous with beginning of the following one. For time coordinates, numeric
         values are considered as seconds. Default to zero tolerance.
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
-    engine: str of callable, optional
+    engine: str or callable, optional
         The type of file to open or a read function. Default to xdas netcdf format.
     parallel: bool or int, optional
         Whether to use multiprocessing to fetch file metadata. If False or 1,
@@ -598,7 +598,7 @@ def open_dataarray(fname, engine=None, vtype=None, ctype=None, **kwargs):
     ----------
     fname : str
         The path of the dataarray.
-    engine: str of callable, optional
+    engine: str or callable, optional
         The type of file to open or a read function. Default to xdas netcdf format.
     **kwargs
         Additional keyword arguments to be passed to the read function.
@@ -664,7 +664,7 @@ def asdataarray(obj, tolerance=None):
     """
     Try to convert given object to a dataarray.
 
-    Only support DataArray or DataArray as input.
+    Only supports DataArray or xr.DataArray as input.
 
     Parameters
     ----------
@@ -683,7 +683,7 @@ def asdataarray(obj, tolerance=None):
     Raises
     ------
     ValueError
-        _description_
+        If the object cannot be converted to a DataArray.
     """
     if isinstance(obj, DataArray):
         return obj
@@ -712,7 +712,7 @@ def combine_by_field(
         The data collections to combine.
     dim : str, optional
         The dimension along which concatenate. Default to "first".
-    tolerance : float of timedelta64, optional
+    tolerance : float or timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
         the following. For time coordinates, numeric  values are considered as seconds.
         Zero by default.
@@ -776,7 +776,7 @@ def combine_by_coords(
         The data arrays to combine.
     dim : str, optional
         The dimension along which concatenate. Default to "first".
-    tolerance : float of timedelta64, optional
+    tolerance : float or timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
         the following. For time coordinates, numeric values are considered as seconds.
         Zero by default.
@@ -930,7 +930,7 @@ def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         List of data arrays to concatenate.
     dim : str
         The dimension along which concatenate.
-    tolerance : float of timedelta64, optional
+    tolerance : float or timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
         the following, For time coordinates, numeric values are considered as seconds.
         Zero by default.
@@ -1010,7 +1010,7 @@ def concat_coords(objs, *, sort=False, return_order=False, tolerance=False):
     return_order : bool, optional
         If True, return `(coord, order)` where `order` is the list of
         indices used to sort the input objects.
-    tolerance : float of timedelta64, optional
+    tolerance : float or timedelta64, optional
         The tolerance to consider that the end of a coordinate object is continuous
         with beginning of the following, For time coordinates, numeric values are
         considered as seconds. No simplification by default.

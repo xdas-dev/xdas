@@ -25,7 +25,7 @@ class DataArray(NDArrayOperatorsMixin):
     """
     N-dimensional array with labeled coordinates and dimensions.
 
-    It is the equivalent of and xarray.DataArray but with custom coordinate objects.
+    It is the equivalent of an xarray.DataArray but with custom coordinate objects.
     Most of the DataArray API follows the DataArray one. DataArray objects also provide
     virtual dataset capabilities to manipulate huge multi-file NETCDF4 or HDF5 datasets.
 
@@ -368,6 +368,11 @@ class DataArray(NDArrayOperatorsMixin):
         indexers : dict, optional
             A dict with keys matching dimensions and values given by scalars, slices or
             arrays of tick labels.
+        method : str, optional
+            Method to use for inexact matches. None (default) means only exact matches.
+            "nearest" finds the nearest index value.
+        endpoint : bool, optional
+            Whether to include the endpoint of a slice. Default is True.
         drop : bool, optional
             If ``drop=True``, drop coordinates variables in `indexers` instead
             of making them scalar.
@@ -833,7 +838,7 @@ class DataArray(NDArrayOperatorsMixin):
             The channel code. If the string can be formatted, the band code will be
             inferred from the sampling rate. By default "{:1}N1"
         dim : dict, optional
-            A dict with as key the spatial dimension to split into traces, and as key
+            A dict with as key the spatial dimension to split into traces, and as value
             the temporal dimension. By default {"last": "first"}.
 
         Returns
@@ -851,7 +856,7 @@ class DataArray(NDArrayOperatorsMixin):
         """
         Convert an obspy stream into a data array.
 
-        Traces in the stream must have the same length an must be syncronized. Traces
+        Traces in the stream must have the same length and must be syncronized. Traces
         are stacked along the first axis. The trace ids are used as labels along the
         first dimension.
 
@@ -893,7 +898,7 @@ class DataArray(NDArrayOperatorsMixin):
         group : str, optional
             Path to the netCDF4 group in the given file to open.
         virtual : bool, optional
-            Weather to write a virtual dataset. The DataArray data must be a VirtualSource
+            Whether to write a virtual dataset. The DataArray data must be a VirtualSource
             or a VirtualLayout. Default (None) is to try to write a virtual dataset if
             possible.
         encoding : dict, optional
