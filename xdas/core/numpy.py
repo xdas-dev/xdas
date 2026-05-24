@@ -35,6 +35,7 @@ def handled(reduce=False, drop_coords=False, **defaults):
     **defaults : dict
         Default keyword arguments forwarded to the wrapped function.
     """
+
     def decorator(func):
         """Build and register the coordinate-aware wrapper for *func*."""
         sig = signature(func)

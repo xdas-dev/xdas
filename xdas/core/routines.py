@@ -545,12 +545,18 @@ def open_mfdataarray(
             "to 100 000."
         )
     max_workers = get_workers_count(parallel)
+    objs = []
+    failures = []
     if (max_workers == 1) or (engine == "miniseed"):  # TODO: dirty miniseed fix
-        if verbose:
-            iterator = tqdm(paths, desc="Fetching metadata from files")
-        else:
-            iterator = paths
-        objs = [open_dataarray(path, engine=engine, **kwargs) for path in iterator]
+        iterator = (
+            tqdm(paths, desc="Fetching metadata from files") if verbose else paths
+        )
+        for path in iterator:
+            try:
+                objs.append(open_dataarray(path, engine=engine, **kwargs))
+            except Exception as e:
+                failures.append((path, e))
+                warnings.warn(f"could not open {path}: {e}", RuntimeWarning)
     else:
         executor = get_reusable_executor(max_workers)
         futures_to_paths = {
@@ -565,8 +571,6 @@ def open_mfdataarray(
             )
         else:
             iterator = as_completed(futures_to_paths)
-        objs = []
-        failures = []
         for future in iterator:
             try:
                 obj = future.result()

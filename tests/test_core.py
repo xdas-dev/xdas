@@ -63,17 +63,17 @@ class TestCore:
             {
                 "starttime": "2023-01-01T00:00:00",
                 "resolution": (np.timedelta64(20, "ms"), 20.0),
-                "nchunk": 10,
+                "nchunk": 3,
             },
             {
                 "starttime": "2023-01-01T06:00:00",
                 "resolution": (np.timedelta64(10, "ms"), 20.0),
-                "nchunk": 10,
+                "nchunk": 3,
             },
             {
                 "starttime": "2023-01-01T12:00:00",
                 "resolution": (np.timedelta64(10, "ms"), 10.0),
-                "nchunk": 10,
+                "nchunk": 3,
             },
         ]
         count = 1

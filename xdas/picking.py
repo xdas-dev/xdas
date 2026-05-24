@@ -117,7 +117,7 @@ def tapered_selection(da, start, end, window=None, size=None, dim="last"):
     return xd.DataArray(data, coords=coords, dims=da.dims)
 
 
-@njit(parallel=True)
+@njit(parallel=True, cache=True)
 def _tapered_selection(data, sel, start, stop, size, window):
     out = np.zeros((sel.size, size), dtype=data.dtype)
     w = window.size // 2

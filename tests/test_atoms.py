@@ -1,6 +1,7 @@
 import pickle
 
 import numpy as np
+import pytest
 import scipy.signal as sp
 
 import xdas as xd
@@ -232,6 +233,7 @@ class TestResamplePoly:
 
 
 class TestMLPicker:
+    @pytest.mark.slow
     def test_picker(self):
         from seisbench.models import PhaseNet
 
@@ -244,6 +246,7 @@ class TestMLPicker:
         result = xd.concat([picker(chunk, chunk_dim="time") for chunk in chunks])
         assert result.equals(expected)
 
+    @pytest.mark.slow
     def test_compare_with_seisbench(self):
         import obspy
         from seisbench.models import PhaseNet

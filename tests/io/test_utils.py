@@ -28,6 +28,7 @@ class TestCompression:
         for key in actual:
             np.testing.assert_array_equal(actual[key], desired[key], strict)
 
+    @pytest.mark.slow
     @pytest.mark.parametrize("test_file, dataset_location", TEST_FILES)
     def test_compression(self, tmp_path, test_file, dataset_location):
         src_path = dascore.utils.downloader.fetch(test_file)

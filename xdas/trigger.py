@@ -548,7 +548,10 @@ def _find_picks_numeric(cft, thresh, axis=-1, buffer=None, offset=None):
     return out
 
 
-@njit("Tuple((i8[:], i8[:], f8[:]))(f8[:, :], f8, f8, b1[:], i8[:], f8[:], i8)")
+@njit(
+    "Tuple((i8[:], i8[:], f8[:]))(f8[:, :], f8, f8, b1[:], i8[:], f8[:], i8)",
+    cache=True,
+)
 def _trigger(
     cft, thresh_on, thresh_off, buffer_status, buffer_index, buffer_value, offset
 ):

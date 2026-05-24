@@ -70,10 +70,9 @@ def wavelet_wavefronts(
     d = np.hypot(xc, (s - np.mean(s)))  # channel distance to source [m]
     ttp = d / vp  # P-wave travel time [s]
     tts = d / vs  # S-wave travel time [s]
-    data = np.zeros(shape)
-    for k in range(shape[1]):
-        data[:, k] += sp.gausspulse(t - ttp[k] - t0, fc) / 2  # P is twice weaker
-        data[:, k] += sp.gausspulse(t - tts[k] - t0, fc)
+    t_col = t[:, np.newaxis]
+    data = sp.gausspulse(t_col - ttp - t0, fc) / 2  # P is twice weaker
+    data += sp.gausspulse(t_col - tts - t0, fc)
     data /= np.max(np.abs(data), axis=0, keepdims=True)  # normalize
     data += np.random.randn(*shape) / snr  # add noise
 

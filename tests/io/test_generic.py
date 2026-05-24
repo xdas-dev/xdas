@@ -1,5 +1,6 @@
 import dascore as dc
 import numpy as np
+import pytest
 from dascore.utils.downloader import fetch
 
 import xdas as xd
@@ -21,6 +22,7 @@ class TestGenericIO:
         "sample_tdms_file_v4713.tdms",  # NOTE: dascore does not really know what it does
     ]
 
+    @pytest.mark.slow
     def test_auto_open_files(self):
         for engine, fnames in self.TEST_FILES.items():
             for fname in fnames:
@@ -29,6 +31,7 @@ class TestGenericIO:
                 da_auto = xd.open(path)
                 assert da.equals(da_auto)
 
+    @pytest.mark.slow
     def test_compare_with_dascore(self):
         for engine, fnames in self.TEST_FILES.items():
             for fname in fnames:
