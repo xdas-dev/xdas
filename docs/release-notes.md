@@ -12,8 +12,9 @@
 
 ### Refactoring
 - Achieved **100% test coverage** across the codebase (@atrabattoni).
-- Reduced test suite execution time by ~50% (@atrabattoni).
-- Migrated formatting tooling from `isort` + `black` to `ruff` (@atrabattoni).
+- *Reduced* test suite execution time by **~50%** (@atrabattoni).
+- Migrated formatting tooling from `isort` + `black` to `ruff` **including docstring checks** (@atrabattoni).
+- Ensure all ruff checks pass (@atrabattoni). 
 
 ## 0.2.6
 
