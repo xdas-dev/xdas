@@ -1,5 +1,20 @@
 # Release notes
 
+## 0.2.7
+
+### Documentation
+- Achieved **100% docstring coverage** (excluding `__magic__` and private `_methods`) (@atrabattoni).
+- Improved *User Guide* index (@atrabattoni).
+- Added new *Sampled Coordinates* page (@atrabattoni).
+- Enhanced *Processing* documentation (@atrabattoni).
+- Improved *FAQ* page (@atrabattoni).
+- Added missing API documentation for several methods (@atrabattoni).
+
+### Refactoring
+- Achieved **100% test coverage** across the codebase (@atrabattoni).
+- Reduced test suite execution time by ~50% (@atrabattoni).
+- Migrated formatting tooling from `isort` + `black` to `ruff` (@atrabattoni).
+
 ## 0.2.6
 
 ### New features

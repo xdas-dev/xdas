@@ -6,7 +6,7 @@ types for physical axes, multi-threaded signal processing pipelines, and I/O eng
 for common DAS instrument formats.
 """
 
-__version__ = "0.2.6"
+__version__ = "0.2.7"
 
 from . import (
     atoms,
