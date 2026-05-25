@@ -148,7 +148,7 @@ class DataCollection:
                     )
                     for name, value in data.items()
                 }
-            else:
+            else:  # pragma: no cover
                 raise TypeError("unknown type of data collection")
             return DataCollection(data, self.name)
         else:

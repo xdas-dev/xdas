@@ -32,12 +32,12 @@ class XdasEngine(Engine, name="xdas"):
         return save_dataarray(da, fname, **kwargs)
 
     def open_datacollection(self, fname, **kwargs):
-        """Delegate to module-level :func:`open_datamapping`."""
-        return open_datamapping(fname, **kwargs)
+        """Delegate to module-level :func:`open_datacollection`."""
+        return open_datacollection(fname, **kwargs)
 
     def save_datacollection(self, dc, fname, **kwargs):
-        """Delegate to module-level :func:`save_datamapping`."""
-        return save_datamapping(dc, fname, **kwargs)
+        """Delegate to module-level :func:`save_datacollection`."""
+        return save_datacollection(dc, fname, **kwargs)
 
 
 def open_dataarray(fname, group=None):
@@ -194,16 +194,14 @@ def save_dataarray(
 
 def open_datacollection(fname, group=None):
     """Read a :class:`DataCollection` from *fname*, auto-detecting sequence vs. mapping."""
-    if isinstance(fname, Path):
-        fname = str(fname)
     dc = open_datamapping(fname, group)
     try:
         keys = [int(key) for key in dc.keys()]
-        if keys == list(range(len(keys))):
-            return DataSequence.from_mapping(dc)
-        else:
-            return dc
     except ValueError:
+        return dc
+    if set(keys) == set(range(len(keys))):
+        return DataSequence([dc[str(key)] for key in range(len(keys))], dc.name)
+    else:
         return dc
 
 
@@ -211,9 +209,6 @@ def save_datacollection(
     dc, fname, mode="w", group=None, virtual=None, encoding=None, create_dirs=False
 ):
     """Write *dc* to *fname*, dispatching to sequence or mapping writer as needed."""
-    if isinstance(fname, Path):
-        fname = str(fname)
-
     if isinstance(dc, DataSequence):
         save_datasequence(dc, fname, mode, group, virtual, encoding, create_dirs)
     elif isinstance(dc, DataCollection):
@@ -238,7 +233,7 @@ def open_datamapping(fname, group=None):
                 "it looks like you are trying to open a data array as a data collection."
             )
         else:
-            if not isinstance(group, h5py.Group):
+            if not isinstance(group, h5py.Group):  # pragma: no cover
                 raise RuntimeError(
                     "something went wrong while opening the data collection."
                 )

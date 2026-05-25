@@ -421,3 +421,26 @@ class TestInterpCoordinate:
         )
         result = coord.decimate(3)
         assert np.all(np.diff(result.tie_indices) > 0)
+
+    def test_get_split_indices_overlaps_tolerance_false(self):
+        # Build a coord with an overlap (tie_values go backwards between segments)
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 4, 5, 9],
+                "tie_values": [0.0, 4.0, 3.0, 7.0],  # overlap at index 5 (value 3 < 4)
+            }
+        )
+        result = coord.get_split_indices(kind="overlaps", tolerance=False)
+        assert isinstance(result, np.ndarray)
+        np.testing.assert_array_equal(result, [5], strict=True)
+
+    def test_get_split_indices_overlaps_with_tolerance(self):
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 4, 5, 9],
+                "tie_values": [0.0, 4.0, 3.0, 7.0],
+            }
+        )
+        result = coord.get_split_indices(kind="overlaps", tolerance=0.5)
+        assert isinstance(result, np.ndarray)
+        np.testing.assert_array_equal(result, [5], strict=True)

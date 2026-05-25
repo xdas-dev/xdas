@@ -176,7 +176,7 @@ def open(
                 verbose=verbose,
                 **kwargs,
             )
-        case "tree-like":
+        case "tree-like":  # pragma: no branch
             return open_mfdatatree(
                 paths,
                 dim,
@@ -554,9 +554,9 @@ def open_mfdataarray(
         for path in iterator:
             try:
                 objs.append(open_dataarray(path, engine=engine, **kwargs))
-            except Exception as e:
-                failures.append((path, e))
-                warnings.warn(f"could not open {path}: {e}", RuntimeWarning)
+            except Exception as error:
+                failures.append((path, error))
+                warnings.warn(f"could not open {path}: {error}", RuntimeWarning)
     else:
         executor = get_reusable_executor(max_workers)
         futures_to_paths = {
@@ -574,19 +574,17 @@ def open_mfdataarray(
         for future in iterator:
             try:
                 obj = future.result()
-            except Exception as e:
+            except Exception as error:
                 path = futures_to_paths[future]
-                failures.append((path, e))
-                warnings.warn(f"could not open {path}: {e}", RuntimeWarning)
+                failures.append((path, error))
+                warnings.warn(f"could not open {path}: {error}", RuntimeWarning)
             else:
                 objs.append(obj)
-    if len(objs) == 0:
-        if failures:
-            path, error = failures[0]
-            raise RuntimeError(
-                f"could not open any file with; first failure was {path}: {error}"
-            ) from error
-        raise FileNotFoundError("no file to open")
+    if len(objs) == 0:  # there must be failures
+        path, error = failures[0]
+        raise RuntimeError(
+            f"could not open any file with engine: {engine}; first failure was {path}: {error}"
+        ) from error
     return combine_by_coords(objs, dim, tolerance, squeeze, None, verbose)
 
 

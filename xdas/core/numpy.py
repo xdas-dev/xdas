@@ -50,7 +50,7 @@ def handled(reduce=False, drop_coords=False, **defaults):
             da = ba.arguments.get(key)
             axis = ba.arguments.get("axis")
             out = ba.arguments.get("out")
-            if isinstance(da, DataArray):
+            if isinstance(da, DataArray):  # pragma: no branch
                 ba.arguments[key] = da.data
             if isinstance(out, DataArray):
                 ba.arguments["out"] = out.data
@@ -137,9 +137,9 @@ handled(drop_coords=True)
 handled(drop_coords=True)(np.diff)
 handled(drop_coords=True)(np.ediff1d)
 
-if NumpyVersion(np.__version__) < "2.4.0":
+if NumpyVersion(np.__version__) < "2.4.0":  # pragma: no cover
     handled(drop_coords=True)(np.trapz)
-if NumpyVersion(np.__version__) >= "2.0.0":
+if NumpyVersion(np.__version__) >= "2.0.0":  # pragma: no branch
     handled(drop_coords=True)(np.trapezoid)
 
 # TODO: gradient

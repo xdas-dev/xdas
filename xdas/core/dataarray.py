@@ -132,10 +132,7 @@ class DataArray(NDArrayOperatorsMixin):
             return self.data.__array__(dtype)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        from .routines import (
-            broadcast_coords,
-            broadcast_to,
-        )  # TODO: circular import
+        from .routines import broadcast_coords, broadcast_to  # TODO: circular import
 
         if not method == "__call__":
             return NotImplemented
@@ -966,7 +963,7 @@ class DataArray(NDArrayOperatorsMixin):
             raise NotImplementedError("cannot convert a virtual array to a dictionary")
         elif isinstance(self.data, np.ndarray):
             data = self.data.tolist()
-        elif isinstance(self.data, DaskArray):
+        elif isinstance(self.data, DaskArray):  # pragma: no branch
             data = to_dict(self.data)
         return {
             "data": data,

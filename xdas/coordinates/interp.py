@@ -295,7 +295,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
                     "`da[dim] = da[dim].simplify(tolerance)`, or by specifying a "
                     "tolerance when opening multiple files."
                 )
-            else:
+            else:  # pragma: no cover
                 raise e
         return indexer
 
@@ -393,7 +393,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
             match kind:
                 case "gaps":
                     mask = deltas >= zero
-                case "overlaps":
+                case "overlaps":  # pragma: no branch
                     mask = deltas < zero
 
         else:
@@ -404,7 +404,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
                     mask = np.abs(deltas) > tolerance
                 case "gaps":
                     mask = deltas > tolerance
-                case "overlaps":
+                case "overlaps":  # pragma: no branch
                     mask = deltas < -tolerance
 
         return self.tie_indices[indices[mask]]

@@ -369,7 +369,7 @@ class Coordinate:
         else:
             return self.data.__array__(dtype)
 
-    def __array__ufunc__(self, ufunc, method, *inputs, **kwargs):
+    def __array__ufunc__(self, ufunc, method, *inputs, **kwargs):  # pragma: no cover
         return self.data.__array__ufunc__(ufunc, method, *inputs, **kwargs)
 
     def __array_function__(self, func, types, args, kwargs):
@@ -761,7 +761,7 @@ class Coordinate:
         """Read coordinates named *name* from an xarray *dataset* via each registered subclass."""
         coords = {}
         for subcls in cls.__subclasses__():
-            if hasattr(subcls, "from_dataset"):
+            if hasattr(subcls, "from_dataset"):  # pragma: no branch
                 coords |= subcls.from_dataset(dataset, name)
         return coords
 

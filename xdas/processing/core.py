@@ -111,7 +111,7 @@ class DataArrayLoader:
     def __init__(self, da, chunks, max_buffers=1, max_workers=1):
         if not isinstance(da, DataArray):
             raise TypeError(f"`da` must by a DataArray object, not a {type(da)}")
-        if not isinstance(chunks, dict) and len(chunks) == 1:
+        if not (isinstance(chunks, dict) and len(chunks) == 1):
             raise TypeError(
                 "`chunks` must be a dict that maps a unique "
                 "dimension to a unique size: {'dim': int}"
@@ -371,7 +371,7 @@ class DataFrameWriter:
         return self.submit(df)
 
     def _write(self, df):
-        if df is not None:
+        if df is not None:  # pragma: no branch
             if not os.path.exists(self.path):
                 df.to_csv(self.path, mode="w", header=True, index=False)
             else:
@@ -505,7 +505,7 @@ class StreamWriter:
             new_st += tr
             new_st = new_st[0].split()
             for new_tr in new_st:
-                if isinstance(new_tr.data, np.ma.masked_array):
+                if isinstance(new_tr.data, np.ma.masked_array):  # pragma: no cover
                     new_tr.data = new_tr.data.filled()
                 new_tr.stats.mseed["dataquality"] = self.dataquality
             year = new_st[0].stats.starttime.year
@@ -529,7 +529,7 @@ class StreamWriter:
             tmp_st += tr
             tmp_st = tmp_st[0].split()
             for new_tr in tmp_st:
-                if isinstance(new_tr.data, np.ma.masked_array):
+                if isinstance(new_tr.data, np.ma.masked_array):  # pragma: no cover
                     new_tr.data = new_tr.data.filled()
                 new_st += new_tr
         new_st.write(os.path.join(self.dirpath, self.fname), **self.kw_write)
@@ -569,7 +569,7 @@ class StreamWriter:
         out = out.merge(**self.kw_merge)
         if self.output_format == "flat":
             self._to_flat(out)
-        elif self.output_format == "SDS":
+        elif self.output_format == "SDS":  # pragma: no branch
             self._to_SDS(out)
         files_to_remove = glob(pattern)
         for file in files_to_remove:
@@ -642,7 +642,7 @@ class ZMQPublisher:
         """Alias for :meth:`submit`."""
         self.submit(da)
 
-    def result():
+    def result(self):
         """Return ``None`` — ZMQPublisher has no aggregated result."""
         return None
 

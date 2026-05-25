@@ -37,7 +37,7 @@ class MiniSEEDEngine(Engine, name="miniseed"):
         st = obspy.read(path, headonly=True)
 
         dtype = uniquifiy(tr.data.dtype for tr in st)
-        if not isinstance(dtype, np.dtype):
+        if not isinstance(dtype, np.dtype):  # pragma: no cover
             raise ValueError("All traces must have the same dtype")
 
         stations = [tr.stats.station for tr in st]

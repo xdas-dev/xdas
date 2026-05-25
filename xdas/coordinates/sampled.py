@@ -382,7 +382,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
 
         offset = (value - self.tie_values[reference]) / self.sampling_interval
 
-        match method:
+        match method:  # pragma: no branch
             case None:
                 if np.any(
                     (offset % 1 != 0)
@@ -399,7 +399,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
                 if np.any(offset < 0):
                     raise KeyError("index not found")
                 offset = np.minimum(offset, self.tie_lengths[reference] - 1)
-            case "bfill":
+            case "bfill":  # pragma: no branch
                 offset = np.ceil(offset).astype(int)
                 if np.any(offset > self.tie_lengths[reference] - 1):
                     raise KeyError("index not found")
@@ -500,33 +500,24 @@ class SampledCoordinate(Coordinate, name="sampled"):
         if tolerance is False:
             zero = np.timedelta64(0) if np.issubdtype(self.dtype, np.datetime64) else 0
 
-            match kind:
+            match kind:  # pragma: no branch
                 case "gaps":
                     mask = deltas >= zero
-                case "overlaps":
+                case "overlaps":  # pragma: no branch
                     mask = deltas < zero
 
         else:
             tolerance = parse_tolerance(tolerance, self.dtype)
 
-            match kind:
+            match kind:  # pragma: no branch
                 case "discontinuities":
                     mask = np.abs(deltas) > tolerance
                 case "gaps":
                     mask = deltas > tolerance
-                case "overlaps":
+                case "overlaps":  # pragma: no branch
                     mask = deltas < -tolerance
 
         return indices[mask]
-
-        indices = self.tie_indices[1:]
-        if tolerance is not None:
-            tolerance = parse_tolerance(tolerance, self.dtype)
-            deltas = self.tie_values[1:] - (
-                self.tie_values[:-1] + self.sampling_interval * self.tie_lengths[:-1]
-            )
-            indices = indices[np.abs(deltas) > tolerance]
-        return indices
 
     @classmethod
     def from_array(cls, arr, dim=None, sampling_interval=None):

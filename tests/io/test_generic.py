@@ -31,6 +31,21 @@ class TestEngineRegistry:
         with pytest.raises(ValueError, match="ctype"):
             AutoEngine(ctype="dense").open_dataarray(str(fake))
 
+    def test_auto_engine_fail_message_includes_vtype(self, tmp_path):
+        fake = tmp_path / "fake.h5"
+        fake.write_bytes(b"not a valid hdf5 file")
+        with pytest.raises(ValueError, match="vtype"):
+            AutoEngine(vtype="hdf5").open_dataarray(str(fake))
+
+    def test_dict_ctype_with_none_value(self):
+        engine = Engine["asn"](ctype={"time": None, "distance": "interpolated"})
+        assert engine.ctype["time"] == "interpolated"
+        assert engine.ctype["distance"] == "interpolated"
+
+    def test_invalid_ctype_type_raises(self):
+        with pytest.raises(ValueError, match="ctype must be"):
+            Engine["asn"](ctype=42)
+
 
 class TestGenericIO:
     TEST_FILES = {

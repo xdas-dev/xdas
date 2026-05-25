@@ -966,3 +966,21 @@ class TestSampledCoordinateMissingBranches:
         coord = self.make_coord()
         assert coord.get_indexer(0.0, method="bfill") == 0
         assert coord.get_indexer(0.5, method="bfill") == 1
+
+    def test_get_split_indices_overlaps_tolerance_false(self):
+        # Build a coord with an actual overlap (segment 2 starts before segment 1 ends)
+        coord = SampledCoordinate(
+            {"tie_values": [0.0, 2.0], "tie_lengths": [5, 5], "sampling_interval": 1.0}
+        )
+        result = coord.get_split_indices(kind="overlaps", tolerance=False)
+        assert isinstance(result, np.ndarray)
+        np.testing.assert_array_equal(result, [5], strict=True)
+
+    def test_get_split_indices_overlaps_with_tolerance(self):
+        # Build a coord with an actual overlap (segment 2 starts before segment 1 ends)
+        coord = SampledCoordinate(
+            {"tie_values": [0.0, 2.0], "tie_lengths": [5, 5], "sampling_interval": 1.0}
+        )
+        result = coord.get_split_indices(kind="overlaps", tolerance=1.0)
+        assert isinstance(result, np.ndarray)
+        np.testing.assert_array_equal(result, [5], strict=True)
