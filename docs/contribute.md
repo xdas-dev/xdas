@@ -128,8 +128,7 @@ quick way to add tests to your function.
 
 Run (in the root xdas folder or where you are working):
 ```
-black .
-isort .
+ruff check --fix && ruff format
 ```
 
 ## How to add tests

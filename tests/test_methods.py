@@ -4,7 +4,6 @@ import numpy as np
 import pytest
 
 import xdas as xd
-from xdas.synthetics import wavelet_wavefronts
 
 
 @pytest.fixture

@@ -4,7 +4,6 @@ OptaSense and Sintela format.
 """
 
 import h5py
-import numpy as np
 import pandas as pd
 
 from ..coordinates.core import Coordinate

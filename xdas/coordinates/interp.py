@@ -6,7 +6,6 @@ using ``xinterp`` for forward and inverse interpolation.
 import re
 
 import numpy as np
-import pandas as pd
 from xinterp import forward, inverse
 
 from .core import (

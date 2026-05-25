@@ -121,8 +121,7 @@ class DataArrayLoader:
         chunk_size = int(chunk_size)
         if chunk_dim not in da.dims:
             raise ValueError(
-                f"chunking dimension {chunk_dim} not "
-                f"found in `da` dimensions {da.dims}"
+                f"chunking dimension {chunk_dim} not found in `da` dimensions {da.dims}"
             )
         if chunk_size > da.sizes[chunk_dim]:
             raise ValueError(

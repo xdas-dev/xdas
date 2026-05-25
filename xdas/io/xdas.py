@@ -8,7 +8,7 @@ from pathlib import Path
 
 import h5netcdf
 import h5py
-import hdf5plugin
+import hdf5plugin  # noqa
 import xarray as xr
 from dask.array import Array as DaskArray
 

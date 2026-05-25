@@ -113,7 +113,6 @@ class FebusEngine(Engine, name="febus"):
 
         dc = []
         for t0, chunk in zip(times, chunks):
-
             t0 = np.rint(1e6 * t0).astype("M8[us]").astype("M8[ns]")
             time = Coordinate[self.ctype["time"]].from_block(t0, nt, dt, dim="time")
             distance = Coordinate[self.ctype["distance"]].from_block(

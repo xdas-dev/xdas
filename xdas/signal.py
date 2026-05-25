@@ -3,7 +3,6 @@ Signal processing functions for :class:`DataArray`: filtering, resampling,
 tapering, detrending, and spectral helpers, all coordinate-aware and
 multi-threaded via :func:`~xdas.parallel.parallelize`.
 """
-
 import numpy as np
 import scipy.signal as sp
 
@@ -11,7 +10,7 @@ from .atoms.core import atomized
 from .coordinates.core import Coordinate, get_sampling_interval
 from .core.dataarray import DataArray
 from .parallel import parallelize
-from .spectral import stft
+from .spectral import stft  # noqa
 
 
 @atomized
@@ -923,8 +922,8 @@ def sliding_mean_removal(
     shape = tuple(-1 if a == axis else 1 for a in range(da.ndim))
     win = np.reshape(win, shape)
     pad_width = tuple((n // 2, n // 2) if a == axis else (0, 0) for a in range(da.ndim))
-    func = lambda x: x - sp.fftconvolve(
-        np.pad(x, pad_width, mode=pad_mode), win, mode="valid"
+    func = lambda x: (
+        x - sp.fftconvolve(np.pad(x, pad_width, mode=pad_mode), win, mode="valid")
     )
     across = int(axis == 0)
     func = parallelize(across, across, parallel)(func)

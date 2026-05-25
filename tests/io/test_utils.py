@@ -8,7 +8,6 @@ from xdas.io.utils import compress
 
 
 class TestCompression:
-
     TEST_FILES = [
         # ("ap_sensing_1.hdf5", "DAS"),  # TODO: not working for some reason...
         ("opto_das_1.hdf5", "data"),

@@ -294,7 +294,6 @@ class TestMLPicker:
 
 class TestAtomCoreMissingBranches:
     def test_repr_with_nested_atoms(self):
-        from xdas.atoms.core import Atom, State
 
         a = [1, 1]
         b = [1, 1]

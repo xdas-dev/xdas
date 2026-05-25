@@ -31,7 +31,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["black", "build", "isort", "twine"]
+dev = ["build", "ruff", "twine"]
 docs = [
     "ipykernel",
     "matplotlib",
@@ -51,8 +51,8 @@ tests = [
     "torch",
 ]
 
-[tool.isort]
-profile = "black"
+[tool.ruff.lint]
+extend-select = ["I"]
 
 [tool.pytest.ini_options]
 addopts = [

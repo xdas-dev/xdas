@@ -3,7 +3,6 @@
 nested tree structures for grouping multiple :class:`DataArray` objects.
 """
 
-import os
 from fnmatch import fnmatch
 from pathlib import Path
 
