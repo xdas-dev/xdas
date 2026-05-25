@@ -1,6 +1,7 @@
 """
-NumPy function dispatch for :class:`DataArray` via ``__array_function__``,
-mapping NumPy functions to coordinate-aware implementations.
+NumPy function dispatch for :class:`DataArray` via ``__array_function__``.
+
+Maps NumPy functions to coordinate-aware implementations.
 """
 
 from inspect import signature
@@ -24,7 +25,7 @@ def implements(numpy_function):
 
 def handled(reduce=False, drop_coords=False, **defaults):
     """
-    Decorator factory that wraps a NumPy function to be coordinate-aware.
+    Wrap a NumPy function to be coordinate-aware.
 
     Parameters
     ----------

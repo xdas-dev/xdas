@@ -1,6 +1,8 @@
 """
-Threshold-based triggering atom :class:`Trigger` for detecting phase
-arrivals in :class:`DataArray` objects using an on/off mechanism.
+Threshold-based triggering atom :class:`Trigger`.
+
+Detects phase arrivals in :class:`DataArray` objects using an on/off
+mechanism.
 """
 
 import numpy as np
@@ -82,7 +84,7 @@ class Trigger(Atom):
 
     def initialize(self, cft, **flags):
         """
-        Initialize the trigger with the following states:
+        Initialize the trigger with the following states.
 
         - "axis": An integer indicating the axis number of the dimension along which to
           find picks.

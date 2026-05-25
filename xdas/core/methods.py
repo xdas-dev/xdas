@@ -1,6 +1,7 @@
 """
-Registration helpers and implementations for :class:`DataArray` instance
-methods dispatched through ``HANDLED_METHODS``.
+Registration helpers and implementations for :class:`DataArray` instance methods.
+
+Methods are dispatched through ``HANDLED_METHODS``.
 """
 
 import numpy as np

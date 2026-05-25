@@ -1,6 +1,7 @@
 """
-:class:`ScalarCoordinate`: non-dimensional (scalar) coordinate that carries a
-single value without being tied to an array axis.
+:class:`ScalarCoordinate`: non-dimensional (scalar) coordinate.
+
+Carries a single value without being tied to an array axis.
 """
 
 import numpy as np

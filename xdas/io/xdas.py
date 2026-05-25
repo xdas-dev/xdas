@@ -1,6 +1,7 @@
 """
-I/O engine for the native xdas HDF5/NetCDF4 format (:class:`XdasEngine`),
-supporting :class:`DataArray`, :class:`DataSequence`, and :class:`DataMapping`.
+I/O engine for the native xdas HDF5/NetCDF4 format (:class:`XdasEngine`).
+
+Supports :class:`DataArray`, :class:`DataSequence`, and :class:`DataMapping`.
 """
 
 import os

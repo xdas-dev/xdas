@@ -1,6 +1,8 @@
 """
-Plugin base class :class:`Engine` for file format handlers, plus
-:class:`AutoEngine` for format auto-detection and :func:`get_free_port`.
+Plugin base class :class:`Engine` for file format handlers.
+
+Also provides :class:`AutoEngine` for format auto-detection and
+:func:`get_free_port`.
 """
 
 import socket

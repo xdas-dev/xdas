@@ -1,7 +1,9 @@
 """
-Core processing infrastructure: :class:`DataArrayLoader`, :class:`DataArrayWriter`,
+Core processing infrastructure for chunked pipeline execution.
+
+Includes :class:`DataArrayLoader`, :class:`DataArrayWriter`,
 :class:`DataFrameWriter`, :class:`StreamWriter`, :class:`ZMQPublisher`,
-:class:`ZMQSubscriber`, :class:`RealTimeLoader`, and the :func:`process` function.
+:class:`ZMQSubscriber`, :class:`RealTimeLoader`, and :func:`process`.
 """
 
 import os

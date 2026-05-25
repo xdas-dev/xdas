@@ -1,6 +1,8 @@
 """
-FFT functions that preserve :class:`DataArray` coordinates: :func:`fft`,
-:func:`ifft`, :func:`rfft`, :func:`irfft`, :func:`fftfreq`, :func:`rfftfreq`.
+FFT functions that preserve :class:`DataArray` coordinates.
+
+Includes :func:`fft`, :func:`ifft`, :func:`rfft`, :func:`irfft`,
+:func:`fftfreq`, :func:`rfftfreq`.
 """
 
 import numpy as np
@@ -217,7 +219,7 @@ def ifft(da, n=None, dim={"last": "signal"}, norm=None, parallel=None):
 @atomized
 def irfft(da, n=None, dim={"last": "signal"}, norm=None, parallel=None):
     """
-    Computes the inverse of `rfft`.
+    Compute the inverse of `rfft`.
 
     Parameters
     ----------

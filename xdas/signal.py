@@ -1,7 +1,8 @@
 """
-Signal processing functions for :class:`DataArray`: filtering, resampling,
-tapering, detrending, and spectral helpers, all coordinate-aware and
-multi-threaded via :func:`~xdas.parallel.parallelize`.
+Signal processing functions for :class:`DataArray`.
+
+Includes filtering, resampling, tapering, detrending, and spectral helpers,
+all coordinate-aware and multi-threaded via :func:`~xdas.parallel.parallelize`.
 """
 
 import numpy as np
@@ -17,7 +18,7 @@ from .spectral import stft  # noqa
 @atomized
 def detrend(da, type="linear", dim="last", parallel=None):
     """
-    Detrend data along given dimension
+    Detrend data along given dimension.
 
     Parameters
     ----------
@@ -52,7 +53,7 @@ def detrend(da, type="linear", dim="last", parallel=None):
 @atomized
 def taper(da, window="hann", fftbins=False, dim="last", parallel=None):
     """
-    Apply a tapering window along the given dimension
+    Apply a tapering window along the given dimension.
 
     Parameters
     ----------
@@ -633,7 +634,7 @@ def sosfilt(sos, da, dim="last", zi=None, parallel=None):
 @atomized
 def sosfiltfilt(sos, da, dim="last", padtype="odd", padlen=None, parallel=None):
     """
-    A forward-backward digital filter using cascaded second-order sections.
+    Apply a forward-backward digital filter using cascaded second-order sections.
 
     Parameters
     ----------
@@ -944,7 +945,7 @@ def sliding_mean_removal(
 @atomized
 def medfilt(da, kernel_dim):  # TODO: parallelize
     """
-    Perform a median filter along given dimensions
+    Perform a median filter along given dimensions.
 
     Apply a median filter to the input using a local window-size given by kernel_size.
     The array will automatically be zero-padded.

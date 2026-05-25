@@ -1,6 +1,4 @@
-"""
-I/O engine for APSensing HDF5 files (:class:`APSensingEngine`).
-"""
+"""I/O engine for APSensing HDF5 files (:class:`APSensingEngine`)."""
 
 import h5py
 import numpy as np

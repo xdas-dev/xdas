@@ -1,6 +1,8 @@
 """
-Chunked processing pipeline: loaders, writers, real-time streaming, and
-the :func:`process` orchestrator for larger-than-memory datasets.
+Chunked processing pipeline for larger-than-memory datasets.
+
+Provides loaders, writers, real-time streaming, and the :func:`process`
+orchestrator.
 """
 
 __all__ = [

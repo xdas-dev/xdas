@@ -1,6 +1,7 @@
 """
-:class:`InterpCoordinate`: piecewise-linear coordinate defined by tie points,
-using ``xinterp`` for forward and inverse interpolation.
+:class:`InterpCoordinate`: piecewise-linear coordinate.
+
+Defined by tie points, using ``xinterp`` for forward and inverse interpolation.
 """
 
 import re
@@ -19,12 +20,11 @@ from .core import (
 
 class InterpCoordinate(Coordinate, name="interpolated"):
     """
-    Array-like object used to represent piecewise evenly spaced coordinates using the
-    CF convention.
+    Array-like object representing piecewise evenly spaced coordinates (CF convention).
 
-    The coordinate ticks are describes by the mean of tie points that are interpolated
-    when intermediate values are required. Coordinate objects provides label based
-    selections methods.
+    The coordinate ticks are described by tie points that are interpolated when
+    intermediate values are required. Coordinate objects provide label-based
+    selection methods.
 
     Parameters
     ----------

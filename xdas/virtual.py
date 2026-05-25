@@ -1,7 +1,9 @@
 """
-Virtual (lazy) array types: :class:`VirtualArray` base, :class:`VirtualSource`
-for a single HDF5/NetCDF4 dataset slice, and :class:`VirtualStack` for
-concatenating multiple sources along an axis.
+Virtual (lazy) array types for deferred HDF5/NetCDF4 access.
+
+Includes :class:`VirtualArray` base, :class:`VirtualSource` for a single
+dataset slice, and :class:`VirtualStack` for concatenating sources along
+an axis.
 """
 
 import os

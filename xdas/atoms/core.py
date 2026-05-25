@@ -1,6 +1,8 @@
 """
-Base classes for stateful processing atoms: :class:`Atom`, :class:`State`,
-:class:`Sequential`, :class:`Partial`, and the :func:`atomized` decorator.
+Base classes for stateful processing atoms.
+
+Includes :class:`Atom`, :class:`State`, :class:`Sequential`, :class:`Partial`,
+and the :func:`atomized` decorator.
 """
 
 import importlib
@@ -24,7 +26,6 @@ class State:
 
     Examples
     --------
-
     In practice the State object is used when implementing new Atom objects. Bellow a
     dummy example without any class declaration.
 
@@ -157,6 +158,7 @@ class Atom:
         return NotImplemented
 
     def __call__(self, x, **flags):
+        """Process input data, initializing state if needed and resetting after final chunk."""
         chunk_dim = flags.get("chunk_dim", None)
         if not self.initialized or chunk_dim is None:
             self.initialize(x, **flags)
@@ -203,10 +205,11 @@ class Atom:
 
 class Sequential(Atom, list):
     """
-    A class to handle a sequence of operations. Each operation is represented by an
-    Atom class object, which contains the function and its arguments.
+    A class to handle a sequence of operations.
 
-    Sequence inherits from list, and therefore behaves as it.
+    Each operation is represented by an Atom class object, which contains the
+    function and its arguments. Sequence inherits from list, and therefore
+    behaves as it.
 
     Parameters
     ----------
@@ -309,7 +312,7 @@ class Sequential(Atom, list):
         return s
 
     def reset(self) -> None:
-        """Resets the state of all StateAtom of the sequence."""
+        """Reset the state of all stateful atoms in the sequence."""
         for atom in self:
             if isinstance(atom, Partial):
                 atom.reset()

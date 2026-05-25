@@ -1,6 +1,7 @@
 """
-HDF5 utility functions for compressing datasets while preserving file
-structure and metadata.
+HDF5 utility functions for compressing datasets.
+
+Preserves file structure and metadata during compression.
 """
 
 import h5py
@@ -25,7 +26,6 @@ def compress(src_path: str, dst_path: str, dataset_location: str, encoding: dict
         - 'compression': the compression algorithm to use and its parameters, part of the hdf5plugin library
         - 'chunks': the chunk size for the dataset, should be a tuple of integers, default to False for no chunking
     """
-
     if "chunks" in encoding.keys() and not encoding["chunks"]:
         encoding.pop("chunks")
 

@@ -1,6 +1,7 @@
 """
-:class:`SampledCoordinate`: regularly-sampled coordinate described by tie
-points and a fixed ``sampling_interval`` between them.
+:class:`SampledCoordinate`: regularly-sampled coordinate.
+
+Described by tie points and a fixed ``sampling_interval`` between them.
 """
 
 import re

@@ -1,6 +1,4 @@
-"""
-:class:`Monitor`: tqdm-based throughput tracker for chunked processing pipelines.
-"""
+""":class:`Monitor`: tqdm-based throughput tracker for chunked processing pipelines."""
 
 from time import perf_counter
 

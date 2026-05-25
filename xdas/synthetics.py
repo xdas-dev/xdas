@@ -1,6 +1,7 @@
 """
-Synthetic DAS data generators used in doctests and test fixtures:
-:func:`wavelet_wavefronts` and :func:`randn_wavefronts`.
+Synthetic DAS data generators used in doctests and test fixtures.
+
+Includes :func:`wavelet_wavefronts` and :func:`randn_wavefronts`.
 """
 
 import numpy as np
@@ -33,7 +34,6 @@ def wavelet_wavefronts(
 
     Examples
     --------
-
     >>> import os
     >>> import xdas as xd
     >>> from xdas.synthetics import wavelet_wavefronts

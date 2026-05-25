@@ -1,6 +1,7 @@
 """
-Thread-parallelism decorator :func:`parallelize` for splitting array axes
-across workers using :class:`~concurrent.futures.ThreadPoolExecutor`.
+Thread-parallelism decorator :func:`parallelize` for splitting array axes.
+
+Splits across workers using :class:`~concurrent.futures.ThreadPoolExecutor`.
 """
 
 import os
@@ -14,7 +15,7 @@ from . import config
 
 def parallelize(split_axis=0, concat_axis=0, parallel=None):
     """
-    Decorator factory that splits array positional arguments across threads.
+    Split array positional arguments across threads.
 
     Parameters
     ----------

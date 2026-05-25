@@ -1,6 +1,7 @@
 """
-Top-level routines for opening, concatenating, aligning, and splitting
-:class:`DataArray` and :class:`DataCollection` objects, including
+Top-level routines for opening, concatenating, aligning, and splitting arrays.
+
+Operates on :class:`DataArray` and :class:`DataCollection` objects; includes
 multi-file helpers (``open_mfdataarray``, ``open_mfdatacollection``).
 """
 
@@ -404,7 +405,7 @@ def collect(
     **kwargs,
 ):
     """
-    Collects the data from a tree of paths using `fields` as level names.
+    Collect the data from a tree of paths using `fields` as level names.
 
     Parameters
     ----------
@@ -1012,6 +1013,7 @@ def concat_coords(objs, *, sort=False, return_order=False, tolerance=False):
         The tolerance to consider that the end of a coordinate object is continuous
         with beginning of the following, For time coordinates, numeric values are
         considered as seconds. No simplification by default.
+
     Returns
     -------
     coord

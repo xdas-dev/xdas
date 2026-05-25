@@ -1,6 +1,4 @@
-"""
-:class:`DenseCoordinate`: coordinate backed by a full numpy array.
-"""
+""":class:`DenseCoordinate`: coordinate backed by a full numpy array."""
 
 import numpy as np
 import pandas as pd

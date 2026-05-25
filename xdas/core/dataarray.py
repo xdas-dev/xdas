@@ -1,6 +1,8 @@
 """
-:class:`DataArray`: the primary N-dimensional array object with labeled
-coordinates, NumPy/Dask backing, and lazy :class:`VirtualArray` support.
+:class:`DataArray`: the primary N-dimensional labeled array object.
+
+Features labeled coordinates, NumPy/Dask backing, and lazy
+:class:`VirtualArray` support.
 """
 
 import copy
@@ -321,8 +323,7 @@ class DataArray(NDArrayOperatorsMixin):
 
     def isel(self, indexers=None, drop=False, **indexers_kwargs):
         """
-        Return a new DataArray whose data is given by selecting indexes along the
-        specified dimension(s).
+        Return a new DataArray selecting indexes along the specified dimension(s).
 
         Parameters
         ----------
@@ -355,8 +356,7 @@ class DataArray(NDArrayOperatorsMixin):
         self, indexers=None, method=None, endpoint=True, drop=False, **indexers_kwargs
     ):
         """
-        Return a new DataArray whose data is given by selecting index labels along the
-        specified dimension(s).
+        Return a new DataArray selecting index labels along the specified dimension(s).
 
         In contrast to DataArray.isel, indexers for this method should use labels
         instead of integers.
@@ -428,7 +428,7 @@ class DataArray(NDArrayOperatorsMixin):
 
     def copy(self, deep=True, data=None):
         """
-        Returns a copy of this array
+        Return a copy of this array.
 
         If deep=True, a deep copy is made of the data array. Otherwise, a shallow copy
         is made, and the returned data array's values are a new view of this data
@@ -468,7 +468,7 @@ class DataArray(NDArrayOperatorsMixin):
 
     def rename(self, new_name_or_name_dict=None, **names):
         """
-        Returns a new DataArray with renamed coordinates, dimensions or a new name.
+        Return a new DataArray with renamed coordinates, dimensions or a new name.
 
         Parameters
         ----------
@@ -588,7 +588,7 @@ class DataArray(NDArrayOperatorsMixin):
 
     def swap_dims(self, dims_dict=None, **dims_kwargs):
         """
-        Returns a new DataArray with swapped dimensions.
+        Return a new DataArray with swapped dimensions.
 
         Parameters
         ----------

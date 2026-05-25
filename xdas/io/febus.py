@@ -1,6 +1,4 @@
-"""
-I/O engine for Febus HDF5 files (:class:`FebusEngine`).
-"""
+"""I/O engine for Febus HDF5 files (:class:`FebusEngine`)."""
 
 import warnings
 
@@ -36,8 +34,8 @@ class FebusEngine(Engine, name="febus"):
         recommended to manually specify the overlap and offset parameters. If not provided,
         the function will attempt to determine the correct values at your own risk.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         fname : str
             The filename of the Febus file to read.
         overlaps : tuple of int, optional
@@ -49,8 +47,8 @@ class FebusEngine(Engine, name="febus"):
             from the beginning. If not provided, the function will attempt to determine the
             correct offset at you own risk.
 
-        Returns:
-        --------
+        Returns
+        -------
         DataArray
             A data array containing the data from the Febus file.
 

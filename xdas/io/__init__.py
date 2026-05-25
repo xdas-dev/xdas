@@ -1,6 +1,8 @@
 """
-I/O subsystem: plugin-based :class:`Engine` registry and concrete engines for
-xdas native, ASN, APSensing, Febus, MiniSEED, ProdML, Silixa, Terra15 formats.
+I/O subsystem: plugin-based :class:`Engine` registry and concrete engines.
+
+Supports xdas native, ASN, APSensing, Febus, MiniSEED, ProdML, Silixa, and
+Terra15 formats.
 """
 
 __all__ = [

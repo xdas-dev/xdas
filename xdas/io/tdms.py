@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Copyright (c) 2018 Silixa Ltd
+Copyright (c) 2018 Silixa Ltd.
+
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation
 files (the "Software"), to use the Software for the sole purpose of private, non-commercial use and/or in-house company
 research and development meaning the right to use, copy, modify, merge, share the Software, and to permit persons to whom
@@ -55,16 +56,16 @@ def write_property_dict(prop_dict, out_file):
 
 
 def type_not_supported(vargin):
-    """Function raises a NotImplementedException."""
+    """Raise a NotImplementedException for unsupported tdsDataTypes."""
     raise NotImplementedError("Reading of this tdsDataType is not implemented")
 
 
 def parse_time_stamp(fractions, seconds):
     """
-    Convert time TDMS time representation to datetime
-    fractions   -- fractional seconds (2^-64)
-    seconds     -- The number of seconds since 1/1/1904
-    @rtype : datetime.datetime
+    Convert TDMS time representation to datetime.
+
+    Parameters: fractions (fractional seconds, 2^-64), seconds (seconds since
+    1/1/1904). Returns datetime.datetime or None.
     """
     if fractions is not None and seconds is not None and fractions + seconds > 0:
         return datetime.timedelta(0, fractions * 2**-64 + seconds) + datetime.datetime(
@@ -139,7 +140,7 @@ FILEINFO_NAMES = (
 
 
 class TdmsReader(object):
-    """A TDMS file reader object for reading properties and data"""
+    """A TDMS file reader object for reading properties and data."""
 
     def __init__(self, filename):
         self._properties = None
@@ -197,9 +198,7 @@ class TdmsReader(object):
     channel_length = property(_get_channel_length)
 
     def get_properties(self, mapped=False):
-        """
-        Return a dictionary of properties. Read from file only if necessary.
-        """
+        """Return a dictionary of properties. Read from file only if necessary."""
         # Check if already hold properties in memory
         if self._properties is None:
             self._properties = self._read_properties()
@@ -233,6 +232,7 @@ class TdmsReader(object):
     def _read_property(self):
         """
         Read a single property from the TDMS file.
+
         Return the name, type and value of the property as a list.
         """
         # Read length of object path:
@@ -250,7 +250,7 @@ class TdmsReader(object):
         return name, data_type, value
 
     def _read_properties(self):
-        """Read the properties from the file"""
+        """Read the properties from the file."""
         self._tdms_file.seek(LEAD_IN_LENGTH, 0)
         # Number of channels is total objects - file objects - group objects
         self.fileinfo["n_channels"] = struct.unpack("i", self._tdms_file.read(4))[0] - 2
@@ -302,10 +302,8 @@ class TdmsReader(object):
     def get_data(self, first_ch=0, last_ch=None, first_s=0, last_s=None):
         """
         Get a block of data from the TDMS file.
-        first_ch -- The first channel to load
-        last_ch  -- The last channel to load
-        first_s  -- The first sample to load
-        last_s   -- The last sample to load
+
+        Parameters: first_ch, last_ch (channel range), first_s, last_s (sample range).
         """
         if self._raw_data is None:
             self._initialise_data()

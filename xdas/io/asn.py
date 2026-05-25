@@ -1,6 +1,8 @@
 """
-I/O engine for ASN HDF5 files (:class:`ASNEngine`) and a ZMQ-based
-real-time subscriber (:class:`ZMQSubscriber`) for live ASN streams.
+I/O engine for ASN HDF5 files and live ZMQ streams.
+
+Includes :class:`ASNEngine` and a ZMQ-based real-time subscriber
+(:class:`ZMQSubscriber`) for live ASN streams.
 """
 
 import json
@@ -101,7 +103,7 @@ class ZMQSubscriber:
 
     def __init__(self, address):
         """
-        Initializes a ZMQStream object.
+        Initialize a ZMQStream object.
 
         Parameters
         ----------
@@ -297,7 +299,7 @@ class ZMQPublisher:
 
 def float_to_timedelta(value, unit):
     """
-    Converts a floating-point value to a timedelta object.
+    Convert a floating-point value to a timedelta object.
 
     Parameters
     ----------

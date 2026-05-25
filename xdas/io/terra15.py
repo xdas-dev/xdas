@@ -1,6 +1,4 @@
-"""
-I/O engine for Terra15 HDF5 files (:class:`Terra15Engine`).
-"""
+"""I/O engine for Terra15 HDF5 files (:class:`Terra15Engine`)."""
 
 import h5py
 import pandas as pd

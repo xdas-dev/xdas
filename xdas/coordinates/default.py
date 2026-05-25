@@ -1,6 +1,7 @@
 """
-:class:`DefaultCoordinate`: integer-range coordinate used when no coordinate
-is explicitly provided for an axis.
+:class:`DefaultCoordinate`: integer-range coordinate.
+
+Used when no coordinate is explicitly provided for an axis.
 """
 
 import numpy as np

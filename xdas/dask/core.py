@@ -1,6 +1,7 @@
 """
-Functions to store and restore dask arrays as HDF5 variables using msgpack
-serialization of the dask task graph.
+Functions to store and restore dask arrays as HDF5 variables.
+
+Uses msgpack serialization of the dask task graph.
 """
 
 import numpy as np

@@ -1,6 +1,4 @@
-"""
-I/O engine for Silixa TDMS files (:class:`SilixaEngine`).
-"""
+"""I/O engine for Silixa TDMS files (:class:`SilixaEngine`)."""
 
 import dask
 import numpy as np

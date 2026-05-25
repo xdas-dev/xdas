@@ -1,6 +1,7 @@
 """
-Spectral analysis functions for :class:`DataArray`: Short-Time Fourier
-Transform (:func:`stft`) and related helpers.
+Spectral analysis functions for :class:`DataArray`.
+
+Includes Short-Time Fourier Transform (:func:`stft`) and related helpers.
 """
 
 import numpy as np

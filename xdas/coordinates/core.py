@@ -1,7 +1,9 @@
 """
-Core coordinate infrastructure: :class:`Coordinates` container,
-:class:`Coordinate` factory/base class, and shared helpers used by all
-concrete coordinate types (parsing, interpolation, tolerance handling).
+Core coordinate infrastructure.
+
+Includes the :class:`Coordinates` container, :class:`Coordinate` factory/base
+class, and shared helpers used by all concrete coordinate types (parsing,
+interpolation, tolerance handling).
 """
 
 import weakref
@@ -14,7 +16,7 @@ import pandas as pd
 
 
 def wraps_first_last(func):
-    """Decorator that resolves ``"first"`` and ``"last"`` dim aliases before calling *func*."""
+    """Resolve ``"first"`` and ``"last"`` dim aliases before calling *func*."""
 
     @wraps(func)
     def wrapper(self, dim, *args, **kwargs):
@@ -214,7 +216,6 @@ class Coordinates(dict):
 
         Examples
         --------
-
         >>> import xdas as xd
 
         >>> coords = xd.Coordinates(
@@ -326,6 +327,7 @@ class Coordinate:
         return cls._registry[item]
 
     def __new__(cls, data=None, dim=None, dtype=None):
+        """Instantiate the appropriate Coordinate subclass based on *data*."""
         # class factory if instantiating Coordinate directly
         if cls is Coordinate:
             if data is None:
@@ -609,7 +611,7 @@ class Coordinate:
 
     def get_discontinuities(self, tolerance=None):
         """
-        Returns a DataFrame containing information about the discontinuities.
+        Return a DataFrame containing information about the discontinuities.
 
         Returns
         -------
@@ -664,7 +666,7 @@ class Coordinate:
 
     def get_availabilities(self):
         """
-        Returns a DataFrame containing information about the data availability.
+        Return a DataFrame containing information about the data availability.
 
         Returns
         -------
@@ -836,7 +838,7 @@ def parse_tolerance(tolerance, dtype):
 
 def get_sampling_interval(da, dim, cast=True):
     """
-    Returns the sample spacing along a given dimension.
+    Return the sample spacing along a given dimension.
 
     Parameters
     ----------

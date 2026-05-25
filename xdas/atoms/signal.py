@@ -1,8 +1,8 @@
 """
-Signal-processing atoms: stateful wrappers around common filtering and
-resampling operations (:class:`ResamplePoly`, :class:`IIRFilter`,
-:class:`FIRFilter`, :class:`LFilter`, :class:`SOSFilter`,
-:class:`DownSample`, :class:`UpSample`).
+Signal-processing atoms: stateful wrappers around filtering and resampling.
+
+Includes :class:`ResamplePoly`, :class:`IIRFilter`, :class:`FIRFilter`,
+:class:`LFilter`, :class:`SOSFilter`, :class:`DownSample`, :class:`UpSample`.
 """
 
 from fractions import Fraction
@@ -19,9 +19,9 @@ from .core import Atom, State
 
 class ResamplePoly(Atom):
     """
-    Pipeline implementation of polyphase-filter resampling from the
-    original sampling rate to the ``target`` sampling rate.
+    Pipeline implementation of polyphase-filter resampling.
 
+    Resamples from the original sampling rate to the ``target`` sampling rate.
     This is achieved by an upsampling of the data,
     followed by the application of a low-pass FIR filter,
     and finally by downsampling of the data. The ratio of the
@@ -30,7 +30,6 @@ class ResamplePoly(Atom):
 
     Parameters
     ----------
-
     target : float
         The target sampling rate of the new data
     maxfactor : int

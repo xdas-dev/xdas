@@ -1,6 +1,7 @@
 """
-I/O engine for ProdML HDF5 files (:class:`ProdML`), also known as
-OptaSense and Sintela format.
+I/O engine for ProdML HDF5 files (:class:`ProdML`).
+
+Also known as OptaSense and Sintela format.
 """
 
 import h5py

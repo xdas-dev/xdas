@@ -1,6 +1,8 @@
 """
-:class:`DataCollection`, :class:`DataSequence`, and :class:`DataMapping`:
-nested tree structures for grouping multiple :class:`DataArray` objects.
+Nested tree structures for grouping multiple :class:`DataArray` objects.
+
+Includes :class:`DataCollection`, :class:`DataSequence`, and
+:class:`DataMapping`.
 """
 
 from fnmatch import fnmatch
@@ -23,7 +25,7 @@ class DataCollection:
     name: str
         The name of the current level of nesting.
 
-    Returns:
+    Returns
     -------
     DataCollection:
         The nested data as a DataSequence or DataMapping.
@@ -55,6 +57,7 @@ class DataCollection:
     """
 
     def __new__(cls, data, name=None):
+        """Dispatch to :class:`DataSequence` or :class:`DataMapping` based on *data* type."""
         data, name = parse(data, name)
         if isinstance(data, list):
             return list.__new__(DataSequence)
@@ -87,7 +90,7 @@ class DataCollection:
             The keyword arguments form of indexers. Overwrite indexers input if both
             are provided.
 
-        Returns:
+        Returns
         -------
         DataCollection:
             The queried data.
@@ -202,6 +205,7 @@ class DataMapping(DataCollection, dict):
     """
 
     def __new__(cls, data, name=None):
+        """Allocate a new dict-backed DataMapping instance."""
         return dict.__new__(cls)
 
     def __init__(self, data, name=None):
@@ -361,7 +365,7 @@ class DataMapping(DataCollection, dict):
 
     def map(self, atom):
         """
-        Apply an atom to each data array of the data collection
+        Apply an atom to each data array of the data collection.
 
         Parameters
         ----------
@@ -413,6 +417,7 @@ class DataSequence(DataCollection, list):
     """
 
     def __new__(cls, data, name=None):
+        """Allocate a new list-backed DataSequence instance."""
         return list.__new__(cls)
 
     def __init__(self, data, name=None):
@@ -566,7 +571,7 @@ class DataSequence(DataCollection, list):
 
     def map(self, atom):
         """
-        Apply an atom to each data array of the data collection
+        Apply an atom to each data array of the data collection.
 
         Parameters
         ----------

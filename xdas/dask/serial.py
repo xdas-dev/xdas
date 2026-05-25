@@ -1,6 +1,8 @@
 """
-msgpack-based serialization for dask task graphs, handling tuples, slices,
-callables, ``methodcaller``, and ``itemgetter`` objects.
+msgpack-based serialization for dask task graphs.
+
+Handles tuples, slices, callables, ``methodcaller``, and ``itemgetter``
+objects.
 """
 
 import importlib
@@ -19,7 +21,7 @@ codes = {
 
 def encode(obj):
     """
-    msgpack *default* hook — encode non-native types as :class:`msgpack.ExtType`.
+    Msgpack *default* hook — encode non-native types as :class:`msgpack.ExtType`.
 
     Handles ``tuple``, ``slice``, ``callable``, :class:`methodcaller`, and
     :class:`itemgetter`.
@@ -56,7 +58,7 @@ def encode(obj):
 
 def decode(code, data):
     """
-    msgpack *ext_hook* — decode an :class:`msgpack.ExtType` back to the original object.
+    Msgpack *ext_hook* — decode an :class:`msgpack.ExtType` back to the original object.
 
     Parameters
     ----------

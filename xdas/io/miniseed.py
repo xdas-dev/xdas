@@ -1,6 +1,4 @@
-"""
-I/O engine for MiniSEED files via ObsPy (:class:`MiniSEEDEngine`).
-"""
+"""I/O engine for MiniSEED files via ObsPy (:class:`MiniSEEDEngine`)."""
 
 import dask
 import numpy as np

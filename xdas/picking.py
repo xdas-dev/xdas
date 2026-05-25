@@ -1,6 +1,7 @@
 """
-Phase-pick utilities: tapered selection and cross-correlation based
-picking of onset times in :class:`DataArray` objects.
+Phase-pick utilities for :class:`DataArray` objects.
+
+Includes tapered selection and cross-correlation based picking of onset times.
 """
 
 import numpy as np
@@ -12,7 +13,7 @@ import xdas as xd
 
 def tapered_selection(da, start, end, window=None, size=None, dim="last"):
     """
-    Selects and tapers a DataArray based on `start` and `end` values.
+    Select and taper a DataArray based on `start` and `end` values.
 
     Coordinates with NaN or NaT `start` or `end` values are ignored. If no `size` is
     provided, the length of the resulting data is determined by the next fast length
