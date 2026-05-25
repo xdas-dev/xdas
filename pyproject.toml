@@ -45,7 +45,6 @@ tests = [
     "dascore",
     "pytest",
     "pytest-cov",
-    "pytest-timeout",
     "psutil",
     "seisbench",
     "torch",
