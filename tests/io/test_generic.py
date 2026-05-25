@@ -4,6 +4,32 @@ import pytest
 from dascore.utils.downloader import fetch
 
 import xdas as xd
+from xdas.io.core import AutoEngine, Engine
+
+
+class TestEngineRegistry:
+    def test_unknown_engine_raises_key_error(self):
+        with pytest.raises(KeyError, match="not found"):
+            Engine["nonexistent_engine_xyz"]
+
+    def test_invalid_vtype_raises_value_error(self):
+        with pytest.raises(ValueError, match="vtype must be None or a string"):
+            Engine["asn"](vtype=42)
+
+    def test_dict_ctype_fills_missing_keys(self):
+        engine = Engine["asn"](ctype={"time": "interpolated"})
+        assert engine.ctype["time"] == "interpolated"
+        assert "distance" in engine.ctype
+
+    def test_auto_engine_all_fail_raises_value_error(self):
+        with pytest.raises(ValueError, match="no engine could open"):
+            AutoEngine().open_dataarray("/definitely/nonexistent_file.hdf5")
+
+    def test_auto_engine_fail_message_includes_ctype(self, tmp_path):
+        fake = tmp_path / "fake.h5"
+        fake.write_bytes(b"not a valid hdf5 file")
+        with pytest.raises(ValueError, match="ctype"):
+            AutoEngine(ctype="dense").open_dataarray(str(fake))
 
 
 class TestGenericIO:

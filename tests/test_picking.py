@@ -252,8 +252,16 @@ class TestTaperedSelection:
                 "station": "ABC",
             },
         )
-        start = [np.datetime64("NaT")] + [np.datetime64("2023-01-01T00:00:03")] * 2 + [np.datetime64("NaT")] * 2
-        end = [np.datetime64("NaT")] + [np.datetime64("2023-01-01T00:00:07")] * 2 + [np.datetime64("NaT")] * 2
+        start = (
+            [np.datetime64("NaT")]
+            + [np.datetime64("2023-01-01T00:00:03")] * 2
+            + [np.datetime64("NaT")] * 2
+        )
+        end = (
+            [np.datetime64("NaT")]
+            + [np.datetime64("2023-01-01T00:00:07")] * 2
+            + [np.datetime64("NaT")] * 2
+        )
 
         result = tapered_selection(da, start, end, dim="time")
         assert result.coords["station"].values == np.array("ABC")
@@ -279,8 +287,16 @@ class TestTaperedSelection:
                 ),
             },
         )
-        start = [np.datetime64("NaT")] + [np.datetime64("2023-01-01T00:00:03")] * 2 + [np.datetime64("NaT")] * 2
-        end = [np.datetime64("NaT")] + [np.datetime64("2023-01-01T00:00:07")] * 2 + [np.datetime64("NaT")] * 2
+        start = (
+            [np.datetime64("NaT")]
+            + [np.datetime64("2023-01-01T00:00:03")] * 2
+            + [np.datetime64("NaT")] * 2
+        )
+        end = (
+            [np.datetime64("NaT")]
+            + [np.datetime64("2023-01-01T00:00:07")] * 2
+            + [np.datetime64("NaT")] * 2
+        )
 
         result = tapered_selection(da, start, end, dim="time")
         assert "quality" not in result.coords

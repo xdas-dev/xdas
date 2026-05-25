@@ -85,7 +85,9 @@ class TestDefaultCoordinate:
     def test_equals_wrong_type(self):
         from xdas.coordinates import DenseCoordinate
 
-        result = DefaultCoordinate({"size": 3}).equals(DenseCoordinate(np.arange(3), "x"))
+        result = DefaultCoordinate({"size": 3}).equals(
+            DenseCoordinate(np.arange(3), "x")
+        )
         assert result is None
 
     def test_get_indexer(self):

@@ -69,3 +69,14 @@ def test_unknown_type():
         TypeError, match="Cannot encode object of type <class 'object'>"
     ):
         dumps(object())
+
+
+def test_decode_unknown_code():
+    import msgpack
+
+    from xdas.dask.serial import decode
+
+    # Call decode with an extension code not in the codes dict
+    data = msgpack.dumps(None)
+    with pytest.raises(ValueError, match="Unknown code"):
+        decode(99, data)

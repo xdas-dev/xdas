@@ -34,45 +34,33 @@ class TestMethods:
 
     def test_cumprod_float(self, float_da):
         result = float_da.cumprod("y")
-        np.testing.assert_array_equal(
-            result.data, np.nancumprod(float_da.data, axis=1)
-        )
+        np.testing.assert_array_equal(result.data, np.nancumprod(float_da.data, axis=1))
 
     def test_cumsum_float(self, float_da):
         result = float_da.cumsum("y")
-        np.testing.assert_array_equal(
-            result.data, np.nancumsum(float_da.data, axis=1)
-        )
+        np.testing.assert_array_equal(result.data, np.nancumsum(float_da.data, axis=1))
 
     # --- cumprod / cumsum with integer dtype (non-skipna branch) ---
 
     def test_cumprod_integer(self, int_da):
         result = int_da.cumprod("y")
         assert result.shape == int_da.shape
-        np.testing.assert_array_equal(
-            result.data, np.cumprod(int_da.data, axis=1)
-        )
+        np.testing.assert_array_equal(result.data, np.cumprod(int_da.data, axis=1))
 
     def test_cumsum_integer(self, int_da):
         result = int_da.cumsum("y")
         assert result.shape == int_da.shape
-        np.testing.assert_array_equal(
-            result.data, np.cumsum(int_da.data, axis=1)
-        )
+        np.testing.assert_array_equal(result.data, np.cumsum(int_da.data, axis=1))
 
     # --- skipna=False branches ---
 
     def test_cumprod_skipna_false(self, float_da):
         result = float_da.cumprod("y", skipna=False)
-        np.testing.assert_array_equal(
-            result.data, np.cumprod(float_da.data, axis=1)
-        )
+        np.testing.assert_array_equal(result.data, np.cumprod(float_da.data, axis=1))
 
     def test_cumsum_skipna_false(self, float_da):
         result = float_da.cumsum("y", skipna=False)
-        np.testing.assert_array_equal(
-            result.data, np.cumsum(float_da.data, axis=1)
-        )
+        np.testing.assert_array_equal(result.data, np.cumsum(float_da.data, axis=1))
 
     # --- dim=None (axis=None) branches ---
 

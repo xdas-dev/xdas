@@ -935,3 +935,34 @@ class TestNotImplementedMethods:
             coord.__array_function__(None, None, None, None)
         with pytest.raises(NotImplementedError):
             coord.from_array(None)
+
+
+class TestSampledCoordinateMissingBranches:
+    def make_coord(self):
+        return SampledCoordinate(
+            {"tie_values": [0.0, 10.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
+        )
+
+    def make_coord_with_overlap(self):
+        return SampledCoordinate(
+            {"tie_values": [0.0, 5.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
+        )
+
+    def test_simplify_false(self):
+        coord = self.make_coord()
+        assert coord.simplify(False) is coord
+
+    def test_get_split_indices_gaps(self):
+        coord = self.make_coord()
+        gaps = coord.get_split_indices(kind="gaps")
+        assert isinstance(gaps, np.ndarray)
+
+    def test_get_split_indices_overlaps(self):
+        coord = self.make_coord()
+        overlaps = coord.get_split_indices(kind="overlaps")
+        assert isinstance(overlaps, np.ndarray)
+
+    def test_get_indexer_bfill_in_bounds(self):
+        coord = self.make_coord()
+        assert coord.get_indexer(0.0, method="bfill") == 0
+        assert coord.get_indexer(0.5, method="bfill") == 1

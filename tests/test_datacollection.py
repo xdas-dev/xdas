@@ -167,17 +167,20 @@ class TestDataCollection:
 
     def test_datacollection_from_raw_data(self):
         import numpy as np
+
         data = np.ones((3, 4))
         result = xd.DataCollection(data, "raw")
         assert isinstance(result, xd.DataArray)
 
     def test_empty_mapping_repr(self):
         from xdas.core.datacollection import DataMapping
+
         dm = DataMapping({}, "empty")
         assert repr(dm) == "Empty"
 
     def test_mapping_reduce(self):
         import pickle
+
         da = wavelet_wavefronts()
         dc = xd.DataCollection({"a": da}, "test")
         pickled = pickle.dumps(dc)
@@ -186,6 +189,7 @@ class TestDataCollection:
 
     def test_sequence_reduce(self):
         import pickle
+
         da = wavelet_wavefronts()
         dc = xd.DataCollection([da, da], "test")
         pickled = pickle.dumps(dc)
@@ -286,6 +290,7 @@ class TestDataCollection:
 
     def test_from_netcdf_non_sequential_int_keys(self, tmp_path):
         from xdas.core.datacollection import DataMapping
+
         da = wavelet_wavefronts()
         # Create a mapping with non-sequential int keys (gaps)
         dm = DataMapping({0: da, 2: da}, "test")
@@ -297,6 +302,7 @@ class TestDataCollection:
 
     def test_sequence_from_netcdf_direct(self, tmp_path):
         from xdas.core.datacollection import DataSequence
+
         da = wavelet_wavefronts()
         dc = DataSequence([da, da], "seq")
         path = tmp_path / "seq_direct.nc"
@@ -325,6 +331,7 @@ class TestDataCollection:
 
     def test_mapping_repr_int_keys(self):
         from xdas.core.datacollection import DataMapping
+
         da = wavelet_wavefronts()
         dm = DataMapping({0: da, 1: da}, "seq")
         s = repr(dm)
@@ -366,6 +373,7 @@ class TestDataCollection:
 
     def test_parse_tuple_with_name_given(self):
         from xdas.core.datacollection import DataMapping
+
         da = wavelet_wavefronts()
         # When data is a tuple and name is already provided, unpack the tuple ignoring its name
         dm = DataMapping(("inner_name", {"a": da}), "outer_name")
@@ -379,5 +387,28 @@ class TestDataCollection:
         dc_copy = xd.DataCollection.__new__(xd.DataCollection, dm2)
         # just verify parse propagates name
         from xdas.core.datacollection import parse
+
         data, name = parse(dm, None)  # should propagate dm.name
         assert name == "original_name"
+
+    def test_mapping_map_invalid_item(self):
+        from xdas.core.datacollection import DataMapping
+
+        da = wavelet_wavefronts()
+        dm = DataMapping({"good": da}, "test")
+        # bypass validation to inject an invalid item
+        dict.__setitem__(dm, "bad", "not_a_dataarray")
+        atom = xs.decimate(..., 2, ftype="fir")
+        with pytest.raises(TypeError, match="encountered in the collection"):
+            dm.map(atom)
+
+    def test_sequence_map_invalid_item(self):
+        from xdas.core.datacollection import DataSequence
+
+        da = wavelet_wavefronts()
+        ds = DataSequence([da], "test")
+        # bypass validation to inject an invalid item
+        list.append(ds, "not_a_dataarray")
+        atom = xs.decimate(..., 2, ftype="fir")
+        with pytest.raises(TypeError, match="encountered in the collection"):
+            ds.map(atom)

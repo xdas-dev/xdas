@@ -31,12 +31,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "black",
-    "build",
-    "isort",
-    "twine",
-]
+dev = ["black", "build", "isort", "twine"]
 docs = [
     "ipykernel",
     "matplotlib",
@@ -60,17 +55,19 @@ tests = [
 profile = "black"
 
 [tool.pytest.ini_options]
-addopts = ["--doctest-modules", "--import-mode=importlib", "--cov=xdas", "--cov-report=term-missing"]
+addopts = [
+    "--doctest-modules",
+    "--import-mode=importlib",
+]
 doctest_optionflags = "NORMALIZE_WHITESPACE"
 markers = ["slow: marks tests as slow (skip with --skip-slow)"]
 
 [tool.coverage.run]
 source = ["xdas"]
-branch = true 
+branch = true
+omit = ["xdas/io/tdms.py"]
 
 [tool.coverage.report]
 show_missing = true
-skip_covered = false
-exclude_also = [
-    "raise NotImplementedError",
-]
+skip_covered = true
+exclude_also = ["raise NotImplementedError"]

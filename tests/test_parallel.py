@@ -84,7 +84,6 @@ class TestParallelize:
         assert np.array_equal(y_res, y_exp)
         assert np.array_equal(t_res, t_exp)
 
-
     def test_parallel_multiple_outputs(self):
         # Force 2 workers to hit the parallel output path (line 104)
         func = parallelize(split_axis=(0, 0), concat_axis=(0, 0), parallel=2)(
@@ -134,7 +133,9 @@ class TestConcatenate:
 
     def test_different_dtypes(self):
         with pytest.raises(ValueError, match="same dtype"):
-            concatenate([np.ones((3,), dtype=np.float32), np.ones((3,), dtype=np.float64)])
+            concatenate(
+                [np.ones((3,), dtype=np.float32), np.ones((3,), dtype=np.float64)]
+            )
 
     def test_different_shape_other_axis(self):
         with pytest.raises(ValueError, match="same shape"):
@@ -161,6 +162,7 @@ class TestGetWorkersCount:
 
     def test_bool_true(self):
         import os
+
         assert get_workers_count(True) == os.cpu_count()
 
     def test_bool_false(self):
@@ -168,3 +170,7 @@ class TestGetWorkersCount:
 
     def test_int(self):
         assert get_workers_count(4) == 4
+
+    def test_invalid_type_raises(self):
+        with pytest.raises(TypeError, match="must be either None, bool or int"):
+            get_workers_count("invalid")

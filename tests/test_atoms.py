@@ -290,3 +290,151 @@ class TestMLPicker:
             _result.values, _expected.values, rtol=1e-5, atol=1e-7
         )
         np.testing.assert_array_max_ulp(_result.values, _expected.values, maxulp=300)
+
+
+class TestAtomCoreMissingBranches:
+    def test_repr_with_nested_atoms(self):
+        from xdas.atoms.core import Atom, State
+
+        a = [1, 1]
+        b = [1, 1]
+        atom = IIRFilter(a, b, 10.0, "lowpass", dim="time")
+        s = repr(atom)
+        assert "IIRFilter" in s
+
+    def test_sequential_wraps_non_atom(self):
+        seq = Sequential([np.abs, np.square])
+        assert all(isinstance(a, Partial) for a in seq)
+
+    def test_partial_non_callable_raises(self):
+        with pytest.raises(TypeError, match="`func` should be callable"):
+            Partial(42)
+
+    def test_partial_multiple_ellipsis_raises(self):
+        with pytest.raises(ValueError, match="at most one Ellipsis"):
+            Partial(np.abs, ..., ...)
+
+    def test_partial_state_kwarg(self):
+        from xdas.atoms.core import State
+
+        p = Partial(np.abs, key=State(42))
+        assert "key" in p._state
+
+    def test_partial_stateful_call(self):
+        da = wavelet_wavefronts()
+        atom = IIRFilter(4, 10.0, "lowpass", dim="time", stype="ba")
+        da_out = atom(da, chunk_dim="time")
+        assert da_out.shape == da.shape
+
+    def test_save_and_load_state(self, tmp_path):
+        from xdas.atoms.core import Atom, State
+
+        class SimpleAtom(Atom):
+            def __init__(self):
+                super().__init__()
+                self.buf = State(...)
+
+            def initialize(self, x, **flags):
+                self.buf = State(x.copy())
+
+            def initialize_from_state(self):
+                pass
+
+            def call(self, x, **flags):
+                return x
+
+        atom = SimpleAtom()
+        da = xd.DataArray(np.ones((10, 5)), dims=("x", "y"))
+        atom(da, chunk_dim="x")
+        path = tmp_path / "state.nc"
+        atom.save_state(path)
+        recovered = SimpleAtom()
+        recovered.load_state(path)
+        # TODO: should be Dataarray.equals comparison
+        np.testing.assert_array_equal(recovered.buf, atom.buf)
+
+    def test_atomized_two_atom_args_raises(self):
+        da = wavelet_wavefronts()
+        atom1 = xs.integrate(...)
+        atom2 = xs.integrate(...)
+        with pytest.raises(ValueError, match="Only one Atom"):
+            xs.integrate(atom1, atom2)
+
+    def test_atomized_sequential_input(self):
+        atom = xs.integrate(...)
+        seq = Sequential([atom])
+        initial_len = len(seq)
+        xs.integrate(seq)
+        assert len(seq) == initial_len + 1
+
+    def test_set_state_nested_atom(self):
+        from xdas.atoms.core import Atom, State
+
+        class InnerAtom(Atom):
+            def __init__(self):
+                super().__init__()
+                self.val = State(np.zeros(3))
+
+            def call(self, x, **flags):
+                return x
+
+        class OuterAtom(Atom):
+            def __init__(self):
+                super().__init__()
+                self.inner = InnerAtom()
+
+            def call(self, x, **flags):
+                return x
+
+        outer = OuterAtom()
+        state = xd.DataArray(np.ones(3))
+        outer.set_state({"inner": {"val": state}})
+        # TODO: should be Dataarray.equals comparison
+        np.testing.assert_array_equal(outer.inner.val, state)
+
+    def test_partial_repr_long_kwarg(self):
+        atom = Partial(np.abs, axis=np.arange(10))
+        r = repr(atom)
+        assert "<ndarray>" in r
+
+
+class TestAtomSignalMissingBranches:
+    def test_iirfilter_invalid_stype(self):
+        with pytest.raises(ValueError):
+            IIRFilter(4, 10.0, "lowpass", dim="time", stype="invalid")
+
+    def test_iirfilter_initialize_from_state_zpk_stype(self):
+        da = wavelet_wavefronts()
+        atom = IIRFilter(4, 10.0, "lowpass", dim="time", stype="ba")
+        atom(da, chunk_dim="time")
+        atom.stype = "zpk"
+        with pytest.raises(ValueError):
+            atom.initialize_from_state()
+
+    def test_downsample_factor_one(self):
+        da = wavelet_wavefronts()
+        atom = DownSample(1, dim="time")
+        result = atom(da)
+        assert result.equals(da)
+
+    def test_upsample_no_scale(self):
+        da = wavelet_wavefronts().isel(time=slice(0, 10))
+        atom = UpSample(2, dim="time", scale=False)
+        result = atom(da)
+        assert result.sizes["time"] == 2 * da.sizes["time"]
+
+
+class TestMLPickerMissingBranches:
+    def test_lazy_module_import_error(self):
+        from xdas.atoms.ml import LazyModule
+
+        mod = LazyModule("nonexistent_module_xdas_test")
+        with pytest.raises(ImportError, match="is not installed by default"):
+            _ = mod.something
+
+    def test_mlpicker_invalid_component_strategy(self):
+        import seisbench.models as sbm
+
+        model = sbm.PhaseNet.from_pretrained("geofon")
+        with pytest.raises(ValueError, match="component_strategy must be one of"):
+            MLPicker(model, dim="time", component_strategy="invalid")
