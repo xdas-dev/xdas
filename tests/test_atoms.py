@@ -7,6 +7,7 @@ import scipy.signal as sp
 import xdas as xd
 import xdas.signal as xs
 from xdas.atoms import (
+    Atom,
     DownSample,
     FIRFilter,
     IIRFilter,
@@ -18,6 +19,14 @@ from xdas.atoms import (
 )
 from xdas.signal import lfilter
 from xdas.synthetics import randn_wavefronts, wavelet_wavefronts
+
+
+class TestAbstractAtom:
+    def test(self):
+        atom = Atom()
+        assert atom.initialize(None) is NotImplemented
+        assert atom.initialize_from_state() is NotImplemented
+        assert atom.call(None) is NotImplemented
 
 
 class TestPartialAtom:
@@ -353,7 +362,6 @@ class TestAtomCoreMissingBranches:
         np.testing.assert_array_equal(recovered.buf, atom.buf)
 
     def test_atomized_two_atom_args_raises(self):
-        da = wavelet_wavefronts()
         atom1 = xs.integrate(...)
         atom2 = xs.integrate(...)
         with pytest.raises(ValueError, match="Only one Atom"):

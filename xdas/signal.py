@@ -795,7 +795,10 @@ def integrate(da, midpoints=False, dim="last", parallel=None):
     """
     axis = da.get_axis_num(dim)
     d = get_sampling_interval(da, dim)
-    func = lambda x: np.cumsum(x, axis=axis) * d
+
+    def func(x):
+        return np.cumsum(x, axis=axis) * d
+
     across = int(axis == 0)
     func = parallelize(across, across, parallel)(func)
     data = func(da.values)
@@ -835,7 +838,10 @@ def differentiate(da, midpoints=False, dim="last", parallel=None):
     """
     axis = da.get_axis_num(dim)
     d = get_sampling_interval(da, dim)
-    func = lambda x: np.diff(x, axis=axis) / d
+
+    def func(x):
+        return np.diff(x, axis=axis) / d
+
     across = int(axis == 0)
     func = parallelize(across, across, parallel)(func)
     data = func(da.values)
@@ -923,9 +929,12 @@ def sliding_mean_removal(
     shape = tuple(-1 if a == axis else 1 for a in range(da.ndim))
     win = np.reshape(win, shape)
     pad_width = tuple((n // 2, n // 2) if a == axis else (0, 0) for a in range(da.ndim))
-    func = lambda x: (
-        x - sp.fftconvolve(np.pad(x, pad_width, mode=pad_mode), win, mode="valid")
-    )
+
+    def func(x):
+        return x - sp.fftconvolve(
+            np.pad(x, pad_width, mode=pad_mode), win, mode="valid"
+        )
+
     across = int(axis == 0)
     func = parallelize(across, across, parallel)(func)
     data = func(da.values)

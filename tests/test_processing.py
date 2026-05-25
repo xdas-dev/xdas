@@ -130,19 +130,16 @@ class TestProcessing:
         sequence = Sequential([Partial(sosfilt, sos, ..., dim="time", zi=...)])
 
         # monolithic processing
-        result1 = sequence(da)
+        sequence(da)
 
         # chunked processing
         data_loader = xp.DataArrayLoader(da, chunks={"time": 100})
         for da in data_loader:
-            pass
+            pass  # TODO
         # data_writer = xp.DataArrayWriter(tmp_path)
         # result2 = xp.process(
         #     sequence, data_loader, data_writer
         # )  # resets the sequence by default
-
-        # # test
-        # assert result1.equals(result2)
 
 
 class TestDataFrameWriter:
@@ -273,13 +270,14 @@ class TestStreamWriter:
             },
         )
 
-        atom = lambda da, **kwargs: da.to_stream(
-            network="NT",
-            station="ST{:03}",
-            channel="HN1",
-            location="00",
-            dim={"distance": "time"},
-        )
+        def atom(da, **kwargs):
+            return da.to_stream(
+                network="NT",
+                station="ST{:03}",
+                channel="HN1",
+                location="00",
+                dim={"distance": "time"},
+            )
 
         data_loader = xp.DataArrayLoader(da, chunks={"time": 100})
 
@@ -330,13 +328,15 @@ class TestStreamWriter:
                 "distance": 5.0 * np.arange(10),
             },
         )
-        atom = lambda da, **kwargs: da.to_stream(
-            network="NT",
-            station="ST{:03}",
-            channel="HN1",
-            location="00",
-            dim={"distance": "time"},
-        )
+
+        def atom(da, **kwargs):
+            return da.to_stream(
+                network="NT",
+                station="ST{:03}",
+                channel="HN1",
+                location="00",
+                dim={"distance": "time"},
+            )
 
         data_loader = xp.DataArrayLoader(da, chunks={"time": 100})
 
@@ -388,13 +388,14 @@ class TestStreamWriter:
             },
         )
 
-        atom = lambda da, **kwargs: da.to_stream(
-            network="NT",
-            station="ST{:03}",
-            channel="HN1",
-            location="00",
-            dim={"distance": "time"},
-        )
+        def atom(da, **kwargs):
+            return da.to_stream(
+                network="NT",
+                station="ST{:03}",
+                channel="HN1",
+                location="00",
+                dim={"distance": "time"},
+            )
 
         data_loader = xp.DataArrayLoader(da, chunks={"time": 100})
 

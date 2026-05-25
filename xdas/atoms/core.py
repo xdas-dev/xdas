@@ -144,15 +144,15 @@ class Atom:
         """``True`` if every state key has been initialised (no ``...`` sentinels remain)."""
         return all(value is not ... for value in self._state.values())
 
-    def initialize(self, x, **flags): 
+    def initialize(self, x, **flags):
         """Initialise the atom from a first chunks of data."""
         return NotImplemented
 
-    def initialize_from_state(self): 
+    def initialize_from_state(self):
         """Initialise the atom from its current state."""
         return NotImplemented
 
-    def call(self, x, **flags): 
+    def call(self, x, **flags):
         """Process a chunk of data."""
         return NotImplemented
 

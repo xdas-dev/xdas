@@ -86,13 +86,13 @@ intersphinx_mapping = {
 }
 
 # -- Generate dummy data -----------------------------------------------------
-import os
+import os  # noqa: E402
 
-import h5py
-import numpy as np
+import h5py  # noqa: E402
+import numpy as np  # noqa: E402
 
-import xdas as xd
-from xdas.synthetics import wavelet_wavefronts
+import xdas as xd  # noqa: E402
+from xdas.synthetics import wavelet_wavefronts  # noqa: E402
 
 dirpath = os.path.join(os.path.split(__file__)[0], "_data")
 if not os.path.exists(dirpath):

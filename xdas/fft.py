@@ -65,7 +65,10 @@ def fft(da, n=None, dim={"last": "spectrum"}, norm=None, parallel=None):
     axis = da.get_axis_num(olddim)
     d = get_sampling_interval(da, olddim)
     f = np.fft.fftshift(np.fft.fftfreq(n, d))
-    func = lambda x: np.fft.fftshift(np.fft.fft(x, n, axis, norm), axis)
+
+    def func(x):
+        return np.fft.fftshift(np.fft.fft(x, n, axis, norm), axis)
+
     across = int(axis == 0)
     func = parallelize(across, across, parallel)(func)
     data = func(da.values)
@@ -195,7 +198,10 @@ def ifft(da, n=None, dim={"last": "signal"}, norm=None, parallel=None):
     axis = da.get_axis_num(olddim)
     d = get_sampling_interval(da, olddim)
     f = np.fft.ifftshift(np.fft.fftfreq(n, d))
-    func = lambda x: np.fft.ifft(np.fft.ifftshift(x, axis), n, axis, norm)
+
+    def func(x):
+        return np.fft.ifft(np.fft.ifftshift(x, axis), n, axis, norm)
+
     across = int(axis == 0)
     func = parallelize(across, across, parallel)(func)
     data = func(da.values)

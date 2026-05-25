@@ -382,9 +382,6 @@ class TestDataCollection:
     def test_parse_datacollection_propagates_name(self):
         da = wavelet_wavefronts()
         dm = xd.DataCollection({"a": da}, "original_name")
-        # Passing existing DataCollection without explicit name propagates the name
-        dm2 = xd.DataCollection({"a": da}, "original_name")
-        dc_copy = xd.DataCollection.__new__(xd.DataCollection, dm2)
         # just verify parse propagates name
         from xdas.core.datacollection import parse
 

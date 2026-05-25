@@ -7,6 +7,17 @@ Exports :class:`Coordinates` (container) and all concrete coordinate classes:
 :class:`SampledCoordinate`, :class:`ScalarCoordinate`.
 """
 
+__all__ = [
+    "Coordinate",
+    "Coordinates",
+    "DefaultCoordinate",
+    "DenseCoordinate",
+    "InterpCoordinate",
+    "SampledCoordinate",
+    "ScalarCoordinate",
+    "get_sampling_interval",
+]
+
 from .core import Coordinate, Coordinates, get_sampling_interval
 from .default import DefaultCoordinate
 from .dense import DenseCoordinate

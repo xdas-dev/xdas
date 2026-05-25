@@ -4,6 +4,7 @@ coordinates, NumPy/Dask backing, and lazy :class:`VirtualArray` support.
 """
 
 import copy
+import warnings
 from functools import partial
 
 import numpy as np
@@ -17,8 +18,6 @@ from ..virtual import VirtualArray, _to_human
 
 HANDLED_NUMPY_FUNCTIONS = {}
 HANDLED_METHODS = {}
-
-import warnings
 
 
 class DataArray(NDArrayOperatorsMixin):
