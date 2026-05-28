@@ -2,6 +2,9 @@
 
 ## 0.2.7
 
+### Bug Fixes
+- Fix a regression introduced in 0.2.6 where `is_monotonic` was significantly degrading `.sel` performance.
+
 ### Documentation
 - Achieved **100% docstring coverage** (excluding `__magic__` and private `_methods`) (@atrabattoni).
 - Improved *User Guide* index (@atrabattoni).
