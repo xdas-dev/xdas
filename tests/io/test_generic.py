@@ -1,8 +1,50 @@
 import dascore as dc
 import numpy as np
+import pytest
 from dascore.utils.downloader import fetch
 
 import xdas as xd
+from xdas.io.core import AutoEngine, Engine
+
+
+class TestEngineRegistry:
+    def test_unknown_engine_raises_key_error(self):
+        with pytest.raises(KeyError, match="not found"):
+            Engine["nonexistent_engine_xyz"]
+
+    def test_invalid_vtype_raises_value_error(self):
+        with pytest.raises(ValueError, match="vtype must be None or a string"):
+            Engine["asn"](vtype=42)
+
+    def test_dict_ctype_fills_missing_keys(self):
+        engine = Engine["asn"](ctype={"time": "interpolated"})
+        assert engine.ctype["time"] == "interpolated"
+        assert "distance" in engine.ctype
+
+    def test_auto_engine_all_fail_raises_value_error(self):
+        with pytest.raises(ValueError, match="no engine could open"):
+            AutoEngine().open_dataarray("/definitely/nonexistent_file.hdf5")
+
+    def test_auto_engine_fail_message_includes_ctype(self, tmp_path):
+        fake = tmp_path / "fake.h5"
+        fake.write_bytes(b"not a valid hdf5 file")
+        with pytest.raises(ValueError, match="ctype"):
+            AutoEngine(ctype="dense").open_dataarray(str(fake))
+
+    def test_auto_engine_fail_message_includes_vtype(self, tmp_path):
+        fake = tmp_path / "fake.h5"
+        fake.write_bytes(b"not a valid hdf5 file")
+        with pytest.raises(ValueError, match="vtype"):
+            AutoEngine(vtype="hdf5").open_dataarray(str(fake))
+
+    def test_dict_ctype_with_none_value(self):
+        engine = Engine["asn"](ctype={"time": None, "distance": "interpolated"})
+        assert engine.ctype["time"] == "interpolated"
+        assert engine.ctype["distance"] == "interpolated"
+
+    def test_invalid_ctype_type_raises(self):
+        with pytest.raises(ValueError, match="ctype must be"):
+            Engine["asn"](ctype=42)
 
 
 class TestGenericIO:
@@ -21,6 +63,7 @@ class TestGenericIO:
         "sample_tdms_file_v4713.tdms",  # NOTE: dascore does not really know what it does
     ]
 
+    @pytest.mark.slow
     def test_auto_open_files(self):
         for engine, fnames in self.TEST_FILES.items():
             for fname in fnames:
@@ -29,6 +72,7 @@ class TestGenericIO:
                 da_auto = xd.open(path)
                 assert da.equals(da_auto)
 
+    @pytest.mark.slow
     def test_compare_with_dascore(self):
         for engine, fnames in self.TEST_FILES.items():
             for fname in fnames:

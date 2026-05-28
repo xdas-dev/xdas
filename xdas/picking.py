@@ -1,3 +1,9 @@
+"""
+Phase-pick utilities for :class:`DataArray` objects.
+
+Includes tapered selection and cross-correlation based picking of onset times.
+"""
+
 import numpy as np
 from numba import njit, prange
 from scipy.fft import next_fast_len
@@ -7,7 +13,7 @@ import xdas as xd
 
 def tapered_selection(da, start, end, window=None, size=None, dim="last"):
     """
-    Selects and tapers a DataArray based on `start` and `end` values.
+    Select and taper a DataArray based on `start` and `end` values.
 
     Coordinates with NaN or NaT `start` or `end` values are ignored. If no `size` is
     provided, the length of the resulting data is determined by the next fast length
@@ -112,8 +118,8 @@ def tapered_selection(da, start, end, window=None, size=None, dim="last"):
     return xd.DataArray(data, coords=coords, dims=da.dims)
 
 
-@njit(parallel=True)
-def _tapered_selection(data, sel, start, stop, size, window):
+@njit(parallel=True, cache=True)
+def _tapered_selection(data, sel, start, stop, size, window):  # pragma: no cover
     out = np.zeros((sel.size, size), dtype=data.dtype)
     w = window.size // 2
     for i in prange(sel.size):

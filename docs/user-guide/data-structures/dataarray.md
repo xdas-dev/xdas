@@ -15,7 +15,7 @@ os.chdir("../../_data")
 
 {py:class}`~xdas.DataArray` is the base class to load and manipulate big datasets to in *xdas*. It is mainly composed of two attributes: 
 
-- `data`: any N-dimensional array-like object. Compared to *xarray* `xdas.DataArray` are more permissive to the kinds of array-like objects that can be used. In particular, [virtual arrays](../virtual-datasets) can be used.
+- `data`: any N-dimensional array-like object. Compared to *xarray* `xdas.DataArray` are more permissive to the kinds of array-like objects that can be used. In particular, [virtual arrays](../io/virtual-datasets) can be used.
 - `coords`: a dict-like container of coordinates. As opposed to *xarray*, which uses dense arrays to label each point, *xdas* also implements [interpolated coordinates](../coordinates/interpolated-coordinates) that provides an efficient representation of evenly spaced data (gracefully handling gaps and small sampling variations).
 
 ![](/_static/dataarray.svg)
@@ -57,7 +57,7 @@ da
 
 ## Writing a DataArray to disk
 
-*xdas* uses the CF conventions to write {py:class}`xdas.DataArray` to disk as netCDF4 files. If the DataArray was generated from a netCDF4/HDF5 file and only slicing was performed, the DataArray can be written as a pointer to the original data using the `virtual` argument. See the part on [](../virtual-datasets).
+*xdas* uses the CF conventions to write {py:class}`xdas.DataArray` to disk as netCDF4 files. If the DataArray was generated from a netCDF4/HDF5 file and only slicing was performed, the DataArray can be written as a pointer to the original data using the `virtual` argument. See the part on [](../io/virtual-datasets).
 
 ```{code-cell}
 da.to_netcdf("dataarray.nc", virtual=None)  # try to write virtual, here it's impossible
@@ -67,7 +67,7 @@ da.to_netcdf("dataarray.nc", virtual=None)  # try to write virtual, here it's im
 
 Xdas can read several DAS file format with {py:func}`~xdas.open` along with its own format. Xdas uses the netCDF4 format with CF conventions. By default Xdas assumes that files are Xdas NetCDF format. If not the case the `engine` argument must be passed.
 
-To learn how to read your custom DAS data format with *xdas*, please see the chapter on [](../data-formats.md).
+To learn how to read your custom DAS data format with *xdas*, please see the chapter on [](../io/data-formats.md).
 
 ```{code-cell}
 da = xd.open("dataarray.nc", engine=None)  # by default Xdas NetCDF

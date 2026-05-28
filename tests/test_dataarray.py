@@ -1,6 +1,7 @@
 import os
 
 import dask
+import dask.array
 import hdf5plugin
 import numpy as np
 import psutil
@@ -644,3 +645,228 @@ class TestGarbadgeCollection:
             deltas.append(current - previous)
             previous = current
         assert np.median(deltas) == 0.0
+
+
+class TestDataArrayMissingBranches:
+    """Covers branches not exercised by the main test suite."""
+
+    def test_repr_dask(self):
+        data = dask.array.from_array(np.ones((3, 4)), chunks=(3, 4))
+        da = xd.DataArray(data)
+        r = repr(da)
+        assert "DaskArray" in r
+
+    def test_repr_virtual(self, tmp_path):
+        da = wavelet_wavefronts()
+        da.to_netcdf(tmp_path / "a.nc")
+        da2 = xd.open(tmp_path / "a.nc")
+        r = repr(da2)
+        assert "VirtualSource" in r
+
+    def test_repr_no_coords(self):
+        da = xd.DataArray(np.ones((3, 4)))
+        r = repr(da)
+        assert "Dimensions without coordinates" in r
+
+    def test_repr_complex(self):
+        da = xd.DataArray(np.ones((3,), dtype=np.complex128))
+        r = repr(da)
+        assert "DataArray" in r
+
+    def test_len(self):
+        da = xd.DataArray(np.arange(6).reshape(2, 3))
+        assert len(da) == 2
+
+    def test_array_with_dtype(self):
+        da = xd.DataArray(np.ones((3,)))
+        result = np.asarray(da, dtype=np.float32)
+        assert result.dtype == np.float32
+
+    def test_array_ufunc_non_call(self):
+        da = xd.DataArray(np.ones((3,)))
+        result = da.__array_ufunc__(np.add, "reduce", da)
+        assert result is NotImplemented
+
+    def test_array_function_unhandled(self):
+        da = xd.DataArray(np.ones((3,)))
+        result = da.__array_function__(lambda x: x, [type(da)], (da,), {})
+        assert result is NotImplemented
+
+    def test_array_function_wrong_type(self):
+        da = xd.DataArray(np.ones((3,)))
+        func = next(iter(xd.core.dataarray.HANDLED_NUMPY_FUNCTIONS))
+        result = da.__array_function__(func, [np.ndarray], (da,), {})
+        assert result is NotImplemented
+
+    def test_conj(self):
+        da = xd.DataArray(np.array([1 + 2j, 3 + 4j]))
+        result = da.conj()
+        assert np.allclose(result.values, np.conj(np.array([1 + 2j, 3 + 4j])))
+
+    def test_conjugate(self):
+        da = xd.DataArray(np.array([1 + 2j, 3 + 4j]))
+        result = da.conjugate()
+        assert np.allclose(result.values, np.conjugate(np.array([1 + 2j, 3 + 4j])))
+
+    def test_size(self):
+        da = xd.DataArray(np.ones((3, 4)))
+        assert da.size == 12
+
+    def test_equals_dtype_mismatch(self):
+        da1 = xd.DataArray(np.ones((3,), dtype=np.float32))
+        da2 = xd.DataArray(np.ones((3,), dtype=np.float64))
+        assert not da1.equals(da2)
+
+    def test_equals_values_mismatch(self):
+        da1 = xd.DataArray(np.array([1.0, 2.0]))
+        da2 = xd.DataArray(np.array([1.0, 3.0]))
+        assert not da1.equals(da2)
+
+    def test_equals_coords_mismatch(self):
+        da1 = xd.DataArray(np.ones((3,)), {"x": [1, 2, 3]})
+        da2 = xd.DataArray(np.ones((3,)), {"x": [4, 5, 6]})
+        assert not da1.equals(da2)
+
+    def test_equals_dims_mismatch(self):
+        da1 = xd.DataArray(np.ones((3,)), dims=("x",))
+        da2 = xd.DataArray(np.ones((3,)), dims=("y",))
+        assert not da1.equals(da2)
+
+    def test_equals_name_mismatch(self):
+        da1 = xd.DataArray(np.ones((3,)), name="a")
+        da2 = xd.DataArray(np.ones((3,)), name="b")
+        assert not da1.equals(da2)
+
+    def test_equals_attrs_mismatch(self):
+        da1 = xd.DataArray(np.ones((3,)), attrs={"k": 1})
+        da2 = xd.DataArray(np.ones((3,)), attrs={"k": 2})
+        assert not da1.equals(da2)
+
+    def test_equals_non_dataarray(self):
+        da = xd.DataArray(np.ones((3,)))
+        assert not da.equals(42)
+
+    def test_get_axis_num_invalid(self):
+        da = xd.DataArray(np.ones((3,)), {"x": [1, 2, 3]})
+        with pytest.raises(ValueError, match="dim not found"):
+            da.get_axis_num("nonexistent")
+
+    def test_drop_dims(self):
+        # drop a dim that is not a main data axis (no-op on data shape)
+        da = xd.DataArray(np.ones((3,)), {"x": [1, 2, 3]})
+        result = da.drop_dims("nonexistent")
+        assert "x" in result.coords
+        assert result.shape == (3,)
+
+    def test_drop_coords(self):
+        da = xd.DataArray(np.ones((3,)), {"x": [1, 2, 3]})
+        da["meta"] = ("x", [10, 20, 30])
+        result = da.drop_coords("meta")
+        assert "meta" not in result.coords
+        assert "x" in result.coords
+
+    def test_isel_drop_non_scalar(self):
+        da = wavelet_wavefronts()
+        result = da.isel(time=slice(0, 3), drop=True)
+        assert "time" in result.coords
+
+    def test_sel_drop_non_scalar(self):
+        da = wavelet_wavefronts()
+        t0 = da["time"].tie_values[0]
+        t1 = da["time"].tie_values[-1]
+        result = da.sel(time=slice(t0, t1), drop=True)
+        assert "time" in result.coords
+
+    def test_rename_coord_dim(self):
+        da = xd.DataArray(np.ones((3,)), {"x": [1, 2, 3]})
+        da["meta"] = 0  # scalar coord with dim=None — not in the rename dict
+        result = da.rename({"x": "y"})
+        assert "y" in result.coords
+        assert "x" not in result.coords
+        assert "meta" in result.coords  # scalar coord preserved unchanged
+
+    def test_swap_dims_coord_not_in_dict(self):
+        # swap_dims when a coord's dim is NOT in dims_dict covers the False branch
+        da = xd.DataArray(np.ones((3,)), {"x": [1, 2, 3]})
+        da["meta"] = 0  # scalar coord with dim=None — not in {"x": "y"}
+        result = da.swap_dims({"x": "y"})
+        assert "meta" in result.coords
+        assert "y" in result.dims
+
+    def test_expand_dims_existing(self):
+        da = xd.DataArray(np.ones((3,)), {"x": [1, 2, 3]})
+        with pytest.raises(ValueError, match="cannot expand on existing dimension"):
+            da.expand_dims("x", 0)
+
+    def test_expand_dims_non_scalar_coord(self):
+        da = xd.DataArray(np.ones((3,)), {"x": [1, 2, 3]})
+        da["y"] = ("x", [10, 20, 30])
+        with pytest.raises(ValueError, match="cannot expand along y"):
+            da.expand_dims("y", 0)
+
+    def test_to_dict_virtual_raises(self, tmp_path):
+        da = wavelet_wavefronts()
+        da.to_netcdf(tmp_path / "b.nc")
+        da2 = xd.open(tmp_path / "b.nc")
+        with pytest.raises(NotImplementedError):
+            da2.to_dict()
+
+    def test_to_dict_numpy(self):
+        da = xd.DataArray(np.array([1.0, 2.0, 3.0]), {"x": [1, 2, 3]})
+        d = da.to_dict()
+        assert isinstance(d["data"], list)
+
+    def test_to_dict_dask(self):
+        data = dask.array.from_array(np.ones((3,)), chunks=3)
+        da = xd.DataArray(data, {"x": [1, 2, 3]})
+        d = da.to_dict()
+        assert isinstance(d["data"], dict)
+
+    def test_from_dict_list(self):
+        da = xd.DataArray(np.array([1.0, 2.0]), {"x": [1, 2]})
+        d = da.to_dict()
+        result = xd.DataArray.from_dict(d)
+        assert isinstance(result.data, np.ndarray)
+        assert np.allclose(result.values, [1.0, 2.0])
+
+    def test_from_dict_dict(self):
+        data = dask.array.from_array(np.ones((3,)), chunks=3)
+        da = xd.DataArray(data, {"x": [1, 2, 3]})
+        d = da.to_dict()
+        result = xd.DataArray.from_dict(d)
+        assert np.allclose(result.values, np.ones(3))
+
+    def test_from_dict_invalid(self):
+        d = {"data": 42, "coords": {}, "dims": (), "name": None, "attrs": {}}
+        with pytest.raises(ValueError, match="data must be a list or a dictionary"):
+            xd.DataArray.from_dict(d)
+
+    def test_plot_1d(self):
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        da = xd.DataArray(np.ones((5,)), {"x": [1, 2, 3, 4, 5]})
+        da.plot()
+        plt.close("all")
+
+    def test_plot_2d(self):
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        da = xd.DataArray(np.ones((3, 4)), {"x": [1, 2, 3], "y": [1, 2, 3, 4]})
+        da.plot()
+        plt.close("all")
+
+    def test_plot_nd(self):
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        da = xd.DataArray(np.ones((2, 3, 4)))
+        da.plot()
+        plt.close("all")

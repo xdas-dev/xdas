@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 from pathlib import Path
@@ -129,19 +130,16 @@ class TestProcessing:
         sequence = Sequential([Partial(sosfilt, sos, ..., dim="time", zi=...)])
 
         # monolithic processing
-        result1 = sequence(da)
+        sequence(da)
 
         # chunked processing
         data_loader = xp.DataArrayLoader(da, chunks={"time": 100})
         for da in data_loader:
-            pass
+            pass  # TODO
         # data_writer = xp.DataArrayWriter(tmp_path)
         # result2 = xp.process(
         #     sequence, data_loader, data_writer
         # )  # resets the sequence by default
-
-        # # test
-        # assert result1.equals(result2)
 
 
 class TestDataFrameWriter:
@@ -200,8 +198,14 @@ class TestDataFrameWriter:
     def test_missing_directory(self, tmp_path):
         with pytest.raises(OSError):
             xp.DataFrameWriter(tmp_path / "not_a_directory" / "output.csv")
-        dirpath = tmp_path / "some_directory" / "output.csv"
-        xp.DataFrameWriter(dirpath, create_dirs=True)
+        xp.DataFrameWriter(tmp_path / "some_directory" / "output.csv", create_dirs=True)
+        orig = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            dw = xp.DataFrameWriter("output.csv", create_dirs=True)
+            assert dw.path == "output.csv"
+        finally:
+            os.chdir(orig)
 
     def test_passing_wrong_input(self, tmp_path):
         dw = xp.DataFrameWriter(tmp_path / "output.csv")
@@ -266,13 +270,14 @@ class TestStreamWriter:
             },
         )
 
-        atom = lambda da, **kwargs: da.to_stream(
-            network="NT",
-            station="ST{:03}",
-            channel="HN1",
-            location="00",
-            dim={"distance": "time"},
-        )
+        def atom(da, **kwargs):
+            return da.to_stream(
+                network="NT",
+                station="ST{:03}",
+                channel="HN1",
+                location="00",
+                dim={"distance": "time"},
+            )
 
         data_loader = xp.DataArrayLoader(da, chunks={"time": 100})
 
@@ -323,13 +328,15 @@ class TestStreamWriter:
                 "distance": 5.0 * np.arange(10),
             },
         )
-        atom = lambda da, **kwargs: da.to_stream(
-            network="NT",
-            station="ST{:03}",
-            channel="HN1",
-            location="00",
-            dim={"distance": "time"},
-        )
+
+        def atom(da, **kwargs):
+            return da.to_stream(
+                network="NT",
+                station="ST{:03}",
+                channel="HN1",
+                location="00",
+                dim={"distance": "time"},
+            )
 
         data_loader = xp.DataArrayLoader(da, chunks={"time": 100})
 
@@ -381,13 +388,14 @@ class TestStreamWriter:
             },
         )
 
-        atom = lambda da, **kwargs: da.to_stream(
-            network="NT",
-            station="ST{:03}",
-            channel="HN1",
-            location="00",
-            dim={"distance": "time"},
-        )
+        def atom(da, **kwargs):
+            return da.to_stream(
+                network="NT",
+                station="ST{:03}",
+                channel="HN1",
+                location="00",
+                dim={"distance": "time"},
+            )
 
         data_loader = xp.DataArrayLoader(da, chunks={"time": 100})
 
@@ -413,3 +421,141 @@ class TestStreamWriter:
         assert path.exists()
         st = obspy.read(path)
         assert len(st) == 10
+
+
+class TestProcessNoNbytes:
+    def test_loader_without_nbytes(self, tmp_path):
+        da = xd.DataArray(np.random.rand(100, 10), dims=("time", "distance"))
+        chunks = xd.split(da, 10, dim="time")
+
+        class SimpleLoader:
+            chunk_dim = "time"
+
+            def __iter__(self):
+                return iter(chunks)
+
+        data_writer = xp.DataArrayWriter(tmp_path)
+
+        def atom(x, **kw):
+            return x
+
+        result = xp.process(atom, SimpleLoader(), data_writer)
+        assert result.equals(da)
+
+
+class TestDataArrayLoaderMaxBuffers:
+    def test_max_buffers_exceeds_chunks(self):
+        da = xd.DataArray(np.random.rand(10, 5), dims=("time", "distance"))
+        dl = xp.DataArrayLoader(da, {"time": 5}, max_buffers=10)
+        chunks = list(dl)
+        assert len(chunks) == 2
+        result = xd.concat(chunks)
+        assert result.equals(da)
+
+
+class TestDataFrameWriterAliases:
+    def test_write_alias(self, tmp_path):
+        dw = xp.DataFrameWriter(tmp_path / "output.csv")
+        df = pd.DataFrame({"A": [1, 2, 3]})
+        dw.write(df)  # use write() alias
+        result = dw.result()
+        assert result.equals(df)
+
+    def test_create_dirs_no_dirname(self, tmp_path):
+        path = tmp_path / "bare.csv"
+        dw = xp.DataFrameWriter(path, create_dirs=True)
+        assert dw.path == str(path)
+
+
+class TestStreamWriterEdgeCases:
+    def test_flat_missing_directory_raises(self, tmp_path):
+        with pytest.raises(OSError):
+            xp.StreamWriter(
+                tmp_path / "nonexistent_dir" / "out.mseed", "M", output_format="flat"
+            )
+
+    def test_invalid_output_format_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="output_format"):
+            xp.StreamWriter(tmp_path, "M", output_format="invalid")
+
+    def test_submit_wrong_type_raises(self, tmp_path):
+        sw = xp.StreamWriter(tmp_path, "M")
+        with pytest.raises(TypeError):
+            sw.submit("not_a_stream")
+
+
+class TestZMQPublisherAliases:
+    def test_write_alias(self):
+        address = f"tcp://localhost:{xd.io.get_free_port()}"
+        publisher = xp.ZMQPublisher(address)
+        da = xd.synthetics.dummy()
+        publisher.write(da)  # use write() alias
+
+    def test_result_returns_none(self):
+        address = f"tcp://localhost:{xd.io.get_free_port()}"
+        publisher = xp.ZMQPublisher(address)
+        assert publisher.result() is None
+
+
+class TestHandlerDirect:
+    def test_on_closed(self, tmp_path):
+        from queue import Queue
+
+        from xdas.processing.core import Handler
+
+        da = xd.DataArray(
+            np.zeros((10, 5), dtype=np.float32),
+            {
+                "time": {
+                    "tie_indices": [0, 9],
+                    "tie_values": [
+                        np.datetime64("2020-01-01T00:00:00.000000000"),
+                        np.datetime64("2020-01-01T00:00:09.000000000"),
+                    ],
+                },
+                "distance": {"tie_indices": [0, 4], "tie_values": [0.0, 40.0]},
+            },
+        )
+        path = str(tmp_path / "test.nc")
+        da.to_netcdf(path)
+
+        queue = Queue()
+        handler = Handler(queue, "xdas")
+
+        class MockEvent:
+            src_path = path
+
+        handler.on_closed(MockEvent())
+        result = queue.get()
+        assert result.equals(da)
+
+
+class TestRealTimeLoader:
+    def test_iter_and_next(self, tmp_path):
+        from xdas.processing.core import RealTimeLoader
+
+        loader = RealTimeLoader(str(tmp_path), engine="xdas")
+        assert iter(loader) is loader
+
+        # put a DataArray directly into the queue
+        da = xd.DataArray(
+            np.zeros((5, 3), dtype=np.float32),
+            {
+                "time": {
+                    "tie_indices": [0, 4],
+                    "tie_values": [
+                        np.datetime64("2020-01-01T00:00:00.000000000"),
+                        np.datetime64("2020-01-01T00:00:04.000000000"),
+                    ],
+                },
+                "distance": {"tie_indices": [0, 2], "tie_values": [0.0, 20.0]},
+            },
+        )
+        loader.queue.put(da)
+        result = next(loader)
+        assert result.equals(da)
+
+        # put None to trigger StopIteration
+        loader.queue.put(None)
+        with pytest.raises(StopIteration):
+            next(loader)

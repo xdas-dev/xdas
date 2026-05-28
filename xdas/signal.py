@@ -1,3 +1,10 @@
+"""
+Signal processing functions for :class:`DataArray`.
+
+Includes filtering, resampling, tapering, detrending, and spectral helpers,
+all coordinate-aware and multi-threaded via :func:`~xdas.parallel.parallelize`.
+"""
+
 import numpy as np
 import scipy.signal as sp
 
@@ -5,26 +12,30 @@ from .atoms.core import atomized
 from .coordinates.core import Coordinate, get_sampling_interval
 from .core.dataarray import DataArray
 from .parallel import parallelize
-from .spectral import stft
+from .spectral import stft  # noqa
 
 
 @atomized
 def detrend(da, type="linear", dim="last", parallel=None):
     """
-    Detrend data along given dimension
+    Detrend data along given dimension.
 
     Parameters
     ----------
-    da : DataArray or DataArray
+    da : DataArray
         The data to detrend.
     type : str
         Either "linear" or "constant".
     dim : str
         The dimension along which to detrend the data.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
-    DataArray or DataArray
+    DataArray
         The detrended data.
 
     Notes
@@ -42,22 +53,26 @@ def detrend(da, type="linear", dim="last", parallel=None):
 @atomized
 def taper(da, window="hann", fftbins=False, dim="last", parallel=None):
     """
-    Apply a tapering window along the given dimension
+    Apply a tapering window along the given dimension.
 
     Parameters
     ----------
-    da : DataArray or DataArray
+    da : DataArray
         The data to taper.
     window : str or tuple, optional
         The window to use, by default "hann"
     fftbins : bool, optional
-        Weather to use a periodic windowing, by default False
+        Whether to use a periodic windowing, by default False
     dim : str, optional
-        Dimension along the which to taper, by default "time"
+        Dimension along which to taper, by default "last"
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
-    DataArray or DataArray
+    DataArray
         The tapered data.
     """
     axis = da.get_axis_num(dim)
@@ -91,6 +106,10 @@ def filter(da, freq, btype, corners=4, zerophase=False, dim="last", parallel=Non
         the resulting filtered trace.
     dim: str, optional
         The dimension along which to filter.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
@@ -125,9 +144,10 @@ def hilbert(da, N=None, dim="last", parallel=None):
         Number of Fourier components. Default: `da.sizes[dim]`.
     dim: str, optional
         The dimension along which to transform. Default: last.
-    parallel: bool or int, optional
-        Whether to parallelize the function, if True all cores are used,
-        if False single core, if int: number of cores.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
@@ -188,6 +208,10 @@ def resample(da, num, dim="last", window=None, domain="time", parallel=None):
     domain: string, optional
         A string indicating the domain of the input x: `time` Consider the input da as
         time-domain (Default), `freq` Consider the input da as frequency-domain.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
@@ -262,7 +286,7 @@ def resample_poly(
         The upsampling factor.
     down : int
         The downsampling factor.
-    dim : int, optional
+    dim : str, optional
         The dimension of `da` that is resampled. Default is last.
     window : string, tuple, or array_like, optional
         Desired window to use to design the low-pass filter, or the FIR filter
@@ -278,6 +302,10 @@ def resample_poly(
         respectively of the array along the dimension.
     cval : float, optional
         Value to use if `padtype='constant'`. Default is zero.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Notes
     -----
@@ -359,9 +387,11 @@ def lfilter(b, a, da, dim="last", zi=None, parallel=None):
     zi : array_like or str, optional
         Initial conditions for the filter delays. If `zi` is None or ... then
         initial rest is assumed.
-    parallel: bool or int, optional
-        Whether to parallelize the function, if true: all cores are used, if false:
-        single core, if int: n cores are used.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
+
     Returns
     -------
     da : DataArray
@@ -447,7 +477,7 @@ def filtfilt(
         is not 1, then both `a` and `b` are normalized by ``a[0]``.
     da : DataArray
         The array of data to be filtered.
-    dim : srt, optional
+    dim : str, optional
         The dimension of `da` to which the filter is applied.
         Default is last.
     padtype : str or None, optional
@@ -471,6 +501,10 @@ def filtfilt(
         impulse response of the filter.  If `irlen` is None, no part
         of the impulse response is ignored.  For a long signal, specifying
         `irlen` can significantly improve the performance of the filter.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Notes
     -----
@@ -538,6 +572,10 @@ def sosfilt(sos, da, dim="last", zi=None, parallel=None):
         ``..., 2, ...`` denotes the shape of `da`, but with ``da.sizes[dim]``
         replaced by 2.  If `zi` is None,... , or is not given then initial rest
         (i.e. all zeros) is assumed.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
@@ -596,7 +634,7 @@ def sosfilt(sos, da, dim="last", zi=None, parallel=None):
 @atomized
 def sosfiltfilt(sos, da, dim="last", padtype="odd", padlen=None, parallel=None):
     """
-    A forward-backward digital filter using cascaded second-order sections.
+    Apply a forward-backward digital filter using cascaded second-order sections.
 
     Parameters
     ----------
@@ -619,7 +657,7 @@ def sosfiltfilt(sos, da, dim="last", padtype="odd", padlen=None, parallel=None):
     padlen : int or None, optional
         The number of elements by which to extend `da` at both ends of
         `dim` before applying the filter.  This value must be less than
-        ``da.sizes[do,] - 1``.  ``padlen=0`` implies no padding.
+        ``da.sizes[dim] - 1``.  ``padlen=0`` implies no padding.
         The default value is::
 
             3 * (2 * len(sos) + 1 - min((sos[:, 2] == 0).sum(),
@@ -629,6 +667,10 @@ def sosfiltfilt(sos, da, dim="last", padtype="odd", padlen=None, parallel=None):
         and zeros at the origin (e.g. for odd-order filters) to yield
         equivalent estimates of `padlen` to those of `filtfilt` for
         second-order section filters built with `scipy.signal` functions.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
@@ -678,7 +720,7 @@ def decimate(da, q, n=None, ftype="iir", zero_phase=True, dim="last", parallel=N
 
     Parameters
     ----------
-    da : DataArray or DataArray
+    da : DataArray
         The signal to be downsampled, as an N-dimensional dataarray.
     q : int
         The downsampling factor. When using IIR downsampling, it is recommended
@@ -697,10 +739,14 @@ def decimate(da, q, n=None, ftype="iir", zero_phase=True, dim="last", parallel=N
         when using an IIR filter, and shifting the outputs back by the filter's
         group delay when using an FIR filter. The default value of ``True`` is
         recommended, since a phase shift is generally not desired.
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
-    DataArray or DataArray
+    DataArray
         The down-sampled signal.
 
     Notes
@@ -727,16 +773,20 @@ def integrate(da, midpoints=False, dim="last", parallel=None):
 
     Parameters
     ----------
-    da : DataArray or DataArray
+    da : DataArray
         The data to integrate.
     midpoints : bool, optional
         Whether to move the coordinates by half a step, by default False.
     dim : str, optional
-        The dimension along which to integrate, by default "distance".
+        The dimension along which to integrate, by default "last".
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
-    DataArray or DataArray
+    DataArray
         The integrated data.
 
     Notes
@@ -746,7 +796,10 @@ def integrate(da, midpoints=False, dim="last", parallel=None):
     """
     axis = da.get_axis_num(dim)
     d = get_sampling_interval(da, dim)
-    func = lambda x: np.cumsum(x, axis=axis) * d
+
+    def func(x):
+        return np.cumsum(x, axis=axis) * d
+
     across = int(axis == 0)
     func = parallelize(across, across, parallel)(func)
     data = func(da.values)
@@ -763,17 +816,21 @@ def differentiate(da, midpoints=False, dim="last", parallel=None):
 
     Parameters
     ----------
-    da : DataArray or DataArray
-        The data to integrate.
+    da : DataArray
+        The data to differentiate.
     midpoints : bool, optional
         Whether to move the coordinates by half a step, by default False.
     dim : str, optional
-        The dimension along which to integrate, by default "distance".
+        The dimension along which to differentiate, by default "last".
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
-    DataArray or DataArray
-        The integrated data.
+    DataArray
+        The differentiated data.
 
     Notes
     -----
@@ -782,7 +839,10 @@ def differentiate(da, midpoints=False, dim="last", parallel=None):
     """
     axis = da.get_axis_num(dim)
     d = get_sampling_interval(da, dim)
-    func = lambda x: np.diff(x, axis=axis) / d
+
+    def func(x):
+        return np.diff(x, axis=axis) / d
+
     across = int(axis == 0)
     func = parallelize(across, across, parallel)(func)
     data = func(da.values)
@@ -799,18 +859,18 @@ def segment_mean_removal(da, limits, window="hann", dim="last"):  # TODO: parall
 
     Parameters
     ----------
-    da : DataArray or DataArray
+    da : DataArray
         The data that segment mean should be removed.
     limits : list of float
         The segments limits.
     window : str, optional
         The tapering windows to apply at each window, by default "hann".
     dim : str, optional
-        The axis along which remove the segment means, by default "distance".
+        The dimension along which to remove the segment means, by default "last".
 
     Returns
     -------
-    DataArray or DataArray
+    DataArray
         The data with segment means removed.
     """
     out = da.copy()
@@ -835,7 +895,7 @@ def sliding_mean_removal(
 
     Parameters
     ----------
-    da : DataArray or DataArray
+    da : DataArray
         The data that sliding mean should be removed.
     wlen : float
         Length of the sliding mean.
@@ -844,11 +904,15 @@ def sliding_mean_removal(
     pad_mode : str, optional
         Padding mode used, by default "reflect"
     dim : str, optional
-        The dimension along which remove the sliding mean, by default "distance"
+        The dimension along which to remove the sliding mean, by default "last"
+    parallel : bool or int, optional
+        Number of threads to use. True uses all cores, False uses one, an int
+        uses that many, None defers to the global xdas configuration. Default
+        is None.
 
     Returns
     -------
-    DataArray or DataArray
+    DataArray
         The data with sliding mean removed.
 
     Notes
@@ -866,9 +930,12 @@ def sliding_mean_removal(
     shape = tuple(-1 if a == axis else 1 for a in range(da.ndim))
     win = np.reshape(win, shape)
     pad_width = tuple((n // 2, n // 2) if a == axis else (0, 0) for a in range(da.ndim))
-    func = lambda x: x - sp.fftconvolve(
-        np.pad(x, pad_width, mode=pad_mode), win, mode="valid"
-    )
+
+    def func(x):
+        return x - sp.fftconvolve(
+            np.pad(x, pad_width, mode=pad_mode), win, mode="valid"
+        )
+
     across = int(axis == 0)
     func = parallelize(across, across, parallel)(func)
     data = func(da.values)
@@ -878,7 +945,7 @@ def sliding_mean_removal(
 @atomized
 def medfilt(da, kernel_dim):  # TODO: parallelize
     """
-    Perform a median filter along given dimensions
+    Perform a median filter along given dimensions.
 
     Apply a median filter to the input using a local window-size given by kernel_size.
     The array will automatically be zero-padded.

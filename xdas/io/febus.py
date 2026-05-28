@@ -1,3 +1,5 @@
+"""I/O engine for Febus HDF5 files (:class:`FebusEngine`)."""
+
 import warnings
 
 import h5py
@@ -11,6 +13,8 @@ from .core import Engine
 
 
 class FebusEngine(Engine, name="febus"):
+    """Engine for reading Febus HDF5 files."""
+
     _supported_vtypes = ["hdf5"]
     _supported_ctypes = {
         "time": ["interpolated", "sampled", "dense"],
@@ -30,8 +34,8 @@ class FebusEngine(Engine, name="febus"):
         recommended to manually specify the overlap and offset parameters. If not provided,
         the function will attempt to determine the correct values at your own risk.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         fname : str
             The filename of the Febus file to read.
         overlaps : tuple of int, optional
@@ -43,8 +47,8 @@ class FebusEngine(Engine, name="febus"):
             from the beginning. If not provided, the function will attempt to determine the
             correct offset at you own risk.
 
-        Returns:
-        --------
+        Returns
+        -------
         DataArray
             A data array containing the data from the Febus file.
 
@@ -107,7 +111,6 @@ class FebusEngine(Engine, name="febus"):
 
         dc = []
         for t0, chunk in zip(times, chunks):
-
             t0 = np.rint(1e6 * t0).astype("M8[us]").astype("M8[ns]")
             time = Coordinate[self.ctype["time"]].from_block(t0, nt, dt, dim="time")
             distance = Coordinate[self.ctype["distance"]].from_block(

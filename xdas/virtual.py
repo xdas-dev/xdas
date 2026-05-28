@@ -1,3 +1,11 @@
+"""
+Virtual (lazy) array types for deferred HDF5/NetCDF4 access.
+
+Includes :class:`VirtualArray` base, :class:`VirtualSource` for a single
+dataset slice, and :class:`VirtualStack` for concatenating sources along
+an axis.
+"""
+
 import os
 from copy import copy, deepcopy
 from tempfile import TemporaryDirectory
@@ -7,6 +15,13 @@ import numpy as np
 
 
 class VirtualArray:
+    """
+    Abstract base class for lazy array objects backed by HDF5/NetCDF4 files.
+
+    Subclasses must implement :meth:`shape`, :meth:`dtype`, :meth:`__getitem__`,
+    :meth:`__array__`, and :meth:`to_dataset`.
+    """
+
     def __repr__(self):
         return f"{self.__class__.__name__}: {_to_human(self.nbytes)} ({self.dtype})"
 
@@ -18,21 +33,26 @@ class VirtualArray:
 
     @property
     def shape(self):
+        """Tuple of array dimensions (abstract — must be overridden)."""
         NotImplemented
 
     @property
     def dtype(self):
+        """NumPy dtype of the array elements (abstract — must be overridden)."""
         NotImplemented
 
     def to_dataset(self, file_or_group, name):
+        """Write this virtual array as an HDF5 dataset (abstract — must be overridden)."""
         NotImplemented
 
     @property
     def ndim(self):
+        """Number of dimensions."""
         return len(self.shape)
 
     @property
     def size(self):
+        """Total number of elements."""
         if self.shape:
             return np.prod(self.shape)
         else:
@@ -40,16 +60,37 @@ class VirtualArray:
 
     @property
     def empty(self):
+        """``True`` if the array contains no elements."""
         return self.size == 0
 
     @property
     def nbytes(self):
+        """Total number of bytes occupied by the array elements."""
         if self.shape:
             return self.size * self.dtype.itemsize
         else:
             return 0
 
     def create_variable(self, file, name, dims=None, dtype=None):
+        """
+        Write this virtual array into *file* and register it as a named variable.
+
+        Parameters
+        ----------
+        file : netCDF4-like file handle
+            Open writable file.
+        name : str
+            Variable name to create inside *file*.
+        dims : sequence of str, optional
+            Dimension names for the variable.
+        dtype : dtype-like, optional
+            Override data type for the variable.
+
+        Returns
+        -------
+        variable
+            The newly created file variable.
+        """
         self.to_dataset(file._h5group, name)
         variable = file._variable_cls(file, name, dims)
         file._variables[name] = variable
@@ -60,6 +101,18 @@ class VirtualArray:
 
 
 class VirtualStack(VirtualArray):
+    """
+    Lazy concatenation of multiple :class:`VirtualSource` objects along one axis.
+
+    Parameters
+    ----------
+    sources : list of VirtualSource, optional
+        Initial list of sources to stack.  All sources must share the same
+        dtype and shape on every axis other than *axis*.
+    axis : int, optional
+        Concatenation axis.  Defaults to ``0``.
+    """
+
     def __init__(self, sources=[], axis=0):
         self._sources = list()
         self._axis = axis
@@ -129,14 +182,17 @@ class VirtualStack(VirtualArray):
 
     @property
     def sources(self):
+        """List of :class:`VirtualSource` objects in the stack."""
         return self._sources
 
     @property
     def axis(self):
+        """Concatenation axis index."""
         return self._axis
 
     @property
     def shape(self):
+        """Shape of the concatenated virtual array."""
         return tuple(
             (
                 sum(source.shape[self._axis] for source in self._sources)
@@ -148,23 +204,42 @@ class VirtualStack(VirtualArray):
 
     @property
     def dtype(self):
+        """NumPy dtype shared by all sources in the stack."""
         if not hasattr(self, "_dtype"):
             raise AttributeError("empty stack has no dtype")
         return self._dtype
 
     def append(self, source):
+        """
+        Append *source* to the stack.
+
+        Parameters
+        ----------
+        source : VirtualSource
+            Source to add.  Must have the same dtype and off-axis shape as
+            existing sources.
+        """
         if not self._sources:
             self._initialize(source)
         self._check(source)
         self._sources.append(source)
 
     def extend(self, sources):
+        """
+        Extend the stack with an iterable of sources.
+
+        Parameters
+        ----------
+        sources : list of VirtualSource
+            Sources to append, validated one-by-one via :meth:`append`.
+        """
         if not isinstance(sources, list):
             raise TypeError("`sources` must be a list")
         for source in sources:
             self.append(source)
 
     def to_dataset(self, file_or_group, name):
+        """Write the stacked virtual array as an HDF5 virtual dataset."""
         self._to_layout().to_dataset(file_or_group, name)
 
     def _initialize(self, source):
@@ -284,13 +359,16 @@ class VirtualLayout(VirtualArray):
 
     @property
     def shape(self):
+        """Shape of the layout after any lazy selections."""
         return self._sel.shape
 
     @property
     def dtype(self):
+        """NumPy dtype of the layout."""
         return self._layout.dtype
 
     def to_dataset(self, file_or_group, name):
+        """Write the layout as an HDF5 virtual dataset in *file_or_group*."""
         if np.issubdtype(self.dtype, np.integer):
             fillvalue = np.iinfo(self.dtype).min
         elif np.issubdtype(self.dtype, np.floating):
@@ -390,23 +468,27 @@ class VirtualSource(VirtualArray):
     def __array__(self, dtype=None):
         with h5py.File(self.vsource.path) as file:
             dataset = file[self.vsource.name]
-            return dataset[self._sel.get_indexer()].__array__(dtype)
+            return np.asarray(dataset[self._sel.get_indexer()], dtype=dtype)
         # We used to create an temporary file:
         # return self._to_layout().__array__(dtype)
 
     @property
     def vsource(self):
+        """Underlying :class:`h5py.VirtualSource` with the current selection applied."""
         return self._vsource.__getitem__(self._sel.get_indexer())
 
     @property
     def shape(self):
+        """Shape of the selected region of the source dataset."""
         return self.vsource.shape
 
     @property
     def dtype(self):
+        """NumPy dtype of the source dataset."""
         return self.vsource.dtype
 
     def to_dataset(self, file_or_group, name):
+        """Write this source as an HDF5 virtual dataset in *file_or_group*."""
         self._to_layout().to_dataset(file_or_group, name)
 
     def _to_layout(self):
@@ -491,6 +573,7 @@ class Selection:
 
     @property
     def shape(self):
+        """Shape of the array after all selections are applied."""
         return tuple(
             len(selector)
             for selector in self._selectors
@@ -499,9 +582,11 @@ class Selection:
 
     @property
     def ndim(self):
+        """Number of dimensions remaining after selections."""
         return len(self.shape)
 
     def get_indexer(self):
+        """Return a tuple of slices/ints that materialises the accumulated selections."""
         return tuple(selector.get_indexer() for selector in self._selectors)
 
 
@@ -531,6 +616,7 @@ class SingleSelector:
         self._index = index
 
     def get_indexer(self):
+        """Return the stored integer index."""
         return self._index
 
 
@@ -569,6 +655,7 @@ class SliceSelector:
         return len(self._range)
 
     def get_indexer(self):
+        """Return a :class:`slice` that represents the stored range selection."""
         if len(self) == 0:
             return slice(0)
         elif self._range.stop < 0:

@@ -1,3 +1,9 @@
+"""
+Thread-parallelism decorator :func:`parallelize` for splitting array axes.
+
+Splits across workers using :class:`~concurrent.futures.ThreadPoolExecutor`.
+"""
+
 import os
 from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
@@ -8,9 +14,31 @@ from . import config
 
 
 def parallelize(split_axis=0, concat_axis=0, parallel=None):
+    """
+    Split array positional arguments across threads.
+
+    Parameters
+    ----------
+    split_axis : int or tuple of int, optional
+        Axis (or axes) along which to split positional array arguments.
+        Use ``None`` for arguments that should not be split.
+    concat_axis : int or tuple of int, optional
+        Axis (or axes) along which to concatenate the per-worker outputs.
+    parallel : int, bool, or None, optional
+        Worker count override.  Forwarded to :func:`get_workers_count`.
+
+    Returns
+    -------
+    decorator : callable
+        A function decorator.
+    """
+
     def decorator(func):
+        """Return a thread-parallelised wrapper for *func*."""
+
         @wraps(func)
         def wrapper(*args, **kwargs):
+            """Split inputs, dispatch to a thread pool, then concatenate outputs."""
             split_axes = split_axis if isinstance(split_axis, tuple) else (split_axis,)
             split_axes += (None,) * (len(args) - len(split_axes))
             inputs = tuple(
@@ -20,6 +48,7 @@ def parallelize(split_axis=0, concat_axis=0, parallel=None):
             args = tuple(value for value, axis in zip(args, split_axes) if axis is None)
 
             def fn(_inputs, tuplize=True):
+                """Call *func* on one chunk; optionally wrap scalar output in a tuple."""
                 _inputs = iter(_inputs)
                 _args = iter(args)
                 _args = tuple(
@@ -100,6 +129,9 @@ def concatenate(arrays, axis=0, out=None, dtype=None, n_workers=None):
     dtype: str or numpy.dtype
         If provided, the destination array will have this dtype. Cannot be provided
         together with out.
+    n_workers : int or None, optional
+        Number of threads to use for writing chunks. None defers to the global
+        xdas configuration. Default is None.
 
     Returns
     -------
@@ -135,7 +167,7 @@ def concatenate(arrays, axis=0, out=None, dtype=None, n_workers=None):
     if out is None:
         out = np.empty(shape, dtype=dtype)
     else:
-        if not (out.ndim == ndim and out.dtype == dtype, out.shape == shape):
+        if not (out.ndim == ndim and out.dtype == dtype and out.shape == shape):
             raise ValueError("`out` does not match with provided arrays.")
 
     div_points = np.cumsum([0] + section_sizes, dtype=int)
