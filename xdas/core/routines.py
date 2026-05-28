@@ -949,7 +949,7 @@ def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
     objs = list(objs)
     non_empty = [da for da in objs if not da.empty]
     if not non_empty:
-        return objs[0] if objs else DataArray()
+        return objs[0] if objs else DataArray([])
     objs = non_empty
 
     if virtual is None:
