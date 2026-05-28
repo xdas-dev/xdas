@@ -984,3 +984,26 @@ class TestSampledCoordinateMissingBranches:
         result = coord.get_split_indices(kind="overlaps", tolerance=1.0)
         assert isinstance(result, np.ndarray)
         np.testing.assert_array_equal(result, [5], strict=True)
+
+    def test_is_monotonic_increasing_true(self):
+        coord = SampledCoordinate(
+            {"tie_values": [0.0, 5.0], "tie_lengths": [5, 5], "sampling_interval": 1.0}
+        )
+        assert coord.is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_false(self):
+        coord = SampledCoordinate(
+            {"tie_values": [0.0, 2.0], "tie_lengths": [5, 5], "sampling_interval": 1.0}
+        )
+        assert coord.is_monotonic_increasing() is False
+
+    def test_is_monotonic_increasing_multi_segment(self):
+        # Three segments all increasing — must not raise ValueError from bool()
+        coord = SampledCoordinate(
+            {
+                "tie_values": [0.0, 5.0, 11.0],
+                "tie_lengths": [5, 5, 5],
+                "sampling_interval": 1.0,
+            }
+        )
+        assert coord.is_monotonic_increasing() is True

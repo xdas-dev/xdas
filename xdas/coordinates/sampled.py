@@ -263,6 +263,10 @@ class SampledCoordinate(Coordinate, name="sampled"):
             delta = delta / np.timedelta64(1, "s")
         return delta
 
+    def is_monotonic_increasing(self):
+        """Return ``True`` if no segment starts below the end of the previous one."""
+        return not self.get_split_indices("overlaps", tolerance=False).size
+
     def equals(self, other):
         """Return ``True`` if *other* has identical tie values, lengths, sampling interval, dim, and dtype."""
         return (

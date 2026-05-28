@@ -444,3 +444,25 @@ class TestInterpCoordinate:
         result = coord.get_split_indices(kind="overlaps", tolerance=0.5)
         assert isinstance(result, np.ndarray)
         np.testing.assert_array_equal(result, [5], strict=True)
+
+    def test_is_monotonic_increasing_true(self):
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 5, 9], "tie_values": [0.0, 4.0, 5.0, 9.0]}
+        )
+        assert coord.is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_false(self):
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 5, 9], "tie_values": [0.0, 4.0, 3.0, 7.0]}
+        )
+        assert coord.is_monotonic_increasing() is False
+
+    def test_is_monotonic_increasing_multi_segment(self):
+        # Three segments all strictly increasing — must not raise ValueError from bool()
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 4, 5, 9, 10, 14],
+                "tie_values": [0.0, 4.0, 5.0, 9.0, 10.0, 14.0],
+            }
+        )
+        assert coord.is_monotonic_increasing() is True

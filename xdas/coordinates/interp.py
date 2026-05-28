@@ -216,6 +216,10 @@ class InterpCoordinate(Coordinate, name="interpolated"):
             delta = delta / np.timedelta64(1, "s")
         return delta
 
+    def is_monotonic_increasing(self):
+        """Return ``True`` if no segment boundary exhibits a backward jump."""
+        return not self.get_split_indices("overlaps", tolerance=False).size
+
     def equals(self, other):
         """Return ``True`` if *other* has identical tie points, dim, and dtype."""
         return (

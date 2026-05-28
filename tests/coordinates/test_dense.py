@@ -157,3 +157,14 @@ class TestDenseCoordinate:
         coord = DenseCoordinate.from_block(0, 5, 1, dim="x")
         expected = DenseCoordinate([0, 1, 2, 3, 4], dim="x")
         assert coord.equals(expected)
+
+    def test_is_monotonic_increasing(self):
+        assert DenseCoordinate([1, 2, 3]).is_monotonic_increasing()
+        assert not DenseCoordinate([1, 3, 2]).is_monotonic_increasing()
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        times = np.array([t0, t0 + np.timedelta64(1, "s"), t0 + np.timedelta64(2, "s")])
+        assert DenseCoordinate(times).is_monotonic_increasing()
+        times_bad = np.array(
+            [t0, t0 + np.timedelta64(2, "s"), t0 + np.timedelta64(1, "s")]
+        )
+        assert not DenseCoordinate(times_bad).is_monotonic_increasing()
