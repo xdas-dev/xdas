@@ -670,6 +670,31 @@ class TestCombineByCoordsDimLast:
         assert isinstance(result, xd.DataArray)
 
 
+class TestConcatEdgeCases:
+    def test_empty_list_returns_dataarray(self):
+        result = xd.concat([])
+        assert isinstance(result, xd.DataArray)
+        assert result.empty
+
+    def test_all_empty_elements_returns_empty_dataarray(self):
+        da = xd.DataArray(np.zeros((0, 10)), dims=("time", "distance"))
+        result = xd.concat([da, da])
+        assert isinstance(result, xd.DataArray)
+        assert result.empty
+        assert result.dims == ("time", "distance")
+
+    def test_mixed_empty_and_nonempty_uses_nonempty(self):
+        t_empty = np.array([], dtype="datetime64[ns]")
+        da_empty = xd.DataArray(np.zeros((0,)), {"time": t_empty})
+        t = np.array(
+            ["2000-01-01", "2000-01-02", "2000-01-03", "2000-01-04", "2000-01-05"],
+            dtype="datetime64[ns]",
+        )
+        da = xd.DataArray(np.ones((5,)), {"time": t})
+        result = xd.concat([da_empty, da])
+        assert result.equals(da)
+
+
 class TestConcatCoordsEdgeCases:
     def test_tolerance_with_dense_coord_raises(self):
         da1 = xd.DataArray(

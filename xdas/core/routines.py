@@ -945,7 +945,11 @@ def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         The concatenated dataarray.
 
     """
-    objs = [da for da in objs if not da.empty]
+    objs = list(objs)
+    non_empty = [da for da in objs if not da.empty]
+    if not non_empty:
+        return objs[0] if objs else DataArray()
+    objs = non_empty
 
     if virtual is None:
         virtual = all(isinstance(da.data, (VirtualSource, VirtualStack)) for da in objs)
