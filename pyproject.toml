@@ -30,8 +30,8 @@ dependencies = [
     "pyzmq",
 ]
 
-[project.optional-dependencies]
-dev = ["build", "ruff", "twine"]
+[dependency-groups]
+dev = ["ruff", "pyright", "pytest", "pytest-cov"]
 docs = [
     "ipykernel",
     "matplotlib",
@@ -41,14 +41,7 @@ docs = [
     "sphinx-copybutton",
     "sphinx",
 ]
-tests = [
-    "dascore",
-    "pytest",
-    "pytest-cov",
-    "psutil",
-    "seisbench",
-    "torch",
-]
+tests = ["dascore", "psutil", "seisbench", "torch"]
 
 [tool.ruff.lint]
 extend-select = ["I", "D"]
@@ -62,10 +55,7 @@ convention = "numpy"
 "docs/**" = ["D"]
 
 [tool.pytest.ini_options]
-addopts = [
-    "--doctest-modules",
-    "--import-mode=importlib",
-]
+addopts = ["--doctest-modules", "--import-mode=importlib"]
 doctest_optionflags = "NORMALIZE_WHITESPACE"
 markers = ["slow: marks tests as slow (skip with --skip-slow)"]
 
