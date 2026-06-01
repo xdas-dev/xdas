@@ -16,6 +16,7 @@
 
 ### Refactoring
 - Achieved **100% test coverage** across the codebase (@atrabattoni).
+- Migrated development workflow from conda to [uv](https://docs.astral.sh/uv/) (@atrabattoni).
 - *Reduced* test suite execution time by **~50%** (@atrabattoni).
 - Migrated formatting tooling from `isort` + `black` to `ruff` **including docstring checks** (@atrabattoni).
 - Ensure all ruff checks pass (@atrabattoni). 
