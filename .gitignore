@@ -167,3 +167,6 @@ cython_debug/
 # AI agents
 CLAUDE.md
 .claude
+
+# uv lock not relevant for a library
+uv.lock
