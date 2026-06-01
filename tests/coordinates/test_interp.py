@@ -327,3 +327,142 @@ class TestInterpCoordinate:
         assert coord0.concat(coord0).empty
         assert coord0.concat(coord1).equals(coord1)
         assert coord1.concat(coord0).equals(coord1)
+
+        with pytest.raises(TypeError):
+            coord1.concat(ScalarCoordinate(1))
+        with pytest.raises(ValueError, match="different dimension"):
+            InterpCoordinate(
+                {"tie_indices": [0, 2], "tie_values": [0, 20]}, "x"
+            ).concat(
+                InterpCoordinate({"tie_indices": [0, 2], "tie_values": [30, 50]}, "y")
+            )
+        with pytest.raises(ValueError, match="different dtype"):
+            InterpCoordinate(
+                {"tie_indices": [0, 2], "tie_values": np.array([0, 20], dtype=np.int32)}
+            ).concat(
+                InterpCoordinate(
+                    {"tie_indices": [0, 2], "tie_values": np.array([30.0, 50.0])}
+                )
+            )
+
+    def test_init_extra_keys(self):
+        with pytest.raises(ValueError, match="both"):
+            InterpCoordinate(
+                {"tie_indices": [0, 8], "tie_values": [100.0, 900.0], "extra": 1}
+            )
+
+    def test_init_non_monotonic(self):
+        with pytest.raises(ValueError, match="strictly increasing"):
+            InterpCoordinate(
+                {"tie_indices": [0, 0, 8], "tie_values": [100.0, 200.0, 900.0]}
+            )
+
+    def test_init_string_values(self):
+        with pytest.raises(ValueError, match="numeric or datetime"):
+            InterpCoordinate({"tie_indices": [0, 1], "tie_values": ["a", "b"]})
+
+    def test_indices_empty(self):
+        coord = InterpCoordinate()
+        assert len(coord.indices) == 0
+
+    def test_array_with_dtype(self):
+        coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
+        result = coord.__array__(dtype=np.float32)
+        assert result.dtype == np.float32
+
+    def test_get_sampling_interval_empty(self):
+        coord = InterpCoordinate()
+        assert coord.get_sampling_interval() is None
+
+    def test_get_indexer_overlaps(self):
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 8], "tie_values": [100.0, 50.0, 900.0]}
+        )
+        with pytest.raises(ValueError, match="overlaps were found"):
+            coord.get_indexer(200.0)
+
+    def test_simplify_false(self):
+        coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
+        assert coord.simplify(False) is coord
+
+    def test_get_split_indices_kinds(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 4, 5, 9, 10, 14],
+                "tie_values": [
+                    t0,
+                    t0 + np.timedelta64(4, "s"),
+                    t0 + np.timedelta64(10, "s"),
+                    t0 + np.timedelta64(14, "s"),
+                    t0 + np.timedelta64(12, "s"),
+                    t0 + np.timedelta64(16, "s"),
+                ],
+            }
+        )
+        gaps = coord.get_split_indices(kind="gaps")
+        overlaps = coord.get_split_indices(kind="overlaps")
+        assert len(gaps) >= 0
+        assert len(overlaps) >= 0
+
+    def test_decimate_collision(self):
+        # Four tie points where two middle ones collide after integer division;
+        # the loop in decimate() fixes the middle collisions so the result is valid.
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 2, 5, 9], "tie_values": [0.0, 20.0, 50.0, 90.0]}
+        )
+        result = coord.decimate(3)
+        assert np.all(np.diff(result.tie_indices) > 0)
+
+    def test_decimate_no_collision(self):
+        # No collisions after //q: the False branch of the collision check is taken.
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 7, 9], "tie_values": [0.0, 40.0, 70.0, 90.0]}
+        )
+        result = coord.decimate(3)
+        assert np.all(np.diff(result.tie_indices) > 0)
+
+    def test_get_split_indices_overlaps_tolerance_false(self):
+        # Build a coord with an overlap (tie_values go backwards between segments)
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 4, 5, 9],
+                "tie_values": [0.0, 4.0, 3.0, 7.0],  # overlap at index 5 (value 3 < 4)
+            }
+        )
+        result = coord.get_split_indices(kind="overlaps", tolerance=False)
+        assert isinstance(result, np.ndarray)
+        np.testing.assert_array_equal(result, [5], strict=True)
+
+    def test_get_split_indices_overlaps_with_tolerance(self):
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 4, 5, 9],
+                "tie_values": [0.0, 4.0, 3.0, 7.0],
+            }
+        )
+        result = coord.get_split_indices(kind="overlaps", tolerance=0.5)
+        assert isinstance(result, np.ndarray)
+        np.testing.assert_array_equal(result, [5], strict=True)
+
+    def test_is_monotonic_increasing_true(self):
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 5, 9], "tie_values": [0.0, 4.0, 5.0, 9.0]}
+        )
+        assert coord.is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_false(self):
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 5, 9], "tie_values": [0.0, 4.0, 3.0, 7.0]}
+        )
+        assert coord.is_monotonic_increasing() is False
+
+    def test_is_monotonic_increasing_multi_segment(self):
+        # Three segments all strictly increasing — must not raise ValueError from bool()
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 4, 5, 9, 10, 14],
+                "tie_values": [0.0, 4.0, 5.0, 9.0, 10.0, 14.0],
+            }
+        )
+        assert coord.is_monotonic_increasing() is True

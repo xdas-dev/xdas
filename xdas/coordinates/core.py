@@ -1,3 +1,11 @@
+"""
+Core coordinate infrastructure.
+
+Includes the :class:`Coordinates` container, :class:`Coordinate` factory/base
+class, and shared helpers used by all concrete coordinate types (parsing,
+interpolation, tolerance handling).
+"""
+
 import weakref
 from copy import copy, deepcopy
 from functools import wraps
@@ -8,8 +16,11 @@ import pandas as pd
 
 
 def wraps_first_last(func):
+    """Resolve ``"first"`` and ``"last"`` dim aliases before calling *func*."""
+
     @wraps(func)
     def wrapper(self, dim, *args, **kwargs):
+        """Resolve ``"first"``/``"last"`` aliases then delegate to *func*."""
         if dim == "first":
             dim = self._dims[0]
         if dim == "last":
@@ -118,16 +129,19 @@ class Coordinates(dict):
 
     @property
     def dims(self):
+        """Ordered tuple of dimension names for this coordinates container."""
         return self._dims
 
     @property
     def parent(self):
+        """The parent object (usually a :class:`DataArray`) this container is attached to."""
         if hasattr(self, "_parent"):
             return self._parent()
         else:
             return None
 
     def isdim(self, name):
+        """Return ``True`` if *name* is a dimensional coordinate (i.e. its dim equals its name)."""
         return self[name].dim == name
 
     def get_query(self, item):
@@ -168,10 +182,28 @@ class Coordinates(dict):
         return query
 
     def to_index(self, item, method=None, endpoint=True):
+        """
+        Convert an item selector to a dict of per-dimension integer indices.
+
+        Parameters
+        ----------
+        item : indexer-like, sequence, or mapping
+            Passed to :meth:`get_query` to resolve dimension-by-dimension indexers.
+        method : str, optional
+            Interpolation method forwarded to each coordinate's :meth:`~Coordinate.to_index`.
+        endpoint : bool, optional
+            Whether to include the stop endpoint of slice selectors. Default ``True``.
+
+        Returns
+        -------
+        dict
+            Mapping from dimension name to integer index or slice.
+        """
         query = self.get_query(item)
         return {dim: self[dim].to_index(query[dim], method, endpoint) for dim in query}
 
     def equals(self, other):
+        """Return ``True`` if *other* is a :class:`Coordinates` with identical coordinate values."""
         if not isinstance(other, Coordinates):
             return False
         for name in self:
@@ -184,7 +216,6 @@ class Coordinates(dict):
 
         Examples
         --------
-
         >>> import xdas as xd
 
         >>> coords = xd.Coordinates(
@@ -214,6 +245,7 @@ class Coordinates(dict):
 
     @classmethod
     def from_dict(cls, dct):
+        """Reconstruct a :class:`Coordinates` from the dict returned by :meth:`to_dict`."""
         return cls(
             {key: Coordinate.from_dict(value) for key, value in dct["coords"].items()},
             dct["dims"],
@@ -221,19 +253,29 @@ class Coordinates(dict):
 
     @classmethod
     def from_dataset(cls, dataset, name):
+        """Build a :class:`Coordinates` by delegating to each registered coordinate subclass."""
         return cls(Coordinate.from_dataset(dataset, name))
 
     def copy(self, deep=True):
+        """Return a copy of this :class:`Coordinates` container.
+
+        Parameters
+        ----------
+        deep : bool, optional
+            If ``True`` (default) perform a deep copy of every coordinate.
+        """
         return self.__class__({key: value.copy(deep) for key, value in self.items()})
 
     @wraps_first_last
     def drop_dims(self, *dims):
+        """Return a new :class:`Coordinates` with *dims* and their associated coordinates removed."""
         coords = {key: value for key, value in self.items() if value.dim not in dims}
         dims = tuple(value for value in self.dims if value not in dims)
         return self.__class__(coords, dims)
 
     @wraps_first_last
     def drop_coords(self, *names):
+        """Return a new :class:`Coordinates` with the named coordinates removed."""
         coords = {key: value for key, value in self.items() if key not in names}
         return self.__class__(coords, self.dims)
 
@@ -253,6 +295,27 @@ class Coordinates(dict):
 
 
 class Coordinate:
+    """
+    Base class and factory for all coordinate types.
+
+    When called as ``Coordinate(data)``, acts as a factory and returns the first
+    registered subclass whose :meth:`isvalid` method accepts *data*.  When
+    subclassed, use the ``name=`` keyword in the class definition to register
+    the subclass (e.g. ``class MyCoord(Coordinate, name="mycoord")``).
+
+    Concrete subclasses must implement :meth:`isvalid`, :meth:`equals`,
+    and :meth:`to_dict` at minimum.
+
+    Parameters
+    ----------
+    data : array-like or mapping
+        The coordinate data.  Interpretation is subclass-specific.
+    dim : str, optional
+        Name of the dimension this coordinate is associated with.
+    dtype : dtype-like, optional
+        Desired dtype for the underlying data array.
+    """
+
     _registry = {}
 
     def __init_subclass__(cls, *, name=None, **kwargs):
@@ -264,13 +327,23 @@ class Coordinate:
         return cls._registry[item]
 
     def __new__(cls, data=None, dim=None, dtype=None):
-        if data is None:
-            raise TypeError("cannot infer coordinate type if no `data` is provided")
-        data, dim = parse(data, dim)
-        for subcls in cls.__subclasses__():
-            if subcls.isvalid(data):
-                return object.__new__(subcls)
-        raise TypeError("could not parse `data`")
+        """Instantiate the appropriate Coordinate subclass based on *data*."""
+        # class factory if instantiating Coordinate directly
+        if cls is Coordinate:
+            if data is None:
+                raise TypeError("cannot infer coordinate type if no `data` is provided")
+
+            data, dim = parse(data, dim)
+
+            for subcls in Coordinate._registry.values():
+                if subcls.isvalid(data):
+                    cls = subcls
+                    break
+            else:
+                raise TypeError("could not parse `data`")
+
+        # normal allocation
+        return super().__new__(cls)
 
     def __getitem__(self, item):
         data = self.data.__getitem__(item)
@@ -298,7 +371,7 @@ class Coordinate:
         else:
             return self.data.__array__(dtype)
 
-    def __array__ufunc__(self, ufunc, method, *inputs, **kwargs):
+    def __array__ufunc__(self, ufunc, method, *inputs, **kwargs):  # pragma: no cover
         return self.data.__array__ufunc__(ufunc, method, *inputs, **kwargs)
 
     def __array_function__(self, func, types, args, kwargs):
@@ -306,30 +379,37 @@ class Coordinate:
 
     @staticmethod
     def isvalid(data):
+        """Return ``True`` if *data* is a valid input for this coordinate subclass."""
         raise NotImplementedError
 
     @property
     def dtype(self):
+        """NumPy dtype of the underlying data array."""
         return self.data.dtype
 
     @property
     def ndim(self):
+        """Number of dimensions of the underlying data array (always 1 for dimensional coords)."""
         return self.data.ndim
 
     @property
     def shape(self):
+        """Shape tuple of the underlying data array."""
         return self.data.shape
 
     @property
     def values(self):
+        """Materialised numpy array of coordinate values."""
         return self.__array__()
 
     @property
     def empty(self):
+        """``True`` if the coordinate has zero length."""
         return len(self) == 0
 
     @property
     def parent(self):
+        """The parent :class:`Coordinates` container, or ``None`` if unattached."""
         if hasattr(self, "_parent"):
             return self._parent()
         else:
@@ -337,6 +417,7 @@ class Coordinate:
 
     @property
     def name(self):
+        """The name under which this coordinate is stored in its parent container."""
         if self.parent is None:
             return self.dim
         return next((name for name in self.parent if self.parent[name] is self), None)
@@ -345,6 +426,19 @@ class Coordinate:
         self._parent = weakref.ref(parent)
 
     def get_sampling_interval(self, cast=True):
+        """
+        Return the average sample spacing (end-to-end distance divided by N-1).
+
+        Parameters
+        ----------
+        cast : bool, optional
+            If ``True`` (default), cast timedelta64 results to seconds (float).
+
+        Returns
+        -------
+        float or None
+            ``None`` if the coordinate has fewer than two elements.
+        """
         if len(self) < 2:
             return None
         delta = (self[-1].values - self[0].values) / (len(self) - 1)
@@ -354,6 +448,7 @@ class Coordinate:
         return delta
 
     def is_monotonic_increasing(self):
+        """Return ``True`` if all consecutive differences in this coordinate are positive."""
         if np.issubdtype(self.dtype, np.datetime64):
             zero = np.timedelta64(0)
         else:
@@ -361,12 +456,21 @@ class Coordinate:
         return np.all(np.diff(self.values) > zero)
 
     def isdim(self):
+        """Return ``True`` if this coordinate is a dimensional coordinate in its parent container."""
         if self.parent is None or self.name is None:
             return None
         else:
             return self.parent.isdim(self.name)
 
     def copy(self, deep=True):
+        """
+        Return a copy of this coordinate.
+
+        Parameters
+        ----------
+        deep : bool, optional
+            If ``True`` (default) perform a deep copy; otherwise a shallow copy.
+        """
         if deep:
             func = deepcopy
         else:
@@ -374,15 +478,48 @@ class Coordinate:
         return self.__class__(func(self.data), func(self.dim), func(self.dtype))
 
     def equals(self, other):
+        """Return ``True`` if *other* represents the same coordinate values. Subclass must implement."""
         raise NotImplementedError
 
     def to_index(self, item, method=None, endpoint=True):
+        """
+        Convert a label-based selector to an integer index or slice.
+
+        Parameters
+        ----------
+        item : label, slice, or array-like
+            Selector to resolve.
+        method : str, optional
+            Look-up method (e.g. ``"ffill"``, ``"bfill"``).
+        endpoint : bool, optional
+            Whether to include the stop of a slice. Default ``True``.
+
+        Returns
+        -------
+        int or slice
+        """
         if isinstance(item, slice):
             return self.slice_indexer(item.start, item.stop, item.step, endpoint)
         else:
             return self.get_indexer(item, method)
 
     def format_index(self, idx, bounds="raise"):
+        """
+        Normalise integer index *idx*, handling negative indices and optional bounds checking.
+
+        Parameters
+        ----------
+        idx : int or array-like of int
+            Index or indices to normalise.
+        bounds : {"raise", "clip"}, optional
+            ``"raise"`` (default) raises :exc:`IndexError` for out-of-bounds indices;
+            ``"clip"`` clamps them to the valid range.
+
+        Returns
+        -------
+        numpy.ndarray
+            Non-negative integer index array.
+        """
         idx = np.asarray(idx)
         if not np.issubdtype(idx.dtype, np.integer):
             raise IndexError("only integer are valid index")
@@ -395,6 +532,24 @@ class Coordinate:
         return idx
 
     def slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
+        """
+        Return an integer :class:`slice` corresponding to the label range [*start*, *stop*].
+
+        Parameters
+        ----------
+        start : label, optional
+            First label to include (inclusive, via ``"bfill"`` look-up).
+        stop : label, optional
+            Last label to include (inclusive by default, via ``"ffill"`` look-up).
+        step : not supported
+            Reserved; raises :exc:`NotImplementedError` if provided.
+        endpoint : bool, optional
+            If ``True`` (default), include *stop* in the result.
+
+        Returns
+        -------
+        slice
+        """
         if start is not None:
             try:
                 start_index = self.get_indexer(start, method="bfill")
@@ -421,34 +576,42 @@ class Coordinate:
         return slice(start_index, stop_index)
 
     def isscalar(self):
+        """Return ``True`` if this is a :class:`ScalarCoordinate` (non-dimensional)."""
         return False
 
     def isdefault(self):
+        """Return ``True`` if this is a :class:`DefaultCoordinate` (integer range)."""
         return False
 
     def isdense(self):
+        """Return ``True`` if this is a :class:`DenseCoordinate` (explicit numpy array)."""
         return False
 
     def isinterp(self):
+        """Return ``True`` if this is an :class:`InterpCoordinate` (piecewise-linear)."""
         return False
 
     def issampled(self):
+        """Return ``True`` if this is a :class:`SampledCoordinate` (regularly sampled)."""
         return False
 
     def concat(self, other):
+        """Concatenate *other* coordinate to this one. Subclass must implement."""
         raise NotImplementedError(f"concat is not implemented for {self.__class__}")
 
     def simplify(self, tolerance=None):
+        """Reduce tie-point count within *tolerance*. Subclass must implement."""
         raise NotImplementedError(f"simplify is not implemented for {self.__class__}")
 
     def get_split_indices(self, kind="discontinuities", tolerance=False):
+        """Return integer indices where this coordinate should be split. Subclass must implement."""
         raise NotImplementedError(
             f"get_split_indices is not implemented for {self.__class__}"
         )
 
     def get_discontinuities(self, tolerance=None):
         """
-        Returns a DataFrame containing information about the discontinuities.
+        Return a DataFrame containing information about the discontinuities.
 
         Returns
         -------
@@ -503,7 +666,7 @@ class Coordinate:
 
     def get_availabilities(self):
         """
-        Returns a DataFrame containing information about the data availability.
+        Return a DataFrame containing information about the data availability.
 
         Returns
         -------
@@ -554,6 +717,7 @@ class Coordinate:
         return pd.DataFrame.from_records(records)
 
     def to_dataarray(self):
+        """Convert this coordinate to a :class:`~xdas.DataArray` with a single dimension."""
         from ..core.dataarray import DataArray  # TODO: avoid defered import?
 
         if self.name is None:
@@ -579,13 +743,16 @@ class Coordinate:
             )
 
     def to_dict(self):
+        """Serialise this coordinate to a plain-dict representation. Subclass must implement."""
         raise NotImplementedError
 
     @classmethod
     def from_dict(cls, dct):
+        """Reconstruct a coordinate from the dict returned by :meth:`to_dict`."""
         return cls(**dct)
 
     def to_dataset(self, dataset, attrs):
+        """Write this coordinate into an xarray *dataset*, updating *attrs* in place."""
         dataset = dataset.assign_coords(
             {self.name: (self.dim, self.values) if self.dim else self.values}
         )
@@ -593,18 +760,41 @@ class Coordinate:
 
     @classmethod
     def from_dataset(cls, dataset, name):
+        """Read coordinates named *name* from an xarray *dataset* via each registered subclass."""
         coords = {}
         for subcls in cls.__subclasses__():
-            if hasattr(subcls, "from_dataset"):
+            if hasattr(subcls, "from_dataset"):  # pragma: no branch
                 coords |= subcls.from_dataset(dataset, name)
         return coords
 
     @classmethod
     def from_block(cls, start, size, step, dim=None, dtype=None):
+        """Construct a coordinate from a start value, element count, and step size. Subclass must implement."""
         raise NotImplementedError
 
 
 def parse(data, dim=None):
+    """
+    Normalise *data* / *dim* inputs accepted by coordinate constructors.
+
+    Unpacks ``(dim, data)`` tuples and strips :class:`Coordinate` wrappers so
+    that downstream constructors always receive a plain data object and an
+    optional dimension string.
+
+    Parameters
+    ----------
+    data : array-like, Coordinate, or (dim, array-like) tuple
+        Raw coordinate input.
+    dim : str, optional
+        Explicit dimension name; overrides any dimension carried by *data*.
+
+    Returns
+    -------
+    data : array-like
+        Unwrapped data.
+    dim : str or None
+        Resolved dimension name.
+    """
     if isinstance(data, tuple):
         if dim is None:
             dim, data = data
@@ -618,6 +808,23 @@ def parse(data, dim=None):
 
 
 def parse_tolerance(tolerance, dtype):
+    """
+    Normalise *tolerance* to the correct type for *dtype*.
+
+    Converts ``None`` to zero, and for datetime64 dtypes converts a
+    numeric tolerance (in seconds) to the appropriate :class:`numpy.timedelta64`.
+
+    Parameters
+    ----------
+    tolerance : float or None
+        Raw tolerance value.
+    dtype : numpy.dtype
+        The dtype of the coordinate values the tolerance will be compared against.
+
+    Returns
+    -------
+    tolerance : int, float, or numpy.timedelta64
+    """
     if np.issubdtype(dtype, np.datetime64):
         if tolerance is None:
             tolerance = np.timedelta64(0)
@@ -631,16 +838,16 @@ def parse_tolerance(tolerance, dtype):
 
 def get_sampling_interval(da, dim, cast=True):
     """
-    Returns the sample spacing along a given dimension.
+    Return the sample spacing along a given dimension.
 
     Parameters
     ----------
-    da : DataArray or DataArray or DataArray
+    da : DataArray
         The data from which extract the sample spacing.
     dim : str
         The dimension along which get the sample spacing.
     cast: bool, optional
-        Wether to cast datetime64 to seconds, by default True.
+        Whether to cast datetime64 to seconds, by default True.
 
     Returns
     -------
@@ -652,11 +859,13 @@ def get_sampling_interval(da, dim, cast=True):
 
 
 def isscalar(data):
+    """Return ``True`` if *data* converts to a 0-d non-object numpy array."""
     data = np.asarray(data)
     return (data.dtype != np.dtype(object)) and (data.ndim == 0)
 
 
 def is_monotonic_increasing(x):
+    """Return ``True`` if every element of *x* is strictly greater than the previous one."""
     if np.issubdtype(x.dtype, np.datetime64):
         return np.all(np.diff(x) > np.timedelta64(0))
     else:
@@ -664,6 +873,7 @@ def is_monotonic_increasing(x):
 
 
 def format_datetime(x):
+    """Format a datetime64-like *x* as an ISO string, truncating sub-millisecond digits."""
     string = str(x)
     if "." in string:
         datetime, digits = string.split(".")

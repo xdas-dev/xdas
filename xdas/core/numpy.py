@@ -1,3 +1,9 @@
+"""
+NumPy function dispatch for :class:`DataArray` via ``__array_function__``.
+
+Maps NumPy functions to coordinate-aware implementations.
+"""
+
 from inspect import signature
 
 import numpy as np
@@ -7,7 +13,10 @@ from .dataarray import HANDLED_NUMPY_FUNCTIONS, DataArray
 
 
 def implements(numpy_function):
+    """Register *func* as the :class:`DataArray` implementation of *numpy_function*."""
+
     def decorator(func):
+        """Register *func* and return it unchanged."""
         HANDLED_NUMPY_FUNCTIONS[numpy_function] = func
         return func
 
@@ -15,11 +24,26 @@ def implements(numpy_function):
 
 
 def handled(reduce=False, drop_coords=False, **defaults):
+    """
+    Wrap a NumPy function to be coordinate-aware.
+
+    Parameters
+    ----------
+    reduce : bool, optional
+        If ``True``, drop the reduced dimension from the output coordinates.
+    drop_coords : bool, optional
+        If ``True``, return a plain array without wrapping in :class:`DataArray`.
+    **defaults : dict
+        Default keyword arguments forwarded to the wrapped function.
+    """
+
     def decorator(func):
+        """Build and register the coordinate-aware wrapper for *func*."""
         sig = signature(func)
 
         @implements(func)
         def wrapper(*args, **kwargs):
+            """Forward *func* call while preserving or reducing DataArray coordinates."""
             ba = sig.bind(*args, **kwargs)
             ba.apply_defaults()
             ba.arguments.update(defaults)
@@ -27,7 +51,7 @@ def handled(reduce=False, drop_coords=False, **defaults):
             da = ba.arguments.get(key)
             axis = ba.arguments.get("axis")
             out = ba.arguments.get("out")
-            if isinstance(da, DataArray):
+            if isinstance(da, DataArray):  # pragma: no branch
                 ba.arguments[key] = da.data
             if isinstance(out, DataArray):
                 ba.arguments["out"] = out.data
@@ -114,9 +138,9 @@ handled(drop_coords=True)
 handled(drop_coords=True)(np.diff)
 handled(drop_coords=True)(np.ediff1d)
 
-if NumpyVersion(np.__version__) < "2.4.0":
+if NumpyVersion(np.__version__) < "2.4.0":  # pragma: no cover
     handled(drop_coords=True)(np.trapz)
-if NumpyVersion(np.__version__) >= "2.0.0":
+if NumpyVersion(np.__version__) >= "2.0.0":  # pragma: no branch
     handled(drop_coords=True)(np.trapezoid)
 
 # TODO: gradient

@@ -1,3 +1,10 @@
+"""
+Threshold-based triggering atom :class:`Trigger`.
+
+Detects phase arrivals in :class:`DataArray` objects using an on/off
+mechanism.
+"""
+
 import numpy as np
 import pandas as pd
 from numba import njit
@@ -77,7 +84,7 @@ class Trigger(Atom):
 
     def initialize(self, cft, **flags):
         """
-        Initialize the trigger with the following states:
+        Initialize the trigger with the following states.
 
         - "axis": An integer indicating the axis number of the dimension along which to
           find picks.
@@ -390,7 +397,7 @@ def _concat(list_of_coord):  # TODO: make it a public function/method
     idx = 0
     dim = list_of_coord[0].dim
     for coord in list_of_coord:
-        if not coord.isinterp:
+        if not coord.isinterp():
             raise ValueError("Only interpolated coordinates can be concatenated.")
         if not coord.dim == dim:
             raise ValueError("All coordinates must have the same dimension.")
@@ -543,8 +550,11 @@ def _find_picks_numeric(cft, thresh, axis=-1, buffer=None, offset=None):
     return out
 
 
-@njit("Tuple((i8[:], i8[:], f8[:]))(f8[:, :], f8, f8, b1[:], i8[:], f8[:], i8)")
-def _trigger(
+@njit(
+    "Tuple((i8[:], i8[:], f8[:]))(f8[:, :], f8, f8, b1[:], i8[:], f8[:], i8)",
+    cache=True,
+)
+def _trigger(  # pragma: no cover
     cft, thresh_on, thresh_off, buffer_status, buffer_index, buffer_value, offset
 ):
     """

@@ -65,11 +65,18 @@ class TestScalarCoordinate:
         for data in self.valid:
             assert ScalarCoordinate(data).values == np.array(data)
 
+    def test_dim_setter(self):
+        coord = ScalarCoordinate(1)
+        coord.dim = None  # allowed
+        with pytest.raises(ValueError):
+            coord.dim = "x"
+
     def test_equals(self):
         for data in self.valid:
             coord = ScalarCoordinate(data)
             assert coord.equals(coord)
         assert ScalarCoordinate(1).equals(ScalarCoordinate(np.array(1)))
+        assert not ScalarCoordinate(1).equals(42)
 
     def test_to_index(self):
         with pytest.raises(NotImplementedError):

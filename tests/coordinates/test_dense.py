@@ -85,6 +85,7 @@ class TestDenseCoordinate:
             coord = DenseCoordinate(data)
             assert coord.equals(coord)
         assert DenseCoordinate([1, 2, 3]).equals(DenseCoordinate([1, 2, 3]))
+        assert not DenseCoordinate([1, 2, 3]).equals(42)
 
     def test_isinstance(self):
         assert not DenseCoordinate([1, 2, 3]).isscalar()
@@ -135,3 +136,35 @@ class TestDenseCoordinate:
         assert coord0.concat(coord0).empty
         assert coord0.concat(coord1).equals(coord1)
         assert coord1.concat(coord0).equals(coord1)
+
+        with pytest.raises(TypeError):
+            coord1.concat(ScalarCoordinate(1))
+        with pytest.raises(ValueError, match="different dimension"):
+            DenseCoordinate([1, 2, 3], "x").concat(DenseCoordinate([4, 5, 6], "y"))
+        with pytest.raises(ValueError, match="different dtype"):
+            DenseCoordinate(np.array([1, 2, 3], dtype=np.int32)).concat(
+                DenseCoordinate(np.array([4.0, 5.0, 6.0], dtype=np.float64))
+            )
+
+    def test_get_div_points(self):
+        coord = DenseCoordinate([1, 2, 3, 10, 11, 12])
+        div_points = coord.get_div_points(tolerance=3.0)
+        assert np.array_equal(div_points, [0, 3, 6])
+        with pytest.raises(NotImplementedError):
+            coord.get_div_points()
+
+    def test_from_block(self):
+        coord = DenseCoordinate.from_block(0, 5, 1, dim="x")
+        expected = DenseCoordinate([0, 1, 2, 3, 4], dim="x")
+        assert coord.equals(expected)
+
+    def test_is_monotonic_increasing(self):
+        assert DenseCoordinate([1, 2, 3]).is_monotonic_increasing()
+        assert not DenseCoordinate([1, 3, 2]).is_monotonic_increasing()
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        times = np.array([t0, t0 + np.timedelta64(1, "s"), t0 + np.timedelta64(2, "s")])
+        assert DenseCoordinate(times).is_monotonic_increasing()
+        times_bad = np.array(
+            [t0, t0 + np.timedelta64(2, "s"), t0 + np.timedelta64(1, "s")]
+        )
+        assert not DenseCoordinate(times_bad).is_monotonic_increasing()

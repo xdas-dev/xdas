@@ -1,9 +1,15 @@
+"""
+I/O engine for the native xdas HDF5/NetCDF4 format (:class:`XdasEngine`).
+
+Supports :class:`DataArray`, :class:`DataSequence`, and :class:`DataMapping`.
+"""
+
 import os
 from pathlib import Path
 
 import h5netcdf
 import h5py
-import hdf5plugin
+import hdf5plugin  # noqa
 import xarray as xr
 from dask.array import Array as DaskArray
 
@@ -16,21 +22,40 @@ from .core import Engine
 
 
 class XdasEngine(Engine, name="xdas"):
+    """Engine for the native xdas HDF5/NetCDF4 format."""
 
     def open_dataarray(self, fname, **kwargs):
+        """Delegate to module-level :func:`open_dataarray`."""
         return open_dataarray(fname, **kwargs)
 
     def save_dataarray(self, da, fname, **kwargs):
+        """Delegate to module-level :func:`save_dataarray`."""
         return save_dataarray(da, fname, **kwargs)
 
     def open_datacollection(self, fname, **kwargs):
-        return open_datamapping(fname, **kwargs)
+        """Delegate to module-level :func:`open_datacollection`."""
+        return open_datacollection(fname, **kwargs)
 
     def save_datacollection(self, dc, fname, **kwargs):
-        return save_datamapping(dc, fname, **kwargs)
+        """Delegate to module-level :func:`save_datacollection`."""
+        return save_datacollection(dc, fname, **kwargs)
 
 
 def open_dataarray(fname, group=None):
+    """
+    Read a :class:`DataArray` from a native xdas NetCDF4/HDF5 file.
+
+    Parameters
+    ----------
+    fname : str or Path
+        Path to the file.
+    group : str, optional
+        HDF5 group path inside the file.
+
+    Returns
+    -------
+    DataArray
+    """
     if isinstance(fname, Path):
         fname = str(fname)
 
@@ -87,6 +112,26 @@ def open_dataarray(fname, group=None):
 def save_dataarray(
     da, fname, mode="w", group=None, virtual=None, encoding=None, create_dirs=False
 ):
+    """
+    Write *da* to a native xdas NetCDF4/HDF5 file.
+
+    Parameters
+    ----------
+    da : DataArray
+        Data to write.
+    fname : str or Path
+        Output file path.
+    mode : str, optional
+        File open mode (``"w"`` or ``"a"``).
+    group : str, optional
+        HDF5 group path within the file.
+    virtual : bool, optional
+        If ``True``, write as a virtual (lazy) dataset.
+    encoding : dict, optional
+        HDF5/NetCDF4 encoding options.
+    create_dirs : bool, optional
+        Create parent directories if they do not exist.
+    """
     if isinstance(fname, Path):
         fname = str(fname)
 
@@ -149,25 +194,22 @@ def save_dataarray(
 
 
 def open_datacollection(fname, group=None):
-    if isinstance(fname, Path):
-        fname = str(fname)
+    """Read a :class:`DataCollection` from *fname*, auto-detecting sequence vs. mapping."""
     dc = open_datamapping(fname, group)
     try:
         keys = [int(key) for key in dc.keys()]
-        if keys == list(range(len(keys))):
-            return DataSequence.from_mapping(dc)
-        else:
-            return dc
     except ValueError:
+        return dc
+    if set(keys) == set(range(len(keys))):
+        return DataSequence([dc[str(key)] for key in range(len(keys))], dc.name)
+    else:
         return dc
 
 
 def save_datacollection(
     dc, fname, mode="w", group=None, virtual=None, encoding=None, create_dirs=False
 ):
-    if isinstance(fname, Path):
-        fname = str(fname)
-
+    """Write *dc* to *fname*, dispatching to sequence or mapping writer as needed."""
     if isinstance(dc, DataSequence):
         save_datasequence(dc, fname, mode, group, virtual, encoding, create_dirs)
     elif isinstance(dc, DataCollection):
@@ -177,6 +219,7 @@ def save_datacollection(
 
 
 def open_datamapping(fname, group=None):
+    """Read a :class:`DataMapping` from *fname*."""
     if isinstance(fname, Path):
         fname = str(fname)
 
@@ -191,7 +234,7 @@ def open_datamapping(fname, group=None):
                 "it looks like you are trying to open a data array as a data collection."
             )
         else:
-            if not isinstance(group, h5py.Group):
+            if not isinstance(group, h5py.Group):  # pragma: no cover
                 raise RuntimeError(
                     "something went wrong while opening the data collection."
                 )
@@ -210,6 +253,7 @@ def open_datamapping(fname, group=None):
 def save_datamapping(
     dm, fname, mode="w", group=None, virtual=None, encoding=None, create_dirs=False
 ):
+    """Write :class:`DataMapping` *dm* to *fname*, writing each key as a separate group."""
     if mode == "w" and group is None and os.path.exists(fname):
         os.remove(fname)
     for key in dm:
@@ -227,6 +271,7 @@ def save_datamapping(
 
 
 def open_datasequence(fname, group=None):
+    """Read a :class:`DataSequence` from *fname* via :func:`open_datamapping`."""
     dm = open_datamapping(fname, group)
     return DataSequence.from_mapping(dm)
 
@@ -234,6 +279,7 @@ def open_datasequence(fname, group=None):
 def save_datasequence(
     ds, fname, mode="w", group=None, virtual=None, encoding=None, create_dirs=False
 ):
+    """Write :class:`DataSequence` *ds* to *fname* by converting to a mapping first."""
     dm = ds.to_mapping()
     save_datamapping(dm, fname, mode, group, virtual, encoding, create_dirs)
 

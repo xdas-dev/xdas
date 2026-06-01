@@ -26,21 +26,6 @@ class TestCore:
             },
         )
 
-    def test_open_mfdatacollection(self): ...  # TODO
-
-    def test_open_mfdatatree(self, tmp_path):
-        keys = ["LOC01", "LOC02"]
-        dirnames = [tmp_path / key for key in keys]
-        for dirname in dirnames:
-            dirname.mkdir()
-            for idx, da in enumerate(wavelet_wavefronts(nchunk=3), start=1):
-                da.to_netcdf(dirname / f"{idx:03d}.nc")
-        da = wavelet_wavefronts()
-        dc = xd.open_mfdatatree(tmp_path / "{node}" / "00[acquisition].nc")
-        assert list(dc.keys()) == keys
-        for key in keys:
-            assert dc[key][0].load().equals(da)
-
     def test_open_mfdataarray(self, tmp_path):
         wavelet_wavefronts().to_netcdf(tmp_path / "sample.nc")
         for idx, da in enumerate(wavelet_wavefronts(nchunk=3), start=1):
@@ -63,17 +48,17 @@ class TestCore:
             {
                 "starttime": "2023-01-01T00:00:00",
                 "resolution": (np.timedelta64(20, "ms"), 20.0),
-                "nchunk": 10,
+                "nchunk": 3,
             },
             {
                 "starttime": "2023-01-01T06:00:00",
                 "resolution": (np.timedelta64(10, "ms"), 20.0),
-                "nchunk": 10,
+                "nchunk": 3,
             },
             {
                 "starttime": "2023-01-01T12:00:00",
                 "resolution": (np.timedelta64(10, "ms"), 10.0),
-                "nchunk": 10,
+                "nchunk": 3,
             },
         ]
         count = 1

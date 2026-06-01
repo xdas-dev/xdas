@@ -1,3 +1,9 @@
+"""
+:class:`SampledCoordinate`: regularly-sampled coordinate.
+
+Described by tie points and a fixed ``sampling_interval`` between them.
+"""
+
 import re
 
 import numpy as np
@@ -34,9 +40,6 @@ class SampledCoordinate(Coordinate, name="sampled"):
     dtype : str or numpy.dtype, optional
         The data type of the coordinate, by default None.
     """
-
-    def __new__(cls, *args, **kwargs):
-        return object.__new__(cls)
 
     def __init__(self, data=None, dim=None, dtype=None):
         # empty
@@ -104,38 +107,47 @@ class SampledCoordinate(Coordinate, name="sampled"):
 
     @property
     def tie_values(self):
+        """Start values of each regularly-sampled segment."""
         return self.data["tie_values"]
 
     @property
     def tie_lengths(self):
+        """Number of samples in each regularly-sampled segment."""
         return self.data["tie_lengths"]
 
     @property
     def sampling_interval(self):
+        """Fixed step between consecutive samples (shared across all segments)."""
         return self.data["sampling_interval"]
 
     @property
     def dtype(self):
+        """Dtype of the tie values (and of all materialised coordinate values)."""
         return self.tie_values.dtype
 
     @property
     def tie_indices(self):
+        """Start integer index of each segment within the full coordinate array."""
         return np.concatenate(([0], np.cumsum(self.tie_lengths[:-1])))
 
     @property
     def empty(self):
+        """``True`` if no segments have been set."""
         return self.tie_values.shape == (0,)
 
     @property
     def ndim(self):
+        """Always 1."""
         return self.tie_values.ndim
 
     @property
     def shape(self):
+        """Shape tuple ``(len(self),)``."""
         return (len(self),)
 
     @property
     def indices(self):
+        """Full integer index array from 0 to ``len(self) - 1``."""
         if self.empty:
             return np.array([], dtype="int")
         else:
@@ -143,6 +155,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
 
     @property
     def values(self):
+        """Materialised numpy array of all coordinate values."""
         if self.empty:
             return np.array([], dtype=self.dtype)
         else:
@@ -150,14 +163,17 @@ class SampledCoordinate(Coordinate, name="sampled"):
 
     @property
     def start(self):
+        """Value at index 0 (first tie value)."""
         return self.tie_values[0]
 
     @property
     def end(self):
+        """Value one step past the last sample (exclusive upper bound)."""
         return self.tie_values[-1] + self.sampling_interval * self.tie_lengths[-1]
 
     @staticmethod
     def isvalid(data):
+        """Return ``True`` if *data* has ``tie_values``, ``tie_lengths``, and ``sampling_interval`` keys."""
         match data:
             case {
                 "tie_values": _,
@@ -230,15 +246,29 @@ class SampledCoordinate(Coordinate, name="sampled"):
         raise NotImplementedError
 
     def issampled(self):
+        """Return ``True`` (this is a :class:`SampledCoordinate`)."""
         return True
 
     def get_sampling_interval(self, cast=True):
+        """
+        Return the sampling interval.
+
+        Parameters
+        ----------
+        cast : bool, optional
+            If ``True`` (default), cast timedelta64 to seconds (float).
+        """
         delta = self.sampling_interval
         if cast and np.issubdtype(delta.dtype, np.timedelta64):
             delta = delta / np.timedelta64(1, "s")
         return delta
 
+    def is_monotonic_increasing(self):
+        """Return ``True`` if no segment starts before the end of the previous one."""
+        return not self.get_split_indices("overlaps", tolerance=False).size
+
     def equals(self, other):
+        """Return ``True`` if *other* has identical tie values, lengths, sampling interval, dim, and dtype."""
         return (
             np.array_equal(self.tie_values, other.tie_values)
             and np.array_equal(self.tie_lengths, other.tie_lengths)
@@ -248,6 +278,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
         )
 
     def get_value(self, index):
+        """Compute coordinate value(s) at integer position(s) *index* using the stored segments."""
         index = self.format_index(index, bounds="raise")
         reference = np.searchsorted(self.tie_indices, index, side="right") - 1
         return self.tie_values[reference] + (
@@ -255,6 +286,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
         )
 
     def slice_index(self, index_slice):
+        """Return a new :class:`SampledCoordinate` for the integer slice *index_slice*."""
         # normalize slice
         start, stop, step = index_slice.indices(len(self))
 
@@ -290,6 +322,25 @@ class SampledCoordinate(Coordinate, name="sampled"):
         return self.__class__(data, self.dim)
 
     def get_indexer(self, value, method=None):
+        """
+        Return the integer index for label *value* using the segment structure.
+
+        Parameters
+        ----------
+        value : scalar, str (ISO datetime), or array-like
+            Label(s) to locate.
+        method : {None, "nearest", "ffill", "bfill"}, optional
+            How to handle values that fall in gaps or between samples.
+
+        Returns
+        -------
+        int or numpy.ndarray
+
+        Raises
+        ------
+        KeyError
+            If *value* falls in an overlap region or is not found (exact mode).
+        """
         if isinstance(value, str):
             value = np.datetime64(value)
         else:
@@ -336,7 +387,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
 
         offset = (value - self.tie_values[reference]) / self.sampling_interval
 
-        match method:
+        match method:  # pragma: no branch
             case None:
                 if np.any(
                     (offset % 1 != 0)
@@ -353,7 +404,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
                 if np.any(offset < 0):
                     raise KeyError("index not found")
                 offset = np.minimum(offset, self.tie_lengths[reference] - 1)
-            case "bfill":
+            case "bfill":  # pragma: no branch
                 offset = np.ceil(offset).astype(int)
                 if np.any(offset > self.tie_lengths[reference] - 1):
                     raise KeyError("index not found")
@@ -361,6 +412,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
         return self.tie_indices[reference] + offset
 
     def concat(self, other):
+        """Append *other* :class:`SampledCoordinate` segments after this one."""
         if not isinstance(other, self.__class__):
             raise TypeError(f"cannot concatenate {type(other)} to {self.__class__}")
         if not self.dim == other.dim:
@@ -387,9 +439,19 @@ class SampledCoordinate(Coordinate, name="sampled"):
         )
 
     def decimate(self, q):
+        """Return a new coordinate keeping every *q*-th sample (integer decimation)."""
         return self[::q]
 
     def simplify(self, tolerance=None):
+        """
+        Merge adjacent segments whose gap is within *tolerance* of the sampling interval.
+
+        Parameters
+        ----------
+        tolerance : float, timedelta, or None
+            Maximum allowed discrepancy between the expected and actual start of the
+            next segment.  ``None`` uses zero tolerance.  ``False`` returns ``self`` unchanged.
+        """
         if tolerance is False:
             return self  # TODO: copy
         tolerance = parse_tolerance(tolerance, self.dtype)
@@ -412,6 +474,20 @@ class SampledCoordinate(Coordinate, name="sampled"):
         )
 
     def get_split_indices(self, kind="discontinuities", tolerance=False):
+        """
+        Return integer indices of segment boundaries (start of each segment except the first).
+
+        Parameters
+        ----------
+        kind : {"discontinuities", "gaps", "overlaps"}, optional
+            Which boundary type to return. Default ``"discontinuities"``.
+        tolerance : float, timedelta, or ``False``
+            Minimum magnitude of the discrepancy to report.
+
+        Returns
+        -------
+        numpy.ndarray
+        """
         valid_kinds = {"discontinuities", "gaps", "overlaps"}
         if kind not in valid_kinds:
             raise ValueError(f"`kind` must be one of {valid_kinds}; got {kind!r}")
@@ -429,39 +505,32 @@ class SampledCoordinate(Coordinate, name="sampled"):
         if tolerance is False:
             zero = np.timedelta64(0) if np.issubdtype(self.dtype, np.datetime64) else 0
 
-            match kind:
+            match kind:  # pragma: no branch
                 case "gaps":
                     mask = deltas >= zero
-                case "overlaps":
+                case "overlaps":  # pragma: no branch
                     mask = deltas < zero
 
         else:
             tolerance = parse_tolerance(tolerance, self.dtype)
 
-            match kind:
+            match kind:  # pragma: no branch
                 case "discontinuities":
                     mask = np.abs(deltas) > tolerance
                 case "gaps":
                     mask = deltas > tolerance
-                case "overlaps":
+                case "overlaps":  # pragma: no branch
                     mask = deltas < -tolerance
 
         return indices[mask]
 
-        indices = self.tie_indices[1:]
-        if tolerance is not None:
-            tolerance = parse_tolerance(tolerance, self.dtype)
-            deltas = self.tie_values[1:] - (
-                self.tie_values[:-1] + self.sampling_interval * self.tie_lengths[:-1]
-            )
-            indices = indices[np.abs(deltas) > tolerance]
-        return indices
-
     @classmethod
     def from_array(cls, arr, dim=None, sampling_interval=None):
+        """Not supported — raises :exc:`NotImplementedError`."""
         raise NotImplementedError("from_array is not implemented for SampledCoordinate")
 
     def to_dict(self):
+        """Serialise to ``{"dim": ..., "data": {"tie_values": ..., "tie_lengths": ..., "sampling_interval": ...}, "dtype": ...}``."""
         tie_values = self.data["tie_values"]
         tie_lengths = self.data["tie_lengths"]
         if np.issubdtype(tie_values.dtype, np.datetime64):
@@ -474,6 +543,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
         return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
 
     def to_dataset(self, dataset, attrs):
+        """Write sampling metadata into an xarray *dataset* using CF tie-point conventions."""
         mapping = f"{self.name}: {self.name}_sampling"
         if "coordinate_sampling" in attrs:
             attrs["coordinate_sampling"] += " " + mapping
@@ -509,6 +579,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
 
     @classmethod
     def from_dataset(cls, dataset, name):
+        """Read sampled coordinates from *dataset* using the ``coordinate_sampling`` attribute."""
         coords = {}
         mapping = dataset[name].attrs.pop("coordinate_sampling", None)
         if mapping is not None:
@@ -539,6 +610,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
 
     @classmethod
     def from_block(cls, start, size, step, dim=None, dtype=None):
+        """Build a single-segment :class:`SampledCoordinate` starting at *start* with *size* samples and step *step*."""
         data = {
             "tie_values": [start],
             "tie_lengths": [size],

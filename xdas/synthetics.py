@@ -1,3 +1,9 @@
+"""
+Synthetic DAS data generators used in doctests and test fixtures.
+
+Includes :func:`wavelet_wavefronts` and :func:`randn_wavefronts`.
+"""
+
 import numpy as np
 import scipy.signal as sp
 
@@ -12,23 +18,22 @@ def wavelet_wavefronts(
     nchunk=None,
 ):
     """
-    Generate some dummy files to bu used in code testing.
-
-    It generates a monolithic `sample.nc` file and a chunked files (`001.nc`, `002.nc`,
-    `003.nc`).
+    Generate a synthetic DAS :class:`DataArray` with wavelet wavefronts.
 
     Parameters
     ----------
-    dirpath : str, optional
-        Directory where files will be written. If None, not file will be written.
-    starttime : str
-        The starttime of the file, will be parsed by `np.datetime64(starttime)`.
-    resolution : (timedelta64, float)
-        The temporal and spatial sampling intervals.
+    starttime : str, optional
+        The starttime of the data, parsed by ``np.datetime64(starttime)``.
+        Default is ``"2023-01-01T00:00:00"``.
+    resolution : (timedelta64, float), optional
+        The temporal and spatial sampling intervals. Default is
+        ``(np.timedelta64(20, "ms"), 25.0)``.
+    nchunk : int, optional
+        If provided, splits the result into ``nchunk`` chunks and returns a
+        list of DataArrays instead of a single DataArray.
 
     Examples
     --------
-
     >>> import os
     >>> import xdas as xd
     >>> from xdas.synthetics import wavelet_wavefronts
@@ -65,10 +70,9 @@ def wavelet_wavefronts(
     d = np.hypot(xc, (s - np.mean(s)))  # channel distance to source [m]
     ttp = d / vp  # P-wave travel time [s]
     tts = d / vs  # S-wave travel time [s]
-    data = np.zeros(shape)
-    for k in range(shape[1]):
-        data[:, k] += sp.gausspulse(t - ttp[k] - t0, fc) / 2  # P is twice weaker
-        data[:, k] += sp.gausspulse(t - tts[k] - t0, fc)
+    t_col = t[:, np.newaxis]
+    data = sp.gausspulse(t_col - ttp - t0, fc) / 2  # P is twice weaker
+    data += sp.gausspulse(t_col - tts - t0, fc)
     data /= np.max(np.abs(data), axis=0, keepdims=True)  # normalize
     data += np.random.randn(*shape) / snr  # add noise
 
@@ -97,13 +101,25 @@ def wavelet_wavefronts(
 
 
 def randn_wavefronts():
+    """
+    Generate a large random-noise synthetic DAS :class:`DataArray`.
+
+    Returns a 200 s × 100 km array (10 Hz temporal, 100 m spatial sampling)
+    with step-onset noise bursts simulating P- and S-wave arrivals from a
+    single source located 20 km off-axis.
+
+    Returns
+    -------
+    DataArray
+        Synthetic DAS data with ``time`` and ``distance`` coordinates.
+    """
     # ensure reporducibility
     np.random.seed(42)
 
     # sampling
     resolution = (np.timedelta64(10, "ms"), 100.0)
     starttime = np.datetime64("2024-01-01T00:00:00").astype("datetime64[ns]")
-    span = (np.timedelta64(200, "s"), 100000.0)  # (100 s, 10 km)
+    span = (np.timedelta64(200, "s"), 100000.0)  # (200 s, 100 km)
     shape = (span[0] // resolution[0], int(span[1] // resolution[1]) + 1)
     t = np.arange(shape[0]) * resolution[0] / np.timedelta64(1, "s")  # time values [s]
     s = np.arange(shape[1]) * resolution[1]  # distance values [m]
@@ -143,6 +159,20 @@ def randn_wavefronts():
 
 
 def dummy(shape=(1000, 100)):
+    """
+    Return a minimal random :class:`DataArray` for quick testing.
+
+    Parameters
+    ----------
+    shape : tuple of int, optional
+        ``(n_time, n_distance)`` shape.  Defaults to ``(1000, 100)``.
+
+    Returns
+    -------
+    DataArray
+        DataArray filled with Gaussian noise, sampled at 10 Hz over
+        ``[0, 1000]`` m with ``time`` starting at 2024-01-01.
+    """
     starttime = np.datetime64("2024-01-01T00:00:00.000000000")
     endtime = starttime + (shape[0] - 1) * np.timedelta64(100, "ms")
     time = {"tie_indices": [0, shape[0] - 1], "tie_values": [starttime, endtime]}

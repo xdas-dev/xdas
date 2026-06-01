@@ -935,3 +935,75 @@ class TestNotImplementedMethods:
             coord.__array_function__(None, None, None, None)
         with pytest.raises(NotImplementedError):
             coord.from_array(None)
+
+
+class TestSampledCoordinateMissingBranches:
+    def make_coord(self):
+        return SampledCoordinate(
+            {"tie_values": [0.0, 10.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
+        )
+
+    def make_coord_with_overlap(self):
+        return SampledCoordinate(
+            {"tie_values": [0.0, 5.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
+        )
+
+    def test_simplify_false(self):
+        coord = self.make_coord()
+        assert coord.simplify(False) is coord
+
+    def test_get_split_indices_gaps(self):
+        coord = self.make_coord()
+        gaps = coord.get_split_indices(kind="gaps")
+        assert isinstance(gaps, np.ndarray)
+
+    def test_get_split_indices_overlaps(self):
+        coord = self.make_coord()
+        overlaps = coord.get_split_indices(kind="overlaps")
+        assert isinstance(overlaps, np.ndarray)
+
+    def test_get_indexer_bfill_in_bounds(self):
+        coord = self.make_coord()
+        assert coord.get_indexer(0.0, method="bfill") == 0
+        assert coord.get_indexer(0.5, method="bfill") == 1
+
+    def test_get_split_indices_overlaps_tolerance_false(self):
+        # Build a coord with an actual overlap (segment 2 starts before segment 1 ends)
+        coord = SampledCoordinate(
+            {"tie_values": [0.0, 2.0], "tie_lengths": [5, 5], "sampling_interval": 1.0}
+        )
+        result = coord.get_split_indices(kind="overlaps", tolerance=False)
+        assert isinstance(result, np.ndarray)
+        np.testing.assert_array_equal(result, [5], strict=True)
+
+    def test_get_split_indices_overlaps_with_tolerance(self):
+        # Build a coord with an actual overlap (segment 2 starts before segment 1 ends)
+        coord = SampledCoordinate(
+            {"tie_values": [0.0, 2.0], "tie_lengths": [5, 5], "sampling_interval": 1.0}
+        )
+        result = coord.get_split_indices(kind="overlaps", tolerance=1.0)
+        assert isinstance(result, np.ndarray)
+        np.testing.assert_array_equal(result, [5], strict=True)
+
+    def test_is_monotonic_increasing_true(self):
+        coord = SampledCoordinate(
+            {"tie_values": [0.0, 5.0], "tie_lengths": [5, 5], "sampling_interval": 1.0}
+        )
+        assert coord.is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_false(self):
+        coord = SampledCoordinate(
+            {"tie_values": [0.0, 2.0], "tie_lengths": [5, 5], "sampling_interval": 1.0}
+        )
+        assert coord.is_monotonic_increasing() is False
+
+    def test_is_monotonic_increasing_multi_segment(self):
+        # Three segments all increasing — must not raise ValueError from bool()
+        coord = SampledCoordinate(
+            {
+                "tie_values": [0.0, 5.0, 11.0],
+                "tie_lengths": [5, 5, 5],
+                "sampling_interval": 1.0,
+            }
+        )
+        assert coord.is_monotonic_increasing() is True

@@ -1,3 +1,11 @@
+"""
+Core processing infrastructure for chunked pipeline execution.
+
+Includes :class:`DataArrayLoader`, :class:`DataArrayWriter`,
+:class:`DataFrameWriter`, :class:`StreamWriter`, :class:`ZMQPublisher`,
+:class:`ZMQSubscriber`, :class:`RealTimeLoader`, and :func:`process`.
+"""
+
 import os
 from concurrent.futures import ThreadPoolExecutor
 from glob import glob
@@ -105,7 +113,7 @@ class DataArrayLoader:
     def __init__(self, da, chunks, max_buffers=1, max_workers=1):
         if not isinstance(da, DataArray):
             raise TypeError(f"`da` must by a DataArray object, not a {type(da)}")
-        if not isinstance(chunks, dict) and len(chunks) == 1:
+        if not (isinstance(chunks, dict) and len(chunks) == 1):
             raise TypeError(
                 "`chunks` must be a dict that maps a unique "
                 "dimension to a unique size: {'dim': int}"
@@ -115,8 +123,7 @@ class DataArrayLoader:
         chunk_size = int(chunk_size)
         if chunk_dim not in da.dims:
             raise ValueError(
-                f"chunking dimension {chunk_dim} not "
-                f"found in `da` dimensions {da.dims}"
+                f"chunking dimension {chunk_dim} not found in `da` dimensions {da.dims}"
             )
         if chunk_size > da.sizes[chunk_dim]:
             raise ValueError(
@@ -166,10 +173,22 @@ class DataArrayLoader:
 
     @property
     def nbytes(self):
+        """Total bytes of the underlying :class:`DataArray`."""
         return self.da.nbytes
 
 
 class RealTimeLoader(Observer):
+    """
+    Real-time :class:`DataArray` loader that watches a directory for new files.
+
+    Parameters
+    ----------
+    path : str or Path
+        Directory to watch.
+    engine : str, optional
+        Engine used to open arriving files.  Defaults to ``"netcdf"``.
+    """
+
     def __init__(self, path, engine="netcdf"):
         super().__init__()
         self.path = str(path) if isinstance(path, Path) else path
@@ -190,11 +209,14 @@ class RealTimeLoader(Observer):
 
 
 class Handler(FileSystemEventHandler):
+    """Watchdog event handler that loads closed files into a queue."""
+
     def __init__(self, queue, engine):
         self.engine = engine
         self.queue = queue
 
     def on_closed(self, event):
+        """Load the newly-closed file and place it in the queue."""
         da = open_dataarray(event.src_path, engine=self.engine)
         self.queue.put(da.load())
 
@@ -251,6 +273,14 @@ class DataArrayWriter:
         self._count = 0
 
     def submit(self, chunk):
+        """
+        Asynchronously write *chunk* to disk and register the path for later concat.
+
+        Parameters
+        ----------
+        chunk : DataArray
+            Processed data chunk to persist.
+        """
         if not isinstance(chunk, DataArray):
             raise TypeError(f"`chunk` must by a DataArray object, not a {type(chunk)}")
         if not len(self._futures) < self.max_buffers:
@@ -261,6 +291,7 @@ class DataArrayWriter:
         self._count += 1
 
     def write(self, chunk):
+        """Alias for :meth:`submit`."""
         return self.submit(chunk)
 
     def _write(self, chunk, count):
@@ -269,9 +300,11 @@ class DataArrayWriter:
         return open_dataarray(path)
 
     def shutdown(self):
+        """Shut down the internal thread pool."""
         self._executor.shutdown()
 
     def result(self):
+        """Flush all pending writes and return the concatenated :class:`DataArray`."""
         while self._futures:
             future = self._futures.pop(0)
             result = future.result()
@@ -289,7 +322,7 @@ class DataFrameWriter:
     path : str
         The path to the csv file.
     parse_dates : bool, int, optional
-        Weather to parse dates when reopening the csv file a the end of the process
+        Whether to parse dates when reopening the csv file at the end of the process
     create_dirs : bool, optional
         Whether to create parent directories if they do not exist. Default is False.
 
@@ -321,6 +354,14 @@ class DataFrameWriter:
         self._future = None
 
     def submit(self, df):
+        """
+        Asynchronously append *df* to the CSV file.
+
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            DataFrame chunk to write.
+        """
         if not isinstance(df, pd.DataFrame):
             raise TypeError(f"`df` must by a DataFrame object, not a {type(df)}")
         if self._future is not None:
@@ -328,19 +369,22 @@ class DataFrameWriter:
         self._future = self._executor.submit(self._write, df)
 
     def write(self, df):
+        """Alias for :meth:`submit`."""
         return self.submit(df)
 
     def _write(self, df):
-        if df is not None:
+        if df is not None:  # pragma: no branch
             if not os.path.exists(self.path):
                 df.to_csv(self.path, mode="w", header=True, index=False)
             else:
                 df.to_csv(self.path, mode="a", header=False, index=False)
 
     def shutdown(self):
+        """Shut down the internal thread pool."""
         self._executor.shutdown()
 
     def result(self):
+        """Flush pending writes and return the full CSV as a :class:`pandas.DataFrame`."""
         self._future.result()
         self.shutdown()
         try:
@@ -463,7 +507,7 @@ class StreamWriter:
             new_st += tr
             new_st = new_st[0].split()
             for new_tr in new_st:
-                if isinstance(new_tr.data, np.ma.masked_array):
+                if isinstance(new_tr.data, np.ma.masked_array):  # pragma: no cover
                     new_tr.data = new_tr.data.filled()
                 new_tr.stats.mseed["dataquality"] = self.dataquality
             year = new_st[0].stats.starttime.year
@@ -487,12 +531,20 @@ class StreamWriter:
             tmp_st += tr
             tmp_st = tmp_st[0].split()
             for new_tr in tmp_st:
-                if isinstance(new_tr.data, np.ma.masked_array):
+                if isinstance(new_tr.data, np.ma.masked_array):  # pragma: no cover
                     new_tr.data = new_tr.data.filled()
                 new_st += new_tr
         new_st.write(os.path.join(self.dirpath, self.fname), **self.kw_write)
 
     def submit(self, st):
+        """
+        Asynchronously write *st* to a temporary MiniSEED file.
+
+        Parameters
+        ----------
+        st : obspy.Stream
+            Stream chunk to persist.
+        """
         if not isinstance(st, obspy.Stream):
             raise TypeError(f"`st` must by a DataFrame object, not a {type(st)}")
         if self._future is not None:
@@ -500,15 +552,18 @@ class StreamWriter:
         self._future = self._executor.submit(self._write, st)
 
     def write(self, st):
+        """Alias for :meth:`submit`."""
         return self.submit(st)
 
     def _write(self, st):
         st.write(f"{self.dirpath}/{st[0].stats.starttime}_tmp.mseed", **self.kw_write)
 
     def shutdown(self):
+        """Shut down the internal thread pool."""
         self._executor.shutdown()
 
     def result(self):
+        """Merge all temporary MiniSEED files and write the final output."""
         self._future.result()
         self.shutdown()
         pattern = f"{self.dirpath}/*_tmp.mseed"
@@ -516,7 +571,7 @@ class StreamWriter:
         out = out.merge(**self.kw_merge)
         if self.output_format == "flat":
             self._to_flat(out)
-        elif self.output_format == "SDS":
+        elif self.output_format == "SDS":  # pragma: no branch
             self._to_SDS(out)
         files_to_remove = glob(pattern)
         for file in files_to_remove:
@@ -586,9 +641,11 @@ class ZMQPublisher:
         self._socket.send(tobytes(da, self.encoding))
 
     def write(self, da):
+        """Alias for :meth:`submit`."""
         self.submit(da)
 
-    def result():
+    def result(self):
+        """Return ``None`` — ZMQPublisher has no aggregated result."""
         return None
 
 
@@ -657,6 +714,20 @@ class ZMQSubscriber:
 
 
 def tobytes(da, encoding=None):
+    """
+    Serialise *da* to raw NetCDF4 bytes via a temporary file.
+
+    Parameters
+    ----------
+    da : DataArray
+        DataArray to serialise.
+    encoding : dict, optional
+        HDF5/NetCDF4 encoding options forwarded to :meth:`DataArray.to_netcdf`.
+
+    Returns
+    -------
+    bytes
+    """
     with TemporaryDirectory() as tmpdir:
         path = os.path.join(tmpdir, "tmp.nc")
         da.to_netcdf(path, virtual=False, encoding=encoding)
@@ -665,6 +736,18 @@ def tobytes(da, encoding=None):
 
 
 def frombuffer(da):
+    """
+    Deserialise raw NetCDF4 *da* bytes into a loaded :class:`DataArray`.
+
+    Parameters
+    ----------
+    da : bytes
+        Raw bytes as produced by :func:`tobytes`.
+
+    Returns
+    -------
+    DataArray
+    """
     with TemporaryDirectory() as tmpdir:
         path = os.path.join(tmpdir, "tmp.nc")
         with open(path, "wb") as file:

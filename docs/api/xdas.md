@@ -28,9 +28,11 @@
    asdataarray
    combine_by_coords
    combine_by_field
+   concat
    concatenate
    concat_coords
    split
+   plot_availability
 ```
 
 ## Mathematical and statistical functions
@@ -72,6 +74,31 @@
    DataArray
 ```
 
+Attributes
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   DataArray.data
+   DataArray.coords
+   DataArray.dims
+   DataArray.shape
+   DataArray.dtype
+   DataArray.ndim
+   DataArray.size
+   DataArray.sizes
+   DataArray.nbytes
+   DataArray.values
+   DataArray.empty
+   DataArray.loc
+   DataArray.T
+   DataArray.conj
+   DataArray.conjugate
+```
+
+Methods
+
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
@@ -80,8 +107,14 @@
    DataArray.get_axis_num
    DataArray.isel
    DataArray.sel
+   DataArray.drop_dims
+   DataArray.drop_coords
    DataArray.copy
    DataArray.rename
+   DataArray.assign_coords
+   DataArray.swap_dims
+   DataArray.transpose
+   DataArray.expand_dims
    DataArray.load
    DataArray.to_xarray
    DataArray.from_xarray
@@ -89,6 +122,8 @@
    DataArray.from_stream
    DataArray.to_netcdf
    DataArray.from_netcdf
+   DataArray.to_dict
+   DataArray.from_dict
    DataArray.plot
 ```
 
@@ -101,6 +136,15 @@ Constructor
    :toctree: ../_autosummary
    
    DataCollection
+```
+
+Attributes
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   DataCollection.empty
 ```
 
 Methods
@@ -132,13 +176,14 @@ Methods
 .. autosummary::
    :toctree: ../_autosummary
 
-   DataMapping.to_netcdf
-   DataMapping.from_netcdf
+   DataMapping.copy
    DataMapping.equals
    DataMapping.isel
    DataMapping.sel
    DataMapping.load
    DataMapping.map
+   DataMapping.to_netcdf
+   DataMapping.from_netcdf
 ```
 
 ### DataSequence
@@ -158,14 +203,14 @@ Methods
 .. autosummary::
    :toctree: ../_autosummary
 
-   DataSequence.to_mapping
-   DataSequence.from_mapping
-   DataSequence.to_netcdf
-   DataSequence.from_netcdf
+   DataSequence.copy
    DataSequence.equals
    DataSequence.isel
    DataSequence.sel
    DataSequence.load
    DataSequence.map
+   DataSequence.to_mapping
+   DataSequence.from_mapping
+   DataSequence.to_netcdf
+   DataSequence.from_netcdf
 ```
-

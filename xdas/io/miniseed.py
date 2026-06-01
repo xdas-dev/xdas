@@ -1,3 +1,5 @@
+"""I/O engine for MiniSEED files via ObsPy (:class:`MiniSEEDEngine`)."""
+
 import dask
 import numpy as np
 import obspy
@@ -9,12 +11,15 @@ from .core import Engine
 
 
 class MiniSEEDEngine(Engine, name="miniseed"):
+    """Engine for reading MiniSEED files via ObsPy as lazy dask-backed DataArrays."""
+
     _supported_vtypes = ["dask"]
     _supported_ctypes = {
         "time": ["interpolated", "sampled", "dense"],
     }
 
     def open_dataarray(self, fname, ignore_last_sample=False, ctype="interpolated"):
+        """Return a lazy dask-backed :class:`DataArray` for the MiniSEED file *fname*."""
         shape, dtype, coords, method = self.read_header(
             fname, ignore_last_sample, ctype
         )
@@ -26,10 +31,11 @@ class MiniSEEDEngine(Engine, name="miniseed"):
         return DataArray(data, coords)
 
     def read_header(self, path, ignore_last_sample, ctype):
+        """Read metadata from *path* and return ``(shape, dtype, coords, method)``."""
         st = obspy.read(path, headonly=True)
 
         dtype = uniquifiy(tr.data.dtype for tr in st)
-        if not isinstance(dtype, np.dtype):
+        if not isinstance(dtype, np.dtype):  # pragma: no cover
             raise ValueError("All traces must have the same dtype")
 
         stations = [tr.stats.station for tr in st]
@@ -79,6 +85,7 @@ class MiniSEEDEngine(Engine, name="miniseed"):
         return shape, dtype, coords, method
 
     def read_data(self, path, method, ignore_last_sample):
+        """Load and return the raw data array from *path* using *method*."""
         st = obspy.read(path)
         if method == "synchronized":
             if ignore_last_sample:
@@ -107,6 +114,23 @@ def to_stream(
     channel="{:1}N1",
     dim={"last": "first"},
 ):
+    """
+    Convert a 2-D :class:`DataArray` to an :class:`obspy.Stream`.
+
+    Parameters
+    ----------
+    da : DataArray
+        2-D array with one time and one distance/channel dimension.
+    network, station, location, channel : str
+        SEED identifiers.  *station* and *channel* may contain ``{:...}``
+        format specs that are filled with the channel index.
+    dim : dict, optional
+        ``{distance_dim: time_dim}`` mapping.  Defaults to ``{"last": "first"}``.
+
+    Returns
+    -------
+    obspy.Stream
+    """
     dimdist, dimtime = dim.copy().popitem()
     if not da.ndim == 2:
         raise ValueError("the data array must be 2D")
@@ -134,6 +158,20 @@ def to_stream(
 
 
 def from_stream(st, dims=("channel", "time")):
+    """
+    Convert an :class:`obspy.Stream` to a :class:`DataArray`.
+
+    Parameters
+    ----------
+    st : obspy.Stream
+        Homogeneous stream (all traces must share start time and sample rate).
+    dims : tuple of str, optional
+        Dimension names for the output array.
+
+    Returns
+    -------
+    DataArray
+    """
     data = np.stack([tr.data for tr in st])
     channel = [tr.id for tr in st]
     time = {
@@ -147,6 +185,7 @@ def from_stream(st, dims=("channel", "time")):
 
 
 def get_time_coord(tr, ignore_last_sample, ctype):
+    """Build a :class:`Coordinate` for the time axis of trace *tr*."""
     t0 = np.datetime64(tr.stats.starttime)
     dt = np.rint(1e6 * tr.stats.delta).astype("m8[us]").astype("m8[ns]")
     nt = tr.stats.npts - int(ignore_last_sample)
@@ -154,6 +193,7 @@ def get_time_coord(tr, ignore_last_sample, ctype):
 
 
 def uniquifiy(seq):
+    """Return the unique elements of *seq* in order; unwrap to scalar if only one."""
     seen = set()
     seq = list(x for x in seq if x not in seen and not seen.add(x))
     if len(seq) == 1:
@@ -163,6 +203,7 @@ def uniquifiy(seq):
 
 
 def get_band_code(sampling_rate):
+    """Return the SEED band code character for *sampling_rate* (Hz)."""
     band_code = ["T", "P", "R", "U", "V", "L", "M", "B", "H", "C", "F"]
     limits = [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 80, 250, 1000, 5000]
     index = np.searchsorted(limits, sampling_rate, "right") - 1

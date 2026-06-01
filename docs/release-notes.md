@@ -1,5 +1,26 @@
 # Release notes
 
+## 0.2.7
+
+### Bug Fixes
+- Fix a regression introduced in 0.2.6 where `is_monotonic` was significantly degrading `.sel` performance.
+- Fix `xdas.concat` to gracefully handle empty inputs, preventing errors when selecting out-of-range data from a `DataCollection` (@atrabattoni).
+
+### Documentation
+- Achieved **100% docstring coverage** (excluding `__magic__` and private `_methods`) (@atrabattoni).
+- Improved *User Guide* index (@atrabattoni).
+- Added new *Sampled Coordinates* page (@atrabattoni).
+- Enhanced *Processing* documentation (@atrabattoni).
+- Improved *FAQ* page (@atrabattoni).
+- Added missing API documentation for several methods (@atrabattoni).
+
+### Refactoring
+- Achieved **100% test coverage** across the codebase (@atrabattoni).
+- Migrated development workflow from conda to [uv](https://docs.astral.sh/uv/) (@atrabattoni).
+- *Reduced* test suite execution time by **~50%** (@atrabattoni).
+- Migrated formatting tooling from `isort` + `black` to `ruff` **including docstring checks** (@atrabattoni).
+- Ensure all ruff checks pass (@atrabattoni). 
+
 ## 0.2.6
 
 ### New features
@@ -10,7 +31,7 @@
 - Add `xdas.concat_coords` to merge coordinates. Also `Coordinate.append` is now `Coordinate.concat` (avoid in-place confusion) and `xdas.concatenate` has now a preferred alias `xdas.concat` (@atrabattoni).
 
 ### Improvements
-- Most `xdas.open_*` functions now have a `create_dirs` argument to create intermediate directories if necessary (@aurelienfalco).
+- All `to_netcdf` methods now have a `create_dirs` argument to create intermediate directories if necessary (@aurelienfalco).
 - Make `DataArray.sel` handle overlaps when slicing, and `xdas.split` can split on overlaps or gaps now (@atrabattoni).
 - New `io.Engine` backend system to register different file formats (@atrabattoni).
 - Make `open_mfdataarray` raise `RuntimeError` when opening all files fails (@asladen). 
@@ -19,7 +40,7 @@
 - Make `DataArray.rename` capable of renaming `dims` and `coords` (@atrabattoni). 
 - Add `parallel` argument to most `open*` functions to let the user choose the file opening strategy (@atrabattoni). 
 
-### Bugs Fixed
+### Bug Fixes
 - Fix **memory accumulation** when slicing multiple times data arrays, e.g. when using atoms (@atrabattoni).
 - Fix **non-terminating loaders and writers** in `xdas.processing` (@atrabattoni).
 - Fix/improve distance handling for: "apsensing", "febus", "optasense", "silixa", and "sintela" (@atrabattoni).

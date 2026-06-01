@@ -4,6 +4,7 @@ import time
 
 import h5py
 import numpy as np
+import pytest
 import zmq
 
 import xdas as xd
@@ -35,6 +36,35 @@ da_int16 = xd.DataArray(
     np.random.randn(100, 10).astype("int16"),
     coords,
 )
+
+
+class TestASNEngineROIBounds:
+    def test_roi_start_beyond_sensor_distances(self):
+        from xdas.io.asn import ASNEngine
+
+        engine = ASNEngine()
+        with pytest.raises(IndexError, match="ROI start lies beyond"):
+            engine._get_roi_bound_indices(
+                [0.0, 10.0, 20.0], n_start=5, n_end=3, dx=10.0
+            )
+
+    def test_roi_end_before_sensor_distances(self):
+        from xdas.io.asn import ASNEngine
+
+        engine = ASNEngine()
+        with pytest.raises(IndexError, match="ROI end lies before"):
+            engine._get_roi_bound_indices(
+                [10.0, 20.0, 30.0], n_start=1, n_end=0, dx=10.0
+            )
+
+
+class TestASNEnginePublisher:
+    def test_write_method(self):
+        from xdas.io.asn import ZMQPublisher as ASNZMQPublisher
+
+        address = get_free_local_address()
+        pub = ASNZMQPublisher(address)
+        pub.write(da_float32)
 
 
 class TestASNEngine:

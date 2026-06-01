@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xdas"
-version = "0.2.6"
+version = "0.2.7"
 requires-python = ">= 3.10"
 authors = [
     { name = "Alister Trabattoni", email = "alister.trabattoni@gmail.com" },
@@ -30,13 +30,8 @@ dependencies = [
     "pyzmq",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "black",
-    "build",
-    "isort",
-    "twine",
-]
+[dependency-groups]
+dev = ["ruff", "pytest", "pytest-cov"]
 docs = [
     "ipykernel",
     "matplotlib",
@@ -46,19 +41,30 @@ docs = [
     "sphinx-copybutton",
     "sphinx",
 ]
-tests = [
-    "dascore",
-    "pytest",
-    "pytest-cov",
-    "pytest-timeout",
-    "psutil",
-    "seisbench",
-    "torch",
-]
+tests = ["dascore", "psutil", "seisbench", "torch"]
 
-[tool.isort]
-profile = "black"
+[tool.ruff.lint]
+extend-select = ["I", "D"]
+extend-ignore = ["D105"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+"docs/**" = ["D"]
 
 [tool.pytest.ini_options]
 addopts = ["--doctest-modules", "--import-mode=importlib"]
 doctest_optionflags = "NORMALIZE_WHITESPACE"
+markers = ["slow: marks tests as slow (skip with --skip-slow)"]
+
+[tool.coverage.run]
+source = ["xdas"]
+branch = true
+omit = ["xdas/io/tdms.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = ["raise NotImplementedError"]
