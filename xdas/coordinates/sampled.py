@@ -264,7 +264,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
         return delta
 
     def is_monotonic_increasing(self):
-        """Return ``True`` if no segment starts below the end of the previous one."""
+        """Return ``True`` if no segment starts before the end of the previous one."""
         return not self.get_split_indices("overlaps", tolerance=False).size
 
     def equals(self, other):

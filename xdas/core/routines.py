@@ -942,10 +942,15 @@ def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
     Returns
     -------
     DataArray
-        The concatenated dataarray.
+        The concatenated dataarray. Coordinates along axes other than *dim* are
+        taken from the first element; no compatibility check is performed on ``objs[1:]``.
 
     """
-    objs = [da for da in objs if not da.empty]
+    objs = list(objs)
+    non_empty = [da for da in objs if not da.empty]
+    if not non_empty:
+        return objs[0] if objs else DataArray([])
+    objs = non_empty
 
     if virtual is None:
         virtual = all(isinstance(da.data, (VirtualSource, VirtualStack)) for da in objs)
@@ -959,6 +964,7 @@ def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         dims = (dim, *objs[0].dims)
         objs = [da.expand_dims(dim) for da in objs]
 
+    # TODO: check that objs[1:] have the same non-concat coords as objs[0]
     coords = objs[0].coords.drop_dims(dim)
     name = objs[0].name
     attrs = objs[0].attrs

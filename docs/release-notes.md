@@ -4,6 +4,7 @@
 
 ### Bug Fixes
 - Fix a regression introduced in 0.2.6 where `is_monotonic` was significantly degrading `.sel` performance.
+- Fix `xdas.concat` to gracefully handle empty inputs, preventing errors when selecting out-of-range data from a `DataCollection` (@atrabattoni).
 
 ### Documentation
 - Achieved **100% docstring coverage** (excluding `__magic__` and private `_methods`) (@atrabattoni).

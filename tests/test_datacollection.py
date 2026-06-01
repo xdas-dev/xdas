@@ -409,3 +409,37 @@ class TestDataCollection:
         atom = xs.decimate(..., 2, ftype="fir")
         with pytest.raises(TypeError, match="encountered in the collection"):
             ds.map(atom)
+
+    def test_mapping_sel_one_element_becomes_empty(self):
+        da = wavelet_wavefronts()
+        da_near = da.sel(distance=slice(0, 4999))
+        da_far = da.sel(distance=slice(5000, 10000))
+        dc = xd.DataCollection({"near": da_near, "far": da_far}, "instrument")
+        result = dc.sel(distance=slice(0, 2000))
+        assert set(result.keys()) == {"near"}
+        assert not result["near"].empty
+
+    def test_mapping_sel_all_elements_become_empty(self):
+        da = wavelet_wavefronts()
+        da_near = da.sel(distance=slice(0, 4999))
+        da_far = da.sel(distance=slice(5000, 10000))
+        dc = xd.DataCollection({"near": da_near, "far": da_far}, "instrument")
+        result = dc.sel(distance=slice(-1000, -1))
+        assert len(result) == 0
+
+    def test_sequence_sel_one_element_becomes_empty(self):
+        da = wavelet_wavefronts()
+        da_near = da.sel(distance=slice(0, 4999))
+        da_far = da.sel(distance=slice(5000, 10000))
+        dc = xd.DataCollection([da_near, da_far], "instrument")
+        result = dc.sel(distance=slice(0, 2000))
+        assert len(result) == 1
+        assert not result[0].empty
+
+    def test_sequence_sel_all_elements_become_empty(self):
+        da = wavelet_wavefronts()
+        da_near = da.sel(distance=slice(0, 4999))
+        da_far = da.sel(distance=slice(5000, 10000))
+        dc = xd.DataCollection([da_near, da_far], "instrument")
+        result = dc.sel(distance=slice(-1000, -1))
+        assert len(result) == 0
