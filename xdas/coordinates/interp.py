@@ -217,7 +217,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         return delta
 
     def is_monotonic_increasing(self):
-        """Return ``True`` if no segment boundary exhibits a backward jump."""
+        """Return ``True`` if no segment starts before the end of the previous one."""
         return not self.get_split_indices("overlaps", tolerance=False).size
 
     def equals(self, other):
