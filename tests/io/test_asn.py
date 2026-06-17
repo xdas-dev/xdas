@@ -111,33 +111,33 @@ class TestZMQPublisher:
         address = get_free_local_address()
         pub = ZMQPublisher(address)
         pub.submit(da_float32)
-        time.sleep(0.001)
+        time.sleep(0.01)
         assert pub.header == ZMQPublisher._get_header(da_float32)
 
     def test_send_header(self):
         address = get_free_local_address()
         pub = ZMQPublisher(address)
         pub.submit(da_float32)
-        time.sleep(0.001)
+        time.sleep(0.01)
         socket = self.get_socket(address)
         pub.submit(da_float32)  # a packet must be sent once subscriber is connected
-        time.sleep(0.001)
+        time.sleep(0.01)
         assert socket.recv() == json.dumps(pub.header).encode("utf-8")
 
     def test_send_data(self):
         address = get_free_local_address()
         pub = ZMQPublisher(address)
         pub.submit(da_float32)
-        time.sleep(0.001)
+        time.sleep(0.01)
         socket = self.get_socket(address)
         pub.submit(da_float32)  # a packet must be sent once subscriber is connected
-        time.sleep(0.001)
+        time.sleep(0.01)
         socket.recv()  # header
         message = socket.recv()
         assert message[:8] == da_float32["time"][0].values.astype("M8[ns]").tobytes()
         assert message[8:] == da_float32.data.tobytes()
         pub.submit(da_int16)
-        time.sleep(0.001)
+        time.sleep(0.01)
         socket.recv()  # header
         message = socket.recv()
         assert message[:8] == da_int16["time"][0].values.astype("M8[ns]").tobytes()
@@ -148,11 +148,11 @@ class TestZMQPublisher:
         pub = ZMQPublisher(address)
         chunks = xd.split(da_float32, 10)
         pub.submit(chunks[0])
-        time.sleep(0.001)
+        time.sleep(0.01)
         socket = self.get_socket(address)
         for chunk in chunks[1:]:
             pub.submit(chunk)
-            time.sleep(0.001)
+            time.sleep(0.01)
         assert socket.recv() == json.dumps(pub.header).encode("utf-8")
         for chunk in chunks[1:]:  # first was sent before subscriber connected
             message = socket.recv()
@@ -164,15 +164,15 @@ class TestZMQPublisher:
         pub = ZMQPublisher(address)
         chunks = xd.split(da_float32, 10)
         pub.submit(chunks[0])
-        time.sleep(0.001)
+        time.sleep(0.01)
         socket1 = self.get_socket(address)
         for chunk in chunks[1:5]:
             pub.submit(chunk)
-            time.sleep(0.001)
+            time.sleep(0.01)
         socket2 = self.get_socket(address)
         for chunk in chunks[5:]:
             pub.submit(chunk)
-            time.sleep(0.001)
+            time.sleep(0.01)
         assert socket1.recv() == json.dumps(pub.header).encode("utf-8")
         for chunk in chunks[1:]:  # first was sent before subscriber connected
             message = socket1.recv()
@@ -189,15 +189,15 @@ class TestZMQPublisher:
         pub = ZMQPublisher(address)
         chunks = xd.split(da_float32, 10)
         pub.submit(chunks[0])
-        time.sleep(0.001)
+        time.sleep(0.01)
         socket = self.get_socket(address)
         for chunk in chunks[1:5]:
             pub.submit(chunk)
             header1 = pub.header
-            time.sleep(0.001)
+            time.sleep(0.01)
         for chunk in chunks[5:]:
             pub.submit(chunk.isel(distance=slice(0, 5)))
-            time.sleep(0.001)
+            time.sleep(0.01)
             header2 = pub.header
         assert socket.recv() == json.dumps(header1).encode("utf-8")
         for chunk in chunks[1:5]:  # first was sent before subscriber connected
@@ -214,7 +214,7 @@ class TestZMQPublisher:
         socket = zmq.Context().socket(zmq.SUB)
         socket.connect(address)
         socket.setsockopt(zmq.SUBSCRIBE, b"")
-        time.sleep(0.001)
+        time.sleep(0.01)
         return socket
 
 
@@ -356,7 +356,7 @@ class TestZMQSubscriber:
         assert result.equals(da_float32)
 
     def publish(self, pub, chunks):
-        time.sleep(0.001)
+        time.sleep(0.01)
         for chunk in chunks:
             pub.submit(chunk)
-            time.sleep(0.001)
+            time.sleep(0.01)
