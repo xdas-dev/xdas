@@ -37,10 +37,11 @@ class TestScalarCoordinate:
                 ScalarCoordinate(data)
 
     def test_getitem(self):
-        assert ScalarCoordinate(1)[...].equals(ScalarCoordinate(1))
-        with pytest.raises(IndexError):
+        with pytest.raises(TypeError):
+            ScalarCoordinate(1)[...]
+        with pytest.raises(TypeError):
             ScalarCoordinate(1)[:]
-        with pytest.raises(IndexError):
+        with pytest.raises(TypeError):
             ScalarCoordinate(1)[0]
 
     def test_len(self):

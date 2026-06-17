@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from .core import Coordinate, parse
+from .core import Coordinate, isscalar, parse
 
 
 class DenseCoordinate(Coordinate, name="dense"):
@@ -36,6 +36,78 @@ class DenseCoordinate(Coordinate, name="dense"):
         # store data
         self.data = np.asarray(data, dtype=dtype)
         self.dim = dim
+
+    def __len__(self):
+        return self.data.__len__()
+
+    def __repr__(self):
+        return np.array2string(self.data, threshold=0, edgeitems=1)
+
+    def __add__(self, other):
+        return self.__class__(self.data + other, self.dim)
+
+    def __sub__(self, other):
+        return self.__class__(self.data - other, self.dim)
+
+    @property
+    def dtype(self):
+        return self.data.dtype
+
+    @property
+    def ndim(self):
+        """Number of dimensions of the underlying data array (always 1 for dimensional coords)."""
+        return self.data.ndim
+
+    @property
+    def shape(self):
+        """Shape tuple of the underlying data array."""
+        return self.data.shape
+
+    def __array__(self, dtype=None):
+        if dtype is None:
+            return self.data.__array__()
+        return self.data.__array__(dtype)
+
+    def __array__ufunc__(self, ufunc, method, *inputs, **kwargs):  # pragma: no cover
+        return self.data.__array__ufunc__(ufunc, method, *inputs, **kwargs)
+
+    def __array_function__(self, func, types, args, kwargs):
+        return self.data.__array_function__(func, types, args, kwargs)
+
+    def __getitem__(self, item):
+        data = self.data.__getitem__(item)
+        dim = None if isscalar(data) else self.dim
+        return Coordinate(data, dim)
+
+    def get_sampling_interval(self, cast=True):
+        """
+        Return the average sample spacing (end-to-end distance divided by N-1).
+
+        Parameters
+        ----------
+        cast : bool, optional
+            If ``True`` (default), cast timedelta64 results to seconds (float).
+
+        Returns
+        -------
+        float or None
+            ``None`` if the coordinate has fewer than two elements.
+        """
+        if len(self) < 2:
+            return None
+        delta = (self[-1].values - self[0].values) / (len(self) - 1)
+        delta = np.asarray(delta)  # TODO: why?
+        if cast and np.issubdtype(delta.dtype, np.timedelta64):
+            delta = delta / np.timedelta64(1, "s")
+        return delta
+
+    def is_monotonic_increasing(self):
+        """Return ``True`` if all consecutive differences in this coordinate are positive."""
+        if np.issubdtype(self.dtype, np.datetime64):
+            zero = np.timedelta64(0)
+        else:
+            zero = 0
+        return np.all(np.diff(self.values) > zero)
 
     @property
     def index(self):

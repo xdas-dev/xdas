@@ -54,6 +54,24 @@ class ScalarCoordinate(Coordinate, name="scalar"):
         data = np.asarray(data)
         return (data.dtype != np.dtype(object)) and (data.ndim == 0)
 
+    @property
+    def dtype(self):
+        return self.data.dtype
+
+    def __repr__(self):
+        return np.array2string(self.data, threshold=0, edgeitems=1)
+
+    def __array__(self, dtype=None):
+        if dtype is None:
+            return self.data.__array__()
+        return self.data.__array__(dtype)
+
+    def __array__ufunc__(self, ufunc, method, *inputs, **kwargs):  # pragma: no cover
+        raise NotImplementedError
+
+    def __array_function__(self, func, types, args, kwargs):
+        raise NotImplementedError
+
     def isscalar(self):
         """Return ``True`` (this is a :class:`ScalarCoordinate`)."""
         return True

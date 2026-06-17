@@ -80,6 +80,11 @@ class DefaultCoordinate(Coordinate, name="default"):
         else:
             return self.data["size"]
 
+    def __repr__(self):
+        if self.empty:
+            return "empty coordinate"
+        return f"0 to {len(self) - 1}"
+
     def __getitem__(self, item):
         data = self.__array__()[item]
         dim = None if isscalar(data) else self.dim
