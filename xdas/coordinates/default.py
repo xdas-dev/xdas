@@ -103,6 +103,10 @@ class DefaultCoordinate(Coordinate, name="default"):
         """Return ``True`` (this is a :class:`DefaultCoordinate`)."""
         return True
 
+    def is_monotonic_increasing(self):
+        """Return ``True`` — integer-range coordinates are always increasing."""
+        return True
+
     def get_sampling_interval(self, cast=True):
         """Return the sample spacing, always 1 for integer-range coordinates."""
         return 1

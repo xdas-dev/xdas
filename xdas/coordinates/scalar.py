@@ -77,6 +77,10 @@ class ScalarCoordinate(Coordinate, name="scalar"):
         """Return ``True`` (this is a :class:`ScalarCoordinate`)."""
         return True
 
+    def is_monotonic_increasing(self):
+        """Not supported — scalar coordinates have no axis to order."""
+        raise TypeError("scalar coordinate has no axis")
+
     def get_sampling_interval(self, cast=True):
         """Return ``None`` — scalar coordinates have no sample spacing."""
         return None

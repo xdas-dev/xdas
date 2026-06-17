@@ -80,6 +80,9 @@ class TestDefaultCoordinate:
     def test_get_sampling_interval(self):
         assert DefaultCoordinate({"size": 3}).get_sampling_interval() == 1
 
+    def test_is_monotonic_increasing(self):
+        assert DefaultCoordinate({"size": 3}).is_monotonic_increasing()
+
     def test_equals_same(self):
         assert DefaultCoordinate({"size": 3}).equals(DefaultCoordinate({"size": 3}))
 

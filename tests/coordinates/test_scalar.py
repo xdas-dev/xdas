@@ -89,6 +89,10 @@ class TestScalarCoordinate:
         with pytest.raises(NotImplementedError):
             ScalarCoordinate(1).to_index("item")
 
+    def test_is_monotonic_increasing(self):
+        with pytest.raises(TypeError):
+            ScalarCoordinate(1).is_monotonic_increasing()
+
     def test_isinstance(self):
         assert ScalarCoordinate(1).isscalar()
         assert not ScalarCoordinate(1).isdense()

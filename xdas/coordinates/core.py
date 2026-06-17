@@ -395,6 +395,10 @@ class Coordinate(ABC):
     def _assign_parent(self, parent):
         self._parent = weakref.ref(parent)
 
+    @abstractmethod
+    def is_monotonic_increasing(self):
+        """Return ``True`` if all consecutive differences in this coordinate are positive."""
+
     def isdim(self):
         """Return ``True`` if this coordinate is a dimensional coordinate in its parent container."""
         if self.parent is None or self.name is None:
