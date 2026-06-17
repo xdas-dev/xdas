@@ -62,6 +62,12 @@ class ScalarCoordinate(Coordinate, name="scalar"):
     def __repr__(self):
         return np.array2string(self.data, threshold=0, edgeitems=1)
 
+    def __len__(self):
+        raise TypeError("scalar coordinate has no length")
+
+    def __getitem__(self, item):
+        raise TypeError("scalar coordinate is not subscriptable")
+
     def __array__(self, dtype=None):
         if dtype is None:
             return self.data.__array__()

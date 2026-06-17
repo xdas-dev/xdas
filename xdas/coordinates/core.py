@@ -354,6 +354,14 @@ class Coordinate(ABC):
     def __array__(self, dtype=None):
         """Materialise the coordinate values as a numpy array."""
 
+    @abstractmethod
+    def __len__(self):
+        """Return the number of elements along this coordinate's axis."""
+
+    @abstractmethod
+    def __getitem__(self, item):
+        """Index into the coordinate, returning a new :class:`Coordinate`."""
+
     def __reduce__(self):
         return self.__class__, (self.data, self.dim)
 
