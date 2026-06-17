@@ -551,15 +551,89 @@ class Coordinate(ABC):
     def concat(self, other):
         """Concatenate *other* coordinate to this one. Subclass must implement."""
 
-    def simplify(self, tolerance=None):
-        """Reduce tie-point count within *tolerance*. Subclass must implement."""
-        raise NotImplementedError(f"simplify is not implemented for {self.__class__}")
+    def to_dataarray(self):
+        """Convert this coordinate to a :class:`~xdas.DataArray` with a single dimension."""
+        from ..core.dataarray import DataArray  # TODO: avoid defered import?
 
+        if self.name is None:
+            raise ValueError("cannot convert unnamed coordinate to DataArray")
+
+        if self.parent is None:
+            return DataArray(
+                self.values,
+                {self.dim: self},
+                dims=[self.dim],
+                name=self.name,
+            )
+        else:
+            return DataArray(
+                self.values,
+                {
+                    name: coord
+                    for name, coord in self.parent.items()
+                    if coord.dim == self.dim
+                },
+                dims=[self.dim],
+                name=self.name,
+            )
+
+    @abstractmethod
+    def to_dict(self):
+        """Serialise this coordinate to a plain-dict representation. Subclass must implement."""
+
+    @classmethod
+    def from_dict(cls, dct):
+        """Reconstruct a coordinate from the dict returned by :meth:`to_dict`."""
+        return cls(**dct)
+
+    def to_dataset(self, dataset, attrs):
+        """Write this coordinate into an xarray *dataset*, updating *attrs* in place."""
+        dataset = dataset.assign_coords(
+            {self.name: (self.dim, self.values) if self.dim else self.values}
+        )
+        return dataset, attrs
+
+    @classmethod
+    def from_dataset(cls, dataset, name):
+        """Read coordinates named *name* from an xarray *dataset* via each registered subclass."""
+        coords = {}
+        for subcls in cls.__subclasses__():
+            coords |= subcls.collect_from_dataset(dataset, name)
+        return coords
+
+    @classmethod
+    @abstractmethod
+    def collect_from_dataset(cls, dataset, name):
+        """Read coordinates of this subclass's kind from an xarray *dataset* variable *name*."""
+
+    @classmethod
+    @abstractmethod
+    def from_block(cls, start, size, step, dim=None, dtype=None):
+        """Construct a coordinate from a start value, element count, and step size. Subclass must implement."""
+
+
+class RegularMixin(ABC):
+    """
+    Shared behaviour for ordered, position-bearing coordinates.
+
+    Mixed into the coordinate types that describe a regular, monotonically
+    ordered axis (:class:`DenseCoordinate`-like, :class:`SampledCoordinate`,
+    :class:`InterpCoordinate`). It builds discontinuity and availability tables
+    on top of the subclass-provided :meth:`get_value` and
+    :meth:`get_split_indices`.
+    """
+
+    @abstractmethod
+    def get_value(self, index):
+        """Return the coordinate value at integer *index*. Subclass must implement."""
+
+    @abstractmethod
     def get_split_indices(self, kind="discontinuities", tolerance=False):
         """Return integer indices where this coordinate should be split. Subclass must implement."""
-        raise NotImplementedError(
-            f"get_split_indices is not implemented for {self.__class__}"
-        )
+
+    @abstractmethod
+    def simplify(self, tolerance=None):
+        """Reduce tie-point count within *tolerance*. Subclass must implement."""
 
     def get_discontinuities(self, tolerance=None):
         """
@@ -667,66 +741,6 @@ class Coordinate(ABC):
                 }
             )
         return pd.DataFrame.from_records(records)
-
-    def to_dataarray(self):
-        """Convert this coordinate to a :class:`~xdas.DataArray` with a single dimension."""
-        from ..core.dataarray import DataArray  # TODO: avoid defered import?
-
-        if self.name is None:
-            raise ValueError("cannot convert unnamed coordinate to DataArray")
-
-        if self.parent is None:
-            return DataArray(
-                self.values,
-                {self.dim: self},
-                dims=[self.dim],
-                name=self.name,
-            )
-        else:
-            return DataArray(
-                self.values,
-                {
-                    name: coord
-                    for name, coord in self.parent.items()
-                    if coord.dim == self.dim
-                },
-                dims=[self.dim],
-                name=self.name,
-            )
-
-    @abstractmethod
-    def to_dict(self):
-        """Serialise this coordinate to a plain-dict representation. Subclass must implement."""
-
-    @classmethod
-    def from_dict(cls, dct):
-        """Reconstruct a coordinate from the dict returned by :meth:`to_dict`."""
-        return cls(**dct)
-
-    def to_dataset(self, dataset, attrs):
-        """Write this coordinate into an xarray *dataset*, updating *attrs* in place."""
-        dataset = dataset.assign_coords(
-            {self.name: (self.dim, self.values) if self.dim else self.values}
-        )
-        return dataset, attrs
-
-    @classmethod
-    def from_dataset(cls, dataset, name):
-        """Read coordinates named *name* from an xarray *dataset* via each registered subclass."""
-        coords = {}
-        for subcls in cls.__subclasses__():
-            coords |= subcls.collect_from_dataset(dataset, name)
-        return coords
-
-    @classmethod
-    @abstractmethod
-    def collect_from_dataset(cls, dataset, name):
-        """Read coordinates of this subclass's kind from an xarray *dataset* variable *name*."""
-
-    @classmethod
-    @abstractmethod
-    def from_block(cls, start, size, step, dim=None, dtype=None):
-        """Construct a coordinate from a start value, element count, and step size. Subclass must implement."""
 
 
 def parse(data, dim=None):
