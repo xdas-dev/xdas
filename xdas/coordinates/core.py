@@ -547,9 +547,9 @@ class Coordinate(ABC):
         """Return ``True`` if this is a :class:`SampledCoordinate` (regularly sampled)."""
         return False
 
+    @abstractmethod
     def concat(self, other):
         """Concatenate *other* coordinate to this one. Subclass must implement."""
-        raise NotImplementedError(f"concat is not implemented for {self.__class__}")
 
     def simplify(self, tolerance=None):
         """Reduce tie-point count within *tolerance*. Subclass must implement."""

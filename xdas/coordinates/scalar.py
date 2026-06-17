@@ -87,6 +87,10 @@ class ScalarCoordinate(Coordinate, name="scalar"):
         """Not supported — scalar coordinates have no axis to order."""
         raise TypeError("scalar coordinate has no axis")
 
+    def concat(self, other):
+        """Not supported — scalar coordinates have no axis to concatenate along."""
+        raise TypeError("cannot concatenate scalar coordinate")
+
     def get_sampling_interval(self, cast=True):
         """Return ``None`` — scalar coordinates have no sample spacing."""
         return None

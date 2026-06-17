@@ -93,6 +93,10 @@ class TestScalarCoordinate:
         with pytest.raises(TypeError):
             ScalarCoordinate(1).is_monotonic_increasing()
 
+    def test_concat(self):
+        with pytest.raises(TypeError):
+            ScalarCoordinate(1).concat(ScalarCoordinate(2))
+
     def test_isinstance(self):
         assert ScalarCoordinate(1).isscalar()
         assert not ScalarCoordinate(1).isdense()
