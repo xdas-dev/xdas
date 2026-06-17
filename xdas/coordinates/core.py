@@ -703,9 +703,13 @@ class Coordinate(ABC):
         """Read coordinates named *name* from an xarray *dataset* via each registered subclass."""
         coords = {}
         for subcls in cls.__subclasses__():
-            if hasattr(subcls, "from_dataset"):  # pragma: no branch
-                coords |= subcls.from_dataset(dataset, name)
+            coords |= subcls.collect_from_dataset(dataset, name)
         return coords
+
+    @classmethod
+    @abstractmethod
+    def collect_from_dataset(cls, dataset, name):
+        """Read coordinates of this subclass's kind from an xarray *dataset* variable *name*."""
 
     @classmethod
     def from_block(cls, start, size, step, dim=None, dtype=None):

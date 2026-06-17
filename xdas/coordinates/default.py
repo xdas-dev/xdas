@@ -131,3 +131,8 @@ class DefaultCoordinate(Coordinate, name="default"):
     def to_dict(self):
         """Serialise to ``{"dim": ..., "data": ...}``."""
         return {"dim": self.dim, "data": self.data}
+
+    @classmethod
+    def collect_from_dataset(cls, dataset, name):
+        """Default coordinates are not stored in a dataset; return an empty mapping."""
+        return {}

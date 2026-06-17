@@ -459,7 +459,7 @@ class InterpCoordinate(Coordinate, name="interpolated"):
         return dataset, attrs
 
     @classmethod
-    def from_dataset(cls, dataset, name):
+    def collect_from_dataset(cls, dataset, name):
         """Read interpolated coordinates from *dataset* using the ``coordinate_interpolation`` attribute."""
         coords = {}
         mapping = dataset[name].attrs.pop("coordinate_interpolation", None)

@@ -578,7 +578,7 @@ class SampledCoordinate(Coordinate, name="sampled"):
         return dataset, attrs
 
     @classmethod
-    def from_dataset(cls, dataset, name):
+    def collect_from_dataset(cls, dataset, name):
         """Read sampled coordinates from *dataset* using the ``coordinate_sampling`` attribute."""
         coords = {}
         mapping = dataset[name].attrs.pop("coordinate_sampling", None)

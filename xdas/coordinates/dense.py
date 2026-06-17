@@ -210,7 +210,7 @@ class DenseCoordinate(Coordinate, name="dense"):
         return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
 
     @classmethod
-    def from_dataset(cls, dataset, name):
+    def collect_from_dataset(cls, dataset, name):
         """Extract all coordinates from an xarray *dataset* variable *name* as plain arrays."""
         return {
             name: (
