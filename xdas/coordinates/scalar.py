@@ -118,3 +118,8 @@ class ScalarCoordinate(Coordinate, name="scalar"):
     def collect_from_dataset(cls, dataset, name):
         """Scalar coordinates are not stored separately in a dataset; return an empty mapping."""
         return {}
+
+    @classmethod
+    def from_block(cls, start, size, step, dim=None, dtype=None):
+        """Not supported — scalar coordinates describe no axis block."""
+        raise TypeError("cannot build a scalar coordinate from a block")

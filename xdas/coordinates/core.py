@@ -724,9 +724,9 @@ class Coordinate(ABC):
         """Read coordinates of this subclass's kind from an xarray *dataset* variable *name*."""
 
     @classmethod
+    @abstractmethod
     def from_block(cls, start, size, step, dim=None, dtype=None):
         """Construct a coordinate from a start value, element count, and step size. Subclass must implement."""
-        raise NotImplementedError
 
 
 def parse(data, dim=None):

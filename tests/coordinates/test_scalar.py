@@ -97,6 +97,10 @@ class TestScalarCoordinate:
         with pytest.raises(TypeError):
             ScalarCoordinate(1).concat(ScalarCoordinate(2))
 
+    def test_from_block(self):
+        with pytest.raises(TypeError):
+            ScalarCoordinate.from_block(0, 5, 1)
+
     def test_isinstance(self):
         assert ScalarCoordinate(1).isscalar()
         assert not ScalarCoordinate(1).isdense()

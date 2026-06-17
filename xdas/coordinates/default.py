@@ -140,3 +140,8 @@ class DefaultCoordinate(Coordinate, name="default"):
     def collect_from_dataset(cls, dataset, name):
         """Default coordinates are not stored in a dataset; return an empty mapping."""
         return {}
+
+    @classmethod
+    def from_block(cls, start, size, step, dim=None, dtype=None):
+        """Build a :class:`DefaultCoordinate` of *size* elements (start and step are ignored)."""
+        return cls({"size": size}, dim=dim)
