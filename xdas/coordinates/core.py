@@ -7,6 +7,7 @@ interpolation, tolerance handling).
 """
 
 import weakref
+from abc import ABC, abstractmethod
 from copy import copy, deepcopy
 from functools import wraps
 from itertools import pairwise
@@ -294,7 +295,7 @@ class Coordinates(dict):
         self._parent = weakref.ref(parent)
 
 
-class Coordinate:
+class Coordinate(ABC):
     """
     Base class and factory for all coordinate types.
 
@@ -345,13 +346,26 @@ class Coordinate:
         # normal allocation
         return super().__new__(cls)
 
+    @abstractmethod
+    def __init__(self, data=None, dim=None, dtype=None):
+        """Initialise the coordinate from subclass-specific *data*."""
+
+    @abstractmethod
+    def __array__(self, dtype=None):
+        """Materialise the coordinate values as a numpy array."""
+
     def __reduce__(self):
         return self.__class__, (self.data, self.dim)
 
     @staticmethod
+    @abstractmethod
     def isvalid(data):
         """Return ``True`` if *data* is a valid input for this coordinate subclass."""
-        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def dtype(self):
+        """NumPy dtype of the underlying coordinate values."""
 
     @property
     def values(self):
@@ -403,9 +417,9 @@ class Coordinate:
             func = copy
         return self.__class__(func(self.data), func(self.dim), func(self.dtype))
 
+    @abstractmethod
     def equals(self, other):
         """Return ``True`` if *other* represents the same coordinate values. Subclass must implement."""
-        raise NotImplementedError
 
     def to_index(self, item, method=None, endpoint=True):
         """
@@ -668,9 +682,9 @@ class Coordinate:
                 name=self.name,
             )
 
+    @abstractmethod
     def to_dict(self):
         """Serialise this coordinate to a plain-dict representation. Subclass must implement."""
-        raise NotImplementedError
 
     @classmethod
     def from_dict(cls, dct):
