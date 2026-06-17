@@ -51,6 +51,7 @@ class DenseCoordinate(Coordinate, name="dense"):
 
     @property
     def dtype(self):
+        """Dtype of the underlying data array."""
         return self.data.dtype
 
     @property

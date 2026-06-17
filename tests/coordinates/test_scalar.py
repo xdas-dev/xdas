@@ -58,6 +58,12 @@ class TestScalarCoordinate:
         for data in self.valid:
             assert ScalarCoordinate(data).__array__() == np.array(data)
 
+    def test_array_dtype(self):
+        coord = ScalarCoordinate(1)
+        arr = coord.__array__(np.float64)
+        assert arr.dtype == np.float64
+        assert arr == np.array(1.0)
+
     def test_dtype(self):
         for data in self.valid:
             assert ScalarCoordinate(data).dtype == np.array(data).dtype

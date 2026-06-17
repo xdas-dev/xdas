@@ -70,6 +70,10 @@ class TestDefaultCoordinate:
         arr = np.asarray(coord)
         np.testing.assert_array_equal(arr, np.arange(4))
 
+    def test_repr(self):
+        assert repr(DefaultCoordinate({"size": 0})) == "empty coordinate"
+        assert repr(DefaultCoordinate({"size": 5})) == "0 to 4"
+
     def test_isdefault(self):
         assert DefaultCoordinate({"size": 3}).isdefault()
 

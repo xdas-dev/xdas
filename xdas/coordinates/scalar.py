@@ -56,6 +56,7 @@ class ScalarCoordinate(Coordinate, name="scalar"):
 
     @property
     def dtype(self):
+        """Dtype of the scalar value."""
         return self.data.dtype
 
     def __repr__(self):
