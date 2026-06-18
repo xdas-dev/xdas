@@ -32,7 +32,6 @@ __all__ = [
     "DataCollection",
     "DataMapping",
     "DataSequence",
-    "DefaultCoordinate",
     "DenseCoordinate",
     "InterpCoordinate",
     "SampledCoordinate",
@@ -73,7 +72,6 @@ from . import (
 from .coordinates import (
     Coordinate,
     Coordinates,
-    DefaultCoordinate,
     DenseCoordinate,
     InterpCoordinate,
     SampledCoordinate,
