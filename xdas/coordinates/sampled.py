@@ -515,19 +515,6 @@ class SampledCoordinate(RegularMixin, Coordinate, name="sampled"):
         """Not supported — raises :exc:`NotImplementedError`."""
         raise NotImplementedError("from_array is not implemented for SampledCoordinate")
 
-    def to_dict(self):
-        """Serialise to ``{"dim": ..., "data": {"tie_values": ..., "tie_lengths": ..., "sampling_interval": ...}, "dtype": ...}``."""
-        tie_values = self.data["tie_values"]
-        tie_lengths = self.data["tie_lengths"]
-        if np.issubdtype(tie_values.dtype, np.datetime64):
-            tie_values = tie_values.astype(str)
-        data = {
-            "tie_values": tie_values.tolist(),
-            "tie_lengths": tie_lengths.tolist(),
-            "sampling_interval": self.sampling_interval,
-        }
-        return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
-
     def to_dataset(self, dataset, attrs):
         """Write sampling metadata into an xarray *dataset* using CF tie-point conventions."""
         mapping = f"{self.name}: {self.name}_sampling"

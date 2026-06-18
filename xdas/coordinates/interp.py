@@ -407,18 +407,6 @@ class InterpCoordinate(RegularMixin, Coordinate, name="interpolated"):
             {"tie_indices": np.arange(len(arr)), "tie_values": arr}, dim
         ).simplify(tolerance)
 
-    def to_dict(self):
-        """Serialise to ``{"dim": ..., "data": {"tie_indices": ..., "tie_values": ...}, "dtype": ...}``."""
-        tie_indices = self.data["tie_indices"]
-        tie_values = self.data["tie_values"]
-        if np.issubdtype(tie_values.dtype, np.datetime64):
-            tie_values = tie_values.astype(str)
-        data = {
-            "tie_indices": tie_indices.tolist(),
-            "tie_values": tie_values.tolist(),
-        }
-        return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
-
     def to_dataset(self, dataset, attrs):
         """Write tie points into an xarray *dataset* using CF coordinate interpolation conventions."""
         mapping = f"{self.name}: {self.name}_indices {self.name}_values"

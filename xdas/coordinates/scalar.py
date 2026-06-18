@@ -97,14 +97,6 @@ class ScalarCoordinate(Coordinate, name="scalar"):
         """Not supported — raises :exc:`NotImplementedError`."""
         raise NotImplementedError("cannot get index of scalar coordinate")
 
-    def to_dict(self):
-        """Serialise to ``{"dim": None, "data": ..., "dtype": ...}``."""
-        if np.issubdtype(self.dtype, np.datetime64):
-            data = self.data.astype(str).item()
-        else:
-            data = self.data.item()
-        return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
-
     @classmethod
     def collect_from_dataset(cls, dataset, name):
         """Scalar coordinates are not stored separately in a dataset; return an empty mapping."""

@@ -15,8 +15,7 @@ from dask.array import Array as DaskArray
 from numpy.lib.mixins import NDArrayOperatorsMixin
 
 from ..coordinates import Coordinates
-from ..dask.core import from_dict, to_dict
-from ..virtual import VirtualArray, _to_human
+from ..virtual import _to_human
 
 HANDLED_NUMPY_FUNCTIONS = {}
 HANDLED_METHODS = {}
@@ -955,34 +954,6 @@ class DataArray(NDArrayOperatorsMixin):
         from ..io.xdas import open_dataarray
 
         return open_dataarray(fname, group)
-
-    def to_dict(self):
-        """Convert the DataArray to a dictionary."""
-        if isinstance(self.data, VirtualArray):
-            raise NotImplementedError("cannot convert a virtual array to a dictionary")
-        elif isinstance(self.data, np.ndarray):
-            data = self.data.tolist()
-        elif isinstance(self.data, DaskArray):  # pragma: no branch
-            data = to_dict(self.data)
-        return {
-            "data": data,
-            "coords": self.coords.to_dict()["coords"],
-            "dims": self.dims,
-            "name": self.name,
-            "attrs": self.attrs,
-        }
-
-    @classmethod
-    def from_dict(cls, dct):
-        """Create a DataArray from a dictionary."""
-        if isinstance(dct["data"], list):
-            data = np.array(dct["data"])
-        elif isinstance(dct["data"], dict):
-            data = from_dict(dct["data"])
-        else:
-            raise ValueError("data must be a list or a dictionary")
-        coords = Coordinates.from_dict({key: dct[key] for key in ["coords", "dims"]})
-        return cls(data, coords, dct["dims"], dct["name"], dct["attrs"])
 
     def plot(self, *args, **kwargs):
         """

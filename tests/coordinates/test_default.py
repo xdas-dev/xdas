@@ -132,12 +132,3 @@ class TestDefaultCoordinate:
         b = DefaultCoordinate({"size": 2}, "y")
         with pytest.raises(ValueError):
             a.concat(b)
-
-    def test_to_from_dict(self):
-        coord = DefaultCoordinate({"size": 5}, "x")
-        dct = coord.to_dict()
-        assert dct["dim"] == "x"
-        assert dct["data"] == {"size": 5}
-        restored = DefaultCoordinate.from_dict(dct)
-        assert restored.equals(coord)
-        assert restored.dim == coord.dim

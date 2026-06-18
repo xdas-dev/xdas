@@ -111,11 +111,6 @@ class TestDenseCoordinate:
             DenseCoordinate([1, 2, 3]).to_index(slice(2, None)), slice(1, 3)
         )
 
-    def test_to_from_dict(self):
-        for data in self.valid:
-            coord = DenseCoordinate(data)
-            assert DenseCoordinate.from_dict(coord.to_dict()).equals(coord)
-
     def test_empty(self):
         coord = DenseCoordinate()
         assert coord.empty

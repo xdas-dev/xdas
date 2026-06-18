@@ -25,7 +25,6 @@ Methods
    Coordinates.get_query
    Coordinates.to_index
    Coordinates.equals
-   Coordinates.to_dict
    Coordinates.copy
    Coordinates.drop_dims 
    Coordinates.drop_coords 
@@ -87,7 +86,6 @@ Methods
    ScalarCoordinate.isvalid
    ScalarCoordinate.equals
    ScalarCoordinate.to_index
-   ScalarCoordinate.to_dict
 ```
 
 ### DenseCoordinate
@@ -111,7 +109,6 @@ Methods
    DenseCoordinate.index
    DenseCoordinate.get_indexer
    DenseCoordinate.slice_indexer
-   DenseCoordinate.to_dict
 ```
 
 ### InterpCoordinate
@@ -159,7 +156,6 @@ Methods
    InterpCoordinate.simplify
    InterpCoordinate.get_discontinuities
    InterpCoordinate.from_array
-   InterpCoordinate.to_dict
 ```
 
 
@@ -212,5 +208,4 @@ Methods
    SampledCoordinate.simplify
    SampledCoordinate.slice_index
    SampledCoordinate.slice_indexer
-   SampledCoordinate.to_dict
 ```

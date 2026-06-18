@@ -106,11 +106,6 @@ class TestScalarCoordinate:
         assert not ScalarCoordinate(1).isdense()
         assert not ScalarCoordinate(1).isinterp()
 
-    def test_to_from_dict(self):
-        for data in self.valid:
-            coord = ScalarCoordinate(data)
-            assert ScalarCoordinate.from_dict(coord.to_dict()).equals(coord)
-
     def test_empty(self):
         with pytest.raises(TypeError, match="cannot be empty"):
             ScalarCoordinate()

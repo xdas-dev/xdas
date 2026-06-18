@@ -212,46 +212,6 @@ class Coordinates(dict):
                 return False
         return True
 
-    def to_dict(self):
-        """Convert this `Coordinates` object into a pure python dictionnary.
-
-        Examples
-        --------
-        >>> import xdas as xd
-
-        >>> coords = xd.Coordinates(
-        ...     {
-        ...         "time": {"tie_indices": [0, 999], "tie_values": [0.0, 10.0]},
-        ...         "distance": [0, 1, 2],
-        ...         "channel": ("distance", ["DAS01", "DAS02", "DAS03"]),
-        ...         "interrogator": (None, "SRN"),
-        ...     }
-        ... )
-        >>> coords.to_dict()
-        {'dims': ('time', 'distance'),
-         'coords': {'time': {'dim': 'time',
-           'data': {'tie_indices': [0, 999], 'tie_values': [0.0, 10.0]},
-           'dtype': 'float64'},
-          'distance': {'dim': 'distance', 'data': [0, 1, 2], 'dtype': 'int64'},
-          'channel': {'dim': 'distance',
-           'data': ['DAS01', 'DAS02', 'DAS03'],
-           'dtype': '<U5'},
-          'interrogator': {'dim': None, 'data': 'SRN', 'dtype': '<U3'}}}
-
-        """
-        return {
-            "dims": self.dims,
-            "coords": {name: self[name].to_dict() for name in self},
-        }
-
-    @classmethod
-    def from_dict(cls, dct):
-        """Reconstruct a :class:`Coordinates` from the dict returned by :meth:`to_dict`."""
-        return cls(
-            {key: Coordinate.from_dict(value) for key, value in dct["coords"].items()},
-            dct["dims"],
-        )
-
     @classmethod
     def from_dataset(cls, dataset, name):
         """Build a :class:`Coordinates` by delegating to each registered coordinate subclass."""
@@ -304,8 +264,8 @@ class Coordinate(ABC):
     subclassed, use the ``name=`` keyword in the class definition to register
     the subclass (e.g. ``class MyCoord(Coordinate, name="mycoord")``).
 
-    Concrete subclasses must implement :meth:`isvalid` and :meth:`to_dict` at
-    minimum; :meth:`equals` is provided generically by the base class.
+    Concrete subclasses must implement :meth:`isvalid` at minimum; :meth:`equals`
+    is provided generically by the base class.
 
     Parameters
     ----------
@@ -594,15 +554,6 @@ class Coordinate(ABC):
                 dims=[self.dim],
                 name=self.name,
             )
-
-    @abstractmethod
-    def to_dict(self):
-        """Serialise this coordinate to a plain-dict representation. Subclass must implement."""
-
-    @classmethod
-    def from_dict(cls, dct):
-        """Reconstruct a coordinate from the dict returned by :meth:`to_dict`."""
-        return cls(**dct)
 
     def to_dataset(self, dataset, attrs):
         """Write this coordinate into an xarray *dataset*, updating *attrs* in place."""

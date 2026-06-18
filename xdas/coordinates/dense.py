@@ -188,14 +188,6 @@ class DenseCoordinate(Coordinate, name="dense"):
         div_points = np.concatenate(([0], div_points, [len(self)]))
         return div_points
 
-    def to_dict(self):
-        """Serialise to ``{"dim": ..., "data": ..., "dtype": ...}``."""
-        if np.issubdtype(self.dtype, np.datetime64):
-            data = self.data.astype(str).tolist()
-        else:
-            data = self.data.tolist()
-        return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
-
     @classmethod
     def collect_from_dataset(cls, dataset, name):
         """Extract all coordinates from an xarray *dataset* variable *name* as plain arrays."""

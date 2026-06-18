@@ -812,43 +812,6 @@ class TestDataArrayMissingBranches:
         with pytest.raises(ValueError, match="cannot expand along y"):
             da.expand_dims("y", 0)
 
-    def test_to_dict_virtual_raises(self, tmp_path):
-        da = wavelet_wavefronts()
-        da.to_netcdf(tmp_path / "b.nc")
-        da2 = xd.open(tmp_path / "b.nc")
-        with pytest.raises(NotImplementedError):
-            da2.to_dict()
-
-    def test_to_dict_numpy(self):
-        da = xd.DataArray(np.array([1.0, 2.0, 3.0]), {"x": [1, 2, 3]})
-        d = da.to_dict()
-        assert isinstance(d["data"], list)
-
-    def test_to_dict_dask(self):
-        data = dask.array.from_array(np.ones((3,)), chunks=3)
-        da = xd.DataArray(data, {"x": [1, 2, 3]})
-        d = da.to_dict()
-        assert isinstance(d["data"], dict)
-
-    def test_from_dict_list(self):
-        da = xd.DataArray(np.array([1.0, 2.0]), {"x": [1, 2]})
-        d = da.to_dict()
-        result = xd.DataArray.from_dict(d)
-        assert isinstance(result.data, np.ndarray)
-        assert np.allclose(result.values, [1.0, 2.0])
-
-    def test_from_dict_dict(self):
-        data = dask.array.from_array(np.ones((3,)), chunks=3)
-        da = xd.DataArray(data, {"x": [1, 2, 3]})
-        d = da.to_dict()
-        result = xd.DataArray.from_dict(d)
-        assert np.allclose(result.values, np.ones(3))
-
-    def test_from_dict_invalid(self):
-        d = {"data": 42, "coords": {}, "dims": (), "name": None, "attrs": {}}
-        with pytest.raises(ValueError, match="data must be a list or a dictionary"):
-            xd.DataArray.from_dict(d)
-
     def test_plot_1d(self):
         import matplotlib
 

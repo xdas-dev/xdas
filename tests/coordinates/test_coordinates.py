@@ -134,18 +134,6 @@ class TestCoordinates:
         with pytest.raises(TypeError, match="must be of type str"):
             coords[0] = ...
 
-    def test_to_from_dict(self):
-        starttime = np.datetime64("2020-01-01T00:00:00.000")
-        endtime = np.datetime64("2020-01-01T00:00:10.000")
-        coords = {
-            "time": {"tie_indices": [0, 999], "tie_values": [starttime, endtime]},
-            "distance": np.linspace(0, 1000, 3),
-            "channel": ("distance", ["DAS01", "DAS02", "DAS03"]),
-            "interrogator": (None, "SRN"),
-        }
-        coords = xd.Coordinates(coords)
-        assert xd.Coordinates.from_dict(coords.to_dict()).equals(coords)
-
     def test_equals_non_coordinates(self):
         coords = xd.Coordinates({"dim": [1, 2, 3]})
         assert not coords.equals({})

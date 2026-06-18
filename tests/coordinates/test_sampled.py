@@ -6,7 +6,6 @@ import pytest
 
 import xdas as xd
 from xdas.coordinates import (
-    Coordinate,
     DenseCoordinate,
     SampledCoordinate,
     ScalarCoordinate,
@@ -551,45 +550,6 @@ class TestSampledCoordinateDiscontinuitiesAvailabilities:
         assert len(avail) >= 1
 
 
-class TestSampledCoordinateToDatasetAndDict:
-    def test_to_dict_contains_expected_keys(self):
-        coord = SampledCoordinate(
-            {
-                "tie_values": [0.0, 10.0],
-                "tie_lengths": [3, 2],
-                "sampling_interval": 1.0,
-            },
-            dim="time",
-        )
-        d = coord.to_dict()
-        assert "dim" in d
-        assert "data" in d
-        assert set(d["data"].keys()) >= {
-            "tie_values",
-            "tie_lengths",
-            "sampling_interval",
-        }
-
-    def test_to_dict_with_datetime(self):
-        t0 = np.datetime64("2000-01-01T00:00:00")
-        coord = SampledCoordinate(
-            {
-                "tie_values": [t0, t0 + np.timedelta64(10, "s")],
-                "tie_lengths": [3, 2],
-                "sampling_interval": np.timedelta64(1, "s"),
-            },
-            dim="time",
-        )
-        d = coord.to_dict()
-        assert "dim" in d
-        assert "data" in d
-        assert set(d["data"].keys()) >= {
-            "tie_values",
-            "tie_lengths",
-            "sampling_interval",
-        }
-
-
 class TestSampledCoordinateSlicing:
     def make_coord(self):
         # Two segments: [0,1,2] and [10,11]
@@ -736,23 +696,6 @@ class TestSampledCoordinateArithmetic:
         result = coord - 5.0
         assert result.tie_values[0] == 5.0
         assert np.array_equal(result.values, np.array([5.0, 6.0, 7.0]))
-
-
-class TestSampledCoordinateSerialization:
-    def test_to_from_dict(self):
-        coord = SampledCoordinate(
-            {
-                "tie_values": [0.0, 10.0],
-                "tie_lengths": [3, 2],
-                "sampling_interval": 1.0,
-            },
-            dim="time",
-        )
-        d = coord.to_dict()
-        # round-trip via Coordinate factory
-        back = Coordinate.from_dict(d)
-        assert isinstance(back, SampledCoordinate)
-        assert back.equals(coord)
 
 
 class TestSampledCoordinateDatetime:
