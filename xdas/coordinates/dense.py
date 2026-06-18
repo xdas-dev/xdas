@@ -123,17 +123,6 @@ class DenseCoordinate(Coordinate, name="dense"):
         """Return ``True`` (this is a :class:`DenseCoordinate`)."""
         return True
 
-    def equals(self, other):
-        """Return ``True`` if *other* is a :class:`DenseCoordinate` with identical values and dtype."""
-        if isinstance(other, self.__class__):
-            return (
-                np.array_equal(self.data, other.data)
-                and self.dim == other.dim
-                and self.dtype == other.dtype
-            )
-        else:
-            return False
-
     def get_indexer(self, value, method=None):
         """
         Return the integer index (or indices) for *value*.

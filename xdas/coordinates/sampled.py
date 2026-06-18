@@ -263,16 +263,6 @@ class SampledCoordinate(RegularMixin, Coordinate, name="sampled"):
         """Return ``True`` if no segment starts before the end of the previous one."""
         return not self.get_split_indices("overlaps", tolerance=False).size
 
-    def equals(self, other):
-        """Return ``True`` if *other* has identical tie values, lengths, sampling interval, dim, and dtype."""
-        return (
-            np.array_equal(self.tie_values, other.tie_values)
-            and np.array_equal(self.tie_lengths, other.tie_lengths)
-            and self.sampling_interval == other.sampling_interval
-            and self.dim == other.dim
-            and self.dtype == other.dtype
-        )
-
     def get_value(self, index):
         """Compute coordinate value(s) at integer position(s) *index* using the stored segments."""
         index = self.format_index(index, bounds="raise")

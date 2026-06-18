@@ -111,11 +111,6 @@ class DefaultCoordinate(Coordinate, name="default"):
         """Return the sample spacing, always 1 for integer-range coordinates."""
         return 1
 
-    def equals(self, other):
-        """Return ``True`` if *other* is a :class:`DefaultCoordinate` of the same size."""
-        if isinstance(other, self.__class__):
-            return self.data["size"] == other.data["size"]
-
     def get_indexer(self, value, method=None):
         """Return *value* directly (integer index equals label for range coordinates)."""
         return value

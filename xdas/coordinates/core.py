@@ -304,8 +304,8 @@ class Coordinate(ABC):
     subclassed, use the ``name=`` keyword in the class definition to register
     the subclass (e.g. ``class MyCoord(Coordinate, name="mycoord")``).
 
-    Concrete subclasses must implement :meth:`isvalid`, :meth:`equals`,
-    and :meth:`to_dict` at minimum.
+    Concrete subclasses must implement :meth:`isvalid` and :meth:`to_dict` at
+    minimum; :meth:`equals` is provided generically by the base class.
 
     Parameters
     ----------
@@ -429,9 +429,27 @@ class Coordinate(ABC):
             func = copy
         return self.__class__(func(self.data), func(self.dim), func(self.dtype))
 
-    @abstractmethod
     def equals(self, other):
-        """Return ``True`` if *other* represents the same coordinate values. Subclass must implement."""
+        """Return ``True`` if *other* is the same coordinate type with identical dim and data.
+
+        Comparison is strict on dtype. Same type implies same ``data`` structure:
+        either a single ``np.ndarray`` or a flat ``dict[str, np.ndarray]`` with
+        the same keys.
+        """
+        if type(self) is not type(other) or self.dim != other.dim:
+            return False
+        a, b = self.data, other.data
+        if isinstance(a, dict):
+            if a.keys() != b.keys():
+                return False
+            pairs = [(a[key], b[key]) for key in a]
+        else:
+            pairs = [(a, b)]
+        for x, y in pairs:
+            x, y = np.asarray(x), np.asarray(y)
+            if x.dtype != y.dtype or not np.array_equal(x, y, equal_nan=False):
+                return False
+        return True
 
     def to_index(self, item, method=None, endpoint=True):
         """

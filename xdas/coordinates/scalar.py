@@ -93,13 +93,6 @@ class ScalarCoordinate(Coordinate, name="scalar"):
         """Return ``None`` — scalar coordinates have no sample spacing."""
         return None
 
-    def equals(self, other):
-        """Return ``True`` if *other* is a :class:`ScalarCoordinate` with the same value."""
-        if isinstance(other, self.__class__):
-            return self.data == other.data
-        else:
-            return False
-
     def to_index(self, item, method=None, endpoint=True):
         """Not supported — raises :exc:`NotImplementedError`."""
         raise NotImplementedError("cannot get index of scalar coordinate")

@@ -101,7 +101,7 @@ class TestDefaultCoordinate:
         result = DefaultCoordinate({"size": 3}).equals(
             DenseCoordinate(np.arange(3), "x")
         )
-        assert result is None
+        assert result is False
 
     def test_get_indexer(self):
         coord = DefaultCoordinate({"size": 5})

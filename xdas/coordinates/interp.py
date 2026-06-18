@@ -216,15 +216,6 @@ class InterpCoordinate(RegularMixin, Coordinate, name="interpolated"):
         """Return ``True`` if no segment starts before the end of the previous one."""
         return not self.get_split_indices("overlaps", tolerance=False).size
 
-    def equals(self, other):
-        """Return ``True`` if *other* has identical tie points, dim, and dtype."""
-        return (
-            np.array_equal(self.tie_indices, other.tie_indices)
-            and np.array_equal(self.tie_values, other.tie_values)
-            and self.dim == other.dim
-            and self.dtype == other.dtype
-        )
-
     def get_value(self, index):
         """Interpolate coordinate values at integer position(s) *index*."""
         index = self.format_index(index)
