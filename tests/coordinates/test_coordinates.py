@@ -188,7 +188,7 @@ class TestCoordinateBase:
         sc = ScalarCoordinate(42)
         dataset = xr.Dataset()
         dataset, attrs = sc._to_dataset(dataset, {})
-        assert "None" in dataset.coords or sc.name in dataset.coords or True
+        assert None in dataset.coords
 
     def test_parse_dim_override(self):
         coord = xd.Coordinate(("x", [1, 2, 3]), dim="y")

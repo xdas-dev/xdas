@@ -124,7 +124,7 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
     def _is_monotonic_increasing(self):
         return not self.get_split_indices(
             "overlaps", tolerance=False
-        ).size  # TODO: do not clall split_indices
+        ).size  # TODO: do not call split_indices
 
     @override
     def _get_value(self, index):
@@ -289,6 +289,8 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
         mask = den != 1
         num = num[mask]
         den = den[mask]
+        if len(num) == 0:
+            return None
         delta = np.median(num / den)
         if cast and np.issubdtype(delta.dtype, np.timedelta64):
             delta = delta / np.timedelta64(1, "s")

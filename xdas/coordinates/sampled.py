@@ -407,6 +407,8 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
         cast : bool, optional
             If ``True`` (default), cast timedelta64 to seconds (float).
         """
+        if len(self) < 2:
+            return None
         delta = self.sampling_interval
         if cast and np.issubdtype(delta.dtype, np.timedelta64):
             delta = delta / np.timedelta64(1, "s")

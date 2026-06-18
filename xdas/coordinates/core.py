@@ -47,7 +47,7 @@ class Coordinates(dict):
           which are assumed to be a dimensional coordinate with `dim` set to the
           related name.
 
-    dims: squence of str, optional
+    dims: sequence of str, optional
         An ordered sequence of dimensions. It is meant to match the dimensionality of
         its associated data. If provided, it must at least include all dimensions found
         in `coords` (extras dimensions will be considered as empty coordinates).
@@ -207,6 +207,8 @@ class Coordinates(dict):
         """Return ``True`` if *other* is a :class:`Coordinates` with identical coordinate values."""
         if not isinstance(other, Coordinates):
             return False
+        if set(self) != set(other):
+            return False
         for name in self:
             if not self[name].equals(other[name]):
                 return False
@@ -225,7 +227,9 @@ class Coordinates(dict):
         deep : bool, optional
             If ``True`` (default) perform a deep copy of every coordinate.
         """
-        return self.__class__({key: value.copy(deep) for key, value in self.items()})
+        return self.__class__(
+            {key: value.copy(deep) for key, value in self.items()}, self.dims
+        )
 
     @wraps_first_last
     def drop_dims(self, *dims):
@@ -749,7 +753,7 @@ class SampledMixin(ABC):
                 "end_index": end_index,
                 "start_value": start_value,
                 "end_value": end_value,
-                "delta": end_value - start_value,
+                "delta": delta,
                 "type": ("gap" if end_value > start_value else "overlap"),
             }
             records.append(record)
