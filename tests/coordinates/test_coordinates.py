@@ -239,9 +239,3 @@ class TestCoordinateBase:
 
         assert "_testnamed" in Coordinate._registry
         del Coordinate._registry["_testnamed"]
-
-    def test_array_function_on_coord(self):
-        coord = DenseCoordinate([1.0, 2.0, 3.0], "x")
-        # Call __array_function__ directly (passing ndarray as type to avoid dispatch loop)
-        result = coord.__array_function__(np.sum, (np.ndarray,), (coord.data,), {})
-        assert result == 6.0

@@ -99,7 +99,10 @@ class ScalarCoordinate(Coordinate, name="scalar"):
 
     @override
     def _to_dataset(self, dataset, attrs):
-        return super()._to_dataset(dataset, attrs)
+        dataset = dataset.assign_coords(
+            {self.name: (self.dim, self.values) if self.dim else self.values}
+        )
+        return dataset, attrs
 
     def __repr__(self):
         return np.array2string(self.data, threshold=0, edgeitems=1)

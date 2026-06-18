@@ -110,7 +110,7 @@ class Coordinates(dict):
                         f"conflicting sizes for dimension {coord.dim}: size {len(coord)} "
                         f"in `coords` and size {size} in `data`"
                     )
-        coord.assign_parent(self)
+        coord._assign_parent(self)
         return super().__setitem__(key, coord)
 
     def __repr__(self):
@@ -374,55 +374,13 @@ class Coordinate(ABC):
     @abstractmethod
     def _to_dataset(self, dataset, attrs):
         """Write this coordinate into an xarray *dataset*, updating *attrs* in place."""
-        dataset = dataset.assign_coords(
-            {self.name: (self.dim, self.values) if self.dim else self.values}
-        )
-        return dataset, attrs
 
     @classmethod
     @abstractmethod
     def _collect_from_dataset(cls, dataset, name):
         """Read coordinates of this subclass's kind from an xarray *dataset* variable *name*."""
 
-    # ---
-
-    def __getitem__(self, item):
-        """Index into the coordinate, returning a new :class:`Coordinate`."""
-        if isinstance(item, slice):
-            return self._slice(item)
-        else:
-            return Coordinate(
-                self._get_value(item), None if np.isscalar(item) else self.dim
-            )
-
-    def __array__(self, dtype=None, copy=None):
-        if self.empty:
-            out = np.array([], dtype=self.dtype)
-        else:
-            out = self._get_value(self.indices)
-        if dtype is not None:
-            out = out.__array__(dtype)
-        return out
-
-    def __reduce__(self):
-        return self.__class__, (self.data, self.dim)
-
-    def __repr__(self):
-        if self.empty:
-            return "empty coordinate"
-        elif len(self) == 1:
-            return f"{self.tie_values[0]}"
-        else:
-            if np.issubdtype(self.dtype, np.floating):
-                return f"{self.start:.3f} to {self.end:.3f}"
-            elif np.issubdtype(self.dtype, np.datetime64):
-                start_str = format_datetime(self.start)
-                end_str = format_datetime(self.end)
-                return f"{start_str} to {end_str}"
-            else:
-                return f"{self.start} to {self.end}"
-
-    # -- properties (data model) --------------------------------------------
+    # -- properties ---
 
     @property
     def ndim(self):
@@ -479,7 +437,43 @@ class Coordinate(ABC):
             return self.dim
         return next((name for name in self.parent if self.parent[name] is self), None)
 
-    # -- validation ---------------------------------------------------------
+    # --- dunders logic ---
+
+    def __getitem__(self, item):
+        """Index into the coordinate, returning a new :class:`Coordinate`."""
+        if isinstance(item, slice):
+            return self._slice(item)
+        else:
+            return Coordinate(
+                self._get_value(item), None if np.isscalar(item) else self.dim
+            )
+
+    def __array__(self, dtype=None, copy=None):
+        if self.empty:
+            out = np.array([], dtype=self.dtype)
+        else:
+            out = self._get_value(self.indices)
+        if dtype is not None:
+            out = out.__array__(dtype)
+        return out
+
+    def __reduce__(self):
+        return self.__class__, (self.data, self.dim)
+
+    def __repr__(self):
+        if self.empty:
+            return "empty coordinate"
+        elif len(self) == 1:
+            return f"{self.tie_values[0]}"
+        else:
+            if np.issubdtype(self.dtype, np.floating):
+                return f"{self.start:.3f} to {self.end:.3f}"
+            elif np.issubdtype(self.dtype, np.datetime64):
+                start_str = format_datetime(self.start)
+                end_str = format_datetime(self.end)
+                return f"{start_str} to {end_str}"
+            else:
+                return f"{self.start} to {self.end}"
 
     # -- queries ------------------------------------------------------------
 
@@ -612,7 +606,7 @@ class Coordinate(ABC):
             stop_index -= 1
         return slice(start_index, stop_index)
 
-    # -- transforms ---------------------------------------------------------
+    # --- routines ---
 
     def copy(self, deep=True):
         """
@@ -628,8 +622,6 @@ class Coordinate(ABC):
         else:
             func = copy
         return self.__class__(func(self.data), func(self.dim), func(self.dtype))
-
-    # -- alternative constructors and IO ------------------------------------
 
     def to_dataarray(self):
         """Convert this coordinate to a :class:`~xdas.DataArray` with a single dimension."""
@@ -657,6 +649,8 @@ class Coordinate(ABC):
                 name=self.name,
             )
 
+    # --- IO ---
+
     @classmethod
     def from_dataset(cls, dataset, name):
         """Read coordinates named *name* from an xarray *dataset* via each registered subclass."""
@@ -665,9 +659,9 @@ class Coordinate(ABC):
             coords |= subcls._collect_from_dataset(dataset, name)
         return coords
 
-    # -- internals ----------------------------------------------------------
+    # --- internals ---
 
-    def assign_parent(self, parent):
+    def _assign_parent(self, parent):
         """Attach this coordinate to its parent :class:`Coordinates` container."""
         self._parent = weakref.ref(parent)
 
