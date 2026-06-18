@@ -67,7 +67,7 @@ class DataArray(NDArrayOperatorsMixin):
         if dims is not None and len(dims) != data.ndim:
             raise ValueError("different number of dimensions on `data` and `dims`")
         coords = Coordinates(coords, dims)
-        coords._assign_parent(self)
+        coords.assign_parent(self)
         self._coords = coords
 
         # metadata
@@ -217,7 +217,7 @@ class DataArray(NDArrayOperatorsMixin):
                 f"replacement coords must have the same dimensions. Replacement coords "
                 f"has dims {value.dims}; original coords has dims {self.dims}"
             )
-        value._assign_parent(self)
+        value.assign_parent(self)
         self._coords = value
 
     @property

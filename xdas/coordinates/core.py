@@ -110,7 +110,7 @@ class Coordinates(dict):
                         f"conflicting sizes for dimension {coord.dim}: size {len(coord)} "
                         f"in `coords` and size {size} in `data`"
                     )
-        coord._assign_parent(self)
+        coord.assign_parent(self)
         return super().__setitem__(key, coord)
 
     def __repr__(self):
@@ -240,7 +240,8 @@ class Coordinates(dict):
         coords = {key: value for key, value in self.items() if key not in names}
         return self.__class__(coords, self.dims)
 
-    def _assign_parent(self, parent):
+    def assign_parent(self, parent):
+        """Attach this container to its parent, validating dimension counts and sizes."""
         if not len(self.dims) == parent.ndim:
             raise ValueError(
                 f"inferred number of dimensions {len(self.dims)} from `coords` does "
@@ -306,9 +307,26 @@ class Coordinate(ABC):
         # normal allocation
         return super().__new__(cls)
 
+    # -- protocol dunders ---------------------------------------------------
+
     @abstractmethod
     def __init__(self, data=None, dim=None, dtype=None):
         """Initialise the coordinate from subclass-specific *data*."""
+
+    @abstractmethod
+    def __array__(self, dtype=None, copy=None):
+        """Materialise the coordinate values as a numpy array."""
+
+    @abstractmethod
+    def __len__(self):
+        """Return the number of elements along this coordinate's axis."""
+
+    @abstractmethod
+    def __getitem__(self, item):
+        """Index into the coordinate, returning a new :class:`Coordinate`."""
+
+    def __reduce__(self):
+        return self.__class__, (self.data, self.dim)
 
     # -- properties (data model) --------------------------------------------
 
@@ -364,32 +382,15 @@ class Coordinate(ABC):
     def isvalid(data):
         """Return ``True`` if *data* is a valid input for this coordinate subclass."""
 
-    # -- protocol dunders ---------------------------------------------------
-
-    @abstractmethod
-    def __array__(self, dtype=None, copy=None):
-        """Materialise the coordinate values as a numpy array."""
-
-    @abstractmethod
-    def __len__(self):
-        """Return the number of elements along this coordinate's axis."""
-
-    @abstractmethod
-    def __getitem__(self, item):
-        """Index into the coordinate, returning a new :class:`Coordinate`."""
-
-    def __reduce__(self):
-        return self.__class__, (self.data, self.dim)
-
     # -- queries ------------------------------------------------------------
-
-    def isscalar(self):
-        """Return ``True`` if this is a :class:`ScalarCoordinate` (non-dimensional)."""
-        return False
 
     @abstractmethod
     def is_monotonic_increasing(self):
         """Return ``True`` if all consecutive differences in this coordinate are positive."""
+
+    def isscalar(self):
+        """Return ``True`` if this is a :class:`ScalarCoordinate` (non-dimensional)."""
+        return False
 
     def isdim(self):
         """Return ``True`` if this coordinate is a dimensional coordinate in its parent container."""
@@ -539,6 +540,16 @@ class Coordinate(ABC):
 
     # -- alternative constructors and IO ------------------------------------
 
+    @classmethod
+    @abstractmethod
+    def collect_from_dataset(cls, dataset, name):
+        """Read coordinates of this subclass's kind from an xarray *dataset* variable *name*."""
+
+    @classmethod
+    @abstractmethod
+    def from_block(cls, start, size, step, dim=None, dtype=None):
+        """Construct a coordinate from a start value, element count, and step size."""
+
     def to_dataarray(self):
         """Convert this coordinate to a :class:`~xdas.DataArray` with a single dimension."""
         from ..core.dataarray import DataArray  # TODO: avoid defered import?
@@ -580,19 +591,10 @@ class Coordinate(ABC):
             coords |= subcls.collect_from_dataset(dataset, name)
         return coords
 
-    @classmethod
-    @abstractmethod
-    def collect_from_dataset(cls, dataset, name):
-        """Read coordinates of this subclass's kind from an xarray *dataset* variable *name*."""
-
-    @classmethod
-    @abstractmethod
-    def from_block(cls, start, size, step, dim=None, dtype=None):
-        """Construct a coordinate from a start value, element count, and step size."""
-
     # -- internals ----------------------------------------------------------
 
-    def _assign_parent(self, parent):
+    def assign_parent(self, parent):
+        """Attach this coordinate to its parent :class:`Coordinates` container."""
         self._parent = weakref.ref(parent)
 
 
