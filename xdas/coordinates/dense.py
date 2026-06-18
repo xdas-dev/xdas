@@ -119,10 +119,6 @@ class DenseCoordinate(Coordinate, name="dense"):
         data = np.asarray(data)
         return (data.dtype != np.dtype(object)) and (data.ndim == 1)
 
-    def isdense(self):
-        """Return ``True`` (this is a :class:`DenseCoordinate`)."""
-        return True
-
     def get_indexer(self, value, method=None):
         """
         Return the integer index (or indices) for *value*.

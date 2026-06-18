@@ -99,10 +99,6 @@ class DefaultCoordinate(Coordinate, name="default"):
     def __array_function__(self, func, types, args, kwargs):
         raise NotImplementedError
 
-    def isdefault(self):
-        """Return ``True`` (this is a :class:`DefaultCoordinate`)."""
-        return True
-
     def is_monotonic_increasing(self):
         """Return ``True`` — integer-range coordinates are always increasing."""
         return True

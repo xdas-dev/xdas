@@ -241,10 +241,6 @@ class SampledCoordinate(RegularMixin, Coordinate, name="sampled"):
     def __array_function__(self, func, types, args, kwargs):
         raise NotImplementedError
 
-    def issampled(self):
-        """Return ``True`` (this is a :class:`SampledCoordinate`)."""
-        return True
-
     def get_sampling_interval(self, cast=True):
         """
         Return the sampling interval.

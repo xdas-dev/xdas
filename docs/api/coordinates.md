@@ -60,9 +60,6 @@ Methods
    :toctree: ../_autosummary
 
    Coordinate.to_index
-   Coordinate.isscalar
-   Coordinate.isdense
-   Coordinate.isinterp
 ```
 
 

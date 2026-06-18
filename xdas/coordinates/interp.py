@@ -182,10 +182,6 @@ class InterpCoordinate(RegularMixin, Coordinate, name="interpolated"):
     def __array_function__(self, func, types, args, kwargs):
         raise NotImplementedError
 
-    def isinterp(self):
-        """Return ``True`` (this is an :class:`InterpCoordinate`)."""
-        return True
-
     def get_sampling_interval(self, cast=True):
         """
         Return the median sample spacing across all tie-point segments.

@@ -509,22 +509,6 @@ class Coordinate(ABC):
         """Return ``True`` if this is a :class:`ScalarCoordinate` (non-dimensional)."""
         return False
 
-    def isdefault(self):
-        """Return ``True`` if this is a :class:`DefaultCoordinate` (integer range)."""
-        return False
-
-    def isdense(self):
-        """Return ``True`` if this is a :class:`DenseCoordinate` (explicit numpy array)."""
-        return False
-
-    def isinterp(self):
-        """Return ``True`` if this is an :class:`InterpCoordinate` (piecewise-linear)."""
-        return False
-
-    def issampled(self):
-        """Return ``True`` if this is a :class:`SampledCoordinate` (regularly sampled)."""
-        return False
-
     @abstractmethod
     def concat(self, other):
         """Concatenate *other* coordinate to this one. Subclass must implement."""

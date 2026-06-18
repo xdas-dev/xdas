@@ -9,10 +9,7 @@ from xdas.coordinates import DenseCoordinate, InterpCoordinate, ScalarCoordinate
 class TestCoordinate:
     def test_new(self):
         assert xd.Coordinate(1).isscalar()
-        assert xd.Coordinate([1]).isdense()
-        assert xd.Coordinate({"tie_values": [], "tie_indices": []}).isinterp()
         coord = xd.Coordinate(xd.Coordinate([1]), "dim")
-        assert coord.isdense()
         assert coord.dim == "dim"
 
     def test_empty(self):
@@ -85,13 +82,11 @@ class TestCoordinates:
             {"dim": ("dim", {"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})}
         )
         coord = coords["dim"]
-        assert coord.isinterp()
         assert np.allclose(coord.tie_indices, [0, 8])
         assert np.allclose(coord.tie_values, [100.0, 900.0])
         assert coords.isdim("dim")
         coords = xd.Coordinates({"dim": [1.0, 2.0, 3.0]})
         coord = coords["dim"]
-        assert coord.isdense()
         assert np.allclose(coord.values, [1.0, 2.0, 3.0])
         assert coords.isdim("dim")
         coords = xd.Coordinates(
@@ -188,11 +183,6 @@ class TestCoordinateBase:
         coord = DenseCoordinate([1, 2, 3], "x")
         result = coord.format_index(np.array([-1, 0, 5]), bounds="clip")
         assert np.all(result >= 0)
-
-    def test_isdefault_issampled(self):
-        coord = DenseCoordinate([1, 2, 3], "x")
-        assert not coord.isdefault()
-        assert not coord.issampled()
 
     def test_to_dataset_no_dim(self):
         sc = ScalarCoordinate(42)

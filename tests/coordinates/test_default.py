@@ -74,9 +74,6 @@ class TestDefaultCoordinate:
         assert repr(DefaultCoordinate({"size": 0})) == "empty coordinate"
         assert repr(DefaultCoordinate({"size": 5})) == "0 to 4"
 
-    def test_isdefault(self):
-        assert DefaultCoordinate({"size": 3}).isdefault()
-
     def test_get_sampling_interval(self):
         assert DefaultCoordinate({"size": 3}).get_sampling_interval() == 1
 

@@ -45,7 +45,6 @@ class TestSampledCoordinateBasics:
         assert len(coord) == 3
         assert coord.start == 0.0
         assert coord.end == 3.0
-        assert coord.issampled()
         coord.get_sampling_interval() == 1.0
 
         # mismatched lengths

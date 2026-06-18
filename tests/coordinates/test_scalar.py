@@ -101,11 +101,6 @@ class TestScalarCoordinate:
         with pytest.raises(TypeError):
             ScalarCoordinate.from_block(0, 5, 1)
 
-    def test_isinstance(self):
-        assert ScalarCoordinate(1).isscalar()
-        assert not ScalarCoordinate(1).isdense()
-        assert not ScalarCoordinate(1).isinterp()
-
     def test_empty(self):
         with pytest.raises(TypeError, match="cannot be empty"):
             ScalarCoordinate()

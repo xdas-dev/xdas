@@ -87,11 +87,6 @@ class TestDenseCoordinate:
         assert DenseCoordinate([1, 2, 3]).equals(DenseCoordinate([1, 2, 3]))
         assert not DenseCoordinate([1, 2, 3]).equals(42)
 
-    def test_isinstance(self):
-        assert not DenseCoordinate([1, 2, 3]).isscalar()
-        assert DenseCoordinate([1, 2, 3]).isdense()
-        assert not DenseCoordinate([1, 2, 3]).isinterp()
-
     def test_get_indexer(self):
         assert DenseCoordinate([1, 2, 3]).get_indexer(2) == 1
         assert np.array_equiv(DenseCoordinate([1, 2, 3]).get_indexer([2, 3]), [1, 2])
