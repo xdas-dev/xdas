@@ -48,12 +48,6 @@ class ScalarCoordinate(Coordinate, name="scalar"):
         if value is not None:
             raise ValueError("A scalar coordinate cannot have a `dim` other that None")
 
-    @staticmethod
-    def isvalid(data):
-        """Return ``True`` if *data* converts to a 0-d non-object numpy array."""
-        data = np.asarray(data)
-        return (data.dtype != np.dtype(object)) and (data.ndim == 0)
-
     @property
     def dtype(self):
         """Dtype of the scalar value."""
@@ -74,11 +68,17 @@ class ScalarCoordinate(Coordinate, name="scalar"):
         """Always 1."""
         return 1
 
-    def __repr__(self):
-        return np.array2string(self.data, threshold=0, edgeitems=1)
+    @staticmethod
+    def isvalid(data):
+        """Return ``True`` if *data* converts to a 0-d non-object numpy array."""
+        data = np.asarray(data)
+        return (data.dtype != np.dtype(object)) and (data.ndim == 0)
 
     def __len__(self):
         raise TypeError("scalar coordinate has no length")
+
+    def __repr__(self):
+        return np.array2string(self.data, threshold=0, edgeitems=1)
 
     def __getitem__(self, item):
         raise TypeError("scalar coordinate is not subscriptable")
@@ -96,6 +96,10 @@ class ScalarCoordinate(Coordinate, name="scalar"):
         """Return ``True`` (this is a :class:`ScalarCoordinate`)."""
         return True
 
+    def get_sampling_interval(self, cast=True):
+        """Return ``None`` — scalar coordinates have no sample spacing."""
+        return None
+
     def is_monotonic_increasing(self):
         """Not supported — scalar coordinates have no axis to order."""
         raise TypeError("scalar coordinate has no axis")
@@ -103,10 +107,6 @@ class ScalarCoordinate(Coordinate, name="scalar"):
     def concat(self, other):
         """Not supported — scalar coordinates have no axis to concatenate along."""
         raise TypeError("cannot concatenate scalar coordinate")
-
-    def get_sampling_interval(self, cast=True):
-        """Return ``None`` — scalar coordinates have no sample spacing."""
-        return None
 
     def to_index(self, item, method=None, endpoint=True):
         """Not supported — raises :exc:`NotImplementedError`."""

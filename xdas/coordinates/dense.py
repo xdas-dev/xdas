@@ -37,22 +37,38 @@ class DenseCoordinate(Coordinate, name="dense"):
         self.data = np.asarray(data, dtype=dtype)
         self.dim = dim
 
+    @property
+    def dtype(self):
+        """Dtype of the underlying data array."""
+        return self.data.dtype
+
+    @property
+    def index(self):
+        """A :class:`pandas.Index` view of the underlying data array."""
+        return pd.Index(self.data)
+
+    @staticmethod
+    def isvalid(data):
+        """Return ``True`` if *data* converts to a 1-D non-object numpy array."""
+        data = np.asarray(data)
+        return (data.dtype != np.dtype(object)) and (data.ndim == 1)
+
     def __len__(self):
         return self.data.__len__()
 
     def __repr__(self):
         return np.array2string(self.data, threshold=0, edgeitems=1)
 
+    def __getitem__(self, item):
+        data = self.data.__getitem__(item)
+        dim = None if isscalar(data) else self.dim
+        return Coordinate(data, dim)
+
     def __add__(self, other):
         return self.__class__(self.data + other, self.dim)
 
     def __sub__(self, other):
         return self.__class__(self.data - other, self.dim)
-
-    @property
-    def dtype(self):
-        """Dtype of the underlying data array."""
-        return self.data.dtype
 
     def __array__(self, dtype=None, copy=None):
         return self.data.__array__(dtype, copy=copy)
@@ -62,11 +78,6 @@ class DenseCoordinate(Coordinate, name="dense"):
 
     def __array_function__(self, func, types, args, kwargs):
         return self.data.__array_function__(func, types, args, kwargs)
-
-    def __getitem__(self, item):
-        data = self.data.__getitem__(item)
-        dim = None if isscalar(data) else self.dim
-        return Coordinate(data, dim)
 
     def get_sampling_interval(self, cast=True):
         """
@@ -97,17 +108,6 @@ class DenseCoordinate(Coordinate, name="dense"):
         else:
             zero = 0
         return np.all(np.diff(self.values) > zero)
-
-    @property
-    def index(self):
-        """A :class:`pandas.Index` view of the underlying data array."""
-        return pd.Index(self.data)
-
-    @staticmethod
-    def isvalid(data):
-        """Return ``True`` if *data* converts to a 1-D non-object numpy array."""
-        data = np.asarray(data)
-        return (data.dtype != np.dtype(object)) and (data.ndim == 1)
 
     def get_indexer(self, value, method=None):
         """

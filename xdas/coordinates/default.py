@@ -89,13 +89,13 @@ class DefaultCoordinate(Coordinate, name="default"):
     def __array_function__(self, func, types, args, kwargs):
         raise NotImplementedError
 
-    def is_monotonic_increasing(self):
-        """Return ``True`` — integer-range coordinates are always increasing."""
-        return True
-
     def get_sampling_interval(self, cast=True):
         """Return the sample spacing, always 1 for integer-range coordinates."""
         return 1
+
+    def is_monotonic_increasing(self):
+        """Return ``True`` — integer-range coordinates are always increasing."""
+        return True
 
     def get_indexer(self, value, method=None):
         """Return *value* directly (integer index equals label for range coordinates)."""
