@@ -14,18 +14,18 @@ from xdas.coordinates import (
 
 class TestSampledCoordinateBasics:
     def test_isvalid(self):
-        assert SampledCoordinate.isvalid(
+        assert SampledCoordinate._isvalid(
             {"tie_values": [0.0], "tie_lengths": [1], "sampling_interval": 1.0}
         )
-        assert SampledCoordinate.isvalid(
+        assert SampledCoordinate._isvalid(
             {
                 "tie_values": [np.datetime64("2000-01-01T00:00:00")],
                 "tie_lengths": [1],
                 "sampling_interval": np.timedelta64(1, "s"),
             }
         )
-        assert not SampledCoordinate.isvalid({"tie_values": [0.0], "tie_lengths": [1]})
-        assert not SampledCoordinate.isvalid({})
+        assert not SampledCoordinate._isvalid({"tie_values": [0.0], "tie_lengths": [1]})
+        assert not SampledCoordinate._isvalid({})
 
     def test_init_and_empty(self):
         empty = SampledCoordinate()
@@ -44,7 +44,7 @@ class TestSampledCoordinateBasics:
         )
         assert len(coord) == 3
         assert coord.start == 0.0
-        assert coord.end == 3.0
+        assert coord.end == 2.0
         coord.get_sampling_interval() == 1.0
 
         # mismatched lengths
@@ -89,7 +89,7 @@ class TestSampledCoordinateBasics:
             }
         )
         assert coord.start == t0
-        assert coord.end == t0 + np.timedelta64(2, "s")
+        assert coord.end == t0 + np.timedelta64(1, "s")
         assert coord.get_sampling_interval() == 1
         assert coord.get_sampling_interval(cast=False) == np.timedelta64(1, "s")
 
@@ -144,31 +144,31 @@ class TestSampledCoordinateIndexing:
     def test_get_value_scalar_and_vector(self):
         coord = self.make_coord()
         # scalar
-        assert coord.get_value(0) == 0.0
-        assert coord.get_value(1) == 1.0
-        assert coord.get_value(2) == 2.0
-        assert coord.get_value(3) == 10.0
-        assert coord.get_value(4) == 11.0
+        assert coord._get_value(0) == 0.0
+        assert coord._get_value(1) == 1.0
+        assert coord._get_value(2) == 2.0
+        assert coord._get_value(3) == 10.0
+        assert coord._get_value(4) == 11.0
         # negative index
-        assert coord.get_value(-1) == 11.0
-        assert coord.get_value(-2) == 10.0
-        assert coord.get_value(-3) == 2.0
-        assert coord.get_value(-4) == 1.0
-        assert coord.get_value(-5) == 0.0
+        assert coord._get_value(-1) == 11.0
+        assert coord._get_value(-2) == 10.0
+        assert coord._get_value(-3) == 2.0
+        assert coord._get_value(-4) == 1.0
+        assert coord._get_value(-5) == 0.0
         # vectorized
-        vals = coord.get_value([0, 1, 2, 3, 4, -5, -4, -3, -2, -1])
+        vals = coord._get_value([0, 1, 2, 3, 4, -5, -4, -3, -2, -1])
         assert np.array_equal(
             vals, np.array([0.0, 1.0, 2.0, 10.0, 11.0, 0.0, 1.0, 2.0, 10.0, 11.0])
         )
         # bounds
         with pytest.raises(IndexError):
-            coord.get_value(-6)
+            coord._get_value(-6)
         with pytest.raises(IndexError):
-            coord.get_value(5)
+            coord._get_value(5)
         with pytest.raises(IndexError):
-            coord.get_value([0, 5])
+            coord._get_value([0, 5])
         with pytest.raises(IndexError):
-            coord.get_value([-6, 0])
+            coord._get_value([-6, 0])
 
     def test_values(self):
         coord = self.make_coord()
@@ -268,14 +268,14 @@ class TestSampledCoordinateSliceEdgeCases:
         s2 = coord[-10:10]
         assert s2.equals(coord)
 
-    def test_slice_step_decimate(self):
+    def test_slice_step(self):
         coord = SampledCoordinate(
             {"tie_values": [0.0], "tie_lengths": [10], "sampling_interval": 1.0}
         )
         stepped = coord[::2]
-        decimated = coord.decimate(2)
         assert isinstance(stepped, SampledCoordinate)
-        assert decimated.equals(stepped)
+        assert stepped.sampling_interval == 2.0
+        assert stepped.tie_lengths[0] == 5
 
 
 class TestSampledCoordinateValueBasedIndexing:
@@ -297,22 +297,22 @@ class TestSampledCoordinateValueBasedIndexing:
     def test_get_indexer_exact(self):
         # float
         coord = self.make_coord()
-        assert coord.get_indexer(0.0, method=None) == 0
-        assert coord.get_indexer(10.0, method=None) == 3
+        assert coord._get_indexer(0.0, method=None) == 0
+        assert coord._get_indexer(10.0, method=None) == 3
         with pytest.raises(KeyError):
-            coord.get_indexer(1.5, method=None)
+            coord._get_indexer(1.5, method=None)
         with pytest.raises(KeyError):
-            coord.get_indexer(5.0, method=None)
+            coord._get_indexer(5.0, method=None)
 
         # datetime
         coord = self.make_coord_datetime()
         t0 = coord[0].values
-        assert coord.get_indexer(t0, method=None) == 0
-        assert coord.get_indexer(t0 + np.timedelta64(10, "s"), method=None) == 3
+        assert coord._get_indexer(t0, method=None) == 0
+        assert coord._get_indexer(t0 + np.timedelta64(10, "s"), method=None) == 3
         with pytest.raises(KeyError):
-            coord.get_indexer(t0 + np.timedelta64(1500, "ms"), method=None)
+            coord._get_indexer(t0 + np.timedelta64(1500, "ms"), method=None)
         with pytest.raises(KeyError):
-            coord.get_indexer(t0 + np.timedelta64(5, "s"), method=None)
+            coord._get_indexer(t0 + np.timedelta64(5, "s"), method=None)
 
     def test_get_indexer_nearest(self):
         # float
@@ -321,10 +321,10 @@ class TestSampledCoordinateValueBasedIndexing:
         expected = [0, 0, 1, 1, 3, 4, 0, 4, 2, 3, 3]
         # scalar
         for v, e in zip(vals, expected):
-            idx = coord.get_indexer(v, method="nearest")
+            idx = coord._get_indexer(v, method="nearest")
             assert idx == e
         # vectorized
-        idxs = coord.get_indexer(vals, method="nearest")
+        idxs = coord._get_indexer(vals, method="nearest")
         assert np.array_equal(idxs, np.array(expected))
 
         # datetime
@@ -333,10 +333,10 @@ class TestSampledCoordinateValueBasedIndexing:
         vals = t0 + np.rint(1000 * np.array(vals)).astype("timedelta64[ms]")
         # scalar
         for v, e in zip(vals, expected):
-            idx = coord.get_indexer(v, method="nearest")
+            idx = coord._get_indexer(v, method="nearest")
             assert idx == e
         # vectorized
-        idxs = coord.get_indexer(vals, method="nearest")
+        idxs = coord._get_indexer(vals, method="nearest")
         assert np.array_equal(idxs, np.array(expected))
 
     def test_get_indexer_ffill(self):
@@ -346,15 +346,15 @@ class TestSampledCoordinateValueBasedIndexing:
         expected = [0, 0, 0, 1, 3, 3, 4, 2, 2, 2]
         # scalar
         for v, e in zip(vals, expected):
-            idx = coord.get_indexer(v, method="ffill")
+            idx = coord._get_indexer(v, method="ffill")
             assert idx == e
         with pytest.raises(KeyError):
-            coord.get_indexer(-10.0, method="ffill")
+            coord._get_indexer(-10.0, method="ffill")
         # vectorized
-        idxs = coord.get_indexer(vals, method="ffill")
+        idxs = coord._get_indexer(vals, method="ffill")
         assert np.array_equal(idxs, np.array(expected))
         with pytest.raises(KeyError):
-            coord.get_indexer([-10.0, 0.0], method="ffill")
+            coord._get_indexer([-10.0, 0.0], method="ffill")
 
         # datetime
         coord = self.make_coord_datetime()
@@ -362,15 +362,15 @@ class TestSampledCoordinateValueBasedIndexing:
         vals = t0 + np.rint(1000 * np.array(vals)).astype("timedelta64[ms]")
         # scalar
         for v, e in zip(vals, expected):
-            idx = coord.get_indexer(v, method="ffill")
+            idx = coord._get_indexer(v, method="ffill")
             assert idx == e
         with pytest.raises(KeyError):
-            coord.get_indexer(t0 - np.timedelta64(10, "s"), method="ffill")
+            coord._get_indexer(t0 - np.timedelta64(10, "s"), method="ffill")
         # vectorized
-        idxs = coord.get_indexer(vals, method="ffill")
+        idxs = coord._get_indexer(vals, method="ffill")
         assert np.array_equal(idxs, np.array(expected))
         with pytest.raises(KeyError):
-            coord.get_indexer([t0 - np.timedelta64(10, "s"), t0], method="ffill")
+            coord._get_indexer([t0 - np.timedelta64(10, "s"), t0], method="ffill")
 
     def test_get_indexer_bfill(self):
         # float
@@ -379,15 +379,15 @@ class TestSampledCoordinateValueBasedIndexing:
         expected = [0, 1, 1, 1, 4, 4, 0, 3, 3, 3]
         # scalar
         for v, e in zip(vals, expected):
-            idx = coord.get_indexer(v, method="bfill")
+            idx = coord._get_indexer(v, method="bfill")
             assert idx == e
         with pytest.raises(KeyError):
-            coord.get_indexer(20.0, method="bfill")
+            coord._get_indexer(20.0, method="bfill")
         # vectorized
-        idxs = coord.get_indexer(vals, method="bfill")
+        idxs = coord._get_indexer(vals, method="bfill")
         assert np.array_equal(idxs, np.array(expected))
         with pytest.raises(KeyError):
-            coord.get_indexer([11.0, 20.0], method="bfill")
+            coord._get_indexer([11.0, 20.0], method="bfill")
 
         # datetime
         coord = self.make_coord_datetime()
@@ -395,40 +395,40 @@ class TestSampledCoordinateValueBasedIndexing:
         vals = t0 + np.rint(1000 * np.array(vals)).astype("timedelta64[ms]")
         # scalar
         for v, e in zip(vals, expected):
-            idx = coord.get_indexer(v, method="bfill")
+            idx = coord._get_indexer(v, method="bfill")
             assert idx == e
         with pytest.raises(KeyError):
-            coord.get_indexer(t0 + np.timedelta64(20, "s"), method="bfill")
+            coord._get_indexer(t0 + np.timedelta64(20, "s"), method="bfill")
         # vectorized
-        idxs = coord.get_indexer(vals, method="bfill")
+        idxs = coord._get_indexer(vals, method="bfill")
         assert np.array_equal(idxs, np.array(expected))
         with pytest.raises(KeyError):
-            coord.get_indexer([t0, t0 + np.timedelta64(20, "s")], method="bfill")
+            coord._get_indexer([t0, t0 + np.timedelta64(20, "s")], method="bfill")
 
     def test_get_indexer_overlap(self):
         coord = SampledCoordinate(
             {"tie_values": [0.0, 2.0], "tie_lengths": [3, 3], "sampling_interval": 1.0}
         )  # segments: [0,1,2] and [2,3,4]
-        assert coord.get_indexer(1.0) == 1
-        assert coord.get_indexer(3.0) == 4
+        assert coord._get_indexer(1.0) == 1
+        assert coord._get_indexer(3.0) == 4
         with pytest.raises(KeyError):
-            coord.get_indexer(2.0)
+            coord._get_indexer(2.0)
         coord = SampledCoordinate(
             {"tie_values": [0.0, 2.0], "tie_lengths": [5, 5], "sampling_interval": 1.0}
         )  # segments: [0,1,2,3,4] and [2,3,4,5,6]
-        assert coord.get_indexer(1.0) == 1
-        assert coord.get_indexer(6.0) == 9
+        assert coord._get_indexer(1.0) == 1
+        assert coord._get_indexer(6.0) == 9
         with pytest.raises(KeyError):
-            coord.get_indexer(2.0)
+            coord._get_indexer(2.0)
         with pytest.raises(KeyError):
-            coord.get_indexer(2.5, method="nearest")
+            coord._get_indexer(2.5, method="nearest")
         with pytest.raises(KeyError):
-            coord.get_indexer(4.0)
+            coord._get_indexer(4.0)
 
     def test_get_indexer_invalid_method(self):
         coord = self.make_coord()
         with pytest.raises(ValueError):
-            coord.get_indexer(0.0, method="invalid")
+            coord._get_indexer(0.0, method="invalid")
 
 
 class TestSampledCoordinateConcat:
@@ -442,7 +442,7 @@ class TestSampledCoordinateConcat:
         expected = SampledCoordinate(
             {"tie_values": [0.0, 10.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
         )
-        result = coord1.concat(coord2)
+        result = coord1._concat(coord2)
         assert result.equals(expected)
 
     def test_concat_two_datetime_coords(self):
@@ -470,7 +470,7 @@ class TestSampledCoordinateConcat:
                 "sampling_interval": np.timedelta64(1, "s"),
             }
         )
-        result = coord1.concat(coord2)
+        result = coord1._concat(coord2)
         assert result.equals(expected)
 
     def test_concat_empty(self):
@@ -478,8 +478,8 @@ class TestSampledCoordinateConcat:
             {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
         )
         coord2 = SampledCoordinate()
-        assert coord1.concat(coord2).equals(coord1)
-        assert coord2.concat(coord1).equals(coord1)
+        assert coord1._concat(coord2).equals(coord1)
+        assert coord2._concat(coord1).equals(coord1)
 
     def test_concat_sampling_interval_mismatch(self):
         coord1 = SampledCoordinate(
@@ -489,7 +489,7 @@ class TestSampledCoordinateConcat:
             {"tie_values": [10.0], "tie_lengths": [2], "sampling_interval": 2.0}
         )
         with pytest.raises(ValueError):
-            coord1.concat(coord2)
+            coord1._concat(coord2)
 
     def test_concat_dtype_mismatch(self):
         coord1 = SampledCoordinate(
@@ -503,7 +503,7 @@ class TestSampledCoordinateConcat:
             }
         )
         with pytest.raises(ValueError):
-            coord1.concat(coord2)
+            coord1._concat(coord2)
 
     def test_concat_type_mismatch(self):
         coord1 = SampledCoordinate(
@@ -511,7 +511,7 @@ class TestSampledCoordinateConcat:
         )
         coord2 = DenseCoordinate(np.array([10.0, 11.0]))
         with pytest.raises(TypeError):
-            coord1.concat(coord2)
+            coord1._concat(coord2)
 
     def test_concat_dimension_mismatch(self):
         coord1 = SampledCoordinate(
@@ -523,7 +523,7 @@ class TestSampledCoordinateConcat:
             dim="depth",
         )
         with pytest.raises(ValueError):
-            coord1.concat(coord2)
+            coord1._concat(coord2)
 
 
 class TestSampledCoordinateDiscontinuitiesAvailabilities:
@@ -581,7 +581,7 @@ class TestSampledCoordinateDecimate:
         coord = SampledCoordinate(
             {"tie_values": [0.0], "tie_lengths": [10], "sampling_interval": 1.0}
         )
-        decimated = coord.decimate(2)
+        decimated = coord[::2]
         assert decimated.sampling_interval == 2.0
         assert decimated.tie_lengths[0] == 5  # (10 + 2 - 1) // 2 = 5
 
@@ -663,20 +663,20 @@ class TestSampledCoordinateGetIndexer:
 
     def test_get_indexer_exact(self):
         coord = self.make_coord()
-        idx = coord.get_indexer(0.0, method="nearest")
+        idx = coord._get_indexer(0.0, method="nearest")
         assert idx == 0
-        idx = coord.get_indexer(10.0, method="nearest")
+        idx = coord._get_indexer(10.0, method="nearest")
         assert idx == 3
 
     def test_get_indexer_nearest(self):
         coord = self.make_coord()
-        idx = coord.get_indexer(0.5, method="nearest")
+        idx = coord._get_indexer(0.5, method="nearest")
         assert idx in [0, 1]
 
     def test_get_indexer_out_of_bounds(self):
         coord = self.make_coord()
         with pytest.raises(KeyError):
-            coord.get_indexer(100.0)
+            coord._get_indexer(100.0)
 
 
 class TestSampledCoordinateArithmetic:
@@ -718,37 +718,36 @@ class TestSampledCoordinateDatetime:
 
     def test_get_value_datetime(self):
         coord = self.make_dt_coord()
-        assert coord.get_value(1) == np.datetime64("2000-01-01T00:00:01")
-        assert coord.get_value(4) == np.datetime64("2000-01-01T00:00:11")
+        assert coord._get_value(1) == np.datetime64("2000-01-01T00:00:01")
+        assert coord._get_value(4) == np.datetime64("2000-01-01T00:00:11")
         with pytest.raises(IndexError):
-            coord.get_value(5)
+            coord._get_value(5)
 
     def test_get_indexer_datetime_methods(self):
         coord = self.make_dt_coord()
         t = np.datetime64("2000-01-01T00:00:01.500")
         # exact required when method=None -> should raise
         with pytest.raises(KeyError):
-            coord.get_indexer(t)
+            coord._get_indexer(t)
         # method variants
-        assert coord.get_indexer(t, method="nearest") in [1, 2]
-        assert coord.get_indexer(t, method="ffill") == 1
-        assert coord.get_indexer(t, method="bfill") == 2
+        assert coord._get_indexer(t, method="nearest") in [1, 2]
+        assert coord._get_indexer(t, method="ffill") == 1
+        assert coord._get_indexer(t, method="bfill") == 2
         # bounds
         with pytest.raises(KeyError):
-            coord.get_indexer(np.datetime64("1999-12-31T23:59:59"))
+            coord._get_indexer(np.datetime64("1999-12-31T23:59:59"))
         with pytest.raises(KeyError):
-            coord.get_indexer(np.datetime64("2000-01-01T00:00:12"))
+            coord._get_indexer(np.datetime64("2000-01-01T00:00:12"))
         # string input
-        assert coord.get_indexer("2000-01-01T00:00:01.500", method="nearest") in [1, 2]
+        assert coord._get_indexer("2000-01-01T00:00:01.500", method="nearest") in [1, 2]
         # invalid method
         with pytest.raises(ValueError):
-            coord.get_indexer(t, method="bad")
+            coord._get_indexer(t, method="bad")
 
     def test_start_end_properties_datetime(self):
         coord = self.make_dt_coord()
         assert coord.start == np.datetime64("2000-01-01T00:00:00")
-        # end is last tie_value + sampling_interval * last_length
-        assert coord.end == np.datetime64("2000-01-01T00:00:12")
+        assert coord.end == np.datetime64("2000-01-01T00:00:11")
 
 
 class TestSampledCoordinateIndexerEdgeCases:
@@ -757,14 +756,14 @@ class TestSampledCoordinateIndexerEdgeCases:
             {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
         )
         with pytest.raises(ValueError):
-            coord.get_indexer(0.0, method="bad")
+            coord._get_indexer(0.0, method="bad")
 
     def test_non_increasing_tie_values_raises(self):
         coord = SampledCoordinate(
             {"tie_values": [2.0, 1.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
         )
         with pytest.raises(ValueError):
-            coord.get_indexer(2.0)
+            coord._get_indexer(2.0)
 
 
 class TestSampledCoordinateToNetCDF:
@@ -799,7 +798,7 @@ class TestSampledCoordinateToNetCDF:
 
         # prepare metadata
         for coord in da.coords.values():
-            dataset, variable_attrs = coord.to_dataset(dataset, variable_attrs)
+            dataset, variable_attrs = coord._to_dataset(dataset, variable_attrs)
 
         dataset["data"] = xr.DataArray(attrs=variable_attrs)
         coords = xd.Coordinates.from_dataset(dataset, "data")
@@ -872,11 +871,7 @@ class TestNotImplementedMethods:
             {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
         )
         with pytest.raises(NotImplementedError):
-            coord.__array_ufunc__(None, None)
-        with pytest.raises(NotImplementedError):
-            coord.__array_function__(None, None, None, None)
-        with pytest.raises(NotImplementedError):
-            coord.from_array(None)
+            coord[::-1]
 
 
 class TestSampledCoordinateMissingBranches:
@@ -906,8 +901,8 @@ class TestSampledCoordinateMissingBranches:
 
     def test_get_indexer_bfill_in_bounds(self):
         coord = self.make_coord()
-        assert coord.get_indexer(0.0, method="bfill") == 0
-        assert coord.get_indexer(0.5, method="bfill") == 1
+        assert coord._get_indexer(0.0, method="bfill") == 0
+        assert coord._get_indexer(0.5, method="bfill") == 1
 
     def test_get_split_indices_overlaps_tolerance_false(self):
         # Build a coord with an actual overlap (segment 2 starts before segment 1 ends)
@@ -931,13 +926,13 @@ class TestSampledCoordinateMissingBranches:
         coord = SampledCoordinate(
             {"tie_values": [0.0, 5.0], "tie_lengths": [5, 5], "sampling_interval": 1.0}
         )
-        assert coord.is_monotonic_increasing() is True
+        assert coord._is_monotonic_increasing() is True
 
     def test_is_monotonic_increasing_false(self):
         coord = SampledCoordinate(
             {"tie_values": [0.0, 2.0], "tie_lengths": [5, 5], "sampling_interval": 1.0}
         )
-        assert coord.is_monotonic_increasing() is False
+        assert coord._is_monotonic_increasing() is False
 
     def test_is_monotonic_increasing_multi_segment(self):
         # Three segments all increasing — must not raise ValueError from bool()
@@ -948,4 +943,4 @@ class TestSampledCoordinateMissingBranches:
                 "sampling_interval": 1.0,
             }
         )
-        assert coord.is_monotonic_increasing() is True
+        assert coord._is_monotonic_increasing() is True

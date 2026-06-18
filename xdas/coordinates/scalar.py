@@ -35,7 +35,7 @@ class ScalarCoordinate(Coordinate, name="scalar"):
         data, dim = parse(data, dim)
         if dim is not None:
             raise ValueError("a scalar coordinate cannot be a dim")
-        if not self.__class__.isvalid(data):
+        if not self._isvalid(data):
             raise TypeError("`data` must be scalar-like")
         self.data = np.asarray(data, dtype=dtype)
 
@@ -76,7 +76,7 @@ class ScalarCoordinate(Coordinate, name="scalar"):
 
     @staticmethod
     @override
-    def isvalid(data):
+    def _isvalid(data):
         """Return ``True`` if *data* converts to a 0-d non-object numpy array."""
         data = np.asarray(data)
         return (data.dtype != np.dtype(object)) and (data.ndim == 0)
@@ -84,6 +84,22 @@ class ScalarCoordinate(Coordinate, name="scalar"):
     @override
     def __len__(self):
         raise TypeError("scalar coordinate has no length")
+
+    @override
+    def _get_value(self, index):
+        raise TypeError("scalar coordinate has no elements to index")
+
+    @override
+    def _get_indexer(self, value, method=None):
+        raise NotImplementedError("cannot get index of scalar coordinate")
+
+    @override
+    def _slice(self, slc):
+        raise TypeError("scalar coordinate is not sliceable")
+
+    @override
+    def _to_dataset(self, dataset, attrs):
+        return super()._to_dataset(dataset, attrs)
 
     def __repr__(self):
         return np.array2string(self.data, threshold=0, edgeitems=1)
@@ -112,7 +128,7 @@ class ScalarCoordinate(Coordinate, name="scalar"):
         return None
 
     @override
-    def is_monotonic_increasing(self):
+    def _is_monotonic_increasing(self):
         """Not supported — scalar coordinates have no axis to order."""
         raise TypeError("scalar coordinate has no axis")
 
@@ -122,13 +138,13 @@ class ScalarCoordinate(Coordinate, name="scalar"):
         raise NotImplementedError("cannot get index of scalar coordinate")
 
     @override
-    def concat(self, other):
+    def _concat(self, other):
         """Not supported — scalar coordinates have no axis to concatenate along."""
         raise TypeError("cannot concatenate scalar coordinate")
 
     @classmethod
     @override
-    def collect_from_dataset(cls, dataset, name):
+    def _collect_from_dataset(cls, dataset, name):
         """Scalar coordinates are not stored separately in a dataset; return an empty mapping."""
         return {}
 

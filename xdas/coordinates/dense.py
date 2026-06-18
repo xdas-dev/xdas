@@ -32,7 +32,7 @@ class DenseCoordinate(Coordinate, name="dense"):
 
         # parse data
         data, dim = parse(data, dim)
-        if not self.isvalid(data):
+        if not self._isvalid(data):
             raise TypeError("`data` must be array-like")
 
         # store data
@@ -51,7 +51,7 @@ class DenseCoordinate(Coordinate, name="dense"):
 
     @staticmethod
     @override
-    def isvalid(data):
+    def _isvalid(data):
         """Return ``True`` if *data* converts to a 1-D non-object numpy array."""
         data = np.asarray(data)
         return (data.dtype != np.dtype(object)) and (data.ndim == 1)
@@ -59,6 +59,18 @@ class DenseCoordinate(Coordinate, name="dense"):
     @override
     def __len__(self):
         return self.data.__len__()
+
+    @override
+    def _get_value(self, index):
+        return self.data[index]
+
+    @override
+    def _slice(self, slc):
+        return self.__class__(self.data[slc], self.dim)
+
+    @override
+    def _to_dataset(self, dataset, attrs):
+        return super()._to_dataset(dataset, attrs)
 
     def __repr__(self):
         return np.array2string(self.data, threshold=0, edgeitems=1)
@@ -108,14 +120,14 @@ class DenseCoordinate(Coordinate, name="dense"):
         return delta
 
     @override
-    def is_monotonic_increasing(self):
+    def _is_monotonic_increasing(self):
         if np.issubdtype(self.dtype, np.datetime64):
             zero = np.timedelta64(0)
         else:
             zero = 0
         return np.all(np.diff(self.values) > zero)
 
-    def get_indexer(self, value, method=None):
+    def _get_indexer(self, value, method=None):
         """
         Return the integer index (or indices) for *value*.
 
@@ -144,19 +156,7 @@ class DenseCoordinate(Coordinate, name="dense"):
         return out
 
     @override
-    def slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
-        """Return an integer :class:`slice` for label range [*start*, *stop*] via :class:`pandas.Index`."""
-        slc = self.index.slice_indexer(start, stop, step)
-        if (
-            (not endpoint)
-            and (stop is not None)
-            and (self[slc.stop - 1].values == stop)
-        ):
-            slc = slice(slc.start, slc.stop - 1, slc.step)
-        return slc
-
-    @override
-    def concat(self, other):
+    def _concat(self, other):
         """Concatenate *other* :class:`DenseCoordinate` values to this one."""
         if not isinstance(other, self.__class__):
             raise TypeError(f"cannot concatenate {type(other)} to {self.__class__}")
@@ -184,7 +184,7 @@ class DenseCoordinate(Coordinate, name="dense"):
 
     @classmethod
     @override
-    def collect_from_dataset(cls, dataset, name):
+    def _collect_from_dataset(cls, dataset, name):
         """Extract all coordinates from an xarray *dataset* variable *name* as plain arrays."""
         return {
             name: (

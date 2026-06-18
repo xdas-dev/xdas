@@ -12,7 +12,6 @@ from typing_extensions import override
 from .core import (
     Coordinate,
     SampledMixin,
-    format_datetime,
     is_monotonic_increasing,
     parse,
     parse_tolerance,
@@ -54,7 +53,7 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
 
         # parse data
         data, dim = parse(data, dim)
-        if not self.__class__.isvalid(data):
+        if not self.__class__._isvalid(data):
             raise ValueError(
                 "`data` must be dict-like and contain `tie_values`, `tie_lengths`, and "
                 "`sampling_interval`"
@@ -124,44 +123,32 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
         return self.data["sampling_interval"]
 
     @property
-    @override
-    def dtype(self):
-        """Dtype of the tie values (and of all materialised coordinate values)."""
-        return self.tie_values.dtype
-
-    @property
     def tie_indices(self):
         """Start integer index of each segment within the full coordinate array."""
         return np.concatenate(([0], np.cumsum(self.tie_lengths[:-1])))
 
     @property
     @override
-    def empty(self):
-        """``True`` if no segments have been set."""
-        return self.tie_values.shape == (0,)
+    def dtype(self):
+        return self.tie_values.dtype
 
-    @property
-    def indices(self):
-        """Full integer index array from 0 to ``len(self) - 1``."""
-        if self.empty:
-            return np.array([], dtype="int")
-        else:
-            return np.arange(len(self))
+    @classmethod
+    @override
+    def from_block(cls, start, size, step, dim=None, dtype=None):
+        data = {
+            "tie_values": [start],
+            "tie_lengths": [size],
+            "sampling_interval": step,
+        }
+        return cls(data, dim=dim, dtype=dtype)
 
-    @property
-    def start(self):
-        """Value at index 0 (first tie value)."""
-        return self.tie_values[0]
-
-    @property
-    def end(self):
-        """Value one step past the last sample (exclusive upper bound)."""
-        return self.tie_values[-1] + self.sampling_interval * self.tie_lengths[-1]
+    @override
+    def __len__(self):
+        return sum(self.tie_lengths)
 
     @staticmethod
     @override
-    def isvalid(data):
-        """Return ``True`` if *data* has ``tie_values``, ``tie_lengths``, and ``sampling_interval`` keys."""
+    def _isvalid(data):
         match data:
             case {
                 "tie_values": _,
@@ -173,157 +160,21 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
                 return False
 
     @override
-    def __len__(self):
-        if self.empty:
-            return 0
-        else:
-            return sum(self.tie_lengths)
-
-    def __repr__(self):
-        if self.empty:
-            return "empty coordinate"
-        elif len(self) == 1:
-            return f"{self.tie_values[0]}"
-        else:
-            if np.issubdtype(self.dtype, np.floating):
-                return f"{self.start:.3f} to {self.end:.3f}"
-            elif np.issubdtype(self.dtype, np.datetime64):
-                start_str = format_datetime(self.start)
-                end_str = format_datetime(self.end)
-                return f"{start_str} to {end_str}"
-            else:
-                return f"{self.start} to {self.end}"
+    def _is_monotonic_increasing(self):
+        return not self.get_split_indices(
+            "overlaps", tolerance=False
+        ).size  # TODO: do not clall split_indices
 
     @override
-    def __getitem__(self, item):
-        if isinstance(item, slice):
-            return self.slice_index(item)
-        else:
-            return Coordinate(
-                self.get_value(item), None if np.isscalar(item) else self.dim
-            )
-
-    def __add__(self, other):
-        return self.__class__(
-            {
-                "tie_values": self.tie_values + other,
-                "tie_lengths": self.tie_lengths,
-                "sampling_interval": self.sampling_interval,
-            },
-            self.dim,
-        )
-
-    def __sub__(self, other):
-        return self.__class__(
-            {
-                "tie_values": self.tie_values - other,
-                "tie_lengths": self.tie_lengths,
-                "sampling_interval": self.sampling_interval,
-            },
-            self.dim,
-        )
-
-    @override
-    def __array__(self, dtype=None, copy=None):
-        if self.empty:
-            out = np.array([], dtype=self.dtype)
-        else:
-            out = self.get_value(self.indices)
-        if dtype is not None:
-            out = out.__array__(dtype)
-        return out
-
-    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        raise NotImplementedError
-
-    def __array_function__(self, func, types, args, kwargs):
-        raise NotImplementedError
-
-    @override
-    def get_sampling_interval(self, cast=True):
-        """
-        Return the sampling interval.
-
-        Parameters
-        ----------
-        cast : bool, optional
-            If ``True`` (default), cast timedelta64 to seconds (float).
-        """
-        delta = self.sampling_interval
-        if cast and np.issubdtype(delta.dtype, np.timedelta64):
-            delta = delta / np.timedelta64(1, "s")
-        return delta
-
-    @override
-    def is_monotonic_increasing(self):
-        """Return ``True`` if no segment starts before the end of the previous one."""
-        return not self.get_split_indices("overlaps", tolerance=False).size
-
-    @override
-    def get_value(self, index):
-        """Compute coordinate value(s) at integer position(s) *index* using the stored segments."""
-        index = self.format_index(index, bounds="raise")
+    def _get_value(self, index):
+        index = self.format_index(index, bounds="raise")  # TODO: move outside
         reference = np.searchsorted(self.tie_indices, index, side="right") - 1
         return self.tie_values[reference] + (
             (index - self.tie_indices[reference]) * self.sampling_interval
         )
 
-    def slice_index(self, index_slice):
-        """Return a new :class:`SampledCoordinate` for the integer slice *index_slice*."""
-        # normalize slice
-        start, stop, step = index_slice.indices(len(self))
-
-        if step < 0:
-            raise NotImplementedError("negative slice step is not implemented")
-
-        # align stop
-        stop += (start - stop) % step  # TODO: check for negative step
-
-        # get relative start and stop within each tie
-        q, r = np.divmod(start - self.tie_indices, step)
-        lo = np.maximum(q, 0) * step + r
-
-        q, r = np.divmod(self.tie_indices + self.tie_lengths - stop, step)
-        hi = self.tie_lengths - np.maximum(q, 0) * step + r
-
-        # filter empty segments
-        mask = hi > lo
-        lo = lo[mask]
-        hi = hi[mask]
-
-        # compute new tie values, tie lengths and sampling interval
-        tie_values = self.tie_values[mask] + lo * self.sampling_interval
-        tie_lengths = (hi - lo) // step
-        sampling_interval = self.sampling_interval * step
-
-        # build new coordinate
-        data = {
-            "tie_values": tie_values,
-            "tie_lengths": tie_lengths,
-            "sampling_interval": sampling_interval,
-        }
-        return self.__class__(data, self.dim)
-
-    def get_indexer(self, value, method=None):
-        """
-        Return the integer index for label *value* using the segment structure.
-
-        Parameters
-        ----------
-        value : scalar, str (ISO datetime), or array-like
-            Label(s) to locate.
-        method : {None, "nearest", "ffill", "bfill"}, optional
-            How to handle values that fall in gaps or between samples.
-
-        Returns
-        -------
-        int or numpy.ndarray
-
-        Raises
-        ------
-        KeyError
-            If *value* falls in an overlap region or is not found (exact mode).
-        """
+    @override
+    def _get_indexer(self, value, method=None):
         if isinstance(value, str):
             value = np.datetime64(value)
         else:
@@ -395,7 +246,43 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
         return self.tie_indices[reference] + offset
 
     @override
-    def concat(self, other):
+    def _slice(self, slc):
+        # normalize slice
+        start, stop, step = slc.indices(len(self))
+
+        if step < 0:
+            raise NotImplementedError("negative slice step is not implemented")
+
+        # align stop
+        stop += (start - stop) % step  # TODO: check for negative step
+
+        # get relative start and stop within each tie
+        q, r = np.divmod(start - self.tie_indices, step)
+        lo = np.maximum(q, 0) * step + r
+
+        q, r = np.divmod(self.tie_indices + self.tie_lengths - stop, step)
+        hi = self.tie_lengths - np.maximum(q, 0) * step + r
+
+        # filter empty segments
+        mask = hi > lo
+        lo = lo[mask]
+        hi = hi[mask]
+
+        # compute new tie values, tie lengths and sampling interval
+        tie_values = self.tie_values[mask] + lo * self.sampling_interval
+        tie_lengths = (hi - lo) // step
+        sampling_interval = self.sampling_interval * step
+
+        # build new coordinate
+        data = {
+            "tie_values": tie_values,
+            "tie_lengths": tie_lengths,
+            "sampling_interval": sampling_interval,
+        }
+        return self.__class__(data, self.dim)
+
+    @override
+    def _concat(self, other):
         """Append *other* :class:`SampledCoordinate` segments after this one."""
         if not isinstance(other, self.__class__):
             raise TypeError(f"cannot concatenate {type(other)} to {self.__class__}")
@@ -422,9 +309,108 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
             self.dim,
         )
 
-    def decimate(self, q):
-        """Return a new coordinate keeping every *q*-th sample (integer decimation)."""
-        return self[::q]
+    @override
+    def _to_dataset(self, dataset, attrs):
+        """Write sampling metadata into an xarray *dataset* using CF tie-point conventions."""
+        mapping = f"{self.name}: {self.name}_sampling"
+        if "coordinate_sampling" in attrs:
+            attrs["coordinate_sampling"] += " " + mapping
+        else:
+            attrs["coordinate_sampling"] = mapping
+        tie_values = (
+            self.tie_values.astype("M8[ns]")
+            if np.issubdtype(self.tie_values.dtype, np.datetime64)
+            else self.tie_values
+        )
+        tie_lengths = self.tie_lengths
+        interp_attrs = {
+            "tie_point_mapping": f"{self.dim}: {self.name}_values {self.name}_lengths",
+        }
+
+        # timedelta
+        if np.issubdtype(self.sampling_interval.dtype, np.timedelta64):
+            code, count = np.datetime_data(self.sampling_interval.dtype)
+            interp_attrs["dtype"] = "timedelta64[ns]"
+            interp_attrs["units"] = CODE_TO_UNITS[code]
+            sampling_interval = count * self.sampling_interval.astype(int)
+        else:
+            sampling_interval = self.sampling_interval
+
+        dataset.update(
+            {
+                f"{self.name}_sampling": ((), sampling_interval, interp_attrs),
+                f"{self.name}_values": (f"{self.name}_points", tie_values),
+                f"{self.name}_lengths": (f"{self.name}_points", tie_lengths),
+            }
+        )
+        return dataset, attrs
+
+    @classmethod
+    @override
+    def _collect_from_dataset(cls, dataset, name):
+        """Read sampled coordinates from *dataset* using the ``coordinate_sampling`` attribute."""
+        coords = {}
+        mapping = dataset[name].attrs.pop("coordinate_sampling", None)
+        if mapping is not None:
+            matches = re.findall(r"(\w+): (\w+)", mapping)
+            for match in matches:
+                name, sampling = match
+                dim, values, lengths = re.match(
+                    r"(\w+): (\w+) (\w+)", dataset[sampling].attrs["tie_point_mapping"]
+                ).groups()
+                data = {
+                    "tie_values": dataset[values].values,
+                    "tie_lengths": dataset[lengths].values,
+                    "sampling_interval": dataset[sampling].values[()],
+                }
+
+                # timedelta
+                if (
+                    "dtype" in dataset[sampling].attrs
+                    and "units" in dataset[sampling].attrs
+                ):
+                    data["sampling_interval"] = np.timedelta64(
+                        data["sampling_interval"],
+                        UNITS_TO_CODE[dataset[sampling].attrs.pop("units")],
+                    ).astype(dataset[sampling].attrs.pop("dtype"))
+
+                coords[name] = Coordinate(data, dim)
+        return coords
+
+    def __add__(self, other):
+        return self.__class__(
+            {
+                "tie_values": self.tie_values + other,
+                "tie_lengths": self.tie_lengths,
+                "sampling_interval": self.sampling_interval,
+            },
+            self.dim,
+        )
+
+    def __sub__(self, other):
+        return self.__class__(
+            {
+                "tie_values": self.tie_values - other,
+                "tie_lengths": self.tie_lengths,
+                "sampling_interval": self.sampling_interval,
+            },
+            self.dim,
+        )
+
+    @override
+    def get_sampling_interval(self, cast=True):
+        """
+        Return the sampling interval.
+
+        Parameters
+        ----------
+        cast : bool, optional
+            If ``True`` (default), cast timedelta64 to seconds (float).
+        """
+        delta = self.sampling_interval
+        if cast and np.issubdtype(delta.dtype, np.timedelta64):
+            delta = delta / np.timedelta64(1, "s")
+        return delta
 
     @override
     def simplify(self, tolerance=None):
@@ -509,87 +495,3 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
                     mask = deltas < -tolerance
 
         return indices[mask]
-
-    @classmethod
-    def from_array(cls, arr, dim=None, sampling_interval=None):
-        """Not supported — raises :exc:`NotImplementedError`."""
-        raise NotImplementedError("from_array is not implemented for SampledCoordinate")
-
-    @override
-    def to_dataset(self, dataset, attrs):
-        """Write sampling metadata into an xarray *dataset* using CF tie-point conventions."""
-        mapping = f"{self.name}: {self.name}_sampling"
-        if "coordinate_sampling" in attrs:
-            attrs["coordinate_sampling"] += " " + mapping
-        else:
-            attrs["coordinate_sampling"] = mapping
-        tie_values = (
-            self.tie_values.astype("M8[ns]")
-            if np.issubdtype(self.tie_values.dtype, np.datetime64)
-            else self.tie_values
-        )
-        tie_lengths = self.tie_lengths
-        interp_attrs = {
-            "tie_point_mapping": f"{self.dim}: {self.name}_values {self.name}_lengths",
-        }
-
-        # timedelta
-        if np.issubdtype(self.sampling_interval.dtype, np.timedelta64):
-            code, count = np.datetime_data(self.sampling_interval.dtype)
-            interp_attrs["dtype"] = "timedelta64[ns]"
-            interp_attrs["units"] = CODE_TO_UNITS[code]
-            sampling_interval = count * self.sampling_interval.astype(int)
-        else:
-            sampling_interval = self.sampling_interval
-
-        dataset.update(
-            {
-                f"{self.name}_sampling": ((), sampling_interval, interp_attrs),
-                f"{self.name}_values": (f"{self.name}_points", tie_values),
-                f"{self.name}_lengths": (f"{self.name}_points", tie_lengths),
-            }
-        )
-        return dataset, attrs
-
-    @classmethod
-    @override
-    def collect_from_dataset(cls, dataset, name):
-        """Read sampled coordinates from *dataset* using the ``coordinate_sampling`` attribute."""
-        coords = {}
-        mapping = dataset[name].attrs.pop("coordinate_sampling", None)
-        if mapping is not None:
-            matches = re.findall(r"(\w+): (\w+)", mapping)
-            for match in matches:
-                name, sampling = match
-                dim, values, lengths = re.match(
-                    r"(\w+): (\w+) (\w+)", dataset[sampling].attrs["tie_point_mapping"]
-                ).groups()
-                data = {
-                    "tie_values": dataset[values].values,
-                    "tie_lengths": dataset[lengths].values,
-                    "sampling_interval": dataset[sampling].values[()],
-                }
-
-                # timedelta
-                if (
-                    "dtype" in dataset[sampling].attrs
-                    and "units" in dataset[sampling].attrs
-                ):
-                    data["sampling_interval"] = np.timedelta64(
-                        data["sampling_interval"],
-                        UNITS_TO_CODE[dataset[sampling].attrs.pop("units")],
-                    ).astype(dataset[sampling].attrs.pop("dtype"))
-
-                coords[name] = Coordinate(data, dim)
-        return coords
-
-    @classmethod
-    @override
-    def from_block(cls, start, size, step, dim=None, dtype=None):
-        """Build a single-segment :class:`SampledCoordinate` starting at *start* with *size* samples and step *step*."""
-        data = {
-            "tie_values": [start],
-            "tie_lengths": [size],
-            "sampling_interval": step,
-        }
-        return cls(data, dim=dim, dtype=dtype)

@@ -388,7 +388,7 @@ class DataArray(NDArrayOperatorsMixin):
 
         # handle not monotonic increasing coordinates
         for dim in indexers:
-            if not self[dim].is_monotonic_increasing():
+            if not self[dim]._is_monotonic_increasing():
                 if isinstance(indexers[dim], slice):
                     warnings.warn(
                         f"dimension {dim} is not monotonic increasing, "

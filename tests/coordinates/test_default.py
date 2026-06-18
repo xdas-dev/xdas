@@ -7,12 +7,12 @@ from xdas.coordinates.default import DefaultCoordinate
 
 class TestDefaultCoordinate:
     def test_isvalid(self):
-        assert DefaultCoordinate.isvalid({"size": 5})
-        assert DefaultCoordinate.isvalid({"size": None})
-        assert not DefaultCoordinate.isvalid({"size": 1.5})
-        assert not DefaultCoordinate.isvalid({"length": 5})
-        assert not DefaultCoordinate.isvalid([1, 2, 3])
-        assert not DefaultCoordinate.isvalid(5)
+        assert DefaultCoordinate._isvalid({"size": 5})
+        assert DefaultCoordinate._isvalid({"size": None})
+        assert not DefaultCoordinate._isvalid({"size": 1.5})
+        assert not DefaultCoordinate._isvalid({"length": 5})
+        assert not DefaultCoordinate._isvalid([1, 2, 3])
+        assert not DefaultCoordinate._isvalid(5)
 
     def test_init_default(self):
         coord = DefaultCoordinate()
@@ -81,7 +81,7 @@ class TestDefaultCoordinate:
         assert DefaultCoordinate({"size": 3}).get_sampling_interval() == 1
 
     def test_is_monotonic_increasing(self):
-        assert DefaultCoordinate({"size": 3}).is_monotonic_increasing()
+        assert DefaultCoordinate({"size": 3})._is_monotonic_increasing()
 
     def test_from_block(self):
         coord = DefaultCoordinate.from_block(10, 4, 2, dim="x")
@@ -105,17 +105,18 @@ class TestDefaultCoordinate:
 
     def test_get_indexer(self):
         coord = DefaultCoordinate({"size": 5})
-        assert coord.get_indexer(3) == 3
+        assert coord._get_indexer(3) == 3
 
     def test_slice_indexer(self):
         coord = DefaultCoordinate({"size": 5})
-        s = coord.slice_indexer(1, 4, 2)
-        assert s == slice(1, 4, 2)
+        assert coord.slice_indexer(1, 4) == slice(1, 5)
+        with pytest.raises(NotImplementedError):
+            coord.slice_indexer(1, 4, 2)
 
     def test_concat(self):
         a = DefaultCoordinate({"size": 3}, "x")
         b = DefaultCoordinate({"size": 2}, "x")
-        c = a.concat(b)
+        c = a._concat(b)
         assert len(c) == 5
         assert c.dim == "x"
 
@@ -125,10 +126,10 @@ class TestDefaultCoordinate:
         a = DefaultCoordinate({"size": 3}, "x")
         b = DenseCoordinate(np.array([0, 1, 2]), "x")
         with pytest.raises(TypeError):
-            a.concat(b)
+            a._concat(b)
 
     def test_concat_dim_mismatch(self):
         a = DefaultCoordinate({"size": 3}, "x")
         b = DefaultCoordinate({"size": 2}, "y")
         with pytest.raises(ValueError):
-            a.concat(b)
+            a._concat(b)

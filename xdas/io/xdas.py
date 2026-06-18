@@ -145,7 +145,7 @@ def save_dataarray(
 
     # prepare metadata
     for coord in da.coords.values():
-        dataset, variable_attrs = coord.to_dataset(dataset, variable_attrs)
+        dataset, variable_attrs = coord._to_dataset(dataset, variable_attrs)
 
     # create parent directories if needed
     if create_dirs:

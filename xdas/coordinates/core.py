@@ -278,6 +278,8 @@ class Coordinate(ABC):
         Desired dtype for the underlying data array.
     """
 
+    # --- class machinery ---
+
     _registry = {}
 
     def __init_subclass__(cls, *, name=None, **kwargs):
@@ -298,7 +300,7 @@ class Coordinate(ABC):
             data, dim = parse(data, dim)
 
             for subcls in Coordinate._registry.values():
-                if subcls.isvalid(data):
+                if subcls._isvalid(data):
                     cls = subcls
                     break
             else:
@@ -307,33 +309,120 @@ class Coordinate(ABC):
         # normal allocation
         return super().__new__(cls)
 
-    # -- protocol dunders ---------------------------------------------------
+    # --- abstract contract ---
 
     @abstractmethod
     def __init__(self, data=None, dim=None, dtype=None):
         """Initialise the coordinate from subclass-specific *data*."""
 
+    @classmethod
     @abstractmethod
-    def __array__(self, dtype=None, copy=None):
-        """Materialise the coordinate values as a numpy array."""
+    def from_block(cls, start, size, step, dim=None, dtype=None):
+        """Construct a coordinate from a start value, element count, and step size."""
 
     @abstractmethod
     def __len__(self):
         """Return the number of elements along this coordinate's axis."""
 
-    @abstractmethod
-    def __getitem__(self, item):
-        """Index into the coordinate, returning a new :class:`Coordinate`."""
-
-    def __reduce__(self):
-        return self.__class__, (self.data, self.dim)
-
-    # -- properties (data model) --------------------------------------------
-
     @property
     @abstractmethod
     def dtype(self):
         """NumPy dtype of the underlying coordinate values."""
+
+    @staticmethod
+    @abstractmethod
+    def _isvalid(data):
+        """Return ``True`` if *data* is a valid input for this coordinate subclass."""
+
+    @abstractmethod
+    def _is_monotonic_increasing(self):
+        """Return ``True`` if all consecutive differences in this coordinate are positive."""
+
+    @abstractmethod
+    def _get_value(self, index): ...
+
+    @abstractmethod
+    def _get_indexer(self, value, method=None):
+        """
+        Return the integer index for label *value* using the segment structure.
+
+        Parameters
+        ----------
+        value : scalar, str (ISO datetime), or array-like
+            Label(s) to locate.
+        method : {None, "nearest", "ffill", "bfill"}, optional
+            How to handle values that fall in gaps or between samples.
+
+        Returns
+        -------
+        int or numpy.ndarray
+
+        Raises
+        ------
+        KeyError
+            If *value* falls in an overlap region or is not found (exact mode).
+        """
+
+    @abstractmethod
+    def _slice(self, slc):
+        """Return a new :class:`SampledCoordinate` for the integer slice *index_slice*."""
+
+    @abstractmethod
+    def _concat(self, other):
+        """Concatenate *other* coordinate to this one, returning a new coordinate."""
+
+    @abstractmethod
+    def _to_dataset(self, dataset, attrs):
+        """Write this coordinate into an xarray *dataset*, updating *attrs* in place."""
+        dataset = dataset.assign_coords(
+            {self.name: (self.dim, self.values) if self.dim else self.values}
+        )
+        return dataset, attrs
+
+    @classmethod
+    @abstractmethod
+    def _collect_from_dataset(cls, dataset, name):
+        """Read coordinates of this subclass's kind from an xarray *dataset* variable *name*."""
+
+    # ---
+
+    def __getitem__(self, item):
+        """Index into the coordinate, returning a new :class:`Coordinate`."""
+        if isinstance(item, slice):
+            return self._slice(item)
+        else:
+            return Coordinate(
+                self._get_value(item), None if np.isscalar(item) else self.dim
+            )
+
+    def __array__(self, dtype=None, copy=None):
+        if self.empty:
+            out = np.array([], dtype=self.dtype)
+        else:
+            out = self._get_value(self.indices)
+        if dtype is not None:
+            out = out.__array__(dtype)
+        return out
+
+    def __reduce__(self):
+        return self.__class__, (self.data, self.dim)
+
+    def __repr__(self):
+        if self.empty:
+            return "empty coordinate"
+        elif len(self) == 1:
+            return f"{self.tie_values[0]}"
+        else:
+            if np.issubdtype(self.dtype, np.floating):
+                return f"{self.start:.3f} to {self.end:.3f}"
+            elif np.issubdtype(self.dtype, np.datetime64):
+                start_str = format_datetime(self.start)
+                end_str = format_datetime(self.end)
+                return f"{start_str} to {end_str}"
+            else:
+                return f"{self.start} to {self.end}"
+
+    # -- properties (data model) --------------------------------------------
 
     @property
     def ndim(self):
@@ -351,14 +440,29 @@ class Coordinate(ABC):
         return len(self)
 
     @property
+    def empty(self):
+        """``True`` if the coordinate has zero length."""
+        return len(self) == 0
+
+    @property
+    def indices(self):
+        """Full integer index array from 0 to the last tie-point index (inclusive)."""
+        return np.arange(len(self))
+
+    @property
     def values(self):
         """Materialised numpy array of coordinate values."""
         return self.__array__(copy=False)
 
     @property
-    def empty(self):
-        """``True`` if the coordinate has zero length."""
-        return len(self) == 0
+    def start(self):
+        """Value at index 0 (first element)."""
+        return self._get_value(0)
+
+    @property
+    def end(self):
+        """Value at the last element."""
+        return self._get_value(len(self) - 1)
 
     @property
     def parent(self):
@@ -377,16 +481,7 @@ class Coordinate(ABC):
 
     # -- validation ---------------------------------------------------------
 
-    @staticmethod
-    @abstractmethod
-    def isvalid(data):
-        """Return ``True`` if *data* is a valid input for this coordinate subclass."""
-
     # -- queries ------------------------------------------------------------
-
-    @abstractmethod
-    def is_monotonic_increasing(self):
-        """Return ``True`` if all consecutive differences in this coordinate are positive."""
 
     def isscalar(self):
         """Return ``True`` if this is a :class:`ScalarCoordinate` (non-dimensional)."""
@@ -443,7 +538,7 @@ class Coordinate(ABC):
         if isinstance(item, slice):
             return self.slice_indexer(item.start, item.stop, item.step, endpoint)
         else:
-            return self.get_indexer(item, method)
+            return self._get_indexer(item, method)
 
     def format_index(self, idx, bounds="raise"):
         """
@@ -494,14 +589,14 @@ class Coordinate(ABC):
         """
         if start is not None:
             try:
-                start_index = self.get_indexer(start, method="bfill")
+                start_index = self._get_indexer(start, method="bfill")
             except KeyError:
                 start_index = len(self)
         else:
             start_index = None
         if stop is not None:
             try:
-                end_index = self.get_indexer(stop, method="ffill")
+                end_index = self._get_indexer(stop, method="ffill")
                 stop_index = end_index + 1
             except KeyError:
                 stop_index = 0
@@ -519,10 +614,6 @@ class Coordinate(ABC):
 
     # -- transforms ---------------------------------------------------------
 
-    @abstractmethod
-    def concat(self, other):
-        """Concatenate *other* coordinate to this one, returning a new coordinate."""
-
     def copy(self, deep=True):
         """
         Return a copy of this coordinate.
@@ -539,16 +630,6 @@ class Coordinate(ABC):
         return self.__class__(func(self.data), func(self.dim), func(self.dtype))
 
     # -- alternative constructors and IO ------------------------------------
-
-    @classmethod
-    @abstractmethod
-    def collect_from_dataset(cls, dataset, name):
-        """Read coordinates of this subclass's kind from an xarray *dataset* variable *name*."""
-
-    @classmethod
-    @abstractmethod
-    def from_block(cls, start, size, step, dim=None, dtype=None):
-        """Construct a coordinate from a start value, element count, and step size."""
 
     def to_dataarray(self):
         """Convert this coordinate to a :class:`~xdas.DataArray` with a single dimension."""
@@ -576,19 +657,12 @@ class Coordinate(ABC):
                 name=self.name,
             )
 
-    def to_dataset(self, dataset, attrs):
-        """Write this coordinate into an xarray *dataset*, updating *attrs* in place."""
-        dataset = dataset.assign_coords(
-            {self.name: (self.dim, self.values) if self.dim else self.values}
-        )
-        return dataset, attrs
-
     @classmethod
     def from_dataset(cls, dataset, name):
         """Read coordinates named *name* from an xarray *dataset* via each registered subclass."""
         coords = {}
         for subcls in cls.__subclasses__():
-            coords |= subcls.collect_from_dataset(dataset, name)
+            coords |= subcls._collect_from_dataset(dataset, name)
         return coords
 
     # -- internals ----------------------------------------------------------
@@ -623,10 +697,6 @@ class SampledMixin(ABC):
         float or None
             ``None`` if the coordinate has fewer than two elements.
         """
-
-    @abstractmethod
-    def get_value(self, index):
-        """Return the coordinate value(s) at integer position(s) *index*."""
 
     @abstractmethod
     def get_split_indices(self, kind="discontinuities", tolerance=False):
@@ -675,8 +745,8 @@ class SampledMixin(ABC):
         for index in indices:
             start_index = index
             end_index = index + 1
-            start_value = self.get_value(index)
-            end_value = self.get_value(index + 1)
+            start_value = self._get_value(index)
+            end_value = self._get_value(index + 1)
             delta = end_value - start_value
             if tolerance is not None and np.abs(delta) < tolerance:
                 continue
@@ -729,8 +799,8 @@ class SampledMixin(ABC):
         records = []
         for start_index, stop_index in pairwise(indices):
             end_index = stop_index - 1
-            start_value = self.get_value(start_index)
-            end_value = self.get_value(end_index)
+            start_value = self._get_value(start_index)
+            end_value = self._get_value(end_index)
             records.append(
                 {
                     "start_index": start_index,

@@ -1037,7 +1037,7 @@ def concat_coords(objs, *, sort=False, return_order=False, tolerance=False):
 
     # concat
     for obj in objs[1:]:
-        out = out.concat(obj)
+        out = out._concat(obj)
 
     # simplify
     if tolerance is not False:

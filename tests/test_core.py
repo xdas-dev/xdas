@@ -164,7 +164,11 @@ class TestCore:
         da = wavelet_wavefronts()
         objs = [obj for obj in da]
         result = xd.concat(objs, dim="time")
-        result["time"] = InterpCoordinate.from_array(result["time"].values)
+        time_values = result["time"].values
+        result["time"] = InterpCoordinate(
+            {"tie_indices": np.arange(len(time_values)), "tie_values": time_values},
+            "time",
+        ).simplify()
         assert result.equals(da)
         objs = [obj.drop_coords("time") for obj in da]
         result = xd.concat(objs, dim="time")

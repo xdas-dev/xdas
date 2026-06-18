@@ -18,9 +18,9 @@ class TestScalarCoordinate:
 
     def test_isvalid(self):
         for data in self.valid:
-            assert ScalarCoordinate.isvalid(data)
+            assert ScalarCoordinate._isvalid(data)
         for data in self.invalid:
-            assert not ScalarCoordinate.isvalid(data)
+            assert not ScalarCoordinate._isvalid(data)
 
     def test_init(self):
         coord = ScalarCoordinate(1)
@@ -97,11 +97,11 @@ class TestScalarCoordinate:
 
     def test_is_monotonic_increasing(self):
         with pytest.raises(TypeError):
-            ScalarCoordinate(1).is_monotonic_increasing()
+            ScalarCoordinate(1)._is_monotonic_increasing()
 
     def test_concat(self):
         with pytest.raises(TypeError):
-            ScalarCoordinate(1).concat(ScalarCoordinate(2))
+            ScalarCoordinate(1)._concat(ScalarCoordinate(2))
 
     def test_from_block(self):
         with pytest.raises(TypeError):

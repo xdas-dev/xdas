@@ -36,7 +36,7 @@ class DefaultCoordinate(Coordinate, name="default"):
 
         # parse data
         data, dim = parse(data, dim)
-        if not self.isvalid(data):
+        if not self._isvalid(data):
             raise TypeError("`data` must be a mapping {'size': <int>}")
 
         # check dtype
@@ -61,7 +61,7 @@ class DefaultCoordinate(Coordinate, name="default"):
 
     @staticmethod
     @override
-    def isvalid(data):
+    def _isvalid(data):
         """Return ``True`` if *data* is ``{"size": int}``."""
         match data:
             case {"size": None | int(_)}:
@@ -75,6 +75,18 @@ class DefaultCoordinate(Coordinate, name="default"):
             return 0
         else:
             return self.data["size"]
+
+    @override
+    def _get_value(self, index):
+        return index
+
+    @override
+    def _slice(self, slc):
+        return Coordinate(self.__array__()[slc], self.dim)
+
+    @override
+    def _to_dataset(self, dataset, attrs):
+        return dataset, attrs
 
     def __repr__(self):
         if self.empty:
@@ -102,21 +114,16 @@ class DefaultCoordinate(Coordinate, name="default"):
         return 1
 
     @override
-    def is_monotonic_increasing(self):
+    def _is_monotonic_increasing(self):
         """Return ``True`` — integer-range coordinates are always increasing."""
         return True
 
-    def get_indexer(self, value, method=None):
+    def _get_indexer(self, value, method=None):
         """Return *value* directly (integer index equals label for range coordinates)."""
         return value
 
     @override
-    def slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
-        """Return a :class:`slice` with *start*, *stop*, *step* unchanged."""
-        return slice(start, stop, step)
-
-    @override
-    def concat(self, other):
+    def _concat(self, other):
         """Return a new :class:`DefaultCoordinate` whose size is the sum of both sizes."""
         if not isinstance(other, self.__class__):
             raise TypeError(f"cannot concatenate {type(other)} to {self.__class__}")
@@ -126,7 +133,7 @@ class DefaultCoordinate(Coordinate, name="default"):
 
     @classmethod
     @override
-    def collect_from_dataset(cls, dataset, name):
+    def _collect_from_dataset(cls, dataset, name):
         """Default coordinates are not stored in a dataset; return an empty mapping."""
         return {}
 
