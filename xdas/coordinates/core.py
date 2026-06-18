@@ -580,15 +580,14 @@ class Coordinate(ABC):
         """Construct a coordinate from a start value, element count, and step size. Subclass must implement."""
 
 
-class RegularMixin(ABC):
+class SampledMixin(ABC):
     """
-    Shared behaviour for ordered, position-bearing coordinates.
+    Shared behaviour for coordinates that carry sampled values along an axis.
 
-    Mixed into the coordinate types that describe a regular, monotonically
-    ordered axis (:class:`DenseCoordinate`-like, :class:`SampledCoordinate`,
-    :class:`InterpCoordinate`). It builds discontinuity and availability tables
-    on top of the subclass-provided :meth:`get_value` and
-    :meth:`get_split_indices`.
+    Mixed into the tie-point coordinate types (:class:`SampledCoordinate`,
+    :class:`InterpCoordinate`), which describe a monotonic axis that may contain
+    gaps and overlaps. It builds discontinuity and availability tables on top of
+    the subclass-provided :meth:`get_value` and :meth:`get_split_indices`.
     """
 
     @abstractmethod

@@ -11,7 +11,7 @@ from xinterp import forward, inverse
 
 from .core import (
     Coordinate,
-    RegularMixin,
+    SampledMixin,
     format_datetime,
     is_monotonic_increasing,
     parse,
@@ -19,7 +19,7 @@ from .core import (
 )
 
 
-class InterpCoordinate(RegularMixin, Coordinate, name="interpolated"):
+class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
     """
     Array-like object representing piecewise evenly spaced coordinates (CF convention).
 

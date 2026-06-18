@@ -10,7 +10,7 @@ import numpy as np
 
 from .core import (
     Coordinate,
-    RegularMixin,
+    SampledMixin,
     format_datetime,
     is_monotonic_increasing,
     parse,
@@ -28,7 +28,7 @@ CODE_TO_UNITS = {
 UNITS_TO_CODE = {v: k for k, v in CODE_TO_UNITS.items()}
 
 
-class SampledCoordinate(RegularMixin, Coordinate, name="sampled"):
+class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
     """
     A coordinate that is sampled at regular intervals.
 
