@@ -68,10 +68,8 @@ class ScalarCoordinate(Coordinate, name="scalar"):
     def __getitem__(self, item):
         raise TypeError("scalar coordinate is not subscriptable")
 
-    def __array__(self, dtype=None):
-        if dtype is None:
-            return self.data.__array__()
-        return self.data.__array__(dtype)
+    def __array__(self, dtype=None, copy=None):
+        return self.data.__array__(dtype, copy=copy)
 
     def __array__ufunc__(self, ufunc, method, *inputs, **kwargs):  # pragma: no cover
         raise NotImplementedError

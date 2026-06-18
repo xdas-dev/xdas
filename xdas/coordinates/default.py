@@ -90,7 +90,7 @@ class DefaultCoordinate(Coordinate, name="default"):
         dim = None if isscalar(data) else self.dim
         return Coordinate(data, dim)
 
-    def __array__(self, dtype=None):
+    def __array__(self, dtype=None, copy=None):
         return np.arange(self.data["size"], dtype=dtype)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):

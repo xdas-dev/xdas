@@ -351,7 +351,7 @@ class Coordinate(ABC):
         """Initialise the coordinate from subclass-specific *data*."""
 
     @abstractmethod
-    def __array__(self, dtype=None):
+    def __array__(self, dtype=None, copy=None):
         """Materialise the coordinate values as a numpy array."""
 
     @abstractmethod

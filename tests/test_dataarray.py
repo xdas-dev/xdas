@@ -64,6 +64,14 @@ class TestBase:
         assert da.dims == tuple()
         assert da.ndim == 0
 
+    def test_array_copy_keyword(self):
+        data = np.arange(5.0)
+        da = xd.DataArray(data, {"x": np.arange(5)})
+        # copy=False / None may share memory with the backing array
+        assert np.shares_memory(np.array(da, copy=False), data)
+        # copy=True must return an independent array
+        assert not np.shares_memory(np.array(da, copy=True), data)
+
     def test_raises_on_data_and_coords_mismatch(self):
         with pytest.raises(ValueError, match="different number of dimensions"):
             xd.DataArray(np.zeros(3), dims=("time", "distance"))

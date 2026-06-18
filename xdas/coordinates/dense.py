@@ -64,10 +64,8 @@ class DenseCoordinate(Coordinate, name="dense"):
         """Shape tuple of the underlying data array."""
         return self.data.shape
 
-    def __array__(self, dtype=None):
-        if dtype is None:
-            return self.data.__array__()
-        return self.data.__array__(dtype)
+    def __array__(self, dtype=None, copy=None):
+        return self.data.__array__(dtype, copy=copy)
 
     def __array__ufunc__(self, ufunc, method, *inputs, **kwargs):  # pragma: no cover
         return self.data.__array__ufunc__(ufunc, method, *inputs, **kwargs)

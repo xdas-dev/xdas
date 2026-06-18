@@ -175,7 +175,7 @@ class InterpCoordinate(RegularMixin, Coordinate, name="interpolated"):
             self.dim,
         )
 
-    def __array__(self, dtype=None):
+    def __array__(self, dtype=None, copy=None):
         out = self.values
         if dtype is not None:
             out = out.__array__(dtype)

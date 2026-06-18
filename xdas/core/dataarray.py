@@ -126,11 +126,11 @@ class DataArray(NDArrayOperatorsMixin):
     def __len__(self):
         return self.shape[0]
 
-    def __array__(self, dtype=None):
-        if dtype is None:
-            return self.data.__array__()
-        else:
-            return self.data.__array__(dtype)
+    def __array__(self, dtype=None, copy=None):
+        out = np.asarray(self.data, dtype=dtype)
+        if copy:
+            out = out.copy()
+        return out
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         from .routines import broadcast_coords, broadcast_to  # TODO: circular import
