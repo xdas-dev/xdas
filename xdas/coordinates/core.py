@@ -336,6 +336,21 @@ class Coordinate(ABC):
         """NumPy dtype of the underlying coordinate values."""
 
     @property
+    def ndim(self):
+        """Number of dimensions (always 1 for dimensional coordinates)."""
+        return 1
+
+    @property
+    def shape(self):
+        """Shape tuple ``(len(self),)``."""
+        return (len(self),)
+
+    @property
+    def size(self):
+        """Number of elements along this coordinate's axis."""
+        return len(self)
+
+    @property
     def values(self):
         """Materialised numpy array of coordinate values."""
         return self.__array__(copy=False)

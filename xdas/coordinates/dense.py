@@ -54,16 +54,6 @@ class DenseCoordinate(Coordinate, name="dense"):
         """Dtype of the underlying data array."""
         return self.data.dtype
 
-    @property
-    def ndim(self):
-        """Number of dimensions of the underlying data array (always 1 for dimensional coords)."""
-        return self.data.ndim
-
-    @property
-    def shape(self):
-        """Shape tuple of the underlying data array."""
-        return self.data.shape
-
     def __array__(self, dtype=None, copy=None):
         return self.data.__array__(dtype, copy=copy)
 

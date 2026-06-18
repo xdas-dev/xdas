@@ -100,16 +100,6 @@ class InterpCoordinate(RegularMixin, Coordinate, name="interpolated"):
         return self.tie_indices.shape == (0,)
 
     @property
-    def ndim(self):
-        """Always 1."""
-        return self.tie_values.ndim
-
-    @property
-    def shape(self):
-        """Shape tuple ``(len(self),)``."""
-        return (len(self),)
-
-    @property
     def indices(self):
         """Full integer index array from 0 to the last tie-point index (inclusive)."""
         if self.empty:

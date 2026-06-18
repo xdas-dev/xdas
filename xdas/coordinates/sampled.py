@@ -137,16 +137,6 @@ class SampledCoordinate(RegularMixin, Coordinate, name="sampled"):
         return self.tie_values.shape == (0,)
 
     @property
-    def ndim(self):
-        """Always 1."""
-        return self.tie_values.ndim
-
-    @property
-    def shape(self):
-        """Shape tuple ``(len(self),)``."""
-        return (len(self),)
-
-    @property
     def indices(self):
         """Full integer index array from 0 to ``len(self) - 1``."""
         if self.empty:

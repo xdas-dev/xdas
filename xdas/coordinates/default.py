@@ -55,16 +55,6 @@ class DefaultCoordinate(Coordinate, name="default"):
         """Always ``numpy.int64``."""
         return np.int64
 
-    @property
-    def ndim(self):
-        """Always 1."""
-        return 1
-
-    @property
-    def shape(self):
-        """Shape tuple ``(size,)``."""
-        return (len(self),)
-
     @staticmethod
     def isvalid(data):
         """Return ``True`` if *data* is ``{"size": int}``."""

@@ -59,6 +59,21 @@ class ScalarCoordinate(Coordinate, name="scalar"):
         """Dtype of the scalar value."""
         return self.data.dtype
 
+    @property
+    def ndim(self):
+        """Always 0 — a scalar coordinate has no axis."""
+        return 0
+
+    @property
+    def shape(self):
+        """Always the empty tuple ``()``."""
+        return ()
+
+    @property
+    def size(self):
+        """Always 1."""
+        return 1
+
     def __repr__(self):
         return np.array2string(self.data, threshold=0, edgeitems=1)
 

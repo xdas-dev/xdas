@@ -46,6 +46,9 @@ class TestDefaultCoordinate:
     def test_shape(self):
         assert DefaultCoordinate({"size": 5}).shape == (5,)
 
+    def test_size(self):
+        assert DefaultCoordinate({"size": 5}).size == 5
+
     def test_len_with_none(self):
         coord = DefaultCoordinate({"size": None})
         assert len(coord) == 0
