@@ -7,6 +7,7 @@ Described by tie points and a fixed ``sampling_interval`` between them.
 import re
 
 import numpy as np
+from typing_extensions import override
 
 from .core import (
     Coordinate,
@@ -42,6 +43,7 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
         The data type of the coordinate, by default None.
     """
 
+    @override
     def __init__(self, data=None, dim=None, dtype=None):
         # empty
         if data is None:
@@ -122,6 +124,7 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
         return self.data["sampling_interval"]
 
     @property
+    @override
     def dtype(self):
         """Dtype of the tie values (and of all materialised coordinate values)."""
         return self.tie_values.dtype
@@ -132,6 +135,7 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
         return np.concatenate(([0], np.cumsum(self.tie_lengths[:-1])))
 
     @property
+    @override
     def empty(self):
         """``True`` if no segments have been set."""
         return self.tie_values.shape == (0,)
@@ -155,6 +159,7 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
         return self.tie_values[-1] + self.sampling_interval * self.tie_lengths[-1]
 
     @staticmethod
+    @override
     def isvalid(data):
         """Return ``True`` if *data* has ``tie_values``, ``tie_lengths``, and ``sampling_interval`` keys."""
         match data:
@@ -167,6 +172,7 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
             case _:
                 return False
 
+    @override
     def __len__(self):
         if self.empty:
             return 0
@@ -188,6 +194,7 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
             else:
                 return f"{self.start} to {self.end}"
 
+    @override
     def __getitem__(self, item):
         if isinstance(item, slice):
             return self.slice_index(item)
@@ -216,6 +223,7 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
             self.dim,
         )
 
+    @override
     def __array__(self, dtype=None, copy=None):
         if self.empty:
             out = np.array([], dtype=self.dtype)
@@ -231,6 +239,7 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
     def __array_function__(self, func, types, args, kwargs):
         raise NotImplementedError
 
+    @override
     def get_sampling_interval(self, cast=True):
         """
         Return the sampling interval.
@@ -245,10 +254,12 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
             delta = delta / np.timedelta64(1, "s")
         return delta
 
+    @override
     def is_monotonic_increasing(self):
         """Return ``True`` if no segment starts before the end of the previous one."""
         return not self.get_split_indices("overlaps", tolerance=False).size
 
+    @override
     def get_value(self, index):
         """Compute coordinate value(s) at integer position(s) *index* using the stored segments."""
         index = self.format_index(index, bounds="raise")
@@ -383,6 +394,7 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
                 offset = np.maximum(offset, 0)
         return self.tie_indices[reference] + offset
 
+    @override
     def concat(self, other):
         """Append *other* :class:`SampledCoordinate` segments after this one."""
         if not isinstance(other, self.__class__):
@@ -414,6 +426,7 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
         """Return a new coordinate keeping every *q*-th sample (integer decimation)."""
         return self[::q]
 
+    @override
     def simplify(self, tolerance=None):
         """
         Merge adjacent segments whose gap is within *tolerance* of the sampling interval.
@@ -445,6 +458,7 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
             self.dim,
         )
 
+    @override
     def get_split_indices(self, kind="discontinuities", tolerance=False):
         """
         Return integer indices of segment boundaries (start of each segment except the first).
@@ -501,6 +515,7 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
         """Not supported — raises :exc:`NotImplementedError`."""
         raise NotImplementedError("from_array is not implemented for SampledCoordinate")
 
+    @override
     def to_dataset(self, dataset, attrs):
         """Write sampling metadata into an xarray *dataset* using CF tie-point conventions."""
         mapping = f"{self.name}: {self.name}_sampling"
@@ -537,6 +552,7 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
         return dataset, attrs
 
     @classmethod
+    @override
     def collect_from_dataset(cls, dataset, name):
         """Read sampled coordinates from *dataset* using the ``coordinate_sampling`` attribute."""
         coords = {}
@@ -568,6 +584,7 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
         return coords
 
     @classmethod
+    @override
     def from_block(cls, start, size, step, dim=None, dtype=None):
         """Build a single-segment :class:`SampledCoordinate` starting at *start* with *size* samples and step *step*."""
         data = {

@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+from typing_extensions import override
 
 from .core import Coordinate, isscalar, parse
 
@@ -23,6 +24,7 @@ class DenseCoordinate(Coordinate, name="dense"):
         Cast *data* to this dtype on construction.
     """
 
+    @override
     def __init__(self, data=None, dim=None, dtype=None):
         # empty
         if data is None:
@@ -38,6 +40,7 @@ class DenseCoordinate(Coordinate, name="dense"):
         self.dim = dim
 
     @property
+    @override
     def dtype(self):
         """Dtype of the underlying data array."""
         return self.data.dtype
@@ -48,17 +51,20 @@ class DenseCoordinate(Coordinate, name="dense"):
         return pd.Index(self.data)
 
     @staticmethod
+    @override
     def isvalid(data):
         """Return ``True`` if *data* converts to a 1-D non-object numpy array."""
         data = np.asarray(data)
         return (data.dtype != np.dtype(object)) and (data.ndim == 1)
 
+    @override
     def __len__(self):
         return self.data.__len__()
 
     def __repr__(self):
         return np.array2string(self.data, threshold=0, edgeitems=1)
 
+    @override
     def __getitem__(self, item):
         data = self.data.__getitem__(item)
         dim = None if isscalar(data) else self.dim
@@ -70,6 +76,7 @@ class DenseCoordinate(Coordinate, name="dense"):
     def __sub__(self, other):
         return self.__class__(self.data - other, self.dim)
 
+    @override
     def __array__(self, dtype=None, copy=None):
         return self.data.__array__(dtype, copy=copy)
 
@@ -101,6 +108,7 @@ class DenseCoordinate(Coordinate, name="dense"):
             delta = delta / np.timedelta64(1, "s")
         return delta
 
+    @override
     def is_monotonic_increasing(self):
         """Return ``True`` if all consecutive differences in this coordinate are positive."""
         if np.issubdtype(self.dtype, np.datetime64):
@@ -137,6 +145,7 @@ class DenseCoordinate(Coordinate, name="dense"):
             raise KeyError("index not found")
         return out
 
+    @override
     def slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
         """Return an integer :class:`slice` for label range [*start*, *stop*] via :class:`pandas.Index`."""
         slc = self.index.slice_indexer(start, stop, step)
@@ -148,6 +157,7 @@ class DenseCoordinate(Coordinate, name="dense"):
             slc = slice(slc.start, slc.stop - 1, slc.step)
         return slc
 
+    @override
     def concat(self, other):
         """Concatenate *other* :class:`DenseCoordinate` values to this one."""
         if not isinstance(other, self.__class__):
@@ -175,6 +185,7 @@ class DenseCoordinate(Coordinate, name="dense"):
         return div_points
 
     @classmethod
+    @override
     def collect_from_dataset(cls, dataset, name):
         """Extract all coordinates from an xarray *dataset* variable *name* as plain arrays."""
         return {
@@ -194,6 +205,7 @@ class DenseCoordinate(Coordinate, name="dense"):
         }
 
     @classmethod
+    @override
     def from_block(cls, start, size, step, dim=None, dtype=None):
         """Build a :class:`DenseCoordinate` from ``start + step * arange(size)``."""
         data = start + step * np.arange(size)

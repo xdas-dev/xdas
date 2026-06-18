@@ -7,6 +7,7 @@ Defined by tie points, using ``xinterp`` for forward and inverse interpolation.
 import re
 
 import numpy as np
+from typing_extensions import override
 from xinterp import forward, inverse
 
 from .core import (
@@ -36,6 +37,7 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
         selection. The len of `tie_indices` and `tie_values` sizes must match.
     """
 
+    @override
     def __init__(self, data=None, dim=None, dtype=None):
         # empty
         if data is None:
@@ -90,11 +92,13 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
         return self.data["tie_values"]
 
     @property
+    @override
     def dtype(self):
         """Dtype of the tie values (and of all materialised coordinate values)."""
         return self.tie_values.dtype
 
     @property
+    @override
     def empty(self):
         """``True`` if no tie points have been set."""
         return self.tie_indices.shape == (0,)
@@ -108,6 +112,7 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
             return np.arange(self.tie_indices[-1] + 1)
 
     @staticmethod
+    @override
     def isvalid(data):
         """Return ``True`` if *data* is a dict with ``tie_indices`` and ``tie_values`` keys."""
         match data:
@@ -116,6 +121,7 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
             case _:
                 return False
 
+    @override
     def __len__(self):
         if self.empty:
             return 0
@@ -137,6 +143,7 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
             else:
                 return f"{self.tie_values[0]} to {self.tie_values[-1]}"
 
+    @override
     def __getitem__(self, item):
         if isinstance(item, slice):
             return self.slice_index(item)
@@ -157,6 +164,7 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
             self.dim,
         )
 
+    @override
     def __array__(self, dtype=None, copy=None):
         if self.empty:
             out = np.array([], dtype=self.dtype)
@@ -172,6 +180,7 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
     def __array_function__(self, func, types, args, kwargs):
         raise NotImplementedError
 
+    @override
     def get_sampling_interval(self, cast=True):
         """
         Return the median sample spacing across all tie-point segments.
@@ -198,10 +207,12 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
             delta = delta / np.timedelta64(1, "s")
         return delta
 
+    @override
     def is_monotonic_increasing(self):
         """Return ``True`` if no segment starts before the end of the previous one."""
         return not self.get_split_indices("overlaps", tolerance=False).size
 
+    @override
     def get_value(self, index):
         """Interpolate coordinate values at integer position(s) *index*."""
         index = self.format_index(index)
@@ -276,6 +287,7 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
                 raise e
         return indexer
 
+    @override
     def concat(self, other):
         """Append *other* :class:`InterpCoordinate` after this one, shifting its tie indices."""
         if not isinstance(other, self.__class__):
@@ -311,6 +323,7 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
             dict(tie_indices=tie_indices, tie_values=tie_values), self.dim
         )
 
+    @override
     def simplify(self, tolerance=None):
         """
         Reduce the number of tie points using the Douglas-Peucker algorithm.
@@ -331,6 +344,7 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
             dict(tie_indices=tie_indices, tie_values=tie_values), self.dim
         )
 
+    @override
     def get_split_indices(self, kind="discontinuities", tolerance=False):
         """
         Return tie-point indices where consecutive segments are discontinuous.
@@ -393,6 +407,7 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
             {"tie_indices": np.arange(len(arr)), "tie_values": arr}, dim
         ).simplify(tolerance)
 
+    @override
     def to_dataset(self, dataset, attrs):
         """Write tie points into an xarray *dataset* using CF coordinate interpolation conventions."""
         mapping = f"{self.name}: {self.name}_indices {self.name}_values"
@@ -420,6 +435,7 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
         return dataset, attrs
 
     @classmethod
+    @override
     def collect_from_dataset(cls, dataset, name):
         """Read interpolated coordinates from *dataset* using the ``coordinate_interpolation`` attribute."""
         coords = {}
@@ -433,6 +449,7 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
         return coords
 
     @classmethod
+    @override
     def from_block(cls, start, size, step, dim=None, dtype=None):
         """Build a two-point :class:`InterpCoordinate` covering [start, start + step*(size-1)]."""
         return cls(

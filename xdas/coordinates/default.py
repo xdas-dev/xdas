@@ -5,6 +5,7 @@ Used when no coordinate is explicitly provided for an axis.
 """
 
 import numpy as np
+from typing_extensions import override
 
 from .core import Coordinate, isscalar, parse
 
@@ -27,6 +28,7 @@ class DefaultCoordinate(Coordinate, name="default"):
         Not supported; raises :exc:`ValueError` if provided.
     """
 
+    @override
     def __init__(self, data=None, dim=None, dtype=None):
         # empty
         if data is None:
@@ -46,16 +48,19 @@ class DefaultCoordinate(Coordinate, name="default"):
         self.dim = dim
 
     @property
+    @override
     def empty(self):
         """``True`` if the coordinate has size zero."""
         return self.data["size"] == 0
 
     @property
+    @override
     def dtype(self):
         """Always ``numpy.int64``."""
         return np.int64
 
     @staticmethod
+    @override
     def isvalid(data):
         """Return ``True`` if *data* is ``{"size": int}``."""
         match data:
@@ -64,6 +69,7 @@ class DefaultCoordinate(Coordinate, name="default"):
             case _:
                 return False
 
+    @override
     def __len__(self):
         if self.data["size"] is None:
             return 0
@@ -75,11 +81,13 @@ class DefaultCoordinate(Coordinate, name="default"):
             return "empty coordinate"
         return f"0 to {len(self) - 1}"
 
+    @override
     def __getitem__(self, item):
         data = self.__array__()[item]
         dim = None if isscalar(data) else self.dim
         return Coordinate(data, dim)
 
+    @override
     def __array__(self, dtype=None, copy=None):
         return np.arange(self.data["size"], dtype=dtype)
 
@@ -93,6 +101,7 @@ class DefaultCoordinate(Coordinate, name="default"):
         """Return the sample spacing, always 1 for integer-range coordinates."""
         return 1
 
+    @override
     def is_monotonic_increasing(self):
         """Return ``True`` — integer-range coordinates are always increasing."""
         return True
@@ -101,10 +110,12 @@ class DefaultCoordinate(Coordinate, name="default"):
         """Return *value* directly (integer index equals label for range coordinates)."""
         return value
 
+    @override
     def slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
         """Return a :class:`slice` with *start*, *stop*, *step* unchanged."""
         return slice(start, stop, step)
 
+    @override
     def concat(self, other):
         """Return a new :class:`DefaultCoordinate` whose size is the sum of both sizes."""
         if not isinstance(other, self.__class__):
@@ -114,11 +125,13 @@ class DefaultCoordinate(Coordinate, name="default"):
         return self.__class__({"size": len(self) + len(other)}, self.dim)
 
     @classmethod
+    @override
     def collect_from_dataset(cls, dataset, name):
         """Default coordinates are not stored in a dataset; return an empty mapping."""
         return {}
 
     @classmethod
+    @override
     def from_block(cls, start, size, step, dim=None, dtype=None):
         """Build a :class:`DefaultCoordinate` of *size* elements (start and step are ignored)."""
         return cls({"size": size}, dim=dim)

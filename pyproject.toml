@@ -24,6 +24,7 @@ dependencies = [
     "setuptools<82.0.0",
     "scipy",
     "tqdm",
+    "typing_extensions",
     "watchdog",
     "xarray",
     "xinterp",
