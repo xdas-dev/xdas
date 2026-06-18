@@ -39,6 +39,27 @@ class ScalarCoordinate(Coordinate, name="scalar"):
             raise TypeError("`data` must be scalar-like")
         self.data = np.asarray(data, dtype=dtype)
 
+    @classmethod
+    @override
+    def from_block(cls, start, size, step, dim=None, dtype=None):
+        raise TypeError("cannot build a scalar coordinate from a block")
+
+    @override
+    def __len__(self):
+        return 1
+
+    @override
+    def __getitem__(self, item):
+        raise TypeError("scalar coordinate is not subscriptable")
+
+    @override
+    def __array__(self, dtype=None, copy=None):
+        return self.data.__array__(dtype, copy=copy)
+
+    @override
+    def __repr__(self):
+        return np.array2string(self.data, threshold=0, edgeitems=1)
+
     @property
     def dim(self):
         """Always ``None`` — scalar coordinates have no associated dimension."""
@@ -53,37 +74,42 @@ class ScalarCoordinate(Coordinate, name="scalar"):
     @property
     @override
     def dtype(self):
-        """Dtype of the scalar value."""
         return self.data.dtype
 
     @property
     @override
     def ndim(self):
-        """Always 0 — a scalar coordinate has no axis."""
         return 0
 
     @property
     @override
     def shape(self):
-        """Always the empty tuple ``()``."""
         return ()
 
     @property
     @override
-    def size(self):
-        """Always 1."""
-        return 1
+    def indices(self):
+        raise TypeError("scalar coordinate has no indices")
+
+    @property
+    @override
+    def start(self):
+        raise TypeError("scalar coordinate has no start")
+
+    @property
+    @override
+    def end(self):
+        raise TypeError("scalar coordinate has no end")
 
     @staticmethod
     @override
     def _isvalid(data):
-        """Return ``True`` if *data* converts to a 0-d non-object numpy array."""
         data = np.asarray(data)
         return (data.dtype != np.dtype(object)) and (data.ndim == 0)
 
     @override
-    def __len__(self):
-        raise TypeError("scalar coordinate has no length")
+    def _is_monotonic_increasing(self):
+        raise TypeError("scalar coordinate has no axis")
 
     @override
     def _get_value(self, index):
@@ -91,11 +117,15 @@ class ScalarCoordinate(Coordinate, name="scalar"):
 
     @override
     def _get_indexer(self, value, method=None):
-        raise NotImplementedError("cannot get index of scalar coordinate")
+        raise TypeError("cannot get index of scalar coordinate")
 
     @override
     def _slice(self, slc):
         raise TypeError("scalar coordinate is not sliceable")
+
+    @override
+    def _concat(self, other):
+        raise TypeError("cannot concatenate scalar coordinate")
 
     @override
     def _to_dataset(self, dataset, attrs):
@@ -104,55 +134,19 @@ class ScalarCoordinate(Coordinate, name="scalar"):
         )
         return dataset, attrs
 
-    def __repr__(self):
-        return np.array2string(self.data, threshold=0, edgeitems=1)
-
-    @override
-    def __getitem__(self, item):
-        raise TypeError("scalar coordinate is not subscriptable")
-
-    @override
-    def __array__(self, dtype=None, copy=None):
-        return self.data.__array__(dtype, copy=copy)
-
-    def __array__ufunc__(self, ufunc, method, *inputs, **kwargs):  # pragma: no cover
-        raise NotImplementedError
-
-    def __array_function__(self, func, types, args, kwargs):
-        raise NotImplementedError
-
-    @override
-    def isscalar(self):
-        """Return ``True`` (this is a :class:`ScalarCoordinate`)."""
-        return True
-
-    def get_sampling_interval(self, cast=True):
-        """Return ``None`` — scalar coordinates have no sample spacing."""
-        return None
-
-    @override
-    def _is_monotonic_increasing(self):
-        """Not supported — scalar coordinates have no axis to order."""
-        raise TypeError("scalar coordinate has no axis")
-
-    @override
-    def to_index(self, item, method=None, endpoint=True):
-        """Not supported — raises :exc:`NotImplementedError`."""
-        raise NotImplementedError("cannot get index of scalar coordinate")
-
-    @override
-    def _concat(self, other):
-        """Not supported — scalar coordinates have no axis to concatenate along."""
-        raise TypeError("cannot concatenate scalar coordinate")
-
     @classmethod
     @override
     def _collect_from_dataset(cls, dataset, name):
-        """Scalar coordinates are not stored separately in a dataset; return an empty mapping."""
         return {}
 
-    @classmethod
     @override
-    def from_block(cls, start, size, step, dim=None, dtype=None):
-        """Not supported — scalar coordinates describe no axis block."""
-        raise TypeError("cannot build a scalar coordinate from a block")
+    def get_sampling_interval(self, cast=True):
+        return None
+
+    @override
+    def isscalar(self):
+        return True
+
+    @override
+    def to_index(self, item, method=None, endpoint=True):
+        raise NotImplementedError("cannot get index of scalar coordinate")

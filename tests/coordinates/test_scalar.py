@@ -45,8 +45,7 @@ class TestScalarCoordinate:
             ScalarCoordinate(1)[0]
 
     def test_len(self):
-        with pytest.raises(TypeError):
-            len(ScalarCoordinate(1))
+        assert len(ScalarCoordinate(1)) == 1
 
     def test_repr(self):
         for data in self.valid:
