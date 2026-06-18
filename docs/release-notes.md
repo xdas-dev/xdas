@@ -1,5 +1,10 @@
 # Release notes
 
+## 0.2.8
+
+### Refactoring
+- Refactored coordinate internals: `Coordinate` is now a proper ABC with an abstract core interface, improved method ordering and consistency across subclasses, and several redundant/unused APIs removed (@atrabattoni).
+
 ## 0.2.7
 
 ### Bug Fixes
