@@ -526,7 +526,7 @@ class Coordinate(ABC):
 
     @abstractmethod
     def concat(self, other):
-        """Concatenate *other* coordinate to this one. Subclass must implement."""
+        """Concatenate *other* coordinate to this one, returning a new coordinate."""
 
     def to_dataarray(self):
         """Convert this coordinate to a :class:`~xdas.DataArray` with a single dimension."""
@@ -577,7 +577,7 @@ class Coordinate(ABC):
     @classmethod
     @abstractmethod
     def from_block(cls, start, size, step, dim=None, dtype=None):
-        """Construct a coordinate from a start value, element count, and step size. Subclass must implement."""
+        """Construct a coordinate from a start value, element count, and step size."""
 
 
 class SampledMixin(ABC):
@@ -608,15 +608,15 @@ class SampledMixin(ABC):
 
     @abstractmethod
     def get_value(self, index):
-        """Return the coordinate value at integer *index*. Subclass must implement."""
+        """Return the coordinate value(s) at integer position(s) *index*."""
 
     @abstractmethod
     def get_split_indices(self, kind="discontinuities", tolerance=False):
-        """Return integer indices where this coordinate should be split. Subclass must implement."""
+        """Return integer indices where this coordinate should be split."""
 
     @abstractmethod
     def simplify(self, tolerance=None):
-        """Reduce tie-point count within *tolerance*. Subclass must implement."""
+        """Reduce the number of stored points within *tolerance*."""
 
     def get_discontinuities(self, tolerance=None):
         """

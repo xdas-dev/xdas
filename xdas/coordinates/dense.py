@@ -42,7 +42,6 @@ class DenseCoordinate(Coordinate, name="dense"):
     @property
     @override
     def dtype(self):
-        """Dtype of the underlying data array."""
         return self.data.dtype
 
     @property
@@ -110,7 +109,6 @@ class DenseCoordinate(Coordinate, name="dense"):
 
     @override
     def is_monotonic_increasing(self):
-        """Return ``True`` if all consecutive differences in this coordinate are positive."""
         if np.issubdtype(self.dtype, np.datetime64):
             zero = np.timedelta64(0)
         else:
