@@ -378,7 +378,7 @@ class Coordinate(ABC):
     @property
     def values(self):
         """Materialised numpy array of coordinate values."""
-        return self.__array__()
+        return self.__array__(copy=False)
 
     @property
     def empty(self):

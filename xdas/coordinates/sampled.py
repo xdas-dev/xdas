@@ -155,14 +155,6 @@ class SampledCoordinate(RegularMixin, Coordinate, name="sampled"):
             return np.arange(len(self))
 
     @property
-    def values(self):
-        """Materialised numpy array of all coordinate values."""
-        if self.empty:
-            return np.array([], dtype=self.dtype)
-        else:
-            return self.get_value(self.indices)
-
-    @property
     def start(self):
         """Value at index 0 (first tie value)."""
         return self.tie_values[0]
@@ -235,7 +227,10 @@ class SampledCoordinate(RegularMixin, Coordinate, name="sampled"):
         )
 
     def __array__(self, dtype=None, copy=None):
-        out = self.values
+        if self.empty:
+            out = np.array([], dtype=self.dtype)
+        else:
+            out = self.get_value(self.indices)
         if dtype is not None:
             out = out.__array__(dtype)
         return out

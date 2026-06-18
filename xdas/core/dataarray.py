@@ -267,7 +267,7 @@ class DataArray(NDArrayOperatorsMixin):
     @property
     def values(self):
         """Materialised numpy array of all values."""
-        return self.__array__()
+        return self.__array__(copy=False)
 
     @property
     def empty(self):

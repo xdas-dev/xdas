@@ -117,14 +117,6 @@ class InterpCoordinate(RegularMixin, Coordinate, name="interpolated"):
         else:
             return np.arange(self.tie_indices[-1] + 1)
 
-    @property
-    def values(self):
-        """Materialised numpy array of all coordinate values via piecewise interpolation."""
-        if self.empty:
-            return np.array([], dtype=self.dtype)
-        else:
-            return self.get_value(self.indices)
-
     @staticmethod
     def isvalid(data):
         """Return ``True`` if *data* is a dict with ``tie_indices`` and ``tie_values`` keys."""
@@ -176,7 +168,10 @@ class InterpCoordinate(RegularMixin, Coordinate, name="interpolated"):
         )
 
     def __array__(self, dtype=None, copy=None):
-        out = self.values
+        if self.empty:
+            out = np.array([], dtype=self.dtype)
+        else:
+            out = self.get_value(self.indices)
         if dtype is not None:
             out = out.__array__(dtype)
         return out
