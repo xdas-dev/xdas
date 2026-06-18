@@ -310,25 +310,7 @@ class Coordinate(ABC):
     def __init__(self, data=None, dim=None, dtype=None):
         """Initialise the coordinate from subclass-specific *data*."""
 
-    @abstractmethod
-    def __array__(self, dtype=None, copy=None):
-        """Materialise the coordinate values as a numpy array."""
-
-    @abstractmethod
-    def __len__(self):
-        """Return the number of elements along this coordinate's axis."""
-
-    @abstractmethod
-    def __getitem__(self, item):
-        """Index into the coordinate, returning a new :class:`Coordinate`."""
-
-    def __reduce__(self):
-        return self.__class__, (self.data, self.dim)
-
-    @staticmethod
-    @abstractmethod
-    def isvalid(data):
-        """Return ``True`` if *data* is a valid input for this coordinate subclass."""
+    # -- properties (data model) --------------------------------------------
 
     @property
     @abstractmethod
@@ -375,8 +357,35 @@ class Coordinate(ABC):
             return self.dim
         return next((name for name in self.parent if self.parent[name] is self), None)
 
-    def _assign_parent(self, parent):
-        self._parent = weakref.ref(parent)
+    # -- validation ---------------------------------------------------------
+
+    @staticmethod
+    @abstractmethod
+    def isvalid(data):
+        """Return ``True`` if *data* is a valid input for this coordinate subclass."""
+
+    # -- protocol dunders ---------------------------------------------------
+
+    @abstractmethod
+    def __array__(self, dtype=None, copy=None):
+        """Materialise the coordinate values as a numpy array."""
+
+    @abstractmethod
+    def __len__(self):
+        """Return the number of elements along this coordinate's axis."""
+
+    @abstractmethod
+    def __getitem__(self, item):
+        """Index into the coordinate, returning a new :class:`Coordinate`."""
+
+    def __reduce__(self):
+        return self.__class__, (self.data, self.dim)
+
+    # -- queries ------------------------------------------------------------
+
+    def isscalar(self):
+        """Return ``True`` if this is a :class:`ScalarCoordinate` (non-dimensional)."""
+        return False
 
     @abstractmethod
     def is_monotonic_increasing(self):
@@ -388,21 +397,6 @@ class Coordinate(ABC):
             return None
         else:
             return self.parent.isdim(self.name)
-
-    def copy(self, deep=True):
-        """
-        Return a copy of this coordinate.
-
-        Parameters
-        ----------
-        deep : bool, optional
-            If ``True`` (default) perform a deep copy; otherwise a shallow copy.
-        """
-        if deep:
-            func = deepcopy
-        else:
-            func = copy
-        return self.__class__(func(self.data), func(self.dim), func(self.dtype))
 
     def equals(self, other):
         """Return ``True`` if *other* is the same coordinate type with identical dim and data.
@@ -425,6 +419,8 @@ class Coordinate(ABC):
             if x.dtype != y.dtype or not np.array_equal(x, y, equal_nan=False):
                 return False
         return True
+
+    # -- selection / indexing -----------------------------------------------
 
     def to_index(self, item, method=None, endpoint=True):
         """
@@ -520,13 +516,28 @@ class Coordinate(ABC):
             stop_index -= 1
         return slice(start_index, stop_index)
 
-    def isscalar(self):
-        """Return ``True`` if this is a :class:`ScalarCoordinate` (non-dimensional)."""
-        return False
+    # -- transforms ---------------------------------------------------------
 
     @abstractmethod
     def concat(self, other):
         """Concatenate *other* coordinate to this one, returning a new coordinate."""
+
+    def copy(self, deep=True):
+        """
+        Return a copy of this coordinate.
+
+        Parameters
+        ----------
+        deep : bool, optional
+            If ``True`` (default) perform a deep copy; otherwise a shallow copy.
+        """
+        if deep:
+            func = deepcopy
+        else:
+            func = copy
+        return self.__class__(func(self.data), func(self.dim), func(self.dtype))
+
+    # -- alternative constructors and IO ------------------------------------
 
     def to_dataarray(self):
         """Convert this coordinate to a :class:`~xdas.DataArray` with a single dimension."""
@@ -578,6 +589,11 @@ class Coordinate(ABC):
     @abstractmethod
     def from_block(cls, start, size, step, dim=None, dtype=None):
         """Construct a coordinate from a start value, element count, and step size."""
+
+    # -- internals ----------------------------------------------------------
+
+    def _assign_parent(self, parent):
+        self._parent = weakref.ref(parent)
 
 
 class SampledMixin(ABC):

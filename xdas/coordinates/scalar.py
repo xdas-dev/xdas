@@ -117,14 +117,14 @@ class ScalarCoordinate(Coordinate, name="scalar"):
         raise TypeError("scalar coordinate has no axis")
 
     @override
-    def concat(self, other):
-        """Not supported — scalar coordinates have no axis to concatenate along."""
-        raise TypeError("cannot concatenate scalar coordinate")
-
-    @override
     def to_index(self, item, method=None, endpoint=True):
         """Not supported — raises :exc:`NotImplementedError`."""
         raise NotImplementedError("cannot get index of scalar coordinate")
+
+    @override
+    def concat(self, other):
+        """Not supported — scalar coordinates have no axis to concatenate along."""
+        raise TypeError("cannot concatenate scalar coordinate")
 
     @classmethod
     @override
