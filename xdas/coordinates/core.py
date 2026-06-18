@@ -592,6 +592,22 @@ class RegularMixin(ABC):
     """
 
     @abstractmethod
+    def get_sampling_interval(self, cast=True):
+        """
+        Return the average sample spacing (end-to-end distance divided by N-1).
+
+        Parameters
+        ----------
+        cast : bool, optional
+            If ``True`` (default), cast timedelta64 results to seconds (float).
+
+        Returns
+        -------
+        float or None
+            ``None`` if the coordinate has fewer than two elements.
+        """
+
+    @abstractmethod
     def get_value(self, index):
         """Return the coordinate value at integer *index*. Subclass must implement."""
 
