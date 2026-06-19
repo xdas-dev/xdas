@@ -42,7 +42,6 @@ class DenseCoordinate(Coordinate, name="dense"):
     @classmethod
     @override
     def from_block(cls, start, size, step, dim=None, dtype=None):
-        """Build a :class:`DenseCoordinate` from ``start + step * arange(size)``."""
         data = start + step * np.arange(size)
         return cls(data, dim=dim, dtype=dtype)
 
@@ -63,7 +62,6 @@ class DenseCoordinate(Coordinate, name="dense"):
     @staticmethod
     @override
     def _isvalid(data):
-        """Return ``True`` if *data* converts to a 1-D non-object numpy array."""
         data = np.asarray(data)
         return (data.dtype != np.dtype(object)) and (data.ndim == 1)
 
@@ -95,7 +93,6 @@ class DenseCoordinate(Coordinate, name="dense"):
 
     @override
     def _concat(self, other):
-        """Concatenate *other* :class:`DenseCoordinate` values to this one."""
         if not isinstance(other, self.__class__):
             raise TypeError(f"cannot concatenate {type(other)} to {self.__class__}")
         if not self.dim == other.dim:
@@ -120,7 +117,6 @@ class DenseCoordinate(Coordinate, name="dense"):
     @classmethod
     @override
     def _collect_from_dataset(cls, dataset, name):
-        """Extract all coordinates from an xarray *dataset* variable *name* as plain arrays."""
         return {
             name: (
                 (

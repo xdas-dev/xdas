@@ -284,19 +284,6 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
 
     @override
     def get_sampling_interval(self, cast=True):
-        """
-        Return the median sample spacing across all tie-point segments.
-
-        Parameters
-        ----------
-        cast : bool, optional
-            If ``True`` (default), cast timedelta64 to seconds.
-
-        Returns
-        -------
-        float or None
-            ``None`` if fewer than two elements.
-        """
         if len(self) < 2:
             return None
         num = np.diff(self.tie_values)
@@ -313,15 +300,6 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
 
     @override
     def simplify(self, tolerance=None):
-        """
-        Reduce the number of tie points using the Douglas-Peucker algorithm.
-
-        Parameters
-        ----------
-        tolerance : float, timedelta, or None
-            Maximum allowed deviation from the original piecewise-linear curve.
-            ``None`` uses zero tolerance (lossless).  ``False`` returns ``self`` unchanged.
-        """
         if tolerance is False:
             return self.copy()
         tolerance = parse_tolerance(tolerance, self.dtype)

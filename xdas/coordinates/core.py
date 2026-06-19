@@ -336,7 +336,27 @@ class Coordinate(ABC):
     @classmethod
     @abstractmethod
     def from_block(cls, start, size, step, dim=None, dtype=None):
-        """Construct a coordinate from a start value, element count, and step size."""
+        """
+        Construct a coordinate from a start value, element count, and step size.
+
+        Parameters
+        ----------
+        start : scalar
+            Value of the first element.
+        size : int
+            Number of elements.
+        step : scalar
+            Spacing between consecutive elements.
+        dim : str, optional
+            Dimension name.
+        dtype : dtype-like, optional
+            Desired dtype for the coordinate values.
+
+        Returns
+        -------
+        Coordinate
+            A new coordinate instance of this subclass.
+        """
 
     @abstractmethod
     def __len__(self):
@@ -357,7 +377,20 @@ class Coordinate(ABC):
         """Return ``True`` if all consecutive differences in this coordinate are positive."""
 
     @abstractmethod
-    def _get_value(self, index): ...
+    def _get_value(self, index):
+        """
+        Return the coordinate value(s) at integer *index*.
+
+        Parameters
+        ----------
+        index : int or numpy.ndarray of int
+            Non-negative integer index or array of indices.
+
+        Returns
+        -------
+        scalar or numpy.ndarray
+            Coordinate value(s) at the requested position(s).
+        """
 
     @abstractmethod
     def _get_indexer(self, value, method=None):
@@ -383,20 +416,80 @@ class Coordinate(ABC):
 
     @abstractmethod
     def _slice(self, slc):
-        """Return a new :class:`SampledCoordinate` for the integer slice *index_slice*."""
+        """
+        Return a new coordinate covering the integer slice *slc*.
+
+        Parameters
+        ----------
+        slc : slice
+            Integer slice (already normalised by the caller).
+
+        Returns
+        -------
+        Coordinate
+            A new coordinate of the same subclass.
+        """
 
     @abstractmethod
     def _concat(self, other):
-        """Concatenate *other* coordinate to this one, returning a new coordinate."""
+        """
+        Return a new coordinate formed by appending *other* after this one.
+
+        Parameters
+        ----------
+        other : Coordinate
+            Must be the same subclass and have the same ``dim`` and ``dtype``.
+
+        Returns
+        -------
+        Coordinate
+            Concatenated coordinate of the same subclass.
+
+        Raises
+        ------
+        TypeError
+            If *other* is not the same coordinate subclass.
+        ValueError
+            If ``dim`` or ``dtype`` differ.
+        """
 
     @abstractmethod
     def _to_dataset(self, dataset, attrs):
-        """Write this coordinate into an xarray *dataset*, updating *attrs* in place."""
+        """
+        Serialise this coordinate into an xarray *dataset*, updating *attrs* in place.
+
+        Parameters
+        ----------
+        dataset : xarray.Dataset
+            Target dataset to write coordinate data into.
+        attrs : dict
+            Global attribute mapping to update (e.g. ``coordinate_interpolation``).
+
+        Returns
+        -------
+        dataset : xarray.Dataset
+        attrs : dict
+        """
 
     @classmethod
     @abstractmethod
     def _collect_from_dataset(cls, dataset, name):
-        """Read coordinates of this subclass's kind from an xarray *dataset* variable *name*."""
+        """
+        Extract coordinates of this subclass's type from *dataset* variable *name*.
+
+        Parameters
+        ----------
+        dataset : xarray.Dataset
+            Source dataset.
+        name : str
+            Name of the variable whose coordinates should be extracted.
+
+        Returns
+        -------
+        dict
+            Mapping from coordinate name to coordinate-like data, ready to be
+            passed to :class:`Coordinate`.
+        """
 
     # -- properties ---
 
@@ -425,7 +518,7 @@ class Coordinate(ABC):
 
     @property
     def indices(self):
-        """Full integer index array from 0 to the last tie-point index (inclusive)."""
+        """Integer array ``[0, 1, ..., len(self) - 1]``."""
         return np.arange(len(self))
 
     @property
@@ -713,15 +806,49 @@ class SampledMixin(ABC):
 
     @abstractmethod
     def get_split_indices(self, kind="discontinuities", tolerance=False):
-        """Return integer indices where this coordinate should be split."""
+        """
+        Return integer indices where this coordinate should be split.
+
+        Parameters
+        ----------
+        kind : {"discontinuities", "gaps", "overlaps"}, optional
+            Which boundary type to return.  Default ``"discontinuities"``.
+        tolerance : float, timedelta, or ``False``, optional
+            Minimum magnitude of the discrepancy to report.  ``False`` (default)
+            skips magnitude filtering.
+
+        Returns
+        -------
+        numpy.ndarray
+            Integer indices of the start of each new segment (excluding the first).
+        """
 
     @abstractmethod
     def simplify(self, tolerance=None):
-        """Reduce the number of stored points within *tolerance*."""
+        """
+        Return a simplified copy of this coordinate within *tolerance*.
+
+        Parameters
+        ----------
+        tolerance : float, timedelta, None, or ``False``, optional
+            Maximum allowed deviation from the original values.  ``None`` uses
+            zero tolerance (lossless).  ``False`` returns an unchanged copy.
+
+        Returns
+        -------
+        Coordinate
+            A new coordinate of the same subclass with fewer stored points.
+        """
 
     def get_discontinuities(self, tolerance=None):
         """
         Return a DataFrame containing information about the discontinuities.
+
+        Parameters
+        ----------
+        tolerance : float, timedelta, or None, optional
+            Minimum magnitude of a gap or overlap to include.  ``None``
+            (default) reports all discontinuities regardless of size.
 
         Returns
         -------

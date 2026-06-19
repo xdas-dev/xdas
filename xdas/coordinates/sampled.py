@@ -309,7 +309,6 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
 
     @override
     def _concat(self, other):
-        """Append *other* :class:`SampledCoordinate` segments after this one."""
         if not isinstance(other, self.__class__):
             raise TypeError(f"cannot concatenate {type(other)} to {self.__class__}")
         if not self.dim == other.dim:
@@ -337,7 +336,6 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
 
     @override
     def _to_dataset(self, dataset, attrs):
-        """Write sampling metadata into an xarray *dataset* using CF tie-point conventions."""
         mapping = f"{self.name}: {self.name}_sampling"
         if "coordinate_sampling" in attrs:
             attrs["coordinate_sampling"] += " " + mapping
@@ -374,7 +372,6 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
     @classmethod
     @override
     def _collect_from_dataset(cls, dataset, name):
-        """Read sampled coordinates from *dataset* using the ``coordinate_sampling`` attribute."""
         coords = {}
         mapping = dataset[name].attrs.pop("coordinate_sampling", None)
         if mapping is not None:
@@ -425,14 +422,6 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
 
     @override
     def get_sampling_interval(self, cast=True):
-        """
-        Return the sampling interval.
-
-        Parameters
-        ----------
-        cast : bool, optional
-            If ``True`` (default), cast timedelta64 to seconds (float).
-        """
         if len(self) < 2:
             return None
         delta = self.sampling_interval
@@ -442,15 +431,6 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
 
     @override
     def simplify(self, tolerance=None):
-        """
-        Merge adjacent segments whose gap is within *tolerance* of the sampling interval.
-
-        Parameters
-        ----------
-        tolerance : float, timedelta, or None
-            Maximum allowed discrepancy between the expected and actual start of the
-            next segment.  ``None`` uses zero tolerance.  ``False`` returns ``self`` unchanged.
-        """
         if tolerance is False:
             return self.copy()
         tolerance = parse_tolerance(tolerance, self.dtype)
@@ -474,20 +454,6 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
 
     @override
     def get_split_indices(self, kind="discontinuities", tolerance=False):
-        """
-        Return integer indices of segment boundaries (start of each segment except the first).
-
-        Parameters
-        ----------
-        kind : {"discontinuities", "gaps", "overlaps"}, optional
-            Which boundary type to return. Default ``"discontinuities"``.
-        tolerance : float, timedelta, or ``False``
-            Minimum magnitude of the discrepancy to report.
-
-        Returns
-        -------
-        numpy.ndarray
-        """
         valid_kinds = {"discontinuities", "gaps", "overlaps"}
         if kind not in valid_kinds:
             raise ValueError(f"`kind` must be one of {valid_kinds}; got {kind!r}")
