@@ -1,3 +1,9 @@
+"""
+Machine-learning atom: :class:`MLPicker` wraps SeisBench models as pipeline atoms.
+
+Torch and SeisBench are loaded lazily so they remain optional dependencies.
+"""
+
 import importlib
 
 import numpy as np
@@ -8,6 +14,8 @@ from .core import Atom, State
 
 
 class LazyModule:
+    """Defer importing *name* until the first attribute access."""
+
     def __init__(self, name):
         self._name = name
         self._module = None
@@ -28,6 +36,26 @@ torch = LazyModule("torch")
 
 
 class MLPicker(Atom):
+    """
+    Wraps a SeisBench phase-picking model as a streaming :class:`Atom`.
+
+    Uses an overlapping sliding-window strategy to apply the model to
+    arbitrarily long data and to stitch the per-segment probability outputs
+    back into a continuous DataArray.
+
+    Parameters
+    ----------
+    model : seisbench.models.WaveformModel
+        A SeisBench model in evaluation mode (will be moved to *device*).
+    dim : str
+        Dimension name along which the model slides (usually ``"time"``).
+    device : str or torch.device, optional
+        Torch device.  Defaults to CUDA if available, else CPU.
+    component_strategy : str, optional
+        How to fill the channel dimension: ``"clone"`` replicates the
+        single-component signal, or pass a component letter to select it.
+    """
+
     def __init__(self, model, dim, device=None, component_strategy="clone"):
         super().__init__()
         if device is None:
@@ -50,33 +78,41 @@ class MLPicker(Atom):
 
     @property
     def nperseg(self):
+        """Number of samples per segment (= model input length)."""
         return self.model.in_samples
 
     @property
     def noverlap(self):
+        """Number of overlapping samples between consecutive segments."""
         return self.nperseg // 2
 
     @property
     def step(self):
+        """Stride between the start of consecutive segments."""
         return self.nperseg - self.noverlap
 
     @property
     def phases(self):
+        """List of phase label strings produced by the model."""
         return list(self.model.labels)
 
     @property
     def in_channels(self):
+        """Number of input channels the model expects."""
         return self.model.in_channels
 
     @property
     def classes(self):
+        """Number of output classes (phases) the model produces."""
         return self.model.classes
 
     @property
     def blinding(self):
+        """``(left, right)`` blinding samples from the model's default args."""
         return self.model.default_args["blinding"]
 
     def initialize(self, da, chunk_dim=None, **flags):
+        """Allocate circular buffers sized to *da*'s batch and segment dimensions."""
         self.batch_size = State(
             np.prod([size for dim, size in da.sizes.items() if not dim == self.dim])
         )
@@ -114,6 +150,7 @@ class MLPicker(Atom):
             self.buffer = State(None)
 
     def call(self, da, **flags):
+        """Run the model over *da*, managing a carry-over buffer for chunked input."""
         if self.buffer is None:
             out = self._process(da)
         else:

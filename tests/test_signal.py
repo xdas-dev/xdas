@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import scipy.signal as sp
 import xarray as xr
 
@@ -308,3 +309,72 @@ class TestSTFT:
         assert np.allclose(result["distance"].values, t)
         assert np.allclose(result["wavenumber"].values, np.sort(f))
         assert "channel" not in result.coords  # TODO: keep non-dimensional coordinates
+
+
+class TestSignalMissingBranches:
+    def test_integrate_no_midpoints(self):
+        da = wavelet_wavefronts()
+        result = xs.integrate(da, midpoints=False)
+        assert result.shape == da.shape
+
+    def test_differentiate_no_midpoints(self):
+        da = wavelet_wavefronts()
+        result = xs.differentiate(da, midpoints=False)
+        assert result.sizes["distance"] == da.sizes["distance"] - 1
+
+    def test_sliding_mean_removal_even_window(self):
+        # When wlen/d gives an even n, sliding_mean_removal increments n by 1.
+        da = wavelet_wavefronts()
+        d = xs.get_sampling_interval(da, "time")
+        # Make wlen exactly twice d so n=2 (even) → becomes 3
+        result = xs.sliding_mean_removal(da, wlen=2 * d)
+        assert result.shape == da.shape
+
+    def test_medfilt_invalid_dim(self):
+        da = wavelet_wavefronts()
+        with pytest.raises(ValueError, match="dims provided not in dataarray"):
+            xs.medfilt(da, {"nonexistent_dim": 3})
+
+    def test_stft_default_noverlap(self):
+        da = wavelet_wavefronts()
+        result = xs.stft(da, nperseg=16, dim={"time": "frequency"})
+        assert "frequency" in result.dims
+
+    def test_stft_invalid_scaling(self):
+        da = wavelet_wavefronts()
+        with pytest.raises(ValueError, match="Scaling must be"):
+            xs.stft(da, nperseg=16, scaling="invalid", dim={"time": "frequency"})
+
+    def test_stft_nperseg_one(self):
+        # nperseg=1, noverlap=0 triggers the stride_tricks bypass branch
+        da = wavelet_wavefronts()
+        # nfft=2 avoids single-element frequency axis (which would make tie_indices=[0,0])
+        result = xs.stft(da, nperseg=1, noverlap=0, nfft=2, dim={"time": "frequency"})
+        assert "frequency" in result.dims
+
+
+class TestFftMissingBranches:
+    def test_fft_explicit_n(self):
+        import xdas.fft as xfft
+
+        da = wavelet_wavefronts().isel(distance=0)
+        n = da.sizes["time"] // 2
+        result = xfft.fft(da, n=n, dim={"time": "frequency"})
+        assert result.sizes["frequency"] == n
+
+    def test_rfft_explicit_n(self):
+        import xdas.fft as xfft
+
+        da = wavelet_wavefronts().isel(distance=0)
+        n = da.sizes["time"]
+        result = xfft.rfft(da, n=n, dim={"time": "frequency"})
+        assert "frequency" in result.dims
+
+    def test_ifft_explicit_n(self):
+        import xdas.fft as xfft
+
+        da = wavelet_wavefronts().isel(distance=0)
+        spectrum = xfft.fft(da, dim={"time": "frequency"})
+        n = da.sizes["time"]
+        result = xfft.ifft(spectrum, n=n, dim={"frequency": "time"})
+        assert result.sizes["time"] == n

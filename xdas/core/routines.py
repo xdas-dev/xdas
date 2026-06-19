@@ -1,8 +1,15 @@
+"""
+Top-level routines for opening, concatenating, aligning, and splitting arrays.
+
+Operates on :class:`DataArray` and :class:`DataCollection` objects; includes
+multi-file helpers (``open_mfdataarray``, ``open_mfdatacollection``).
+"""
+
 import os
 import re
 import warnings
 from collections import defaultdict
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from glob import glob
 from itertools import pairwise
 from pathlib import Path
@@ -11,9 +18,11 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import xarray as xr
+from loky import get_reusable_executor
 from tqdm import tqdm
 
-from ..coordinates.core import Coordinates, get_sampling_interval
+from ..coordinates.core import Coordinates, SampledMixin, get_sampling_interval
+from ..parallel import get_workers_count
 from ..virtual import VirtualSource, VirtualStack
 from .dataarray import DataArray
 from .datacollection import DataCollection, DataMapping, DataSequence
@@ -25,6 +34,7 @@ def open(
     tolerance=None,
     squeeze=None,
     engine=None,
+    parallel=None,
     verbose=False,
     **kwargs,
 ):
@@ -69,6 +79,11 @@ def open(
         The file format engine to use, or a custom read callable. When ``None``
         (default), the xdas NetCDF format is assumed. Providing an engine skips the
         automatic DataCollection detection.
+    parallel: bool or int, optional
+        Whether to use multiprocessing to fetch file metadata. If False or 1,
+        runs in single-process mode. If an integer, use that many processes.
+        If True, use as many processes as available cores. If None, use the
+        global xdas configuration. Default to None.
     verbose : bool, optional
         Whether to display a progress bar while reading metadata. Ignored when
         opening a single file. Default is ``False``.
@@ -147,6 +162,7 @@ def open(
                         dim,
                         tolerance,
                         squeeze=False if squeeze is None else squeeze,
+                        parallel=parallel,
                         verbose=verbose,
                     )
                 except Exception:
@@ -157,23 +173,25 @@ def open(
                 tolerance,
                 squeeze=True if squeeze is None else squeeze,
                 engine=engine,
+                parallel=parallel,
                 verbose=verbose,
                 **kwargs,
             )
-        case "tree-like":
+        case "tree-like":  # pragma: no branch
             return open_mfdatatree(
                 paths,
                 dim,
                 tolerance,
                 squeeze=False if squeeze is None else squeeze,
                 engine=engine,
+                parallel=parallel,
                 verbose=verbose,
                 **kwargs,
             )
 
 
 def open_mfdatacollection(
-    paths, dim="first", tolerance=None, squeeze=False, verbose=False
+    paths, dim="first", tolerance=None, squeeze=False, verbose=False, parallel=None
 ):
     """
     Open a multiple file DataCollection.
@@ -192,13 +210,18 @@ def open_mfdatacollection(
         The path names given as a shell-style wildcards string or a list of paths.
     dim : str, optional
         The dimension along which the data arrays are concatenated. Default to "first".
-    tolerance : float of timedelta64, optional
+    tolerance : float or timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
         continuous with beginning of the following one. For time coordinates, numeric
         values are considered as seconds. Default to zero tolerance.
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
+    parallel: bool or int, optional
+        Whether to use multiprocessing to fetch file metadata. If False or 1,
+        runs in single-process mode. If an integer, use that many processes.
+        If True, use as many processes as available cores. If None, use the
+        global xdas configuration. Default to None.
     verbose: bool
         Whether to display a progress bar. Default to False.
 
@@ -227,7 +250,15 @@ def open_mfdatacollection(
             "The maximum number of file that can be opened at once is for now limited "
             "to 100 000."
         )
-    with ProcessPoolExecutor() as executor:
+    max_workers = get_workers_count(parallel)
+    if max_workers == 1:
+        if verbose:
+            iterator = tqdm(paths, desc="Fetching metadata from files")
+        else:
+            iterator = paths
+        objs = [open_datacollection(path) for path in iterator]
+    else:
+        executor = get_reusable_executor(max_workers)
         futures = [executor.submit(open_datacollection, path) for path in paths]
         if verbose:
             iterator = tqdm(
@@ -248,6 +279,7 @@ def open_mfdatatree(
     squeeze=False,
     engine=None,
     verbose=False,
+    parallel=None,
     **kwargs,
 ):
     """
@@ -273,15 +305,20 @@ def open_mfdatatree(
         The path descriptor.
     dim : str, optional
         The dimension along which the data arrays are concatenated. Default to "first".
-    tolerance : float of timedelta64, optional
+    tolerance : float or timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
         continuous with beginning of the following one. For time coordinates, numeric
         values are considered as seconds. Default to zero tolerance.
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
-    engine: str of callable, optional
+    engine: str or callable, optional
         The type of file to open or a read function. Default to xdas netcdf format.
+    parallel: bool or int, optional
+        Whether to use multiprocessing to fetch file metadata. If False or 1,
+        runs in single-process mode. If an integer, use that many processes.
+        If True, use as many processes as available cores. If None, use the
+        global xdas configuration. Default to None.
     verbose: bool
         Whether to display a progress bar. Default to False.
     **kwargs
@@ -351,7 +388,9 @@ def open_mfdatatree(
             bag = bag[match.group(field)]
         bag.append(fname)
 
-    return collect(tree, fields, dim, tolerance, squeeze, engine, verbose, **kwargs)
+    return collect(
+        tree, fields, dim, tolerance, squeeze, engine, parallel, verbose, **kwargs
+    )
 
 
 def collect(
@@ -361,11 +400,12 @@ def collect(
     tolerance=None,
     squeeze=False,
     engine=None,
+    parallel=None,
     verbose=False,
     **kwargs,
 ):
     """
-    Collects the data from a tree of paths using `fields` as level names.
+    Collect the data from a tree of paths using `fields` as level names.
 
     Parameters
     ----------
@@ -375,15 +415,20 @@ def collect(
         The names of the levels of the tree hierarchy.
     dim : str, optional
         The dimension along which the data arrays are concatenated. Default to "first".
-    tolerance : float of timedelta64, optional
+    tolerance : float or timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
         continuous with beginning of the following one. For time coordinates, numeric
         values are considered as seconds. Default to zero tolerance.
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
-    engine: str of callable, optional
+    engine: str or callable, optional
         The type of file to open or a read function. Default to xdas netcdf format.
+    parallel: bool or int, optional
+        Whether to use multiprocessing to fetch file metadata. If False or 1,
+        runs in single-process mode. If an integer, use that many processes.
+        If True, use as many processes as available cores. If None, use the
+        global xdas configuration. Default to None.
     verbose: bool
         Whether to display a progress bar. Default to False.
     **kwargs
@@ -401,13 +446,21 @@ def collect(
     for key, value in tree.items():
         if isinstance(value, list):
             dc = open_mfdataarray(
-                value, dim, tolerance, squeeze, engine, verbose, **kwargs
+                value, dim, tolerance, squeeze, engine, parallel, verbose, **kwargs
             )
             dc.name = fields[0]
             collection[key] = dc
         else:
             collection[key] = collect(
-                value, fields, dim, tolerance, squeeze, engine, verbose
+                value,
+                fields,
+                dim,
+                tolerance,
+                squeeze,
+                engine,
+                parallel,
+                verbose,
+                **kwargs,
             )
     return collection
 
@@ -426,6 +479,7 @@ def open_mfdataarray(
     tolerance=None,
     squeeze=True,
     engine=None,
+    parallel=None,
     verbose=False,
     **kwargs,
 ):
@@ -443,15 +497,20 @@ def open_mfdataarray(
         The path names given as a shell-style wildcards string or a list of paths.
     dim : str, optional
         The dimension along which the data arrays are concatenated. Default to "first".
-    tolerance : float of timedelta64, optional
+    tolerance : float or timedelta64, optional
         During concatenation, the tolerance to consider that the end of a file is
         continuous with beginning of the following one. For time coordinates, numeric
         values are considered as seconds. Default to zero tolerance.
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
-    engine: str of callable, optional
+    engine: str or callable, optional
         The type of file to open or a read function. Default to xdas netcdf format.
+    parallel: bool or int, optional
+        Whether to use multiprocessing to fetch file metadata. If False or 1,
+        runs in single-process mode. If an integer, use that many processes.
+        If True, use as many processes as available cores. If None, use the
+        global xdas configuration. Default to None.
     verbose: bool
         Whether to display a progress bar. Default to False.
     **kwargs
@@ -486,40 +545,47 @@ def open_mfdataarray(
             "The maximum number of file that can be opened at once is for now limited "
             "to 100 000."
         )
-    if engine == "miniseed":  # TODO: dirty fix
-        objs = [open_dataarray(path, engine=engine, **kwargs) for path in paths]
+    max_workers = get_workers_count(parallel)
+    objs = []
+    failures = []
+    if (max_workers == 1) or (engine == "miniseed"):  # TODO: dirty miniseed fix
+        iterator = (
+            tqdm(paths, desc="Fetching metadata from files") if verbose else paths
+        )
+        for path in iterator:
+            try:
+                objs.append(open_dataarray(path, engine=engine, **kwargs))
+            except Exception as error:
+                failures.append((path, error))
+                warnings.warn(f"could not open {path}: {error}", RuntimeWarning)
     else:
-        with ProcessPoolExecutor() as executor:
-            futures_to_paths = {
-                executor.submit(open_dataarray, path, engine=engine, **kwargs): path
-                for path in paths
-            }
-            if verbose:
-                iterator = tqdm(
-                    as_completed(futures_to_paths),
-                    total=len(futures_to_paths),
-                    desc="Fetching metadata from files",
-                )
+        executor = get_reusable_executor(max_workers)
+        futures_to_paths = {
+            executor.submit(open_dataarray, path, engine=engine, **kwargs): path
+            for path in paths
+        }
+        if verbose:
+            iterator = tqdm(
+                as_completed(futures_to_paths),
+                total=len(futures_to_paths),
+                desc="Fetching metadata from files",
+            )
+        else:
+            iterator = as_completed(futures_to_paths)
+        for future in iterator:
+            try:
+                obj = future.result()
+            except Exception as error:
+                path = futures_to_paths[future]
+                failures.append((path, error))
+                warnings.warn(f"could not open {path}: {error}", RuntimeWarning)
             else:
-                iterator = as_completed(futures_to_paths)
-            objs = []
-            failures = []
-            for future in iterator:
-                try:
-                    obj = future.result()
-                except Exception as e:
-                    path = futures_to_paths[future]
-                    failures.append((path, e))
-                    warnings.warn(f"could not open {path}: {e}", RuntimeWarning)
-                else:
-                    objs.append(obj)
-    if len(objs) == 0:
-        if failures:
-            path, error = failures[0]
-            raise RuntimeError(
-                f"could not open any file with; first failure was {path}: {error}"
-            ) from error
-        raise FileNotFoundError("no file to open")
+                objs.append(obj)
+    if len(objs) == 0:  # there must be failures
+        path, error = failures[0]
+        raise RuntimeError(
+            f"could not open any file with engine: {engine}; first failure was {path}: {error}"
+        ) from error
     return combine_by_coords(objs, dim, tolerance, squeeze, None, verbose)
 
 
@@ -531,7 +597,7 @@ def open_dataarray(fname, engine=None, vtype=None, ctype=None, **kwargs):
     ----------
     fname : str
         The path of the dataarray.
-    engine: str of callable, optional
+    engine: str or callable, optional
         The type of file to open or a read function. Default to xdas netcdf format.
     **kwargs
         Additional keyword arguments to be passed to the read function.
@@ -597,7 +663,7 @@ def asdataarray(obj, tolerance=None):
     """
     Try to convert given object to a dataarray.
 
-    Only support DataArray or DataArray as input.
+    Only supports DataArray or xr.DataArray as input.
 
     Parameters
     ----------
@@ -616,7 +682,7 @@ def asdataarray(obj, tolerance=None):
     Raises
     ------
     ValueError
-        _description_
+        If the object cannot be converted to a DataArray.
     """
     if isinstance(obj, DataArray):
         return obj
@@ -645,7 +711,7 @@ def combine_by_field(
         The data collections to combine.
     dim : str, optional
         The dimension along which concatenate. Default to "first".
-    tolerance : float of timedelta64, optional
+    tolerance : float or timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
         the following. For time coordinates, numeric  values are considered as seconds.
         Zero by default.
@@ -709,7 +775,7 @@ def combine_by_coords(
         The data arrays to combine.
     dim : str, optional
         The dimension along which concatenate. Default to "first".
-    tolerance : float of timedelta64, optional
+    tolerance : float or timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
         the following. For time coordinates, numeric values are considered as seconds.
         Zero by default.
@@ -772,6 +838,14 @@ class CompatibilityError(Exception):
 
 
 class Bag:
+    """
+    Accumulator that collects :class:`DataArray` objects for concatenation along *dim*.
+
+    Compatibility checks (dims, shape, coords, sampling interval, dtype) are run on
+    each appended object; incompatible objects raise :exc:`CompatibilityError` so the
+    caller can start a new bag.
+    """
+
     def __init__(self, dim):
         self.objs = []
         self.dim = dim
@@ -780,6 +854,7 @@ class Bag:
         return iter(self.objs)
 
     def initialize(self, da):
+        """Set *da* as the first element and record its shape, coords, sampling interval, and dtype."""
         self.objs = [da]
         self.dims = da.dims
         self.subshape = tuple(
@@ -797,6 +872,7 @@ class Bag:
         self.dtype = da.dtype
 
     def append(self, da):
+        """Add *da* after running all compatibility checks; initialises on first call."""
         if not self.objs:
             self.initialize(da)
         else:
@@ -808,19 +884,23 @@ class Bag:
             self.objs.append(da)
 
     def check_dims(self, da):
+        """Raise :exc:`CompatibilityError` if *da* has different dimensions."""
         if not self.dims == da.dims:
             raise CompatibilityError("dimensions are not compatible")
 
     def check_shape(self, da):
+        """Raise :exc:`CompatibilityError` if *da* has a different non-concat shape."""
         subshape = tuple(size for dim, size in da.sizes.items() if not dim == self.dim)
         if not self.subshape == subshape:
             raise CompatibilityError("shapes are not compatible")
 
     def check_dtype(self, da):
+        """Raise :exc:`CompatibilityError` if *da* has a different dtype."""
         if not self.dtype == da.dtype:
             raise CompatibilityError("data types are not compatible")
 
     def check_coords(self, da):
+        """Raise :exc:`CompatibilityError` if *da* has incompatible non-concat coordinates."""
         subcoords = (
             da.coords.drop_dims(self.dim)
             if self.dim in self.dims
@@ -830,6 +910,7 @@ class Bag:
             raise CompatibilityError("coordinates are not compatible")
 
     def check_sampling_interval(self, da):
+        """Raise :exc:`CompatibilityError` if *da* has a different sampling interval."""
         if self.delta is None:
             pass
         else:
@@ -848,7 +929,7 @@ def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         List of data arrays to concatenate.
     dim : str
         The dimension along which concatenate.
-    tolerance : float of timedelta64, optional
+    tolerance : float or timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
         the following, For time coordinates, numeric values are considered as seconds.
         Zero by default.
@@ -861,10 +942,15 @@ def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
     Returns
     -------
     DataArray
-        The concatenated dataarray.
+        The concatenated dataarray. Coordinates along axes other than *dim* are
+        taken from the first element; no compatibility check is performed on ``objs[1:]``.
 
     """
-    objs = [da for da in objs if not da.empty]
+    objs = list(objs)
+    non_empty = [da for da in objs if not da.empty]
+    if not non_empty:
+        return objs[0] if objs else DataArray([])
+    objs = non_empty
 
     if virtual is None:
         virtual = all(isinstance(da.data, (VirtualSource, VirtualStack)) for da in objs)
@@ -878,6 +964,7 @@ def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         dims = (dim, *objs[0].dims)
         objs = [da.expand_dims(dim) for da in objs]
 
+    # TODO: check that objs[1:] have the same non-concat coords as objs[0]
     coords = objs[0].coords.drop_dims(dim)
     name = objs[0].name
     attrs = objs[0].attrs
@@ -928,10 +1015,11 @@ def concat_coords(objs, *, sort=False, return_order=False, tolerance=False):
     return_order : bool, optional
         If True, return `(coord, order)` where `order` is the list of
         indices used to sort the input objects.
-    tolerance : float of timedelta64, optional
+    tolerance : float or timedelta64, optional
         The tolerance to consider that the end of a coordinate object is continuous
         with beginning of the following, For time coordinates, numeric values are
         considered as seconds. No simplification by default.
+
     Returns
     -------
     coord
@@ -949,20 +1037,19 @@ def concat_coords(objs, *, sort=False, return_order=False, tolerance=False):
 
     # concat
     for obj in objs[1:]:
-        out = out.concat(obj)
+        out = out._concat(obj)
 
     # simplify
     if tolerance is not False:
-        try:
+        if isinstance(out, SampledMixin):
             out = out.simplify(tolerance)
-        except NotImplementedError:
-            if (
-                tolerance is not None
-            ):  # TODO: Default to False and remove this condition here?
-                raise TypeError(
-                    "`tolerance` can only be used with coordinates "
-                    "that implements `simplify`"
-                )
+        elif (
+            tolerance is not None
+        ):  # TODO: Default to False and remove this condition here?
+            raise TypeError(
+                "`tolerance` can only be used with coordinates "
+                "that implements `simplify`"
+            )
 
     if return_order:
         return out, order

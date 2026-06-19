@@ -226,3 +226,77 @@ class TestTaperedSelection:
 
         with pytest.raises(ValueError, match="No valid start/end pairs found"):
             tapered_selection(da, start, end, window, dim="time")
+
+    def test_shape_mismatch(self):
+        da = self.generate()
+        start = np.full(3, np.datetime64("2023-01-01T00:00:03"))
+        end = np.full(3, np.datetime64("2023-01-01T00:00:07"))
+        with pytest.raises(ValueError, match="shape mismatch"):
+            tapered_selection(da, start, end, dim="time")
+
+    def test_scalar_coord_preserved(self):
+        da = xd.DataArray(
+            data=np.arange(5 * 10).reshape(5, 10).astype(float),
+            coords={
+                "distance": {
+                    "tie_indices": [0, 4],
+                    "tie_values": [0.0, 400.0],
+                },
+                "time": {
+                    "tie_indices": [0, 9],
+                    "tie_values": [
+                        np.datetime64("2023-01-01T00:00:00"),
+                        np.datetime64("2023-01-01T00:00:09"),
+                    ],
+                },
+                "station": "ABC",
+            },
+        )
+        start = (
+            [np.datetime64("NaT")]
+            + [np.datetime64("2023-01-01T00:00:03")] * 2
+            + [np.datetime64("NaT")] * 2
+        )
+        end = (
+            [np.datetime64("NaT")]
+            + [np.datetime64("2023-01-01T00:00:07")] * 2
+            + [np.datetime64("NaT")] * 2
+        )
+
+        result = tapered_selection(da, start, end, dim="time")
+        assert result.coords["station"].values == np.array("ABC")
+
+    def test_non_dim_coord_on_dim_axis_skipped(self):
+        da = xd.DataArray(
+            data=np.arange(5 * 10).reshape(5, 10).astype(float),
+            coords={
+                "distance": {
+                    "tie_indices": [0, 4],
+                    "tie_values": [0.0, 400.0],
+                },
+                "time": {
+                    "tie_indices": [0, 9],
+                    "tie_values": [
+                        np.datetime64("2023-01-01T00:00:00"),
+                        np.datetime64("2023-01-01T00:00:09"),
+                    ],
+                },
+                "quality": (
+                    "time",
+                    np.ones(10),
+                ),
+            },
+        )
+        start = (
+            [np.datetime64("NaT")]
+            + [np.datetime64("2023-01-01T00:00:03")] * 2
+            + [np.datetime64("NaT")] * 2
+        )
+        end = (
+            [np.datetime64("NaT")]
+            + [np.datetime64("2023-01-01T00:00:07")] * 2
+            + [np.datetime64("NaT")] * 2
+        )
+
+        result = tapered_selection(da, start, end, dim="time")
+        assert "quality" not in result.coords

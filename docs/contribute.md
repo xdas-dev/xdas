@@ -1,9 +1,12 @@
 # Development
 
+This project uses [Git](https://git-scm.com/) for version control and [uv](https://docs.astral.sh/uv/) for Python packaging and environment management.
+
+Ensure both tools are installed and available in your environment.
+
 ## Configure development environment
 
-1. Be sure to have a github account with some SSH key configured.
-(or you won't be able to push modifications) and that you configured git:
+1. Be sure to have a github account with some SSH key configured (or you won't be able to push modifications) and that you configured git:
 ```
 git config --global user.name "Your Name Comes Here"
 git config --global user.email you@yourdomain.example.com
@@ -20,31 +23,23 @@ cd xdas
 git checkout dev
 ```
 
-4. Create a dedicated conda environment
+4. Create virtual environment and install development dependencies:
 ```
-conda create -n xdas-dev
-conda activate xdas-dev
-conda install pip
+uv sync --all-groups
 ```
 
-5. Install xdas and optional dependencies in editable mode:
+5. Check that all tests are passing and that test coverage is 100\%:
 ```
-pip install -e ".[dev,docs,tests]"
-```
-
-6. Check that all tests are passing (one test is not passing but this is ok):
-```
-pytest
+uv run pytest --cov
 ```
 
-7. Check that the documentation builds without errors:
+6. Check that the documentation builds without errors:
 ```
 cd docs
-make html
+uv run make html
 cd ..
 ```
-You can then inspect the documentation by opening `index.html` in docs/_build/html with
-any browser (see later).
+You can then inspect the documentation by opening `index.html` in docs/_build/html with any browser (see later).
 
 ## Package structure
 
@@ -60,9 +55,7 @@ Here a quick overview:
 
 ## Adding a function
 
-Most of the time, you will add functions (or methods) to implement new features.
-Small internal functions can be quite undocumented but ideally, function that will bue
-used by users requires to:
+Most of the time, you will add functions (or methods) to implement new features. Small internal functions can be quite undocumented but ideally, function that will be used by users requires to:
 - write the body of the function
 - write a docstring that explains how to use the function
 - add an example into the docstring
@@ -82,22 +75,19 @@ The usual workflow is:
 - publish your branch online
 - make a pull request to ask the permission to merge your code.
 
-To do this you can either use git in the [terminal](https://git-scm.com/docs/gittutorial)
-or within [VS Code](https://code.visualstudio.com/docs/sourcecontrol/overview).
+To do this you can either use git in the [terminal](https://git-scm.com/docs/gittutorial) or within [VS Code](https://code.visualstudio.com/docs/sourcecontrol/overview).
 
 
 ## How to write a docstring with examples
 
-You need to add multiline string that follows the
-[numpydoc](https://numpydoc.readthedocs.io/) style. Here an example:
+You need to add multiline string that follows the [numpydoc](https://numpydoc.readthedocs.io/) style. Here an example:
 
 ```python
 def your_function(arg1, arg2=None):
    """
    Explain in one line the main objective.
 
-   Add additional information with with as many comments as you wants. You will need
-   to wrap you code (ideally max 88 char per line).
+   Add additional information with with as many comments as you wants. You will need to wrap you code (ideally max 88 char per line).
 
    Parameters
    ----------
@@ -120,26 +110,21 @@ def your_function(arg1, arg2=None):
    return do_something_with_args(arg1, arg2)
 ```
 
-Note that the outputs of the examples will be used as tests. `pytest` will check that
-the hard coded output matches what the code actually outputs. This is a first
-quick way to add tests to your function.
+Note that the outputs of the examples will be used as tests. `pytest` will check that the hard coded output matches what the code actually outputs. This is a first quick way to add tests to your function.
 
 ## How to format your code
 
 Run (in the root xdas folder or where you are working):
 ```
-black .
-isort .
+uv run ruff check --fix
+uv run ruff format
 ```
 
 ## How to add tests
 
 [`pytest`](https://docs.pytest.org) is used for testing.
 
-If you are working on a function in a script in `xdas/dir/file.py` then test must be
-located in `tests/dir/test_file.py`. In `pytest` each test is one function. Each function
-can check several things with the `assert` python statement. Functions
-can be grouped into classes. Bellow an example:
+If you are working on a function in a script in `xdas/dir/file.py` then test must be located in `tests/dir/test_file.py`. In `pytest` each test is one function. Each function can check several things with the `assert` python statement. Functions can be grouped into classes. Bellow an example:
 
 ```python
 import pytest
@@ -151,37 +136,30 @@ class TestMyModule:
            my_function(-1)
 ```
 
-Note that here we have one test class for the entire module (the `file.py`) but we could
-have one test class per function if those require to test a lot of things. When testing
-classes, one testing class per developed class is generally the way to go.
+Note that here we have one test class for the entire module (the `file.py`) but we could have one test class per function if those require to test a lot of things. When testing classes, one testing class per developed class is generally the way to go.
 
-The to run check that your test are passing:
+To run and check that your tests are passing:
 ```
-pytest
+uv run pytest --cov
 ```
 
-Note that VS Code as a nice
-[set of features](https://code.visualstudio.com/docs/python/testing) to run test.
+Note that VS Code has a nice [set of features](https://code.visualstudio.com/docs/python/testing) to run tests.
 
 ## Editing the documentation
 
 The documentation is written in [markdown](https://www.markdownguide.org/basic-syntax/).
 
-It uses the [MyST](https://jupyterbook.org/en/stable/content/myst.html) syntax to run
-code as if the documentation was a jupyter notebook.
+It uses the [MyST](https://jupyterbook.org/en/stable/content/myst.html) syntax to run code as if the documentation was a jupyter notebook.
 
-The simpler si probably to take inspiration from some pre-existing documentation.
+The simplest is probably to take inspiration from some pre-existing documentation.
 
-If you need some stuff to be run outside some documentation page (e.g. to generate some
-data) you can place your code at the end of the `docs/conf.py` file.
+If you need some stuff to be run outside some documentation page (e.g. to generate some data) you can place your code at the end of the `docs/conf.py` file.
 
 To build the documentation go in the docs folder an run:
 ```
-make html
+uv run make html
 ```
 
-You can then inspect the documentation by opening `index.html` in docs/_build/html with
-any browser.
+You can then inspect the documentation by opening `index.html` in docs/_build/html with any browser.
 
-Note that VS Code as an extension called Live Preview to render html. Once this extension is installed,
-right click on the `index.html` file and click on Show preview.
+Note that VS Code has an extension called Live Preview to render html. Once this extension is installed, right click on the `index.html` file and click on Show preview.

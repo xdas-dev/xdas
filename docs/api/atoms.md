@@ -24,7 +24,6 @@ Attributes
    Atom.initialized
 ```
 
-
 Methods
 
 ```{eval-rst}
@@ -34,17 +33,55 @@ Methods
    Atom.initialize_from_state
    Atom.call
    Atom.reset
+   Atom.save_state
+   Atom.set_state
+   Atom.load_state
 ```
 
-## Core atoms 
+## Core atoms
 
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
 
    Sequential
-   Partial
    State
+```
+
+### Partial
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   Partial
+```
+
+Attributes
+
+```{eval-rst}
+.. autosummary::
+
+   Partial.stateful
+```
+
+Methods
+
+```{eval-rst}
+.. autosummary::
+
+   Partial.call
+   Partial.from_state
+   Partial.get_state
+```
+
+## Decorators
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   atomized
 ```
 
 ## Signal processing
@@ -57,6 +94,7 @@ Methods
    FIRFilter
    IIRFilter
    LFilter
+   MLPicker
    ResamplePoly
    SOSFilter
    Trigger

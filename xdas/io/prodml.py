@@ -1,5 +1,11 @@
+"""
+I/O engine for ProdML HDF5 files (:class:`ProdML`).
+
+Also known as OptaSense and Sintela format.
+"""
+
 import h5py
-import numpy as np
+import pandas as pd
 
 from ..coordinates.core import Coordinate
 from ..core.dataarray import DataArray
@@ -8,6 +14,8 @@ from .core import Engine
 
 
 class ProdML(Engine, name="prodml", aliases=["optasense", "sintela"]):
+    """Engine for reading ProdML / OptaSense / Sintela HDF5 files."""
+
     _supported_vtypes = ["hdf5"]
     _supported_ctypes = {
         "time": ["interpolated"],
@@ -15,15 +23,24 @@ class ProdML(Engine, name="prodml", aliases=["optasense", "sintela"]):
     }
 
     def open_dataarray(self, fname, swapped_dims=False):
+        """Read a ProdML HDF5 file *fname* and return a virtual :class:`DataArray`."""
         with h5py.File(fname, "r") as file:
             acquisition = file["Acquisition"]
             dx = acquisition.attrs["SpatialSamplingInterval"]
             x0 = dx * acquisition.attrs["StartLocusIndex"]
             rawdata = acquisition["Raw[0]"]["RawData"]
-            tstart = np.datetime64(
-                rawdata.attrs["PartStartTime"].decode().split("+")[0]
+            tstart = (
+                pd.Timestamp(rawdata.attrs["PartStartTime"].decode())
+                .tz_convert("UTC")
+                .tz_localize(None)
+                .to_numpy()
             )
-            tend = np.datetime64(rawdata.attrs["PartEndTime"].decode().split("+")[0])
+            tend = (
+                pd.Timestamp(rawdata.attrs["PartEndTime"].decode())
+                .tz_convert("UTC")
+                .tz_localize(None)
+                .to_numpy()
+            )
             data = VirtualSource(rawdata)
 
         if swapped_dims:

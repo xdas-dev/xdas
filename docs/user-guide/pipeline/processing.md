@@ -9,14 +9,10 @@ kernelspec:
 
 import os
 import xdas as xd
-os.chdir("../_data")
+os.chdir("../../_data")
 ```
 
 # Processing larger-than-memory data
-
-```{warning}
-The API of this part of xdas is still experimental.
-```
 
 ## Chunked processing: basic concepts
 
@@ -32,4 +28,60 @@ A second feature of xdas, is that it automatically handles state updates and tra
 
 ## Example
 
-**TODO**
+The following example shows how to apply a simple processing pipeline to a large dataset.
+First, build and validate the pipeline on a small in-memory subset:
+
+```{code-cell}
+:tags: [remove-output]
+
+import numpy as np
+import xdas as xd
+import xdas.signal as xs
+from xdas.atoms import Sequential, Partial, LFilter
+from xdas.processing import process, DataArrayLoader, DataArrayWriter
+from scipy.signal import iirfilter
+
+da = xd.synthetics.wavelet_wavefronts()
+
+b, a = iirfilter(4, 0.1, btype="high")
+
+atom = Sequential(
+    [
+        Partial(xs.decimate, 2, ftype="fir", dim="distance"),
+        LFilter(b, a, dim="time"),
+        Partial(np.square),
+    ]
+)
+
+monolithic = atom(da)
+```
+
+Then apply the same pipeline chunk-by-chunk using {py:func}`~xdas.processing.process`.
+The {py:class}`~xdas.processing.DataArrayLoader` splits the input into fixed-size chunks
+along a given dimension, while {py:class}`~xdas.processing.DataArrayWriter` collects and
+writes each processed chunk to a directory on disk:
+
+```{code-cell}
+:tags: [remove-output]
+
+import os
+os.makedirs("output", exist_ok=True)
+
+dl = DataArrayLoader(da, chunks={"time": 100})
+dw = DataArrayWriter("output")
+chunked = process(atom, dl, dw)
+
+assert chunked.equals(monolithic)
+```
+
+```{code-cell}
+:tags: [remove-cell]
+
+import shutil
+shutil.rmtree("output")
+```
+
+The result is identical to the monolithic run but can scale to datasets that do not fit in
+memory. The loader and writer can be swapped for other variants — for example,
+{py:class}`~xdas.processing.ZMQPublisher` to stream results over a network (see
+[](streaming.md)).

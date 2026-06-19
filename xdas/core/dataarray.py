@@ -1,4 +1,12 @@
+"""
+:class:`DataArray`: the primary N-dimensional labeled array object.
+
+Features labeled coordinates, NumPy/Dask backing, and lazy
+:class:`VirtualArray` support.
+"""
+
 import copy
+import warnings
 from functools import partial
 
 import numpy as np
@@ -7,20 +15,17 @@ from dask.array import Array as DaskArray
 from numpy.lib.mixins import NDArrayOperatorsMixin
 
 from ..coordinates import Coordinates
-from ..dask.core import from_dict, to_dict
-from ..virtual import VirtualArray, _to_human
+from ..virtual import _to_human
 
 HANDLED_NUMPY_FUNCTIONS = {}
 HANDLED_METHODS = {}
-
-import warnings
 
 
 class DataArray(NDArrayOperatorsMixin):
     """
     N-dimensional array with labeled coordinates and dimensions.
 
-    It is the equivalent of and xarray.DataArray but with custom coordinate objects.
+    It is the equivalent of an xarray.DataArray but with custom coordinate objects.
     Most of the DataArray API follows the DataArray one. DataArray objects also provide
     virtual dataset capabilities to manipulate huge multi-file NETCDF4 or HDF5 datasets.
 
@@ -73,7 +78,7 @@ class DataArray(NDArrayOperatorsMixin):
         if isinstance(key, str):
             return self.coords[key]
         else:
-            query = self.coords.get_query(key)
+            query = self.coords._get_query(key)
             data = self.data.__getitem__(tuple(query.values()))
             coords = {
                 name: (
@@ -90,7 +95,7 @@ class DataArray(NDArrayOperatorsMixin):
         if isinstance(key, str):
             self.coords[key] = value
         else:
-            query = self.coords.get_query(key)
+            query = self.coords._get_query(key)
             self.data.__setitem__(tuple(query.values()), value)
 
     def __repr__(self):
@@ -120,15 +125,14 @@ class DataArray(NDArrayOperatorsMixin):
     def __len__(self):
         return self.shape[0]
 
-    def __array__(self, dtype=None):
-        if dtype is None:
-            return self.data.__array__()
-        else:
-            return self.data.__array__(dtype)
+    def __array__(self, dtype=None, copy=None):
+        out = np.asarray(self.data, dtype=dtype)
+        if copy:
+            out = out.copy()
+        return out
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        from .routines import broadcast_coords  # TODO: circular import
-        from .routines import broadcast_to
+        from .routines import broadcast_coords, broadcast_to  # TODO: circular import
 
         if not method == "__call__":
             return NotImplemented
@@ -175,17 +179,21 @@ class DataArray(NDArrayOperatorsMixin):
             raise AttributeError(f"'DataArray' object has no attribute '{name}'")
 
     def conj(self):
+        """Return the complex conjugate, element-wise."""
         return np.conj(self)
 
     def conjugate(self):
+        """Return the complex conjugate, element-wise (alias of :meth:`conj`)."""
         return np.conjugate(self)
 
     @property
     def data(self):
+        """The underlying array (numpy, dask, or :class:`~xdas.virtual.VirtualArray`)."""
         return self._data
 
     @data.setter
     def data(self, value):
+        """Replace the underlying data; must have the same shape as the current array."""
         if not hasattr(value, "__array__"):
             value = np.asarray(value)
         if not value.shape == self.shape:
@@ -197,10 +205,12 @@ class DataArray(NDArrayOperatorsMixin):
 
     @property
     def coords(self):
+        """The :class:`~xdas.coordinates.Coordinates` container for this array."""
         return self._coords
 
     @coords.setter
     def coords(self, value):
+        """Replace the coordinates container; dimensions must remain unchanged."""
         value = Coordinates(value)
         if not value.dims == self.coords.dims:
             raise ValueError(
@@ -212,10 +222,12 @@ class DataArray(NDArrayOperatorsMixin):
 
     @property
     def dims(self):
+        """Tuple of dimension names in axis order."""
         return self.coords.dims
 
     @dims.setter
     def dims(self, value):
+        """Not supported — raises :exc:`AttributeError` directing users to rename/transpose instead."""
         raise AttributeError(
             "you cannot assign dims on a DataArray, "
             "use .rename(), .transpose() or .swap_dims() instead"
@@ -223,41 +235,51 @@ class DataArray(NDArrayOperatorsMixin):
 
     @property
     def shape(self):
+        """Shape tuple of the underlying data array."""
         return self.data.shape
 
     @property
     def dtype(self):
+        """NumPy dtype of the underlying data array."""
         return self.data.dtype
 
     @property
     def ndim(self):
+        """Number of dimensions."""
         return self.data.ndim
 
     @property
     def size(self):
+        """Total number of elements."""
         return self.data.size
 
     @property
     def sizes(self):
+        """Dict-like mapping from dimension name to its size."""
         return DimSizer(self)
 
     @property
     def nbytes(self):
+        """Total byte size of the underlying data."""
         return self.data.nbytes
 
     @property
     def values(self):
-        return self.__array__()
+        """Materialised numpy array of all values."""
+        return self.__array__(copy=False)
 
     @property
     def empty(self):
+        """``True`` if any dimension has size zero."""
         return np.prod(self.data.shape) == 0
 
     @property
     def loc(self):
+        """Label-based indexer; supports ``da.loc[label]`` and ``da.loc[label] = value``."""
         return LocIndexer(self)
 
     def equals(self, other):
+        """Return ``True`` if *other* has equal data, coordinates, dims, name, and attrs."""
         if isinstance(other, self.__class__):
             if not self.dtype == other.dtype:
                 return False
@@ -300,8 +322,7 @@ class DataArray(NDArrayOperatorsMixin):
 
     def isel(self, indexers=None, drop=False, **indexers_kwargs):
         """
-        Return a new DataArray whose data is given by selecting indexes along the
-        specified dimension(s).
+        Return a new DataArray selecting indexes along the specified dimension(s).
 
         Parameters
         ----------
@@ -334,8 +355,7 @@ class DataArray(NDArrayOperatorsMixin):
         self, indexers=None, method=None, endpoint=True, drop=False, **indexers_kwargs
     ):
         """
-        Return a new DataArray whose data is given by selecting index labels along the
-        specified dimension(s).
+        Return a new DataArray selecting index labels along the specified dimension(s).
 
         In contrast to DataArray.isel, indexers for this method should use labels
         instead of integers.
@@ -345,6 +365,11 @@ class DataArray(NDArrayOperatorsMixin):
         indexers : dict, optional
             A dict with keys matching dimensions and values given by scalars, slices or
             arrays of tick labels.
+        method : str, optional
+            Method to use for inexact matches. None (default) means only exact matches.
+            "nearest" finds the nearest index value.
+        endpoint : bool, optional
+            Whether to include the endpoint of a slice. Default is True.
         drop : bool, optional
             If ``drop=True``, drop coordinates variables in `indexers` instead
             of making them scalar.
@@ -363,7 +388,7 @@ class DataArray(NDArrayOperatorsMixin):
 
         # handle not monotonic increasing coordinates
         for dim in indexers:
-            if not self[dim].is_monotonic_increasing():
+            if not self[dim]._is_monotonic_increasing():
                 if isinstance(indexers[dim], slice):
                     warnings.warn(
                         f"dimension {dim} is not monotonic increasing, "
@@ -391,16 +416,18 @@ class DataArray(NDArrayOperatorsMixin):
         return da
 
     def drop_dims(self, *dims):
+        """Return a new :class:`DataArray` with *dims* and their coordinates removed."""
         coords = self.coords.drop_dims(*dims)
         return self.__class__(self.data, coords, coords.dims, self.name, self.attrs)
 
     def drop_coords(self, *names):
+        """Return a new :class:`DataArray` with the named coordinates removed."""
         coords = self.coords.drop_coords(*names)
         return self.__class__(self.data, coords, coords.dims, self.name, self.attrs)
 
     def copy(self, deep=True, data=None):
         """
-        Returns a copy of this array
+        Return a copy of this array.
 
         If deep=True, a deep copy is made of the data array. Otherwise, a shallow copy
         is made, and the returned data array's values are a new view of this data
@@ -440,7 +467,7 @@ class DataArray(NDArrayOperatorsMixin):
 
     def rename(self, new_name_or_name_dict=None, **names):
         """
-        Returns a new DataArray with renamed coordinates, dimensions or a new name.
+        Return a new DataArray with renamed coordinates, dimensions or a new name.
 
         Parameters
         ----------
@@ -477,6 +504,7 @@ class DataArray(NDArrayOperatorsMixin):
         return self.__class__(self.data, new_coords, new_dims, new_name, self.attrs)
 
     def load(self):
+        """Load the data into memory and return a new :class:`DataArray` backed by a numpy array."""
         return self.copy(data=self.data.__array__())
 
     def assign_coords(self, coords=None, **coords_kwargs):
@@ -559,7 +587,7 @@ class DataArray(NDArrayOperatorsMixin):
 
     def swap_dims(self, dims_dict=None, **dims_kwargs):
         """
-        Returns a new DataArray with swapped dimensions.
+        Return a new DataArray with swapped dimensions.
 
         Parameters
         ----------
@@ -600,7 +628,7 @@ class DataArray(NDArrayOperatorsMixin):
           * y (y): [0 1]
 
         Assign a new empy coordinate z as dimensional coordinate.
-        Use the **kwargs syntax this time:
+        Use the ``**kwargs`` syntax this time:
 
         >>> da.swap_dims(x="z")
         <xdas.DataArray (z: 2)>
@@ -629,6 +657,7 @@ class DataArray(NDArrayOperatorsMixin):
 
     @property
     def T(self):
+        """Transposed array with dimension order reversed."""
         return self.transpose()
 
     def transpose(self, *dims):
@@ -779,6 +808,7 @@ class DataArray(NDArrayOperatorsMixin):
 
     @classmethod
     def from_xarray(cls, da):
+        """Build a :class:`DataArray` from an :class:`xarray.DataArray` *da*."""
         return cls(da.data, da.coords, da.dims, da.name, da.attrs)
 
     def to_stream(
@@ -805,7 +835,7 @@ class DataArray(NDArrayOperatorsMixin):
             The channel code. If the string can be formatted, the band code will be
             inferred from the sampling rate. By default "{:1}N1"
         dim : dict, optional
-            A dict with as key the spatial dimension to split into traces, and as key
+            A dict with as key the spatial dimension to split into traces, and as value
             the temporal dimension. By default {"last": "first"}.
 
         Returns
@@ -823,7 +853,7 @@ class DataArray(NDArrayOperatorsMixin):
         """
         Convert an obspy stream into a data array.
 
-        Traces in the stream must have the same length an must be syncronized. Traces
+        Traces in the stream must have the same length and must be syncronized. Traces
         are stacked along the first axis. The trace ids are used as labels along the
         first dimension.
 
@@ -865,7 +895,7 @@ class DataArray(NDArrayOperatorsMixin):
         group : str, optional
             Path to the netCDF4 group in the given file to open.
         virtual : bool, optional
-            Weather to write a virtual dataset. The DataArray data must be a VirtualSource
+            Whether to write a virtual dataset. The DataArray data must be a VirtualSource
             or a VirtualLayout. Default (None) is to try to write a virtual dataset if
             possible.
         encoding : dict, optional
@@ -925,34 +955,6 @@ class DataArray(NDArrayOperatorsMixin):
 
         return open_dataarray(fname, group)
 
-    def to_dict(self):
-        """Convert the DataArray to a dictionary."""
-        if isinstance(self.data, VirtualArray):
-            raise NotImplementedError("cannot convert a virtual array to a dictionary")
-        elif isinstance(self.data, np.ndarray):
-            data = self.data.tolist()
-        elif isinstance(self.data, DaskArray):
-            data = to_dict(self.data)
-        return {
-            "data": data,
-            "coords": self.coords.to_dict()["coords"],
-            "dims": self.dims,
-            "name": self.name,
-            "attrs": self.attrs,
-        }
-
-    @classmethod
-    def from_dict(cls, dct):
-        """Create a DataArray from a dictionary."""
-        if isinstance(dct["data"], list):
-            data = np.array(dct["data"])
-        elif isinstance(dct["data"], dict):
-            data = from_dict(dct["data"])
-        else:
-            raise ValueError("data must be a list or a dictionary")
-        coords = Coordinates.from_dict({key: dct[key] for key in ["coords", "dims"]})
-        return cls(data, coords, dct["dims"], dct["name"], dct["attrs"])
-
     def plot(self, *args, **kwargs):
         """
         Plot a DataArray.
@@ -986,6 +988,8 @@ class DataArray(NDArrayOperatorsMixin):
 
 
 class LocIndexer:
+    """Label-based indexer returned by :attr:`DataArray.loc`."""
+
     def __init__(self, obj):
         self.obj = obj
 
@@ -999,6 +1003,8 @@ class LocIndexer:
 
 
 class DimSizer(dict):
+    """Dict-like mapping from dimension names to their sizes, returned by :attr:`DataArray.sizes`."""
+
     def __init__(self, obj):
         super().__init__({dim: size for dim, size in zip(obj.dims, obj.shape)})
 

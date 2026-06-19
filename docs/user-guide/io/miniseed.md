@@ -8,7 +8,7 @@ kernelspec:
 :tags: [remove-cell]
 
 import os
-os.chdir("../_data")
+os.chdir("../../_data")
 
 import warnings
 warnings.filterwarnings("ignore")

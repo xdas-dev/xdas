@@ -4,6 +4,14 @@ kernelspec:
   name: python3
 ---
 
+```{code-cell}
+:tags: [remove-cell]
+
+import os
+import xdas as xd
+os.chdir("../../_data")
+```
+
 # Streaming data 
 
 Xdas allows to stream data over any network using [ZeroMQ](https://zeromq.org). Xdas use the Publisher and Subscriber patterns meaning that on one node the data is published and that any number of subscribers can receive the data stream. 

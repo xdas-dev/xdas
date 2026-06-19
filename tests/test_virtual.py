@@ -9,9 +9,11 @@ from xdas.virtual import (
     Selectors,
     SingleSelector,
     SliceSelector,
+    VirtualArray,
     VirtualLayout,
     VirtualSource,
     VirtualStack,
+    _to_human,
 )
 
 
@@ -385,3 +387,158 @@ class TestSliceSelector:
         assert arr[1:-1] == arr[sel[1:-1].get_indexer()]
         assert arr[1:-1][1:-1] == arr[sel[1:-1][1:-1].get_indexer()]
         assert arr[1:-1][::2] == arr[sel[1:-1][::2].get_indexer()]
+
+
+class TestVirtualArrayAbstract:
+    def test_abstract_stubs(self):
+        va = VirtualArray()
+        va.__getitem__(0)
+        va.__array__()
+        _ = va.shape
+        _ = va.dtype
+        va.to_dataset(None, None)
+        assert isinstance(repr(va), str)
+
+
+class TestVirtualStackExtra:
+    def _make_stack(self, tmp_path):
+        data = np.arange(20).reshape(10, 2)
+        sources = []
+        for i, chunk in enumerate(np.split(data, 2, axis=0)):
+            with h5py.File(tmp_path / f"s{i}.h5", "w") as f:
+                f.create_dataset("d", data=chunk)
+                sources.append(VirtualSource(f["d"]))
+        return VirtualStack(sources, axis=0)
+
+    def test_axis_property(self, tmp_path):
+        stack = self._make_stack(tmp_path)
+        assert isinstance(stack, VirtualStack)
+        assert stack.axis == 0
+
+    def test_getitem_non_stack_axis(self, tmp_path):
+        stack = self._make_stack(tmp_path)
+        result = stack[:, 0:1]
+        assert isinstance(result, VirtualStack)
+
+    def test_check_dtype_mismatch(self, tmp_path):
+        path = tmp_path / "x.nc"
+        da_f32 = xd.DataArray(np.ones((10, 5), dtype=np.float32), dims=("a", "b"))
+        da_f64 = xd.DataArray(np.ones((10, 5), dtype=np.float64), dims=("a", "b"))
+        da_f32.to_netcdf(path)
+        with h5py.File(path, "r") as f:
+            src_f32 = VirtualSource(f["__values__"])
+        da_f64.to_netcdf(path)
+        with h5py.File(path, "r") as f:
+            src_f64 = VirtualSource(f["__values__"])
+        stack = VirtualStack([src_f32], axis=0)
+        with pytest.raises(ValueError, match="dtype"):
+            stack.append(src_f64)
+
+
+class TestVirtualLayoutExtra:
+    def test_array_with_dtype(self, tmp_path):
+        da = wavelet_wavefronts()
+        da.to_netcdf(tmp_path / "c.nc")
+        da2 = xd.open(tmp_path / "c.nc")
+        layout = da2.data._to_layout()
+        result = np.asarray(layout, dtype=np.float32)
+        assert result.dtype == np.float32
+
+    def test_setitem_with_virtual_source(self, tmp_path):
+        da = wavelet_wavefronts()
+        da.to_netcdf(tmp_path / "d.nc")
+        with h5py.File(tmp_path / "d.nc", "r") as f:
+            src = VirtualSource(f["__values__"])
+        layout = VirtualLayout(src.shape, src.dtype)
+        layout[...] = src
+        assert True
+
+    def test_to_dataset_integer_dtype(self, tmp_path):
+        da = xd.DataArray(np.ones((5, 3), dtype=np.int16), dims=("a", "b"))
+        da.to_netcdf(tmp_path / "e.nc")
+        da2 = xd.open(tmp_path / "e.nc")
+        layout = da2.data._to_layout()
+        assert np.issubdtype(layout.dtype, np.integer)
+        with h5py.File(tmp_path / "out.h5", "w") as f:
+            layout.to_dataset(f, "test")
+
+    def test_to_dataset_complex_dtype(self, tmp_path):
+        da = xd.DataArray(np.ones((5, 3), dtype=np.complex128), dims=("a", "b"))
+        da.to_netcdf(tmp_path / "f.nc")
+        da2 = xd.open(tmp_path / "f.nc")
+        layout = da2.data._to_layout()
+        with h5py.File(tmp_path / "out2.h5", "w") as f:
+            layout.to_dataset(f, "test")
+
+
+class TestSliceSelectorStopNegative:
+    def test_get_indexer_stop_negative(self):
+        sel = SliceSelector(5)
+        sel._range = range(1, -2, -1)
+        idx = sel.get_indexer()
+        assert idx.stop is None
+
+
+class TestToHuman:
+    def test_small(self):
+        assert _to_human(500) == "500.0B"
+
+    def test_kb(self):
+        assert _to_human(2 * 1024) == "2.0KB"
+
+    def test_mb(self):
+        assert _to_human(2 * 1024 * 1024) == "2.0MB"
+
+    def test_gb(self):
+        assert _to_human(2 * 1024**3) == "2.0GB"
+
+    def test_tb(self):
+        assert _to_human(2 * 1024**4) == "2.0TB"
+
+
+class TestVirtualStackGetitemElse:
+    def test_getitem_axis_beyond_indexers(self, tmp_path):
+        # VirtualStack with axis=1; indexing with a single key (not covering axis)
+        # triggers the else branch at line 173: sources=[source[(0,)] for source ...]
+        data = np.arange(20).reshape(2, 10)
+        sources = []
+        for i, chunk in enumerate(np.split(data, 2, axis=1)):
+            fname = tmp_path / f"t{i}.h5"
+            with h5py.File(fname, "w") as f:
+                f.create_dataset("d", data=chunk)
+            with h5py.File(fname, "r") as f:
+                sources.append(VirtualSource(f["d"]))
+        stack = VirtualStack(sources, axis=1)
+        result = stack[0]
+        assert isinstance(result, VirtualStack)
+
+
+class TestVirtualLayoutSetitemNonSource:
+    def test_setitem_with_h5py_virtual_source(self, tmp_path):
+        # Passing an h5py.VirtualSource (not xdas.VirtualSource) exercises the False
+        # branch of `if isinstance(value, VirtualSource)` at line 354->356.
+        src_path = tmp_path / "src.h5"
+        data = np.ones((5, 3))
+        with h5py.File(src_path, "w") as f:
+            f.create_dataset("d", data=data)
+        h5_src = h5py.VirtualSource(str(src_path), "d", shape=data.shape)
+        layout = VirtualLayout(data.shape, data.dtype)
+        layout[...] = h5_src
+        out_path = tmp_path / "out.h5"
+        with h5py.File(out_path, "w") as f:
+            layout.to_dataset(f, "result")
+
+
+class TestVirtualLayoutToDatasetOtherDtype:
+    def test_fillvalue_none_for_bool_dtype(self, tmp_path):
+        # Boolean dtype triggers the else branch (fillvalue = None) in to_dataset.
+        src_path = tmp_path / "bool_src.h5"
+        data = np.ones((5, 3), dtype=bool)
+        with h5py.File(src_path, "w") as f:
+            f.create_dataset("d", data=data)
+        h5_src = h5py.VirtualSource(str(src_path), "d", shape=data.shape)
+        layout = VirtualLayout(data.shape, data.dtype)
+        layout[...] = h5_src
+        out_path = tmp_path / "bool_out.h5"
+        with h5py.File(out_path, "w") as f:
+            layout.to_dataset(f, "result")

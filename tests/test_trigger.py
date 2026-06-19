@@ -164,3 +164,16 @@ def test_find_picks():
         result.append(atom(chunk, chunk_dim="time"))
     result = pd.concat(result, ignore_index=True)
     assert result.equals(expected)
+
+
+def test_trigger_1d():
+    """1D input (no spatial dimension) covers the coords=() branch in _call_numeric."""
+    cft = xd.DataArray(
+        data=[0.0, 0.1, 0.9, 0.8, 0.2, 0.1, 0.6, 0.7, 0.3, 0.2],
+        coords={
+            "time": {"tie_indices": [0, 9], "tie_values": [0.0, 9.0]},
+        },
+    )
+    picks = Trigger(thresh=0.5, dim="time")(cft)
+    assert len(picks) == 2
+    assert list(picks["time"]) == [2.0, 7.0]

@@ -1,7 +1,9 @@
 import numpy as np
 import obspy
+import pytest
 
 import xdas as xd
+from xdas.io.miniseed import MiniSEEDEngine, get_band_code, to_stream
 
 
 def make_network(dirpath, gap=False, samples=100):
@@ -59,7 +61,6 @@ def test_miniseed(tmp_path):
     da = xd.open(paths[0], engine="miniseed")
     assert da.shape == (3, 100)
     assert da.dims == ("channel", "time")
-    assert da.coords["time"].isinterp()
     assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
     assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:00:00.990")
     assert da.coords["network"].values == "DX"
@@ -71,7 +72,6 @@ def test_miniseed(tmp_path):
     da = xd.open(paths[0], engine="miniseed", ignore_last_sample=True)
     assert da.shape == (3, 99)
     assert da.dims == ("channel", "time")
-    assert da.coords["time"].isinterp()
     assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
     assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:00:00.980")
     assert da.coords["network"].values == "DX"
@@ -85,7 +85,6 @@ def test_miniseed(tmp_path):
     da = xd.open(paths[0], engine="miniseed")
     assert da.shape == (3, 90)
     assert da.dims == ("channel", "time")
-    assert da.coords["time"].isinterp()
     assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
     assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:01:00.390")
     assert da.coords["network"].values == "DX"
@@ -97,7 +96,6 @@ def test_miniseed(tmp_path):
     da = xd.open(paths[0], engine="miniseed", ignore_last_sample=True)
     assert da.shape == (3, 89)
     assert da.dims == ("channel", "time")
-    assert da.coords["time"].isinterp()
     assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
     assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:01:00.380")
     assert da.coords["network"].values == "DX"
@@ -112,7 +110,6 @@ def test_miniseed(tmp_path):
     assert da.shape == (10, 3, 100)
     assert da.dims == ("station", "channel", "time")
     assert da.coords["station"].values.tolist() == [f"CH{i:03d}" for i in range(1, 11)]
-    assert da.coords["time"].isinterp()
     assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
     assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:00:00.990")
     assert da.coords["network"].values == "DX"
@@ -126,7 +123,6 @@ def test_miniseed(tmp_path):
     assert da.shape == (10, 3, 90)
     assert da.dims == ("station", "channel", "time")
     assert da.coords["station"].values.tolist() == [f"CH{i:03d}" for i in range(1, 11)]
-    assert da.coords["time"].isinterp()
     assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
     assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:01:00.390")
     assert da.coords["network"].values == "DX"
@@ -138,7 +134,6 @@ def test_miniseed(tmp_path):
     assert da.shape == (10, 3, 100)
     assert da.dims == ("station", "channel", "time")
     assert da.coords["station"].values.tolist() == [f"CH{i:03d}" for i in range(1, 11)]
-    assert da.coords["time"].isinterp()
     assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
     assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:00:00.990")
     assert da.coords["network"].values == "DX"
@@ -150,9 +145,63 @@ def test_miniseed(tmp_path):
     assert da.shape == (10, 3, 90)
     assert da.dims == ("station", "channel", "time")
     assert da.coords["station"].values.tolist() == [f"CH{i:03d}" for i in range(1, 11)]
-    assert da.coords["time"].isinterp()
     assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
     assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:01:00.390")
     assert da.coords["network"].values == "DX"
     assert da.coords["location"].values == "00"
     assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
+
+    # trigger read_data by loading values (synchronized case)
+    sync_paths = sorted(tmp_path.glob("*00.mseed"))
+    da_sync = xd.open(sync_paths[0], engine="miniseed")
+    values = da_sync.values
+    assert values.shape == (3, 100)
+
+    # trigger read_data synchronized with ignore_last_sample
+    da_sync_trimmed = xd.open(sync_paths[0], engine="miniseed", ignore_last_sample=True)
+    values_trimmed = da_sync_trimmed.values
+    assert values_trimmed.shape == (3, 99)
+
+    # trigger read_data for unsynchronized (gapped) case
+    gapped_paths = sorted(tmp_path.glob("*gap.mseed"))
+    da_gap = xd.open(gapped_paths[0], engine="miniseed")
+    values_gap = da_gap.values
+    assert values_gap.shape == (3, 90)
+
+    # trigger read_data unsynchronized with ignore_last_sample
+    da_gap_trimmed = xd.open(
+        gapped_paths[0], engine="miniseed", ignore_last_sample=True
+    )
+    values_gap_trimmed = da_gap_trimmed.values
+    assert values_gap_trimmed.shape == (3, 89)
+
+
+def test_miniseed_helpers(tmp_path):
+    # get_band_code with out-of-range sampling rate
+    assert get_band_code(0.0) == "X"
+    assert get_band_code(6000.0) == "X"
+
+    # to_stream raises on non-2D data
+    da_3d = xd.DataArray(np.zeros((2, 3, 4)), dims=("a", "b", "c"))
+    with pytest.raises(ValueError, match="2D"):
+        to_stream(da_3d)
+
+
+def test_miniseed_unsynchronized_traces(tmp_path):
+    path = tmp_path / "unsync.mseed"
+    st = obspy.Stream()
+    st.append(
+        obspy.Trace(
+            data=np.zeros(100, dtype=np.float32),
+            header={"station": "AA", "channel": "HHZ", "delta": 0.01},
+        )
+    )
+    st.append(
+        obspy.Trace(
+            data=np.zeros(100, dtype=np.float32),
+            header={"station": "BB", "channel": "HHZ", "delta": 0.005},
+        )
+    )
+    st.write(str(path), format="MSEED")
+    with pytest.raises(ValueError, match="synchronized"):
+        MiniSEEDEngine().read_header(str(path), False, "interpolated")

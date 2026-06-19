@@ -7,8 +7,24 @@ import pytest
 from xdas.io.utils import compress
 
 
-class TestCompression:
+class TestCompressionUnit:
+    def test_compress_with_chunks_false(self, tmp_path):
+        src = tmp_path / "src.h5"
+        dst = tmp_path / "dst.h5"
+        data = np.arange(12).reshape(3, 4)
+        with h5py.File(src, "w") as f:
+            f.create_dataset("ds", data=data)
+        compress(
+            src_path=str(src),
+            dst_path=str(dst),
+            dataset_location="/ds",
+            encoding={"compression": hdf5plugin.Bitshuffle(), "chunks": False},
+        )
+        with h5py.File(dst, "r") as f:
+            np.testing.assert_array_equal(f["ds"][()], data)
 
+
+class TestCompression:
     TEST_FILES = [
         # ("ap_sensing_1.hdf5", "DAS"),  # TODO: not working for some reason...
         ("opto_das_1.hdf5", "data"),
@@ -28,6 +44,7 @@ class TestCompression:
         for key in actual:
             np.testing.assert_array_equal(actual[key], desired[key], strict)
 
+    @pytest.mark.slow
     @pytest.mark.parametrize("test_file, dataset_location", TEST_FILES)
     def test_compression(self, tmp_path, test_file, dataset_location):
         src_path = dascore.utils.downloader.fetch(test_file)

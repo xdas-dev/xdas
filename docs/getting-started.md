@@ -48,7 +48,7 @@ Most instruments usually produces datasets made out of a multitude of files, eac
 
 ### Linking multiple files 
 
-If you are considering a unique acquisition you can use {py:func}`~xdas.open`. You can either pass a list of paths or a path pattern containing wildcards to specify which files must be linked together. Xdas should automatically detect the file format. Xdas support a variety of DAS formats and it is easy to add support to any custom or missing format. See the [](user-guide/data-formats) section for more information. 
+If you are considering a unique acquisition you can use {py:func}`~xdas.open`. You can either pass a list of paths or a path pattern containing wildcards to specify which files must be linked together. Xdas should automatically detect the file format. Xdas support a variety of DAS formats and it is easy to add support to any custom or missing format. See the [](user-guide/io/data-formats) section for more information. 
 
 In the example here, we have three files of interest in the current working directory:
 
@@ -307,4 +307,4 @@ assert chunked.equals(monolithic)  # again equal but could be applied to much bi
 !rm -r output
 ```
 
-This part was a short summary about atoms and chunk processing. To go deeper on the atom part you can head to the [](user-guide/atoms) section. To further study chunk processing you can head to the [](user-guide/processing) section.
+This part was a short summary about atoms and chunk processing. To go deeper on the atom part you can head to the [](user-guide/pipeline/atoms) section. To further study chunk processing you can head to the [](user-guide/pipeline/processing) section.

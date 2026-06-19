@@ -1,4 +1,10 @@
-import os
+"""
+Nested tree structures for grouping multiple :class:`DataArray` objects.
+
+Includes :class:`DataCollection`, :class:`DataSequence`, and
+:class:`DataMapping`.
+"""
+
 from fnmatch import fnmatch
 from pathlib import Path
 
@@ -19,7 +25,7 @@ class DataCollection:
     name: str
         The name of the current level of nesting.
 
-    Returns:
+    Returns
     -------
     DataCollection:
         The nested data as a DataSequence or DataMapping.
@@ -51,6 +57,7 @@ class DataCollection:
     """
 
     def __new__(cls, data, name=None):
+        """Dispatch to :class:`DataSequence` or :class:`DataMapping` based on *data* type."""
         data, name = parse(data, name)
         if isinstance(data, list):
             return list.__new__(DataSequence)
@@ -58,13 +65,14 @@ class DataCollection:
             return dict.__new__(DataMapping)
         elif isinstance(data, DataArray):
             if name is not None:
-                data.rename(name)
+                data = data.rename(name)
             return data
         else:
             return DataArray(data, name=name)
 
     @property
     def empty(self):
+        """``True`` if the collection contains no elements."""
         return len(self) == 0
 
     def query(self, indexers=None, **indexers_kwargs):
@@ -82,7 +90,7 @@ class DataCollection:
             The keyword arguments form of indexers. Overwrite indexers input if both
             are provided.
 
-        Returns:
+        Returns
         -------
         DataCollection:
             The queried data.
@@ -143,16 +151,18 @@ class DataCollection:
                     )
                     for name, value in data.items()
                 }
-            else:
+            else:  # pragma: no cover
                 raise TypeError("unknown type of data collection")
             return DataCollection(data, self.name)
         else:
             return self
 
     def issequence(self):
+        """Return ``True`` if this is a :class:`DataSequence`."""
         return isinstance(self, DataSequence)
 
     def ismapping(self):
+        """Return ``True`` if this is a :class:`DataMapping`."""
         return isinstance(self, DataMapping)
 
     @classmethod
@@ -195,6 +205,7 @@ class DataMapping(DataCollection, dict):
     """
 
     def __new__(cls, data, name=None):
+        """Allocate a new dict-backed DataMapping instance."""
         return dict.__new__(cls)
 
     def __init__(self, data, name=None):
@@ -229,6 +240,7 @@ class DataMapping(DataCollection, dict):
 
     @property
     def fields(self):
+        """Ordered, deduplicated tuple of node names at this level and its immediate children."""
         out = (self.name,) + tuple(
             value.name for value in self.values() if isinstance(value, DataCollection)
         )
@@ -243,17 +255,20 @@ class DataMapping(DataCollection, dict):
         encoding=None,
         create_dirs=False,
     ):
+        """Write this :class:`DataMapping` to a NetCDF file (see :func:`~xdas.io.xdas.save_datamapping`)."""
         from ..io.xdas import save_datamapping
 
         save_datamapping(self, fname, mode, group, virtual, encoding, create_dirs)
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
+        """Lazily read a :class:`DataMapping` from a NetCDF file (see :func:`~xdas.io.xdas.open_datamapping`)."""
         from ..io.xdas import open_datamapping
 
         return open_datamapping(fname, group)
 
     def equals(self, other):
+        """Return ``True`` if *other* is a :class:`DataMapping` with identical keys and values."""
         if not isinstance(other, self.__class__):
             return False
         if not self.name == other.name:
@@ -268,7 +283,7 @@ class DataMapping(DataCollection, dict):
         """
         Perform index selection to each data array of the data collection.
 
-        If a selection results in a empty data array, the data array is discarted.
+        If a selection results in a empty data array, the data array is discarded.
 
         See `DataArray.isel` for more details.
 
@@ -300,7 +315,7 @@ class DataMapping(DataCollection, dict):
         """
         Perform labeled selection to each data array of the data collection.
 
-        If a selection results in a empty data array, the data array is discarted.
+        If a selection results in a empty data array, the data array is discarded.
 
         See DataArray.sel for more details.
 
@@ -309,13 +324,18 @@ class DataMapping(DataCollection, dict):
         indexers : dict, optional
             A dict with keys matching dimensions and values given by scalars, slices or
             arrays of tick labels.
+        method : str, optional
+            Method to use for inexact matches. None (default) means only exact matches.
+        endpoint : bool, optional
+            Whether to include the endpoint of a slice. Default is True.
         **indexers_kwargs : dict, optional
             The keyword arguments form of integers. Overwrite indexers input if both
             are provided.
 
         Returns
         -------
-        The selected data collection.
+        DataCollection
+            The selected data collection.
 
         """
         data = {
@@ -345,7 +365,7 @@ class DataMapping(DataCollection, dict):
 
     def map(self, atom):
         """
-        Apply an atom to each data array of the data collection
+        Apply an atom to each data array of the data collection.
 
         Parameters
         ----------
@@ -397,6 +417,7 @@ class DataSequence(DataCollection, list):
     """
 
     def __new__(cls, data, name=None):
+        """Allocate a new list-backed DataSequence instance."""
         return list.__new__(cls)
 
     def __init__(self, data, name=None):
@@ -416,16 +437,19 @@ class DataSequence(DataCollection, list):
 
     @property
     def fields(self):
+        """Ordered, deduplicated tuple of node names at this level and its immediate children."""
         out = (self.name,) + tuple(
             value.name for value in self if isinstance(value, DataCollection)
         )
         return uniquifiy(out)
 
     def to_mapping(self):
+        """Convert to an integer-keyed :class:`DataMapping`."""
         return DataMapping({key: value for key, value in enumerate(self)}, self.name)
 
     @classmethod
     def from_mapping(cls, data):
+        """Build a :class:`DataSequence` from the values of a :class:`DataMapping`."""
         return cls(data.values(), data.name)
 
     def to_netcdf(
@@ -437,6 +461,7 @@ class DataSequence(DataCollection, list):
         encoding=None,
         create_dirs=False,
     ):
+        """Write this :class:`DataSequence` to a NetCDF file by converting to a mapping first."""
         self.to_mapping().to_netcdf(
             fname,
             mode=mode,
@@ -448,9 +473,11 @@ class DataSequence(DataCollection, list):
 
     @classmethod
     def from_netcdf(cls, fname, group=None):
-        return DataMapping.from_netcdf(fname, group).from_mapping()
+        """Lazily read a :class:`DataSequence` from a NetCDF file."""
+        return cls.from_mapping(DataMapping.from_netcdf(fname, group))
 
     def equals(self, other):
+        """Return ``True`` if *other* is a :class:`DataSequence` with identical elements."""
         if not isinstance(other, self.__class__):
             return False
         if not self.name == other.name:
@@ -465,7 +492,7 @@ class DataSequence(DataCollection, list):
         """
         Perform index selection to each data array of the data collection.
 
-        If a selection results in a empty data array, the data array is discarted.
+        If a selection results in a empty data array, the data array is discarded.
 
         See `DataArray.isel` for more details.
 
@@ -495,7 +522,7 @@ class DataSequence(DataCollection, list):
         """
         Perform labeled selection to each data array of the data collection.
 
-        If a selection results in a empty data array, the data array is discarted.
+        If a selection results in a empty data array, the data array is discarded.
 
         See DataArray.sel for more details.
 
@@ -504,13 +531,18 @@ class DataSequence(DataCollection, list):
         indexers : dict, optional
             A dict with keys matching dimensions and values given by scalars, slices or
             arrays of tick labels.
+        method : str, optional
+            Method to use for inexact matches. None (default) means only exact matches.
+        endpoint : bool, optional
+            Whether to include the endpoint of a slice. Default is True.
         **indexers_kwargs : dict, optional
             The keyword arguments form of integers. Overwrite indexers input if both
             are provided.
 
         Returns
         -------
-        The selected data collection.
+        DataCollection
+            The selected data collection.
 
         """
         data = [
@@ -539,7 +571,7 @@ class DataSequence(DataCollection, list):
 
     def map(self, atom):
         """
-        Apply an atom to each data array of the data collection
+        Apply an atom to each data array of the data collection.
 
         Parameters
         ----------
@@ -582,6 +614,12 @@ class DataSequence(DataCollection, list):
 
 
 def parse(data, name=None):
+    """
+    Normalise *(data, name)* inputs accepted by :class:`DataCollection` constructors.
+
+    Unpacks ``(name, data)`` tuples and propagates the name from an existing
+    :class:`DataCollection` when no explicit name is given.
+    """
     if isinstance(data, tuple):
         if name is None:
             name, data = data
@@ -593,6 +631,7 @@ def parse(data, name=None):
 
 
 def get_depth(group):
+    """Return the maximum nesting depth of an HDF5 *group* by counting ``"/"`` separators."""
     if not isinstance(group, h5py.Group):
         raise ValueError("not a group")
     depths = []
@@ -601,5 +640,6 @@ def get_depth(group):
 
 
 def uniquifiy(seq):
+    """Return a deduplicated tuple of *seq* elements in their original order."""
     seen = set()
     return tuple(x for x in seq if x not in seen and not seen.add(x))

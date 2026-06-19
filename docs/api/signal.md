@@ -36,7 +36,7 @@
    medfilt
 ```
 
-## Spectral analysisi
+## Spectral analysis
 
 ```{eval-rst}
 .. autosummary::
