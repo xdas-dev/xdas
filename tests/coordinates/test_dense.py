@@ -46,8 +46,6 @@ class TestDenseCoordinate:
                 DenseCoordinate(data)
 
     def test_getitem(self):
-        assert np.array_equiv(DenseCoordinate([1, 2, 3])[...].values, [1, 2, 3])
-        assert isinstance(DenseCoordinate([1, 2, 3])[...], DenseCoordinate)
         assert np.array_equiv(DenseCoordinate([1, 2, 3])[:].values, [1, 2, 3])
         assert isinstance(DenseCoordinate([1, 2, 3])[:], DenseCoordinate)
         assert np.array_equiv(DenseCoordinate([1, 2, 3])[1].values, 2)

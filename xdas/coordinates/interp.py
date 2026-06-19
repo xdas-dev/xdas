@@ -143,7 +143,6 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
 
     @override
     def _get_value(self, index):
-        index = self.format_index(index)
         return forward(index, self.tie_indices, self.tie_values)
 
     @override
@@ -169,9 +168,9 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
 
     @override
     def _slice(self, index_slice):
-        start_index, stop_index, step_index = index_slice.indices(len(self))
-        if step_index < 0:
-            raise NotImplementedError("negative slice step is not implemented")
+        start_index, stop_index, step_index = (
+            index_slice.start, index_slice.stop, index_slice.step
+        )
         if stop_index - start_index <= 0:
             return self.__class__(dict(tie_indices=[], tie_values=[]), dim=self.dim)
         elif (stop_index - start_index) <= step_index:

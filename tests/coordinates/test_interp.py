@@ -154,15 +154,17 @@ class TestInterpCoordinate:
         assert coord._get_value(0) == 100.0
         assert coord._get_value(4) == 500.0
         assert coord._get_value(8) == 900.0
-        assert coord._get_value(-1) == 900.0
-        assert coord._get_value(-9) == 100.0
+        assert coord[-1].data == 900.0
+        assert coord[-9].data == 100.0
         assert np.allclose(
-            coord._get_value([1, 2, 3, -2]), [200.0, 300.0, 400.0, 800.0]
+            coord[[1, 2, 3, -2]].values, [200.0, 300.0, 400.0, 800.0]
         )
         with pytest.raises(IndexError):
-            coord._get_value(-10)
-            coord._get_value(9)
-            coord._get_value(0.5)
+            coord[-10]
+        with pytest.raises(IndexError):
+            coord[9]
+        with pytest.raises(IndexError):
+            coord[0.5]
         starttime = np.datetime64("2000-01-01T00:00:00")
         endtime = np.datetime64("2000-01-01T00:00:08")
         coord = InterpCoordinate(
@@ -171,8 +173,8 @@ class TestInterpCoordinate:
         assert coord._get_value(0) == starttime
         assert coord._get_value(4) == np.datetime64("2000-01-01T00:00:04")
         assert coord._get_value(8) == endtime
-        assert coord._get_value(-1) == endtime
-        assert coord._get_value(-9) == starttime
+        assert coord[-1].data == endtime
+        assert coord[-9].data == starttime
 
     def test_get_index(self):
         coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
@@ -227,53 +229,53 @@ class TestInterpCoordinate:
 
     def test_slice_index(self):
         coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
-        assert coord._slice(slice(0, 2)).equals(
+        assert coord[0:2].equals(
             InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[100.0, 200.0]))
         )
-        assert coord._slice(slice(7, None)).equals(
+        assert coord[7:].equals(
             InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[800.0, 900.0]))
         )
-        assert coord._slice(slice(None, None)).equals(coord)
-        assert coord._slice(slice(0, 0)).equals(
+        assert coord[:].equals(coord)
+        assert coord[0:0].equals(
             InterpCoordinate(dict(tie_indices=[], tie_values=[]))
         )
-        assert coord._slice(slice(4, 2)).equals(
+        assert coord[4:2].equals(
             InterpCoordinate(dict(tie_indices=[], tie_values=[]))
         )
-        assert coord._slice(slice(9, 9)).equals(
+        assert coord[9:9].equals(
             InterpCoordinate(dict(tie_indices=[], tie_values=[]))
         )
-        assert coord._slice(slice(3, 3)).equals(
+        assert coord[3:3].equals(
             InterpCoordinate(dict(tie_indices=[], tie_values=[]))
         )
-        assert coord._slice(slice(0, -1)).equals(
+        assert coord[0:-1].equals(
             InterpCoordinate(dict(tie_indices=[0, 7], tie_values=[100.0, 800.0]))
         )
-        assert coord._slice(slice(0, -2)).equals(
+        assert coord[0:-2].equals(
             InterpCoordinate(dict(tie_indices=[0, 6], tie_values=[100.0, 700.0]))
         )
-        assert coord._slice(slice(-2, None)).equals(
+        assert coord[-2:].equals(
             InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[800.0, 900.0]))
         )
-        assert coord._slice(slice(1, 2)).equals(
+        assert coord[1:2].equals(
             InterpCoordinate(dict(tie_indices=[0], tie_values=[200.0]))
         )
-        assert coord._slice(slice(1, 3, 2)).equals(
+        assert coord[1:3:2].equals(
             InterpCoordinate(dict(tie_indices=[0], tie_values=[200.0]))
         )
-        assert coord._slice(slice(None, None, 2)).equals(
+        assert coord[::2].equals(
             InterpCoordinate(dict(tie_indices=[0, 4], tie_values=[100.0, 900.0]))
         )
-        assert coord._slice(slice(None, None, 3)).equals(
+        assert coord[::3].equals(
             InterpCoordinate(dict(tie_indices=[0, 2], tie_values=[100.0, 700.0]))
         )
-        assert coord._slice(slice(None, None, 4)).equals(
+        assert coord[::4].equals(
             InterpCoordinate(dict(tie_indices=[0, 2], tie_values=[100.0, 900.0]))
         )
-        assert coord._slice(slice(None, None, 5)).equals(
+        assert coord[::5].equals(
             InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[100.0, 600.0]))
         )
-        assert coord._slice(slice(2, 7, 3)).equals(
+        assert coord[2:7:3].equals(
             InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[300.0, 600.0]))
         )
 
@@ -457,7 +459,7 @@ class TestInterpCoordinate:
         coord = InterpCoordinate(
             {"tie_indices": [0, 2, 6, 12], "tie_values": [0.0, 20.0, 60.0, 120.0]}
         )
-        result = coord._slice(slice(None, None, 3))
+        result = coord[::3]
         assert isinstance(result, InterpCoordinate)
         assert len(result.tie_indices) >= 3
         assert result.tie_indices[0] == 0

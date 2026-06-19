@@ -193,7 +193,6 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
 
     @override
     def _get_value(self, index):
-        index = self.format_index(index, bounds="raise")  # TODO: move outside
         reference = np.searchsorted(self.tie_indices, index, side="right") - 1
         return self.tie_values[reference] + (
             (index - self.tie_indices[reference]) * self.sampling_interval
@@ -273,11 +272,7 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
 
     @override
     def _slice(self, slc):
-        # normalize slice
-        start, stop, step = slc.indices(len(self))
-
-        if step < 0:
-            raise NotImplementedError("negative slice step is not implemented")
+        start, stop, step = slc.start, slc.stop, slc.step
 
         # align stop
         stop += (start - stop) % step  # TODO: check for negative step

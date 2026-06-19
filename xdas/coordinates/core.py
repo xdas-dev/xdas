@@ -279,12 +279,9 @@ class Coordinate(ABC):
     Base class and factory for all coordinate types.
 
     When called as ``Coordinate(data)``, acts as a factory and returns the first
-    registered subclass whose :meth:`isvalid` method accepts *data*.  When
-    subclassed, use the ``name=`` keyword in the class definition to register
-    the subclass (e.g. ``class MyCoord(Coordinate, name="mycoord")``).
-
-    Concrete subclasses must implement :meth:`isvalid` at minimum; :meth:`equals`
-    is provided generically by the base class.
+    registered subclass who accepts *data*.  When subclassed, use the ``name=`` 
+    keyword in the class definition to register the subclass (e.g. 
+    ``class MyCoord(Coordinate, name="mycoord")``).
 
     Parameters
     ----------
@@ -403,6 +400,12 @@ class Coordinate(ABC):
             Label(s) to locate.
         method : {None, "nearest", "ffill", "bfill"}, optional
             How to handle values that fall in gaps or between samples.
+            ``None`` (default) requires an exact match and raises ``KeyError``
+            if the value is not present. ``"nearest"`` returns the index of
+            the closest label. ``"ffill"`` (forward-fill) returns the last
+            index whose label is less than or equal to *value*. ``"bfill"``
+            (backward-fill) returns the first index whose label is greater
+            than or equal to *value*.
 
         Returns
         -------
@@ -444,13 +447,7 @@ class Coordinate(ABC):
         -------
         Coordinate
             Concatenated coordinate of the same subclass.
-
-        Raises
-        ------
-        TypeError
-            If *other* is not the same coordinate subclass.
-        ValueError
-            If ``dim`` or ``dtype`` differ.
+s
         """
 
     @abstractmethod
@@ -554,12 +551,12 @@ class Coordinate(ABC):
     # --- dunders logic ---
 
     def __getitem__(self, item):
-        """Index into the coordinate, returning a new :class:`Coordinate`."""
         if isinstance(item, slice):
-            return self._slice(item)
+            return self._slice(self.format_slice(item))
         else:
+            item = self.format_index(item)
             return Coordinate(
-                self._get_value(item), None if np.isscalar(item) else self.dim
+                self._get_value(item), None if np.ndim(item) == 0 else self.dim
             )
 
     def __array__(self, dtype=None, copy=None):
@@ -592,11 +589,11 @@ class Coordinate(ABC):
     # -- queries ------------------------------------------------------------
 
     def isscalar(self):
-        """Return ``True`` if this is a :class:`ScalarCoordinate` (non-dimensional)."""
+        """Return ``True`` if this is a :class:`ScalarCoordinate`."""
         return False
 
     def isdim(self):
-        """Return ``True`` if this coordinate is a dimensional coordinate in its parent container."""
+        """Return ``True`` if this coordinate is a dimensional coordinate."""
         if self.parent is None or self.name is None:
             return None
         else:
@@ -632,14 +629,18 @@ class Coordinate(ABC):
         ----------
         item : label, slice, or array-like
             Selector to resolve.
-        method : str, optional
-            Look-up method (e.g. ``"ffill"``, ``"bfill"``).
+        method : {None, "nearest", "ffill", "bfill"}, optional
+            How to resolve *item* when it does not match a label exactly.
+            ``None`` (default) requires an exact match. ``"nearest"`` selects
+            the closest label. ``"ffill"`` selects the last label ≤ *item*;
+            ``"bfill"`` selects the first label ≥ *item*. Ignored when *item*
+            is a slice.
         endpoint : bool, optional
             Whether to include the stop of a slice. Default ``True``.
 
         Returns
         -------
-        int or slice
+        int, array of ints or slice
         """
         if isinstance(item, slice):
             return self.slice_indexer(item.start, item.stop, item.step, endpoint)
@@ -673,6 +674,26 @@ class Coordinate(ABC):
         elif bounds == "clip":
             idx = np.clip(idx, 0, len(self))
         return idx
+
+    def format_slice(self, slc):
+        """
+        Normalise *slc*, resolving ``None`` bounds, negative indices, and out-of-bounds.
+
+        Parameters
+        ----------
+        slc : slice
+            Raw slice, as received from user code.
+
+        Returns
+        -------
+        slice
+            Concrete ``slice(start, stop, step)`` with non-negative integer bounds
+            clipped to ``[0, len(self)]``.
+        """
+        start, stop, step = slc.indices(len(self))
+        if step < 0:
+            raise NotImplementedError("negative slice step is not implemented")
+        return slice(start, stop, step)
 
     def slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
         """
@@ -728,6 +749,11 @@ class Coordinate(ABC):
         ----------
         deep : bool, optional
             If ``True`` (default) perform a deep copy; otherwise a shallow copy.
+
+        Returns
+        -------
+        Coordinate
+            A new coordinate of the same subclass with copied data and metadata.
         """
         if deep:
             func = deepcopy
@@ -783,15 +809,17 @@ class SampledMixin(ABC):
     Shared behaviour for coordinates that carry sampled values along an axis.
 
     Mixed into the tie-point coordinate types (:class:`SampledCoordinate`,
-    :class:`InterpCoordinate`), which describe a monotonic axis that may contain
-    gaps and overlaps. It builds discontinuity and availability tables on top of
-    the subclass-provided :meth:`_get_value` and :meth:`get_split_indices`.
+    :class:`InterpCoordinate`). Both types describe a piecewise-monotonic axis
+    composed of contiguous segments separated by *gaps* (the axis jumps forward
+    by more than one sampling interval) or *overlaps* (the axis jumps backward,
+    creating doubly-covered regions). This mixin provides the shared logic for
+    detecting, cataloguing, and querying those discontinuities.
     """
 
     @abstractmethod
     def get_sampling_interval(self, cast=True):
         """
-        Return the average sample spacing (end-to-end distance divided by N-1).
+        Return the nominal sample spacing for this coordinate.
 
         Parameters
         ----------
@@ -809,13 +837,23 @@ class SampledMixin(ABC):
         """
         Return integer indices where this coordinate should be split.
 
+        Each returned index ``i`` marks the start of a new segment: the
+        boundary lies between element ``i - 1`` and element ``i``. The first
+        segment always starts at index 0, so 0 is never included in the result.
+
         Parameters
         ----------
         kind : {"discontinuities", "gaps", "overlaps"}, optional
-            Which boundary type to return.  Default ``"discontinuities"``.
-        tolerance : float, timedelta, or ``False``, optional
-            Minimum magnitude of the discrepancy to report.  ``False`` (default)
-            skips magnitude filtering.
+            Which boundary type to return. ``"gaps"`` returns only boundaries
+            where the axis jumps forward by more than one sampling interval;
+            ``"overlaps"`` returns only boundaries where the axis jumps
+            backward. ``"discontinuities"`` (default) returns both.
+        tolerance : float, timedelta, None, or ``False``, optional
+            Minimum absolute magnitude of the jump to report. Boundaries
+            smaller than *tolerance* are silently dropped. ``None`` removes
+            only zero-magnitude jumps (i.e. consecutive equal values).
+            ``False`` (default) disables magnitude filtering and returns all
+            boundaries of the requested kind.
 
         Returns
         -------
@@ -826,7 +864,12 @@ class SampledMixin(ABC):
     @abstractmethod
     def simplify(self, tolerance=None):
         """
-        Return a simplified copy of this coordinate within *tolerance*.
+        Return a simplified copy of this coordinate with redundant tie points removed.
+
+        Tie points whose removal would shift any label by no more than *tolerance*
+        are dropped, reducing memory and I/O cost without meaningfully changing
+        the represented axis. As a side effect, small gaps or overlaps that fall
+        within *tolerance* may be absorbed, merging adjacent segments into one.
 
         Parameters
         ----------
@@ -1047,10 +1090,8 @@ def isscalar(data):
 
 def is_monotonic_increasing(x):
     """Return ``True`` if every element of *x* is strictly greater than the previous one."""
-    if np.issubdtype(x.dtype, np.datetime64):
-        return np.all(np.diff(x) > np.timedelta64(0))
-    else:
-        return np.all(np.diff(x) > 0)
+    zero = np.timedelta64(0) if np.issubdtype(x.dtype, np.datetime64) else 0
+    return np.all(np.diff(x) > zero)
 
 
 def format_datetime(x):

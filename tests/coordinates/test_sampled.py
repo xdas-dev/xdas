@@ -150,25 +150,25 @@ class TestSampledCoordinateIndexing:
         assert coord._get_value(3) == 10.0
         assert coord._get_value(4) == 11.0
         # negative index
-        assert coord._get_value(-1) == 11.0
-        assert coord._get_value(-2) == 10.0
-        assert coord._get_value(-3) == 2.0
-        assert coord._get_value(-4) == 1.0
-        assert coord._get_value(-5) == 0.0
+        assert coord[-1].data == 11.0
+        assert coord[-2].data == 10.0
+        assert coord[-3].data == 2.0
+        assert coord[-4].data == 1.0
+        assert coord[-5].data == 0.0
         # vectorized
-        vals = coord._get_value([0, 1, 2, 3, 4, -5, -4, -3, -2, -1])
+        vals = coord[[0, 1, 2, 3, 4, -5, -4, -3, -2, -1]].values
         assert np.array_equal(
             vals, np.array([0.0, 1.0, 2.0, 10.0, 11.0, 0.0, 1.0, 2.0, 10.0, 11.0])
         )
         # bounds
         with pytest.raises(IndexError):
-            coord._get_value(-6)
+            coord[-6]
         with pytest.raises(IndexError):
-            coord._get_value(5)
+            coord[5]
         with pytest.raises(IndexError):
-            coord._get_value([0, 5])
+            coord[[0, 5]]
         with pytest.raises(IndexError):
-            coord._get_value([-6, 0])
+            coord[[-6, 0]]
 
     def test_values(self):
         coord = self.make_coord()
@@ -721,7 +721,7 @@ class TestSampledCoordinateDatetime:
         assert coord._get_value(1) == np.datetime64("2000-01-01T00:00:01")
         assert coord._get_value(4) == np.datetime64("2000-01-01T00:00:11")
         with pytest.raises(IndexError):
-            coord._get_value(5)
+            coord[5]
 
     def test_get_indexer_datetime_methods(self):
         coord = self.make_dt_coord()
