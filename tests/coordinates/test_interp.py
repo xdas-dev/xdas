@@ -156,9 +156,7 @@ class TestInterpCoordinate:
         assert coord._get_value(8) == 900.0
         assert coord[-1].data == 900.0
         assert coord[-9].data == 100.0
-        assert np.allclose(
-            coord[[1, 2, 3, -2]].values, [200.0, 300.0, 400.0, 800.0]
-        )
+        assert np.allclose(coord[[1, 2, 3, -2]].values, [200.0, 300.0, 400.0, 800.0])
         with pytest.raises(IndexError):
             coord[-10]
         with pytest.raises(IndexError):
@@ -236,18 +234,10 @@ class TestInterpCoordinate:
             InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[800.0, 900.0]))
         )
         assert coord[:].equals(coord)
-        assert coord[0:0].equals(
-            InterpCoordinate(dict(tie_indices=[], tie_values=[]))
-        )
-        assert coord[4:2].equals(
-            InterpCoordinate(dict(tie_indices=[], tie_values=[]))
-        )
-        assert coord[9:9].equals(
-            InterpCoordinate(dict(tie_indices=[], tie_values=[]))
-        )
-        assert coord[3:3].equals(
-            InterpCoordinate(dict(tie_indices=[], tie_values=[]))
-        )
+        assert coord[0:0].equals(InterpCoordinate(dict(tie_indices=[], tie_values=[])))
+        assert coord[4:2].equals(InterpCoordinate(dict(tie_indices=[], tie_values=[])))
+        assert coord[9:9].equals(InterpCoordinate(dict(tie_indices=[], tie_values=[])))
+        assert coord[3:3].equals(InterpCoordinate(dict(tie_indices=[], tie_values=[])))
         assert coord[0:-1].equals(
             InterpCoordinate(dict(tie_indices=[0, 7], tie_values=[100.0, 800.0]))
         )

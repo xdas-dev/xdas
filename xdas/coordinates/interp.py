@@ -169,7 +169,9 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
     @override
     def _slice(self, index_slice):
         start_index, stop_index, step_index = (
-            index_slice.start, index_slice.stop, index_slice.step
+            index_slice.start,
+            index_slice.stop,
+            index_slice.step,
         )
         if stop_index - start_index <= 0:
             return self.__class__(dict(tie_indices=[], tie_values=[]), dim=self.dim)

@@ -278,10 +278,31 @@ class Coordinate(ABC):
     """
     Base class and factory for all coordinate types.
 
-    When called as ``Coordinate(data)``, acts as a factory and returns the first
-    registered subclass who accepts *data*.  When subclassed, use the ``name=`` 
-    keyword in the class definition to register the subclass (e.g. 
-    ``class MyCoord(Coordinate, name="mycoord")``).
+    A coordinate maps the integer positions of one array axis to physical
+    values (e.g. timestamps, distances).  It supports two complementary
+    directions of lookup:
+
+    - **Index-based selection** — ``coord[i]`` or ``coord[start:stop]``:
+      given integer position(s), return the corresponding physical value(s)
+      as a new coordinate.
+    - **Label-based selection** — ``coord.to_index(v)``: given a physical
+      value (or slice of values), return the integer index (or slice) at
+      that label.  An optional *method* argument controls nearest/forward/
+      backward matching for values that fall between samples.  The returned
+      index can then be passed to ``coord[idx]`` to retrieve the
+      coordinate subset, and is also used internally to index into the
+      parent data array.
+
+    **Factory behaviour** — calling ``Coordinate(data)`` directly acts as a
+    factory: it inspects *data* and returns an instance of the most suitable
+    registered subclass (:class:`SampledCoordinate`, :class:`InterpCoordinate`,
+    :class:`DenseCoordinate`, or :class:`ScalarCoordinate`).
+
+    **Subclassing** — register a new subclass by passing ``name=`` in the
+    class definition::
+
+        class MyCoord(Coordinate, name="mycoord"):
+            ...
 
     Parameters
     ----------
@@ -436,18 +457,18 @@ class Coordinate(ABC):
     @abstractmethod
     def _concat(self, other):
         """
-        Return a new coordinate formed by appending *other* after this one.
+                Return a new coordinate formed by appending *other* after this one.
 
         Parameters
         ----------
-        other : Coordinate
-            Must be the same subclass and have the same ``dim`` and ``dtype``.
+                other : Coordinate
+                    Must be the same subclass and have the same ``dim`` and ``dtype``.
 
         Returns
         -------
-        Coordinate
-            Concatenated coordinate of the same subclass.
-s
+                Coordinate
+                    Concatenated coordinate of the same subclass.
+        s
         """
 
     @abstractmethod
@@ -586,7 +607,7 @@ s
             else:
                 return f"{self.start} to {self.end}"
 
-    # -- queries ------------------------------------------------------------
+    # --- queries ---
 
     def isscalar(self):
         """Return ``True`` if this is a :class:`ScalarCoordinate`."""
@@ -619,7 +640,7 @@ s
                 return False
         return True
 
-    # -- selection / indexing -----------------------------------------------
+    # --- selection / indexing ---
 
     def to_index(self, item, method=None, endpoint=True):
         """
