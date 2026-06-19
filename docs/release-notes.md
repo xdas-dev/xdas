@@ -2,8 +2,11 @@
 
 ## 0.2.8
 
+### Breaking Changes
+- Removed `DefaultCoordinate`, the `Coordinate.is*` predicate properties (`isdense`, `isdefault`, `isinterp`, `issampled`), and `to_dict`/`from_dict` from `DataArray` and coordinate types. These were internal APIs not intended for public use, so this should not affect user code (@atrabattoni).
+
 ### Refactoring
-- Refactored coordinate internals: `Coordinate` is now a proper ABC with an abstract core interface, improved method ordering and consistency across subclasses, and several redundant/unused APIs removed (@atrabattoni).
+- `Coordinate` is now a proper ABC with an explicit abstract interface; shared ordered-coordinate logic is consolidated in `SampledMixin`; NumPy 2.0 `copy` keyword compliance (@atrabattoni).
 
 ## 0.2.7
 
