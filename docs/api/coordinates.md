@@ -5,9 +5,6 @@
 
 ## Coordinates
 
-Constructor
-
-
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
@@ -26,18 +23,16 @@ Methods
    Coordinates.to_index
    Coordinates.equals
    Coordinates.copy
-   Coordinates.drop_dims 
-   Coordinates.drop_coords 
+   Coordinates.drop_dims
+   Coordinates.drop_coords
 ```
 
-### Coordinate
-
-Constructor
+## Coordinate
 
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
-   
+
    Coordinate
 ```
 
@@ -50,7 +45,14 @@ Attributes
    Coordinate.dtype
    Coordinate.ndim
    Coordinate.shape
+   Coordinate.size
+   Coordinate.empty
+   Coordinate.dim
+   Coordinate.indices
    Coordinate.values
+   Coordinate.start
+   Coordinate.end
+   Coordinate.name
 ```
 
 Methods
@@ -59,13 +61,17 @@ Methods
 .. autosummary::
    :toctree: ../_autosummary
 
+   Coordinate.isscalar
+   Coordinate.isdim
+   Coordinate.equals
    Coordinate.to_index
+   Coordinate.format_index
+   Coordinate.slice_indexer
+   Coordinate.copy
+   Coordinate.to_dataarray
 ```
 
-
-### ScalarCoordinate
-
-Constructor
+## ScalarCoordinate
 
 ```{eval-rst}
 .. autosummary::
@@ -74,20 +80,7 @@ Constructor
    ScalarCoordinate
 ```
 
-Methods
-
-```{eval-rst}
-.. autosummary::
-   :toctree: ../_autosummary
-
-   ScalarCoordinate.isvalid
-   ScalarCoordinate.equals
-   ScalarCoordinate.to_index
-```
-
-### DenseCoordinate
-
-Constructor
+## DenseCoordinate
 
 ```{eval-rst}
 .. autosummary::
@@ -96,21 +89,27 @@ Constructor
    DenseCoordinate
 ```
 
+Attributes
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   DenseCoordinate.index
+```
+
 Methods
 
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
 
-   DenseCoordinate.isvalid
-   DenseCoordinate.index
-   DenseCoordinate.get_indexer
-   DenseCoordinate.slice_indexer
+   DenseCoordinate.from_block
+   DenseCoordinate.get_sampling_interval
+   DenseCoordinate.get_div_points
 ```
 
-### InterpCoordinate
-
-Constructor
+## InterpCoordinate
 
 ```{eval-rst}
 .. autosummary::
@@ -121,19 +120,12 @@ Constructor
 
 Attributes
 
-
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
 
    InterpCoordinate.tie_indices
    InterpCoordinate.tie_values
-   InterpCoordinate.empty
-   InterpCoordinate.dtype
-   InterpCoordinate.ndim
-   InterpCoordinate.shape
-   InterpCoordinate.indices
-   InterpCoordinate.values
 ```
 
 Methods
@@ -142,23 +134,15 @@ Methods
 .. autosummary::
    :toctree: ../_autosummary
 
-   InterpCoordinate.isvalid
-   InterpCoordinate.equals
-   InterpCoordinate.get_value
-   InterpCoordinate.format_index
-   InterpCoordinate.slice_index
-   InterpCoordinate.get_indexer
-   InterpCoordinate.slice_indexer
-   InterpCoordinate.decimate
-   InterpCoordinate.simplify
+   InterpCoordinate.from_block
+   InterpCoordinate.get_sampling_interval
+   InterpCoordinate.get_split_indices
    InterpCoordinate.get_discontinuities
-   InterpCoordinate.from_array
+   InterpCoordinate.get_availabilities
+   InterpCoordinate.simplify
 ```
 
-
-### SampledCoordinate
-
-Constructor
+## SampledCoordinate
 
 ```{eval-rst}
 .. autosummary::
@@ -169,7 +153,6 @@ Constructor
 
 Attributes
 
-
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
@@ -178,12 +161,6 @@ Attributes
    SampledCoordinate.tie_lengths
    SampledCoordinate.tie_indices
    SampledCoordinate.sampling_interval
-   SampledCoordinate.empty
-   SampledCoordinate.dtype
-   SampledCoordinate.ndim
-   SampledCoordinate.shape
-   SampledCoordinate.indices
-   SampledCoordinate.values
 ```
 
 Methods
@@ -192,17 +169,10 @@ Methods
 .. autosummary::
    :toctree: ../_autosummary
 
-   SampledCoordinate.concat
-   SampledCoordinate.decimate
-   SampledCoordinate.equals
-   SampledCoordinate.from_array
    SampledCoordinate.from_block
-   SampledCoordinate.get_indexer
    SampledCoordinate.get_sampling_interval
    SampledCoordinate.get_split_indices
-   SampledCoordinate.get_value
-   SampledCoordinate.isvalid
+   SampledCoordinate.get_discontinuities
+   SampledCoordinate.get_availabilities
    SampledCoordinate.simplify
-   SampledCoordinate.slice_index
-   SampledCoordinate.slice_indexer
 ```

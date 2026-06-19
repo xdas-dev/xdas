@@ -21,19 +21,34 @@ from .core import (
 
 class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
     """
-    Array-like object representing piecewise evenly spaced coordinates (CF convention).
+    Piecewise-linear coordinate described by tie points (CF convention).
 
-    The coordinate ticks are described by tie points that are interpolated when
-    intermediate values are required. Coordinate objects provide label-based
-    selection methods.
+    Values between tie points are recovered by linear interpolation.
+    Discontinuities are represented by two consecutive tie points at adjacent
+    indices.  Supports label-based selection via :meth:`~Coordinate.to_index`.
 
     Parameters
     ----------
-    tie_indices : sequence of integers
-        The indices of the tie points. Must include index 0 and be strictly increasing.
-    tie_values : sequence of float or datetime64
-        The values of the tie points. Must be strictly increasing to enable label-based
-        selection. The len of `tie_indices` and `tie_values` sizes must match.
+    data : dict with keys ``tie_indices`` and ``tie_values``
+        ``tie_indices`` : sequence of int
+            Positions of the tie points.  Must start at 0 and be strictly
+            increasing.
+        ``tie_values`` : sequence of float or datetime64
+            Values at the tie points.  Must be strictly increasing to enable
+            label-based selection.  Length must match ``tie_indices``.
+    dim : str, optional
+        Name of the dimension this coordinate is associated with.
+    dtype : dtype-like, optional
+        Desired dtype for ``tie_values``.
+
+    Examples
+    --------
+    >>> import xdas as xd
+    >>> coord = xd.Coordinate(
+    ...     {"tie_indices": [0, 9, 10, 19], "tie_values": [0.0, 90.0, 200.0, 290.0]}
+    ... )
+    >>> coord
+    0.000 to 290.000
     """
 
     @override

@@ -30,16 +30,42 @@ UNITS_TO_CODE = {v: k for k, v in CODE_TO_UNITS.items()}
 
 class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
     """
-    A coordinate that is sampled at regular intervals.
+    Coordinate sampled at a fixed interval, with optional gaps between segments.
+
+    More compact and numerically stable than
+    :class:`InterpCoordinate` for strictly uniform grids.  Each contiguous
+    block is described by its start value and element count; all blocks share
+    the same ``sampling_interval``.
 
     Parameters
     ----------
-    data : dict-like
-        The data of the coordinate.
+    data : dict with keys ``tie_values``, ``tie_lengths``, and ``sampling_interval``
+        ``tie_values`` : sequence of float or datetime64
+            Start value of each segment.
+        ``tie_lengths`` : sequence of int
+            Number of samples in each segment.  All values must be > 0.
+        ``sampling_interval`` : scalar
+            Fixed step between consecutive samples, shared across all segments.
+            Must be :class:`numpy.timedelta64` when ``tie_values`` are
+            :class:`numpy.datetime64`.
     dim : str, optional
-        The dimension name of the coordinate, by default None.
-    dtype : str or numpy.dtype, optional
-        The data type of the coordinate, by default None.
+        Name of the dimension this coordinate is associated with.
+    dtype : dtype-like, optional
+        Desired dtype for ``tie_values``.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from xdas.coordinates import SampledCoordinate
+    >>> coord = SampledCoordinate(
+    ...     {
+    ...         "tie_values": [np.datetime64("2024-01-01T00:00:00", "ms")],
+    ...         "tie_lengths": [1000],
+    ...         "sampling_interval": np.timedelta64(4, "ms"),
+    ...     }
+    ... )
+    >>> coord
+    2024-01-01T00:00:00.000 to 2024-01-01T00:00:03.996
     """
 
     @override
