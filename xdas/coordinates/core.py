@@ -400,6 +400,9 @@ class Coordinate(ABC):
 
     # -- properties ---
 
+    #: Name of the dimension this coordinate is associated with, or ``None``.
+    dim = None
+
     @property
     def ndim(self):
         """Number of dimensions (always 1 for dimensional coordinates)."""
@@ -517,8 +520,6 @@ class Coordinate(ABC):
             return False
         a, b = self.data, other.data
         if isinstance(a, dict):
-            if a.keys() != b.keys():
-                return False
             pairs = [(a[key], b[key]) for key in a]
         else:
             pairs = [(a, b)]
@@ -691,7 +692,7 @@ class SampledMixin(ABC):
     Mixed into the tie-point coordinate types (:class:`SampledCoordinate`,
     :class:`InterpCoordinate`), which describe a monotonic axis that may contain
     gaps and overlaps. It builds discontinuity and availability tables on top of
-    the subclass-provided :meth:`get_value` and :meth:`get_split_indices`.
+    the subclass-provided :meth:`_get_value` and :meth:`get_split_indices`.
     """
 
     @abstractmethod

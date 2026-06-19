@@ -142,6 +142,122 @@ class TestCoordinates:
         with pytest.raises(TypeError, match="cannot use tuple"):
             coords.to_index({"dim": (1, 2, 3)})
 
+    def test_init_from_coordinates(self):
+        original = xd.Coordinates({"dim": [1.0, 2.0, 3.0]})
+        copy = xd.Coordinates(original)
+        assert copy.dims == original.dims
+        assert copy.equals(original)
+
+    def test_getitem_dim_without_coord(self):
+        coords = xd.Coordinates(dims=("dim",))
+        with pytest.raises(KeyError, match="has no coordinate"):
+            coords["dim"]
+
+    def test_repr(self):
+        coords = xd.Coordinates(
+            {
+                "dim": [1.0, 2.0, 3.0],
+                "meta": 0,
+                "other": ("dim", [4.0, 5.0, 6.0]),
+            }
+        )
+        r = repr(coords)
+        assert "Coordinates:" in r
+        assert "* dim" in r
+        assert "meta" in r
+        assert "other (dim)" in r
+
+    def test_reduce(self):
+        import pickle
+
+        coords = xd.Coordinates({"dim": [1.0, 2.0, 3.0]})
+        restored = pickle.loads(pickle.dumps(coords))
+        assert restored.equals(coords)
+
+    def test_parent(self):
+        da = xd.DataArray(np.ones(3), {"dim": [0.0, 1.0, 2.0]})
+        assert da.coords.parent is da
+
+    def test_get_query_first_last(self):
+        coords = xd.Coordinates({"dim_0": [1.0, 2.0, 3.0], "dim_1": [1.0, 2.0, 3.0]})
+        q = coords.get_query({"first": slice(0, 1)})
+        assert q["dim_0"] == slice(0, 1)
+        assert q["dim_1"] == slice(None)
+        q = coords.get_query({"last": slice(1, 2)})
+        assert q["dim_0"] == slice(None)
+        assert q["dim_1"] == slice(1, 2)
+
+    def test_get_query_tuple(self):
+        coords = xd.Coordinates({"dim_0": [1.0, 2.0, 3.0], "dim_1": [1.0, 2.0, 3.0]})
+        q = coords.get_query((slice(0, 1), slice(1, 2)))
+        assert q["dim_0"] == slice(0, 1)
+        assert q["dim_1"] == slice(1, 2)
+
+    def test_get_query_else_and_return(self):
+        coords = xd.Coordinates({"dim_0": [1.0, 2.0, 3.0], "dim_1": [1.0, 2.0, 3.0]})
+        q = coords.get_query(slice(0, 1))
+        assert q["dim_0"] == slice(0, 1)
+        assert q["dim_1"] == slice(None)
+
+    def test_to_index(self):
+        coords = xd.Coordinates({"dim": [1.0, 2.0, 3.0]})
+        idx = coords.to_index(2.0)
+        assert idx == {"dim": 1}
+
+    def test_equals_different_names(self):
+        assert not xd.Coordinates({"dim": [1.0, 2.0, 3.0]}).equals(
+            xd.Coordinates({"other": [1.0, 2.0, 3.0]})
+        )
+
+    def test_equals_different_values(self):
+        assert not xd.Coordinates({"dim": [1.0, 2.0, 3.0]}).equals(
+            xd.Coordinates({"dim": [4.0, 5.0, 6.0]})
+        )
+
+    def test_copy(self):
+        coords = xd.Coordinates({"dim": [1.0, 2.0, 3.0]})
+        copy = coords.copy()
+        assert copy.equals(coords)
+        assert copy is not coords
+
+    def test_setitem_with_parent(self):
+        class FakeParent:
+            ndim = 1
+            shape = (3,)
+            sizes = {"dim": 3}
+
+        coords = xd.Coordinates({"dim": [1.0, 2.0, 3.0]})
+        parent = FakeParent()
+        coords.assign_parent(parent)
+        with pytest.raises(KeyError, match="cannot add new dimension"):
+            coords["other_dim"] = [1.0, 2.0, 3.0]
+        with pytest.raises(ValueError, match="conflicting sizes"):
+            coords["dim"] = [1.0, 2.0, 3.0, 4.0]
+        # scalar coord: coord.dim is None → skips the dim check block
+        coords["meta"] = 42
+        # correctly-sized coord: sizes match → no error
+        coords["dim"] = [4.0, 5.0, 6.0]
+
+    def test_assign_parent_ndim_mismatch(self):
+        class FakeParent:
+            ndim = 1
+            shape = (3,)
+            sizes = {"dim_0": 3}
+
+        coords = xd.Coordinates({"dim_0": [1.0, 2.0, 3.0], "dim_1": [4.0, 5.0, 6.0]})
+        with pytest.raises(ValueError, match="number of dimensions"):
+            coords.assign_parent(FakeParent())
+
+    def test_assign_parent_size_mismatch(self):
+        class FakeParent:
+            ndim = 1
+            shape = (3,)
+            sizes = {"dim": 3}
+
+        coords = xd.Coordinates({"dim": [1.0, 2.0, 3.0, 4.0]})
+        with pytest.raises(ValueError, match="conflicting sizes"):
+            coords.assign_parent(FakeParent())
+
 
 class TestCoordinateBase:
     def test_new_unparseable(self):
@@ -296,3 +412,20 @@ class TestCoordinateBase:
         assert "dim_0" not in result
         assert "dim_2" not in result
         assert "dim_1" in result
+
+    def test_reduce(self):
+        import pickle
+
+        coord = DenseCoordinate([1.0, 2.0, 3.0], "x")
+        restored = pickle.loads(pickle.dumps(coord))
+        assert restored.equals(coord)
+
+    def test_equals_returns_false_different_values(self):
+        c1 = DenseCoordinate([1.0, 2.0, 3.0], "x")
+        c2 = DenseCoordinate([4.0, 5.0, 6.0], "x")
+        assert not c1.equals(c2)
+
+    def test_slice_indexer_endpoint_false(self):
+        coord = DenseCoordinate([1.0, 2.0, 3.0], "x")
+        slc = coord.slice_indexer(stop=3.0, endpoint=False)
+        assert slc == slice(None, 2)

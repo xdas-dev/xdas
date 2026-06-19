@@ -946,3 +946,16 @@ class TestSampledCoordinateMissingBranches:
             }
         )
         assert coord._is_monotonic_increasing() is True
+
+    def test_get_sampling_interval_singleton(self):
+        coord = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [1], "sampling_interval": 1.0}
+        )
+        assert coord.get_sampling_interval() is None
+
+    def test_collect_from_dataset_no_sampling(self):
+        import xarray as xr
+
+        dataset = xr.Dataset({"data": xr.DataArray(np.zeros(3))})
+        result = SampledCoordinate._collect_from_dataset(dataset, "data")
+        assert result == {}
