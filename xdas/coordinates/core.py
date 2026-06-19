@@ -31,6 +31,20 @@ def wraps_first_last(func):
     return wrapper
 
 
+def wraps_first_last_all(func):
+    """Resolve ``"first"`` and ``"last"`` aliases in every positional argument."""
+
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        resolved = tuple(
+            self._dims[0] if a == "first" else (self._dims[-1] if a == "last" else a)
+            for a in args
+        )
+        return func(self, *resolved, **kwargs)
+
+    return wrapper
+
+
 class Coordinates(dict):
     """
     Dictionary like container for coordinates.
@@ -231,14 +245,14 @@ class Coordinates(dict):
             {key: value.copy(deep) for key, value in self.items()}, self.dims
         )
 
-    @wraps_first_last
+    @wraps_first_last_all
     def drop_dims(self, *dims):
         """Return a new :class:`Coordinates` with *dims* and their associated coordinates removed."""
         coords = {key: value for key, value in self.items() if value.dim not in dims}
         dims = tuple(value for value in self.dims if value not in dims)
         return self.__class__(coords, dims)
 
-    @wraps_first_last
+    @wraps_first_last_all
     def drop_coords(self, *names):
         """Return a new :class:`Coordinates` with the named coordinates removed."""
         coords = {key: value for key, value in self.items() if key not in names}

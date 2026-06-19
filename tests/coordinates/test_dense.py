@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import pytest
+import xarray as xr
 
 from xdas.coordinates import DenseCoordinate, ScalarCoordinate
 
@@ -154,3 +155,39 @@ class TestDenseCoordinate:
             [t0, t0 + np.timedelta64(2, "s"), t0 + np.timedelta64(1, "s")]
         )
         assert not DenseCoordinate(times_bad)._is_monotonic_increasing()
+
+    def test_add(self):
+        coord = DenseCoordinate([1.0, 2.0, 3.0], "x")
+        result = coord + 1.0
+        expected = DenseCoordinate([2.0, 3.0, 4.0], "x")
+        assert result.equals(expected)
+
+    def test_get_indexer_missing(self):
+        with pytest.raises(KeyError):
+            DenseCoordinate([1, 2, 3])._get_indexer(99)
+
+    def test_to_dataset(self):
+        coord = DenseCoordinate([1.0, 2.0, 3.0], "x")
+        coord.dim = "x"
+        import xdas as xd
+
+        da = xd.DataArray([0, 0, 0], {"x": coord})
+        dataset = xr.Dataset()
+        dataset, attrs = da.coords["x"]._to_dataset(dataset, {})
+        assert "x" in dataset.coords
+
+    def test_to_dataset_no_name(self):
+        coord = DenseCoordinate([1.0, 2.0, 3.0])
+        with pytest.raises(ValueError, match="no name"):
+            coord._to_dataset(xr.Dataset(), {})
+
+    def test_collect_from_dataset_object_dtype(self):
+        coord = DenseCoordinate([1.0, 2.0, 3.0], "x")
+        import xdas as xd
+
+        da = xd.DataArray([0, 0, 0], {"x": coord})
+        dataset = xr.Dataset()
+        dataset, _ = da.coords["x"]._to_dataset(dataset, {})
+        dataset["x"] = dataset["x"].astype(object)
+        result = DenseCoordinate._collect_from_dataset(dataset, "x")
+        assert "x" in result

@@ -4,6 +4,7 @@ import xarray as xr
 
 import xdas as xd
 from xdas.coordinates import DenseCoordinate, InterpCoordinate, ScalarCoordinate
+from xdas.coordinates.core import format_datetime, isscalar
 
 
 class TestCoordinate:
@@ -184,11 +185,10 @@ class TestCoordinateBase:
         result = coord.format_index(np.array([-1, 0, 5]), bounds="clip")
         assert np.all(result >= 0)
 
-    def test_to_dataset_no_dim(self):
+    def test_to_dataset_no_name(self):
         sc = ScalarCoordinate(42)
-        dataset = xr.Dataset()
-        dataset, attrs = sc._to_dataset(dataset, {})
-        assert None in dataset.coords
+        with pytest.raises(ValueError, match="no name"):
+            sc._to_dataset(xr.Dataset(), {})
 
     def test_parse_dim_override(self):
         coord = xd.Coordinate(("x", [1, 2, 3]), dim="y")
@@ -239,3 +239,60 @@ class TestCoordinateBase:
 
         assert "_testnamed" in Coordinate._registry
         del Coordinate._registry["_testnamed"]
+
+    def test_coordinate_copy_deep(self):
+        coord = DenseCoordinate([1.0, 2.0, 3.0], "x")
+        deep = coord.copy(deep=True)
+        assert deep.equals(coord)
+        assert deep.data is not coord.data
+
+    def test_coordinate_copy_shallow(self):
+        coord = DenseCoordinate([1.0, 2.0, 3.0], "x")
+        shallow = coord.copy(deep=False)
+        assert shallow.equals(coord)
+
+    def test_get_sampling_interval_helper(self):
+        from xdas.coordinates import get_sampling_interval
+
+        da = xd.DataArray([1, 2, 3], {"x": [10.0, 20.0, 30.0]})
+        assert get_sampling_interval(da, "x") == 10.0
+
+    def test_isscalar(self):
+        assert isscalar(1)
+        assert isscalar(1.0)
+        assert isscalar(np.array(1))
+        assert not isscalar([1])
+        assert not isscalar({"key": "value"})
+
+    def test_format_datetime_no_fractional(self):
+        x = np.datetime64("2000-01-01T00:00:00", "s")
+        assert format_datetime(x) == "2000-01-01T00:00:00"
+
+    def test_format_datetime_truncates_sub_ms(self):
+        x = np.datetime64("2000-01-01T00:00:00.123456789", "ns")
+        result = format_datetime(x)
+        assert result == "2000-01-01T00:00:00.123"
+
+    def test_drop_dims_variadic_first_last(self):
+        coords = xd.Coordinates(
+            {
+                "dim_0": [1.0, 2.0, 3.0],
+                "dim_1": [4.0, 5.0, 6.0],
+                "dim_2": [7.0, 8.0, 9.0],
+            }
+        )
+        result = coords.drop_dims("first", "last")
+        assert list(result.dims) == ["dim_1"]
+
+    def test_drop_coords_variadic_first_last(self):
+        coords = xd.Coordinates(
+            {
+                "dim_0": [1.0, 2.0, 3.0],
+                "dim_1": [4.0, 5.0, 6.0],
+                "dim_2": [7.0, 8.0, 9.0],
+            }
+        )
+        result = coords.drop_coords("first", "last")
+        assert "dim_0" not in result
+        assert "dim_2" not in result
+        assert "dim_1" in result

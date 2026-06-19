@@ -110,6 +110,8 @@ class DenseCoordinate(Coordinate, name="dense"):
 
     @override
     def _to_dataset(self, dataset, attrs):
+        if self.name is None:
+            raise ValueError("cannot serialize a coordinate with no name")
         dataset = dataset.assign_coords(
             {self.name: (self.dim, self.values) if self.dim else self.values}
         )
@@ -162,7 +164,9 @@ class DenseCoordinate(Coordinate, name="dense"):
         if len(self) < 2:
             return None
         delta = (self[-1].values - self[0].values) / (len(self) - 1)
-        delta = np.asarray(delta)  # TODO: why?
+        delta = np.asarray(
+            delta
+        )  # plain Python floats have no .dtype; np.asarray adds it
         if cast and np.issubdtype(delta.dtype, np.timedelta64):
             delta = delta / np.timedelta64(1, "s")
         return delta

@@ -308,7 +308,7 @@ class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
             ``None`` uses zero tolerance (lossless).  ``False`` returns ``self`` unchanged.
         """
         if tolerance is False:
-            return self  # TODO: copy
+            return self.copy()
         tolerance = parse_tolerance(tolerance, self.dtype)
         tie_indices, tie_values = _douglas_peucker(
             self.tie_indices, self.tie_values, tolerance

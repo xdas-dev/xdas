@@ -426,7 +426,7 @@ class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
             next segment.  ``None`` uses zero tolerance.  ``False`` returns ``self`` unchanged.
         """
         if tolerance is False:
-            return self  # TODO: copy
+            return self.copy()
         tolerance = parse_tolerance(tolerance, self.dtype)
         tie_values = [self.tie_values[0]]
         tie_lengths = [self.tie_lengths[0]]

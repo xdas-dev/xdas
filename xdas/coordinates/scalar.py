@@ -129,6 +129,8 @@ class ScalarCoordinate(Coordinate, name="scalar"):
 
     @override
     def _to_dataset(self, dataset, attrs):
+        if self.name is None:
+            raise ValueError("cannot serialize a coordinate with no name")
         dataset = dataset.assign_coords(
             {self.name: (self.dim, self.values) if self.dim else self.values}
         )

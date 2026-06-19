@@ -887,7 +887,9 @@ class TestSampledCoordinateMissingBranches:
 
     def test_simplify_false(self):
         coord = self.make_coord()
-        assert coord.simplify(False) is coord
+        result = coord.simplify(False)
+        assert result is not coord
+        assert result.equals(coord)
 
     def test_get_split_indices_gaps(self):
         coord = self.make_coord()

@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
+import xarray as xr
 
+import xdas as xd
 from xdas.coordinates import InterpCoordinate, ScalarCoordinate
 
 
@@ -380,7 +382,9 @@ class TestInterpCoordinate:
 
     def test_simplify_false(self):
         coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
-        assert coord.simplify(False) is coord
+        result = coord.simplify(False)
+        assert result is not coord
+        assert result.equals(coord)
 
     def test_get_split_indices_kinds(self):
         t0 = np.datetime64("2000-01-01T00:00:00")
@@ -446,3 +450,90 @@ class TestInterpCoordinate:
             }
         )
         assert coord._is_monotonic_increasing() is True
+
+    def test_slice_step_collision(self):
+        # 4 tie points; step=3 makes first inner tie collide (collision fixed) and
+        # second inner tie doesn't collide (covers the False branch → loop continues).
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 2, 6, 12], "tie_values": [0.0, 20.0, 60.0, 120.0]}
+        )
+        result = coord._slice(slice(None, None, 3))
+        assert isinstance(result, InterpCoordinate)
+        assert len(result.tie_indices) >= 3
+        assert result.tie_indices[0] == 0
+        assert all(
+            result.tie_indices[i] < result.tie_indices[i + 1]
+            for i in range(len(result.tie_indices) - 1)
+        )
+
+    def test_get_sampling_interval_datetime_cast(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        t1 = np.datetime64("2000-01-01T00:00:08")
+        coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [t0, t1]})
+        result = coord.get_sampling_interval()  # cast=True by default
+        assert result == 1.0
+
+    def test_get_sampling_interval_unit_spaced(self):
+        # all tie-index gaps == 1 → mask is all False → returns None
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 1, 2], "tie_values": [0.0, 1.0, 2.0]}
+        )
+        assert coord.get_sampling_interval() is None
+
+    def test_add_sub(self):
+        coord = InterpCoordinate({"tie_indices": [0, 4], "tie_values": [10.0, 50.0]})
+        result = coord + 5.0
+        assert isinstance(result, InterpCoordinate)
+        assert np.allclose(result.tie_values, [15.0, 55.0])
+        result2 = coord - 5.0
+        assert np.allclose(result2.tie_values, [5.0, 45.0])
+
+    def test_to_dataset_collect_roundtrip(self):
+        da = xd.DataArray(
+            np.zeros(9),
+            {"x": {"tie_indices": [0, 8], "tie_values": [100.0, 900.0]}},
+        )
+        coord = da.coords["x"]
+        dataset = xr.Dataset()
+        attrs = {}
+        dataset, attrs = coord._to_dataset(dataset, attrs)
+        assert "coordinate_interpolation" in attrs
+        assert "x_indices" in dataset
+        assert "x_values" in dataset
+        dataset["__values__"] = xr.DataArray(np.zeros(9), dims=["x"])
+        dataset["__values__"].attrs["coordinate_interpolation"] = attrs[
+            "coordinate_interpolation"
+        ]
+        recovered = InterpCoordinate._collect_from_dataset(dataset, "__values__")
+        assert "x" in recovered
+        assert np.allclose(recovered["x"].tie_values, coord.tie_values)
+
+    def test_to_dataset_multiple_coords_append(self):
+        # Second coord hitting the "already in attrs" branch (line 223)
+        da = xd.DataArray(
+            np.zeros((9, 5)),
+            {
+                "x": {"tie_indices": [0, 8], "tie_values": [100.0, 900.0]},
+                "y": {"tie_indices": [0, 4], "tie_values": [0.0, 40.0]},
+            },
+        )
+        attrs = {}
+        dataset = xr.Dataset()
+        dataset, attrs = da.coords["x"]._to_dataset(dataset, attrs)
+        dataset, attrs = da.coords["y"]._to_dataset(dataset, attrs)
+        assert "x" in attrs["coordinate_interpolation"]
+        assert "y" in attrs["coordinate_interpolation"]
+
+    def test_to_dataset_datetime(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        t1 = np.datetime64("2000-01-01T00:00:08")
+        da = xd.DataArray(
+            np.zeros(9),
+            {"time": {"tie_indices": [0, 8], "tie_values": [t0, t1]}},
+        )
+        coord = da.coords["time"]
+        dataset = xr.Dataset()
+        attrs = {}
+        dataset, attrs = coord._to_dataset(dataset, attrs)
+        assert "time_indices" in dataset
+        assert dataset["time_values"].dtype == np.dtype("datetime64[ns]")

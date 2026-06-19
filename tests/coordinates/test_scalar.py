@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
+import xarray as xr
 
+import xdas as xd
 from xdas.coordinates import ScalarCoordinate
 
 
@@ -109,3 +111,37 @@ class TestScalarCoordinate:
     def test_empty(self):
         with pytest.raises(TypeError, match="cannot be empty"):
             ScalarCoordinate()
+
+    def test_indices(self):
+        with pytest.raises(TypeError):
+            ScalarCoordinate(1).indices
+
+    def test_start(self):
+        with pytest.raises(TypeError):
+            ScalarCoordinate(1).start
+
+    def test_end(self):
+        with pytest.raises(TypeError):
+            ScalarCoordinate(1).end
+
+    def test_get_value(self):
+        with pytest.raises(TypeError):
+            ScalarCoordinate(1)._get_value(0)
+
+    def test_get_indexer(self):
+        with pytest.raises(TypeError):
+            ScalarCoordinate(1)._get_indexer(1)
+
+    def test_slice(self):
+        with pytest.raises(TypeError):
+            ScalarCoordinate(1)._slice(slice(None))
+
+    def test_get_sampling_interval(self):
+        assert ScalarCoordinate(1).get_sampling_interval() is None
+
+    def test_to_dataset_with_name(self):
+        da = xd.DataArray([1, 2, 3], {"x": [1.0, 2.0, 3.0], "meta": 42})
+        sc = da.coords["meta"]
+        dataset = xr.Dataset()
+        dataset, attrs = sc._to_dataset(dataset, {})
+        assert "meta" in dataset.coords
