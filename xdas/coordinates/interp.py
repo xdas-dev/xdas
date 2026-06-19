@@ -141,7 +141,7 @@ class InterpCoordinate(SampledMixin, Coordinate, ctype="interpolated"):
             "overlaps", tolerance=False
         ).size  # TODO: do not call split_indices
 
-    def is_valid_sampling_interval(self, sampling_interval, tolerance=None):
+    def _is_valid_sampling_interval(self, sampling_interval, tolerance=None):
         if len(self) < 2:
             valid = True
         else:
@@ -152,9 +152,7 @@ class InterpCoordinate(SampledMixin, Coordinate, ctype="interpolated"):
             den = den[mask]
             dmin = (num - 2 * tolerance) / den
             dmax = (num + 2 * tolerance) / den
-            print(dmin, dmax, sampling_interval)
             valid = np.all((dmin <= sampling_interval) & (sampling_interval <= dmax))
-            print(sampling_interval <= dmax)
         return valid
 
     @override
@@ -394,6 +392,7 @@ class FixedInterpCoordinate(InterpCoordinate, ctype="fixinterp"):
         value. This parameter is used to check the sampling_interval consistency.
     """
 
+    @override
     def __init__(self, data=None, dim=None, dtype=None):
         if data is None:
             data = {
@@ -412,13 +411,13 @@ class FixedInterpCoordinate(InterpCoordinate, ctype="fixinterp"):
 
         super().__init__(data, dim, dtype)
 
-        self.assign_sampling_interval(sampling_interval, tolerance)
+        self._assign_sampling_interval(sampling_interval, tolerance)
 
-    def assign_sampling_interval(self, sampling_interval, tolerance=None):
+    def _assign_sampling_interval(self, sampling_interval, tolerance=None):
         sampling_interval = parse_scalar_delta(sampling_interval, self.dtype)
         tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
 
-        if self.is_valid_sampling_interval(sampling_interval, tolerance):
+        if self._is_valid_sampling_interval(sampling_interval, tolerance):
             self.data["sampling_interval"] = sampling_interval
             self.data["tolerance"] = tolerance
         else:
@@ -435,8 +434,19 @@ class FixedInterpCoordinate(InterpCoordinate, ctype="fixinterp"):
     def tolerance(self):
         return self.data["tolerance"]
 
+    @classmethod
+    @override
+    def from_block(cls, start, size, step, dim=None, dtype=None):
+        data = {
+            "tie_indices": [0, size - 1],
+            "tie_values": [start, start + step * (size - 1)],
+            "sampling_interval": step,
+        }
+        return cls(data, dim=dim, dtype=dtype)
+
     @staticmethod
-    def isvalid(data):
+    @override
+    def _isvalid(data):
         match data:
             case {
                 "tie_indices": _,
@@ -448,49 +458,27 @@ class FixedInterpCoordinate(InterpCoordinate, ctype="fixinterp"):
             case _:
                 return False
 
-    def get_sampling_interval(self, cast=True):
-        delta = self.sampling_interval
-        if cast and np.issubdtype(delta.dtype, np.timedelta64):
-            delta = delta / np.timedelta64(1, "s")
-        return delta
-
-    def equals(self, other):
-        return super().equals(other) and (
-            self.sampling_interval == other.sampling_interval
-        )
-
-    def append(self, other):
-        if not self.sampling_interval == other.sampling_interval:
-            raise ValueError(
-                "cannot append coordinate with different sampling interval"
-            )
-        coord = super().append(other)
-        coord.data["sampling_interval"] = self.sampling_interval
-        coord.data["tolerance"] = self.tolerance
-        return coord
-
-    def decimate(self, q):
-        coord = super().__init__(q)
-        sampling_interval = self.sampling_interval / q  # TODO: what about interger-like
+    @override
+    def _slice(self, slc):
+        coord = super()._slice(slc)
+        sampling_interval = self.sampling_interval / slc.step
         coord.data["sampling_interval"] = sampling_interval
         coord.data["tolerance"] = self.tolerance
         return coord
 
-    def simplify(self, tolerance=None):  # TODO: shoul ensure that still OK
-        return super().__init__(tolerance)
-
-    @classmethod
-    def from_array(cls, arr, dim=None, tolerance=None):
-        coord = super().__init__(arr, dim, tolerance)
-        coord.sampling_rate = coord.get_sampling_rate(cast=False)
+    @override
+    def _concat(self, other):
+        coord = super()._concat(other)
+        if not self.sampling_interval == other.sampling_interval:
+            raise ValueError(
+                "cannot append coordinate with different sampling interval"
+            )
+        coord.data["sampling_interval"] = self.sampling_interval
+        coord.data["tolerance"] = max(self.tolerance, other.tolerance)
         return coord
 
-    def to_dict(self):
-        d = super().to_dict()
-        d["data"]["sampling_interval"] = self.sampling_interval
-        return d
-
-    def to_dataset(self, dataset, attrs):
+    @override
+    def _to_dataset(self, dataset, attrs):
         dataset, attrs = super().to_dataset(dataset, attrs)
         dataset[f"{self.name}_interpolation"].attrs["sampling_interval"] = (
             self.sampling_interval
@@ -499,7 +487,8 @@ class FixedInterpCoordinate(InterpCoordinate, ctype="fixinterp"):
         return dataset, attrs
 
     @classmethod
-    def from_dataset(cls, dataset, name): ...
+    @override
+    def _collect_from_dataset(cls, dataset, name): ...
 
     # coords = super().from_dataset(dataset, name)
     # for name, coord in coords.items():
@@ -514,11 +503,12 @@ class FixedInterpCoordinate(InterpCoordinate, ctype="fixinterp"):
     #         coords[dim] = Coordinate(data, dim)
     # return coords
 
-    @classmethod
-    def from_block(cls, start, size, step, dim=None, dtype=None):
-        coord = super().from_block(start, size, step, dim, dtype)
-        coord.data["sampling_interval"] = step
-        return coord
+    @override
+    def get_sampling_interval(self, cast=True):
+        delta = self.sampling_interval
+        if cast and np.issubdtype(delta.dtype, np.timedelta64):
+            delta = delta / np.timedelta64(1, "s")
+        return delta
 
 
 def _douglas_peucker(x, y, epsilon):

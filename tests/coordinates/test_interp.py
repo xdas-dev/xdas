@@ -331,7 +331,7 @@ class TestFixedInterpCoordinate:
 
     def test_isvalid(self):
         for data in self.valid:
-            assert FixedInterpCoordinate.isvalid(data)
+            assert FixedInterpCoordinate._isvalid(data)
 
     def test_init(self):
         for data in self.valid:
