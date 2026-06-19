@@ -10,7 +10,7 @@ from typing_extensions import override
 from .core import Coordinate, parse
 
 
-class ScalarCoordinate(Coordinate, name="scalar"):
+class ScalarCoordinate(Coordinate, ctype="scalar"):
     """
     Non-dimensional coordinate that carries a single scalar value.
 
@@ -54,7 +54,12 @@ class ScalarCoordinate(Coordinate, name="scalar"):
 
     @override
     def __array__(self, dtype=None, copy=None):
-        return self.data.__array__(dtype, copy=copy)
+        # TODO: drop this workaround once Python 3.10 is no longer supported
+        # (EOL Oct 2026). numpy < 2.3 raises when copy=False on a 0-d array;
+        # numpy 2.3+ (requires Python 3.11+) handles it correctly.
+        if copy:
+            return np.array(self.data, dtype=dtype)
+        return np.asarray(self.data, dtype=dtype)
 
     @override
     def __repr__(self):

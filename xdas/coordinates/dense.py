@@ -7,7 +7,7 @@ from typing_extensions import override
 from .core import Coordinate, parse
 
 
-class DenseCoordinate(Coordinate, name="dense"):
+class DenseCoordinate(Coordinate, ctype="dense"):
     """
     Coordinate backed by an explicit numpy array.
 

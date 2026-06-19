@@ -19,7 +19,7 @@ from .core import (
 )
 
 
-class InterpCoordinate(SampledMixin, Coordinate, name="interpolated"):
+class InterpCoordinate(SampledMixin, Coordinate, ctype="interpolated"):
     """
     Piecewise-linear coordinate described by tie points (CF convention).
 

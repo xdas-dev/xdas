@@ -298,10 +298,10 @@ class Coordinate(ABC):
     registered subclass (:class:`SampledCoordinate`, :class:`InterpCoordinate`,
     :class:`DenseCoordinate`, or :class:`ScalarCoordinate`).
 
-    **Subclassing** — register a new subclass by passing ``name=`` in the
+    **Subclassing** — register a new subclass by passing ``ctype=`` in the
     class definition::
 
-        class MyCoord(Coordinate, name="mycoord"):
+        class MyCoord(Coordinate, ctype="mycoord"):
             ...
 
     Parameters
@@ -318,10 +318,10 @@ class Coordinate(ABC):
 
     _registry = {}
 
-    def __init_subclass__(cls, *, name=None, **kwargs):
+    def __init_subclass__(cls, *, ctype=None, **kwargs):
         super().__init_subclass__(**kwargs)
-        if name is not None:
-            Coordinate._registry[name] = cls
+        if ctype is not None:
+            Coordinate._registry[ctype] = cls
 
     def __class_getitem__(cls, item):
         return cls._registry[item]

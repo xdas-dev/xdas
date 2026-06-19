@@ -306,6 +306,11 @@ class TestCoordinateBase:
         with pytest.raises(ValueError, match="no name"):
             sc._to_dataset(xr.Dataset(), {})
 
+    def test_scalar_array_copy(self):
+        sc = ScalarCoordinate(42)
+        result = np.array(sc, copy=True)
+        assert result == 42
+
     def test_parse_dim_override(self):
         coord = xd.Coordinate(("x", [1, 2, 3]), dim="y")
         assert coord.dim == "y"
@@ -350,7 +355,7 @@ class TestCoordinateBase:
     def test_init_subclass_with_name(self):
         from xdas.coordinates import Coordinate
 
-        class _Named(Coordinate, name="_testnamed"):
+        class _Named(Coordinate, ctype="_testnamed"):
             pass
 
         assert "_testnamed" in Coordinate._registry

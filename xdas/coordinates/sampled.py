@@ -28,7 +28,7 @@ CODE_TO_UNITS = {
 UNITS_TO_CODE = {v: k for k, v in CODE_TO_UNITS.items()}
 
 
-class SampledCoordinate(SampledMixin, Coordinate, name="sampled"):
+class SampledCoordinate(SampledMixin, Coordinate, ctype="sampled"):
     """
     Coordinate sampled at a fixed interval, with optional gaps between segments.
 
