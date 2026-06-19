@@ -87,7 +87,7 @@ def open_dataarray(fname, group=None):
                 raise ValueError("several possible data arrays detected")
 
         # read coordinates
-        coords = Coordinates.from_dataset(dataset, name)
+        coords = Coordinates._from_dataset(dataset, name)
 
     # read data
     if "__dask_array__" in dataset[name].attrs:
@@ -145,7 +145,7 @@ def save_dataarray(
 
     # prepare metadata
     for coord in da.coords.values():
-        dataset, variable_attrs = coord.to_dataset(dataset, variable_attrs)
+        dataset, variable_attrs = coord._to_dataset(dataset, variable_attrs)
 
     # create parent directories if needed
     if create_dirs:

@@ -28,7 +28,7 @@ class VirtualArray:
     def __getitem__(self, key):
         NotImplemented
 
-    def __array__(self, dtype=None):
+    def __array__(self, dtype=None, copy=None):
         NotImplemented
 
     @property
@@ -175,10 +175,10 @@ class VirtualStack(VirtualArray):
             sources = [source[tuple(indexers)] for source in self._sources]
         return VirtualStack(sources, self._axis)
 
-    def __array__(self, dtype=None):
+    def __array__(self, dtype=None, copy=None):
         if not self._sources:
             raise ValueError("no sources in stack")
-        return self._to_layout().__array__(dtype)
+        return self._to_layout().__array__(dtype, copy=copy)
 
     @property
     def sources(self):
@@ -331,7 +331,7 @@ class VirtualLayout(VirtualArray):
         self._layout = h5py.VirtualLayout(shape, dtype, maxshape, filename)
         self._sel = Selection(self._layout.shape)
 
-    def __array__(self, dtype=None):
+    def __array__(self, dtype=None, copy=None):
         with TemporaryDirectory() as tmpdirname:
             fname = os.path.join(tmpdirname, "vds.h5")
             with h5py.File(fname, "w") as file:
@@ -465,7 +465,7 @@ class VirtualSource(VirtualArray):
         self._sel = self._sel.__getitem__(key)
         return self
 
-    def __array__(self, dtype=None):
+    def __array__(self, dtype=None, copy=None):
         with h5py.File(self.vsource.path) as file:
             dataset = file[self.vsource.name]
             return np.asarray(dataset[self._sel.get_indexer()], dtype=dtype)

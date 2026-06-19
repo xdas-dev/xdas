@@ -7,6 +7,7 @@ interpolation, tolerance handling).
 """
 
 import weakref
+from abc import ABC, abstractmethod
 from copy import copy, deepcopy
 from functools import wraps
 from itertools import pairwise
@@ -30,6 +31,20 @@ def wraps_first_last(func):
     return wrapper
 
 
+def wraps_first_last_all(func):
+    """Resolve ``"first"`` and ``"last"`` aliases in every positional argument."""
+
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        resolved = tuple(
+            self._dims[0] if a == "first" else (self._dims[-1] if a == "last" else a)
+            for a in args
+        )
+        return func(self, *resolved, **kwargs)
+
+    return wrapper
+
+
 class Coordinates(dict):
     """
     Dictionary like container for coordinates.
@@ -46,7 +61,7 @@ class Coordinates(dict):
           which are assumed to be a dimensional coordinate with `dim` set to the
           related name.
 
-    dims: squence of str, optional
+    dims: sequence of str, optional
         An ordered sequence of dimensions. It is meant to match the dimensionality of
         its associated data. If provided, it must at least include all dimensions found
         in `coords` (extras dimensions will be considered as empty coordinates).
@@ -144,7 +159,7 @@ class Coordinates(dict):
         """Return ``True`` if *name* is a dimensional coordinate (i.e. its dim equals its name)."""
         return self[name].dim == name
 
-    def get_query(self, item):
+    def _get_query(self, item):
         """
         Format a query from one or multiple indexer.
 
@@ -199,62 +214,24 @@ class Coordinates(dict):
         dict
             Mapping from dimension name to integer index or slice.
         """
-        query = self.get_query(item)
+        query = self._get_query(item)
         return {dim: self[dim].to_index(query[dim], method, endpoint) for dim in query}
 
     def equals(self, other):
         """Return ``True`` if *other* is a :class:`Coordinates` with identical coordinate values."""
         if not isinstance(other, Coordinates):
             return False
+        if set(self) != set(other):
+            return False
         for name in self:
             if not self[name].equals(other[name]):
                 return False
         return True
 
-    def to_dict(self):
-        """Convert this `Coordinates` object into a pure python dictionnary.
-
-        Examples
-        --------
-        >>> import xdas as xd
-
-        >>> coords = xd.Coordinates(
-        ...     {
-        ...         "time": {"tie_indices": [0, 999], "tie_values": [0.0, 10.0]},
-        ...         "distance": [0, 1, 2],
-        ...         "channel": ("distance", ["DAS01", "DAS02", "DAS03"]),
-        ...         "interrogator": (None, "SRN"),
-        ...     }
-        ... )
-        >>> coords.to_dict()
-        {'dims': ('time', 'distance'),
-         'coords': {'time': {'dim': 'time',
-           'data': {'tie_indices': [0, 999], 'tie_values': [0.0, 10.0]},
-           'dtype': 'float64'},
-          'distance': {'dim': 'distance', 'data': [0, 1, 2], 'dtype': 'int64'},
-          'channel': {'dim': 'distance',
-           'data': ['DAS01', 'DAS02', 'DAS03'],
-           'dtype': '<U5'},
-          'interrogator': {'dim': None, 'data': 'SRN', 'dtype': '<U3'}}}
-
-        """
-        return {
-            "dims": self.dims,
-            "coords": {name: self[name].to_dict() for name in self},
-        }
-
     @classmethod
-    def from_dict(cls, dct):
-        """Reconstruct a :class:`Coordinates` from the dict returned by :meth:`to_dict`."""
-        return cls(
-            {key: Coordinate.from_dict(value) for key, value in dct["coords"].items()},
-            dct["dims"],
-        )
-
-    @classmethod
-    def from_dataset(cls, dataset, name):
+    def _from_dataset(cls, dataset, name):
         """Build a :class:`Coordinates` by delegating to each registered coordinate subclass."""
-        return cls(Coordinate.from_dataset(dataset, name))
+        return cls(Coordinate._from_dataset(dataset, name))
 
     def copy(self, deep=True):
         """Return a copy of this :class:`Coordinates` container.
@@ -264,22 +241,25 @@ class Coordinates(dict):
         deep : bool, optional
             If ``True`` (default) perform a deep copy of every coordinate.
         """
-        return self.__class__({key: value.copy(deep) for key, value in self.items()})
+        return self.__class__(
+            {key: value.copy(deep) for key, value in self.items()}, self.dims
+        )
 
-    @wraps_first_last
+    @wraps_first_last_all
     def drop_dims(self, *dims):
         """Return a new :class:`Coordinates` with *dims* and their associated coordinates removed."""
         coords = {key: value for key, value in self.items() if value.dim not in dims}
         dims = tuple(value for value in self.dims if value not in dims)
         return self.__class__(coords, dims)
 
-    @wraps_first_last
+    @wraps_first_last_all
     def drop_coords(self, *names):
         """Return a new :class:`Coordinates` with the named coordinates removed."""
         coords = {key: value for key, value in self.items() if key not in names}
         return self.__class__(coords, self.dims)
 
     def _assign_parent(self, parent):
+        """Attach this container to its parent, validating dimension counts and sizes."""
         if not len(self.dims) == parent.ndim:
             raise ValueError(
                 f"inferred number of dimensions {len(self.dims)} from `coords` does "
@@ -294,17 +274,35 @@ class Coordinates(dict):
         self._parent = weakref.ref(parent)
 
 
-class Coordinate:
+class Coordinate(ABC):
     """
     Base class and factory for all coordinate types.
 
-    When called as ``Coordinate(data)``, acts as a factory and returns the first
-    registered subclass whose :meth:`isvalid` method accepts *data*.  When
-    subclassed, use the ``name=`` keyword in the class definition to register
-    the subclass (e.g. ``class MyCoord(Coordinate, name="mycoord")``).
+    A coordinate maps the integer positions of one array axis to physical
+    values (e.g. timestamps, distances).  It supports two complementary
+    directions of lookup:
 
-    Concrete subclasses must implement :meth:`isvalid`, :meth:`equals`,
-    and :meth:`to_dict` at minimum.
+    - **Index-based selection** — ``coord[i]`` or ``coord[start:stop]``:
+      given integer position(s), return the corresponding physical value(s)
+      as a new coordinate.
+    - **Label-based selection** — ``coord.to_index(v)``: given a physical
+      value (or slice of values), return the integer index (or slice) at
+      that label.  An optional *method* argument controls nearest/forward/
+      backward matching for values that fall between samples.  The returned
+      index can then be passed to ``coord[idx]`` to retrieve the
+      coordinate subset, and is also used internally to index into the
+      parent data array.
+
+    **Factory behaviour** — calling ``Coordinate(data)`` directly acts as a
+    factory: it inspects *data* and returns an instance of the most suitable
+    registered subclass (:class:`SampledCoordinate`, :class:`InterpCoordinate`,
+    :class:`DenseCoordinate`, or :class:`ScalarCoordinate`).
+
+    **Subclassing** — register a new subclass by passing ``ctype=`` in the
+    class definition::
+
+        class MyCoord(Coordinate, ctype="mycoord"):
+            ...
 
     Parameters
     ----------
@@ -316,12 +314,14 @@ class Coordinate:
         Desired dtype for the underlying data array.
     """
 
+    # --- class machinery ---
+
     _registry = {}
 
-    def __init_subclass__(cls, *, name=None, **kwargs):
+    def __init_subclass__(cls, *, ctype=None, **kwargs):
         super().__init_subclass__(**kwargs)
-        if name is not None:
-            Coordinate._registry[name] = cls
+        if ctype is not None:
+            Coordinate._registry[ctype] = cls
 
     def __class_getitem__(cls, item):
         return cls._registry[item]
@@ -336,7 +336,7 @@ class Coordinate:
             data, dim = parse(data, dim)
 
             for subcls in Coordinate._registry.values():
-                if subcls.isvalid(data):
+                if subcls._isvalid(data):
                     cls = subcls
                     break
             else:
@@ -345,67 +345,214 @@ class Coordinate:
         # normal allocation
         return super().__new__(cls)
 
-    def __getitem__(self, item):
-        data = self.data.__getitem__(item)
-        dim = None if isscalar(data) else self.dim
-        return Coordinate(data, dim)
+    # --- abstract contract ---
 
+    @abstractmethod
+    def __init__(self, data=None, dim=None, dtype=None):
+        """Initialise the coordinate from subclass-specific *data*."""
+
+    @classmethod
+    @abstractmethod
+    def from_block(cls, start, size, step, dim=None, dtype=None):
+        """
+        Construct a coordinate from a start value, element count, and step size.
+
+        Parameters
+        ----------
+        start : scalar
+            Value of the first element.
+        size : int
+            Number of elements.
+        step : scalar
+            Spacing between consecutive elements.
+        dim : str, optional
+            Dimension name.
+        dtype : dtype-like, optional
+            Desired dtype for the coordinate values.
+
+        Returns
+        -------
+        Coordinate
+            A new coordinate instance of this subclass.
+        """
+
+    @abstractmethod
     def __len__(self):
-        return self.data.__len__()
-
-    def __repr__(self):
-        return np.array2string(self.data, threshold=0, edgeitems=1)
-
-    def __reduce__(self):
-        return self.__class__, (self.data, self.dim)
-
-    def __add__(self, other):
-        return self.__class__(self.data + other, self.dim)
-
-    def __sub__(self, other):
-        return self.__class__(self.data - other, self.dim)
-
-    def __array__(self, dtype=None):
-        if dtype is None:
-            return self.data.__array__()
-        else:
-            return self.data.__array__(dtype)
-
-    def __array__ufunc__(self, ufunc, method, *inputs, **kwargs):  # pragma: no cover
-        return self.data.__array__ufunc__(ufunc, method, *inputs, **kwargs)
-
-    def __array_function__(self, func, types, args, kwargs):
-        return self.data.__array_function__(func, types, args, kwargs)
-
-    @staticmethod
-    def isvalid(data):
-        """Return ``True`` if *data* is a valid input for this coordinate subclass."""
-        raise NotImplementedError
+        """Return the number of elements along this coordinate's axis."""
 
     @property
+    @abstractmethod
     def dtype(self):
-        """NumPy dtype of the underlying data array."""
-        return self.data.dtype
+        """NumPy dtype of the underlying coordinate values."""
+
+    @staticmethod
+    @abstractmethod
+    def _isvalid(data):
+        """Return ``True`` if *data* is a valid input for this coordinate subclass."""
+
+    @abstractmethod
+    def _is_monotonic_increasing(self):
+        """Return ``True`` if all consecutive differences in this coordinate are positive."""
+
+    @abstractmethod
+    def _get_value(self, index):
+        """
+        Return the coordinate value(s) at integer *index*.
+
+        Parameters
+        ----------
+        index : int or numpy.ndarray of int
+            Non-negative integer index or array of indices.
+
+        Returns
+        -------
+        scalar or numpy.ndarray
+            Coordinate value(s) at the requested position(s).
+        """
+
+    @abstractmethod
+    def _get_indexer(self, value, method=None):
+        """
+        Return the integer index for label *value* using the segment structure.
+
+        Parameters
+        ----------
+        value : scalar, str (ISO datetime), or array-like
+            Label(s) to locate.
+        method : {None, "nearest", "ffill", "bfill"}, optional
+            How to handle values that fall in gaps or between samples.
+            ``None`` (default) requires an exact match and raises ``KeyError``
+            if the value is not present. ``"nearest"`` returns the index of
+            the closest label. ``"ffill"`` (forward-fill) returns the last
+            index whose label is less than or equal to *value*. ``"bfill"``
+            (backward-fill) returns the first index whose label is greater
+            than or equal to *value*.
+
+        Returns
+        -------
+        int or numpy.ndarray
+
+        Raises
+        ------
+        KeyError
+            If *value* falls in an overlap region or is not found (exact mode).
+        """
+
+    @abstractmethod
+    def _slice(self, slc):
+        """
+        Return a new coordinate covering the integer slice *slc*.
+
+        Parameters
+        ----------
+        slc : slice
+            Integer slice (already normalised by the caller).
+
+        Returns
+        -------
+        Coordinate
+            A new coordinate of the same subclass.
+        """
+
+    @abstractmethod
+    def _concat(self, other):
+        """
+                Return a new coordinate formed by appending *other* after this one.
+
+        Parameters
+        ----------
+                other : Coordinate
+                    Must be the same subclass and have the same ``dim`` and ``dtype``.
+
+        Returns
+        -------
+                Coordinate
+                    Concatenated coordinate of the same subclass.
+        s
+        """
+
+    @abstractmethod
+    def _to_dataset(self, dataset, attrs):
+        """
+        Serialise this coordinate into an xarray *dataset*, updating *attrs* in place.
+
+        Parameters
+        ----------
+        dataset : xarray.Dataset
+            Target dataset to write coordinate data into.
+        attrs : dict
+            Global attribute mapping to update (e.g. ``coordinate_interpolation``).
+
+        Returns
+        -------
+        dataset : xarray.Dataset
+        attrs : dict
+        """
+
+    @classmethod
+    @abstractmethod
+    def _collect_from_dataset(cls, dataset, name):
+        """
+        Extract coordinates of this subclass's type from *dataset* variable *name*.
+
+        Parameters
+        ----------
+        dataset : xarray.Dataset
+            Source dataset.
+        name : str
+            Name of the variable whose coordinates should be extracted.
+
+        Returns
+        -------
+        dict
+            Mapping from coordinate name to coordinate-like data, ready to be
+            passed to :class:`Coordinate`.
+        """
+
+    # -- properties ---
+
+    #: Name of the dimension this coordinate is associated with, or ``None``.
+    dim = None
 
     @property
     def ndim(self):
-        """Number of dimensions of the underlying data array (always 1 for dimensional coords)."""
-        return self.data.ndim
+        """Number of dimensions (always 1 for dimensional coordinates)."""
+        return 1
 
     @property
     def shape(self):
-        """Shape tuple of the underlying data array."""
-        return self.data.shape
+        """Shape tuple ``(len(self),)``."""
+        return (len(self),)
 
     @property
-    def values(self):
-        """Materialised numpy array of coordinate values."""
-        return self.__array__()
+    def size(self):
+        """Number of elements along this coordinate's axis."""
+        return len(self)
 
     @property
     def empty(self):
         """``True`` if the coordinate has zero length."""
         return len(self) == 0
+
+    @property
+    def indices(self):
+        """Integer array ``[0, 1, ..., len(self) - 1]``."""
+        return np.arange(len(self))
+
+    @property
+    def values(self):
+        """Materialised numpy array of coordinate values."""
+        return self.__array__(copy=False)
+
+    @property
+    def start(self):
+        """Value at index 0 (first element)."""
+        return self._get_value(0)
+
+    @property
+    def end(self):
+        """Value at the last element."""
+        return self._get_value(len(self) - 1)
 
     @property
     def parent(self):
@@ -422,64 +569,78 @@ class Coordinate:
             return self.dim
         return next((name for name in self.parent if self.parent[name] is self), None)
 
-    def _assign_parent(self, parent):
-        self._parent = weakref.ref(parent)
+    # --- dunders logic ---
 
-    def get_sampling_interval(self, cast=True):
-        """
-        Return the average sample spacing (end-to-end distance divided by N-1).
-
-        Parameters
-        ----------
-        cast : bool, optional
-            If ``True`` (default), cast timedelta64 results to seconds (float).
-
-        Returns
-        -------
-        float or None
-            ``None`` if the coordinate has fewer than two elements.
-        """
-        if len(self) < 2:
-            return None
-        delta = (self[-1].values - self[0].values) / (len(self) - 1)
-        delta = np.asarray(delta)  # TODO: why?
-        if cast and np.issubdtype(delta.dtype, np.timedelta64):
-            delta = delta / np.timedelta64(1, "s")
-        return delta
-
-    def is_monotonic_increasing(self):
-        """Return ``True`` if all consecutive differences in this coordinate are positive."""
-        if np.issubdtype(self.dtype, np.datetime64):
-            zero = np.timedelta64(0)
+    def __getitem__(self, item):
+        if isinstance(item, slice):
+            return self._slice(self._format_slice(item))
         else:
-            zero = 0
-        return np.all(np.diff(self.values) > zero)
+            item = self._format_index(item)
+            return Coordinate(
+                self._get_value(item), None if np.ndim(item) == 0 else self.dim
+            )
+
+    def __array__(self, dtype=None, copy=None):
+        if self.empty:
+            out = np.array([], dtype=self.dtype)
+        else:
+            out = self._get_value(self.indices)
+        if dtype is not None:
+            out = out.__array__(dtype)
+        return out
+
+    def __reduce__(self):
+        return self.__class__, (self.data, self.dim)
+
+    def __repr__(self):
+        if self.empty:
+            return "empty coordinate"
+        elif len(self) == 1:
+            return f"{self.tie_values[0]}"
+        else:
+            if np.issubdtype(self.dtype, np.floating):
+                return f"{self.start:.3f} to {self.end:.3f}"
+            elif np.issubdtype(self.dtype, np.datetime64):
+                start_str = format_datetime(self.start)
+                end_str = format_datetime(self.end)
+                return f"{start_str} to {end_str}"
+            else:
+                return f"{self.start} to {self.end}"
+
+    # --- queries ---
+
+    def isscalar(self):
+        """Return ``True`` if this is a :class:`ScalarCoordinate`."""
+        return False
 
     def isdim(self):
-        """Return ``True`` if this coordinate is a dimensional coordinate in its parent container."""
+        """Return ``True`` if this coordinate is a dimensional coordinate."""
         if self.parent is None or self.name is None:
             return None
         else:
             return self.parent.isdim(self.name)
 
-    def copy(self, deep=True):
-        """
-        Return a copy of this coordinate.
-
-        Parameters
-        ----------
-        deep : bool, optional
-            If ``True`` (default) perform a deep copy; otherwise a shallow copy.
-        """
-        if deep:
-            func = deepcopy
-        else:
-            func = copy
-        return self.__class__(func(self.data), func(self.dim), func(self.dtype))
-
     def equals(self, other):
-        """Return ``True`` if *other* represents the same coordinate values. Subclass must implement."""
-        raise NotImplementedError
+        """Return ``True`` if *other* is the same coordinate type with identical dim and data.
+
+        Comparison is strict on dtype. Same type implies same ``data`` structure:
+        either a single ``np.ndarray`` or a flat ``dict[str, np.ndarray]`` with
+        the same keys.
+        """
+        if type(self) is not type(other) or self.dim != other.dim:
+            return False
+        a, b = self.data, other.data
+        if isinstance(a, dict):
+            pairs = [(a[key], b[key]) for key in a]
+        else:
+            pairs = [(a, b)]
+        for x, y in pairs:
+            x, y = np.asarray(x), np.asarray(y)
+            if x.dtype != y.dtype or not np.array_equal(x, y, equal_nan=False):
+                return False
+        return True
+
+    # --- selection / indexing ---
 
     def to_index(self, item, method=None, endpoint=True):
         """
@@ -489,21 +650,25 @@ class Coordinate:
         ----------
         item : label, slice, or array-like
             Selector to resolve.
-        method : str, optional
-            Look-up method (e.g. ``"ffill"``, ``"bfill"``).
+        method : {None, "nearest", "ffill", "bfill"}, optional
+            How to resolve *item* when it does not match a label exactly.
+            ``None`` (default) requires an exact match. ``"nearest"`` selects
+            the closest label. ``"ffill"`` selects the last label ≤ *item*;
+            ``"bfill"`` selects the first label ≥ *item*. Ignored when *item*
+            is a slice.
         endpoint : bool, optional
             Whether to include the stop of a slice. Default ``True``.
 
         Returns
         -------
-        int or slice
+        int, array of ints or slice
         """
         if isinstance(item, slice):
-            return self.slice_indexer(item.start, item.stop, item.step, endpoint)
+            return self._slice_indexer(item.start, item.stop, item.step, endpoint)
         else:
-            return self.get_indexer(item, method)
+            return self._get_indexer(item, method)
 
-    def format_index(self, idx, bounds="raise"):
+    def _format_index(self, idx, bounds="raise"):
         """
         Normalise integer index *idx*, handling negative indices and optional bounds checking.
 
@@ -531,7 +696,27 @@ class Coordinate:
             idx = np.clip(idx, 0, len(self))
         return idx
 
-    def slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
+    def _format_slice(self, slc):
+        """
+        Normalise *slc*, resolving ``None`` bounds, negative indices, and out-of-bounds.
+
+        Parameters
+        ----------
+        slc : slice
+            Raw slice, as received from user code.
+
+        Returns
+        -------
+        slice
+            Concrete ``slice(start, stop, step)`` with non-negative integer bounds
+            clipped to ``[0, len(self)]``.
+        """
+        start, stop, step = slc.indices(len(self))
+        if step < 0:
+            raise NotImplementedError("negative slice step is not implemented")
+        return slice(start, stop, step)
+
+    def _slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
         """
         Return an integer :class:`slice` corresponding to the label range [*start*, *stop*].
 
@@ -552,14 +737,14 @@ class Coordinate:
         """
         if start is not None:
             try:
-                start_index = self.get_indexer(start, method="bfill")
+                start_index = self._get_indexer(start, method="bfill")
             except KeyError:
                 start_index = len(self)
         else:
             start_index = None
         if stop is not None:
             try:
-                end_index = self.get_indexer(stop, method="ffill")
+                end_index = self._get_indexer(stop, method="ffill")
                 stop_index = end_index + 1
             except KeyError:
                 stop_index = 0
@@ -575,43 +760,159 @@ class Coordinate:
             stop_index -= 1
         return slice(start_index, stop_index)
 
-    def isscalar(self):
-        """Return ``True`` if this is a :class:`ScalarCoordinate` (non-dimensional)."""
-        return False
+    # --- routines ---
 
-    def isdefault(self):
-        """Return ``True`` if this is a :class:`DefaultCoordinate` (integer range)."""
-        return False
+    def copy(self, deep=True):
+        """
+        Return a copy of this coordinate.
 
-    def isdense(self):
-        """Return ``True`` if this is a :class:`DenseCoordinate` (explicit numpy array)."""
-        return False
+        Parameters
+        ----------
+        deep : bool, optional
+            If ``True`` (default) perform a deep copy; otherwise a shallow copy.
 
-    def isinterp(self):
-        """Return ``True`` if this is an :class:`InterpCoordinate` (piecewise-linear)."""
-        return False
+        Returns
+        -------
+        Coordinate
+            A new coordinate of the same subclass with copied data and metadata.
+        """
+        if deep:
+            func = deepcopy
+        else:
+            func = copy
+        return self.__class__(func(self.data), func(self.dim), func(self.dtype))
 
-    def issampled(self):
-        """Return ``True`` if this is a :class:`SampledCoordinate` (regularly sampled)."""
-        return False
+    def to_dataarray(self):
+        """Convert this coordinate to a :class:`~xdas.DataArray` with a single dimension."""
+        from ..core.dataarray import DataArray  # TODO: avoid defered import?
 
-    def concat(self, other):
-        """Concatenate *other* coordinate to this one. Subclass must implement."""
-        raise NotImplementedError(f"concat is not implemented for {self.__class__}")
+        if self.name is None:
+            raise ValueError("cannot convert unnamed coordinate to DataArray")
 
-    def simplify(self, tolerance=None):
-        """Reduce tie-point count within *tolerance*. Subclass must implement."""
-        raise NotImplementedError(f"simplify is not implemented for {self.__class__}")
+        if self.parent is None:
+            return DataArray(
+                self.values,
+                {self.dim: self},
+                dims=[self.dim],
+                name=self.name,
+            )
+        else:
+            return DataArray(
+                self.values,
+                {
+                    name: coord
+                    for name, coord in self.parent.items()
+                    if coord.dim == self.dim
+                },
+                dims=[self.dim],
+                name=self.name,
+            )
 
+    # --- IO ---
+
+    @classmethod
+    def _from_dataset(cls, dataset, name):
+        """Read coordinates named *name* from an xarray *dataset* via each registered subclass."""
+        coords = {}
+        for subcls in cls.__subclasses__():
+            coords |= subcls._collect_from_dataset(dataset, name)
+        return coords
+
+    # --- internals ---
+
+    def _assign_parent(self, parent):
+        """Attach this coordinate to its parent :class:`Coordinates` container."""
+        self._parent = weakref.ref(parent)
+
+
+class SampledMixin(ABC):
+    """
+    Shared behaviour for coordinates that carry sampled values along an axis.
+
+    Mixed into the tie-point coordinate types (:class:`SampledCoordinate`,
+    :class:`InterpCoordinate`). Both types describe a piecewise-monotonic axis
+    composed of contiguous segments separated by *gaps* (the axis jumps forward
+    by more than one sampling interval) or *overlaps* (the axis jumps backward,
+    creating doubly-covered regions). This mixin provides the shared logic for
+    detecting, cataloguing, and querying those discontinuities.
+    """
+
+    @abstractmethod
+    def get_sampling_interval(self, cast=True):
+        """
+        Return the nominal sample spacing for this coordinate.
+
+        Parameters
+        ----------
+        cast : bool, optional
+            If ``True`` (default), cast timedelta64 results to seconds (float).
+
+        Returns
+        -------
+        float or None
+            ``None`` if the coordinate has fewer than two elements.
+        """
+
+    @abstractmethod
     def get_split_indices(self, kind="discontinuities", tolerance=False):
-        """Return integer indices where this coordinate should be split. Subclass must implement."""
-        raise NotImplementedError(
-            f"get_split_indices is not implemented for {self.__class__}"
-        )
+        """
+        Return integer indices where this coordinate should be split.
+
+        Each returned index ``i`` marks the start of a new segment: the
+        boundary lies between element ``i - 1`` and element ``i``. The first
+        segment always starts at index 0, so 0 is never included in the result.
+
+        Parameters
+        ----------
+        kind : {"discontinuities", "gaps", "overlaps"}, optional
+            Which boundary type to return. ``"gaps"`` returns only boundaries
+            where the axis jumps forward by more than one sampling interval;
+            ``"overlaps"`` returns only boundaries where the axis jumps
+            backward. ``"discontinuities"`` (default) returns both.
+        tolerance : float, timedelta, None, or ``False``, optional
+            Minimum absolute magnitude of the jump to report. Boundaries
+            smaller than *tolerance* are silently dropped. ``None`` removes
+            only zero-magnitude jumps (i.e. consecutive equal values).
+            ``False`` (default) disables magnitude filtering and returns all
+            boundaries of the requested kind.
+
+        Returns
+        -------
+        numpy.ndarray
+            Integer indices of the start of each new segment (excluding the first).
+        """
+
+    @abstractmethod
+    def simplify(self, tolerance=None):
+        """
+        Return a simplified copy of this coordinate with redundant tie points removed.
+
+        Tie points whose removal would shift any label by no more than *tolerance*
+        are dropped, reducing memory and I/O cost without meaningfully changing
+        the represented axis. As a side effect, small gaps or overlaps that fall
+        within *tolerance* may be absorbed, merging adjacent segments into one.
+
+        Parameters
+        ----------
+        tolerance : float, timedelta, None, or ``False``, optional
+            Maximum allowed deviation from the original values.  ``None`` uses
+            zero tolerance (lossless).  ``False`` returns an unchanged copy.
+
+        Returns
+        -------
+        Coordinate
+            A new coordinate of the same subclass with fewer stored points.
+        """
 
     def get_discontinuities(self, tolerance=None):
         """
         Return a DataFrame containing information about the discontinuities.
+
+        Parameters
+        ----------
+        tolerance : float, timedelta, or None, optional
+            Minimum magnitude of a gap or overlap to include.  ``None``
+            (default) reports all discontinuities regardless of size.
 
         Returns
         -------
@@ -648,8 +949,8 @@ class Coordinate:
         for index in indices:
             start_index = index
             end_index = index + 1
-            start_value = self.get_value(index)
-            end_value = self.get_value(index + 1)
+            start_value = self._get_value(index)
+            end_value = self._get_value(index + 1)
             delta = end_value - start_value
             if tolerance is not None and np.abs(delta) < tolerance:
                 continue
@@ -658,7 +959,7 @@ class Coordinate:
                 "end_index": end_index,
                 "start_value": start_value,
                 "end_value": end_value,
-                "delta": end_value - start_value,
+                "delta": delta,
                 "type": ("gap" if end_value > start_value else "overlap"),
             }
             records.append(record)
@@ -702,8 +1003,8 @@ class Coordinate:
         records = []
         for start_index, stop_index in pairwise(indices):
             end_index = stop_index - 1
-            start_value = self.get_value(start_index)
-            end_value = self.get_value(end_index)
+            start_value = self._get_value(start_index)
+            end_value = self._get_value(end_index)
             records.append(
                 {
                     "start_index": start_index,
@@ -715,62 +1016,6 @@ class Coordinate:
                 }
             )
         return pd.DataFrame.from_records(records)
-
-    def to_dataarray(self):
-        """Convert this coordinate to a :class:`~xdas.DataArray` with a single dimension."""
-        from ..core.dataarray import DataArray  # TODO: avoid defered import?
-
-        if self.name is None:
-            raise ValueError("cannot convert unnamed coordinate to DataArray")
-
-        if self.parent is None:
-            return DataArray(
-                self.values,
-                {self.dim: self},
-                dims=[self.dim],
-                name=self.name,
-            )
-        else:
-            return DataArray(
-                self.values,
-                {
-                    name: coord
-                    for name, coord in self.parent.items()
-                    if coord.dim == self.dim
-                },
-                dims=[self.dim],
-                name=self.name,
-            )
-
-    def to_dict(self):
-        """Serialise this coordinate to a plain-dict representation. Subclass must implement."""
-        raise NotImplementedError
-
-    @classmethod
-    def from_dict(cls, dct):
-        """Reconstruct a coordinate from the dict returned by :meth:`to_dict`."""
-        return cls(**dct)
-
-    def to_dataset(self, dataset, attrs):
-        """Write this coordinate into an xarray *dataset*, updating *attrs* in place."""
-        dataset = dataset.assign_coords(
-            {self.name: (self.dim, self.values) if self.dim else self.values}
-        )
-        return dataset, attrs
-
-    @classmethod
-    def from_dataset(cls, dataset, name):
-        """Read coordinates named *name* from an xarray *dataset* via each registered subclass."""
-        coords = {}
-        for subcls in cls.__subclasses__():
-            if hasattr(subcls, "from_dataset"):  # pragma: no branch
-                coords |= subcls.from_dataset(dataset, name)
-        return coords
-
-    @classmethod
-    def from_block(cls, start, size, step, dim=None, dtype=None):
-        """Construct a coordinate from a start value, element count, and step size. Subclass must implement."""
-        raise NotImplementedError
 
 
 def parse(data, dim=None):
@@ -866,10 +1111,8 @@ def isscalar(data):
 
 def is_monotonic_increasing(x):
     """Return ``True`` if every element of *x* is strictly greater than the previous one."""
-    if np.issubdtype(x.dtype, np.datetime64):
-        return np.all(np.diff(x) > np.timedelta64(0))
-    else:
-        return np.all(np.diff(x) > 0)
+    zero = np.timedelta64(0) if np.issubdtype(x.dtype, np.datetime64) else 0
+    return np.all(np.diff(x) > zero)
 
 
 def format_datetime(x):

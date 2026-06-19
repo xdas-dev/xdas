@@ -6,7 +6,7 @@ types for physical axes, multi-threaded signal processing pipelines, and I/O eng
 for common DAS instrument formats.
 """
 
-__version__ = "0.2.7"
+__version__ = "0.2.8"
 
 __all__ = [
     # submodules
@@ -32,7 +32,6 @@ __all__ = [
     "DataCollection",
     "DataMapping",
     "DataSequence",
-    "DefaultCoordinate",
     "DenseCoordinate",
     "InterpCoordinate",
     "SampledCoordinate",
@@ -73,7 +72,6 @@ from . import (
 from .coordinates import (
     Coordinate,
     Coordinates,
-    DefaultCoordinate,
     DenseCoordinate,
     InterpCoordinate,
     SampledCoordinate,

@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
+import xarray as xr
 
+import xdas as xd
 from xdas.coordinates import ScalarCoordinate
 
 
@@ -18,9 +20,9 @@ class TestScalarCoordinate:
 
     def test_isvalid(self):
         for data in self.valid:
-            assert ScalarCoordinate.isvalid(data)
+            assert ScalarCoordinate._isvalid(data)
         for data in self.invalid:
-            assert not ScalarCoordinate.isvalid(data)
+            assert not ScalarCoordinate._isvalid(data)
 
     def test_init(self):
         coord = ScalarCoordinate(1)
@@ -37,15 +39,15 @@ class TestScalarCoordinate:
                 ScalarCoordinate(data)
 
     def test_getitem(self):
-        assert ScalarCoordinate(1)[...].equals(ScalarCoordinate(1))
-        with pytest.raises(IndexError):
+        with pytest.raises(TypeError):
+            ScalarCoordinate(1)[...]
+        with pytest.raises(TypeError):
             ScalarCoordinate(1)[:]
-        with pytest.raises(IndexError):
+        with pytest.raises(TypeError):
             ScalarCoordinate(1)[0]
 
     def test_len(self):
-        with pytest.raises(TypeError):
-            len(ScalarCoordinate(1))
+        assert len(ScalarCoordinate(1)) == 1
 
     def test_repr(self):
         for data in self.valid:
@@ -57,9 +59,21 @@ class TestScalarCoordinate:
         for data in self.valid:
             assert ScalarCoordinate(data).__array__() == np.array(data)
 
+    def test_array_dtype(self):
+        coord = ScalarCoordinate(1)
+        arr = coord.__array__(np.float64)
+        assert arr.dtype == np.float64
+        assert arr == np.array(1.0)
+
     def test_dtype(self):
         for data in self.valid:
             assert ScalarCoordinate(data).dtype == np.array(data).dtype
+
+    def test_ndim_shape_size(self):
+        coord = ScalarCoordinate(1)
+        assert coord.ndim == 0
+        assert coord.shape == ()
+        assert coord.size == 1
 
     def test_values(self):
         for data in self.valid:
@@ -82,16 +96,52 @@ class TestScalarCoordinate:
         with pytest.raises(NotImplementedError):
             ScalarCoordinate(1).to_index("item")
 
-    def test_isinstance(self):
-        assert ScalarCoordinate(1).isscalar()
-        assert not ScalarCoordinate(1).isdense()
-        assert not ScalarCoordinate(1).isinterp()
+    def test_is_monotonic_increasing(self):
+        with pytest.raises(TypeError):
+            ScalarCoordinate(1)._is_monotonic_increasing()
 
-    def test_to_from_dict(self):
-        for data in self.valid:
-            coord = ScalarCoordinate(data)
-            assert ScalarCoordinate.from_dict(coord.to_dict()).equals(coord)
+    def test_concat(self):
+        with pytest.raises(TypeError):
+            ScalarCoordinate(1)._concat(ScalarCoordinate(2))
+
+    def test_from_block(self):
+        with pytest.raises(TypeError):
+            ScalarCoordinate.from_block(0, 5, 1)
 
     def test_empty(self):
         with pytest.raises(TypeError, match="cannot be empty"):
             ScalarCoordinate()
+
+    def test_indices(self):
+        with pytest.raises(TypeError):
+            ScalarCoordinate(1).indices
+
+    def test_start(self):
+        with pytest.raises(TypeError):
+            ScalarCoordinate(1).start
+
+    def test_end(self):
+        with pytest.raises(TypeError):
+            ScalarCoordinate(1).end
+
+    def test_get_value(self):
+        with pytest.raises(TypeError):
+            ScalarCoordinate(1)._get_value(0)
+
+    def test_get_indexer(self):
+        with pytest.raises(TypeError):
+            ScalarCoordinate(1)._get_indexer(1)
+
+    def test_slice(self):
+        with pytest.raises(TypeError):
+            ScalarCoordinate(1)._slice(slice(None))
+
+    def test_get_sampling_interval(self):
+        assert ScalarCoordinate(1).get_sampling_interval() is None
+
+    def test_to_dataset_with_name(self):
+        da = xd.DataArray([1, 2, 3], {"x": [1.0, 2.0, 3.0], "meta": 42})
+        sc = da.coords["meta"]
+        dataset = xr.Dataset()
+        dataset, attrs = sc._to_dataset(dataset, {})
+        assert "meta" in dataset.coords

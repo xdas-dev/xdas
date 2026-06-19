@@ -122,8 +122,6 @@ Methods
    DataArray.from_stream
    DataArray.to_netcdf
    DataArray.from_netcdf
-   DataArray.to_dict
-   DataArray.from_dict
    DataArray.plot
 ```
 

@@ -40,17 +40,16 @@ to 200) is explicit — there is simply no segment covering that range.
 
 ## Materialising values
 
-Calling `.values` returns the full coordinate vector as a dense NumPy array:
+Calling `.values` returns the full coordinate vector as a dense NumPy array.
+Individual values are accessed by integer subscript, and the reverse mapping
+(index from value) uses `.to_index`:
 
 ```{code-cell}
 coord.values
 ```
 
-Individual values are obtained from indices with `.get_value` and the reverse mapping
-(index from value) with `.to_index`:
-
 ```{code-cell}
-coord.get_value(3)
+coord[3].values
 ```
 
 ```{code-cell}

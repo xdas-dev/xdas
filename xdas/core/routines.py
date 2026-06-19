@@ -21,7 +21,7 @@ import xarray as xr
 from loky import get_reusable_executor
 from tqdm import tqdm
 
-from ..coordinates.core import Coordinates, get_sampling_interval
+from ..coordinates.core import Coordinates, SampledMixin, get_sampling_interval
 from ..parallel import get_workers_count
 from ..virtual import VirtualSource, VirtualStack
 from .dataarray import DataArray
@@ -1037,20 +1037,19 @@ def concat_coords(objs, *, sort=False, return_order=False, tolerance=False):
 
     # concat
     for obj in objs[1:]:
-        out = out.concat(obj)
+        out = out._concat(obj)
 
     # simplify
     if tolerance is not False:
-        try:
+        if isinstance(out, SampledMixin):
             out = out.simplify(tolerance)
-        except NotImplementedError:
-            if (
-                tolerance is not None
-            ):  # TODO: Default to False and remove this condition here?
-                raise TypeError(
-                    "`tolerance` can only be used with coordinates "
-                    "that implements `simplify`"
-                )
+        elif (
+            tolerance is not None
+        ):  # TODO: Default to False and remove this condition here?
+            raise TypeError(
+                "`tolerance` can only be used with coordinates "
+                "that implements `simplify`"
+            )
 
     if return_order:
         return out, order
