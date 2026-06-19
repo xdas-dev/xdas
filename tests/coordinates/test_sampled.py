@@ -801,7 +801,7 @@ class TestSampledCoordinateToNetCDF:
             dataset, variable_attrs = coord._to_dataset(dataset, variable_attrs)
 
         dataset["data"] = xr.DataArray(attrs=variable_attrs)
-        coords = xd.Coordinates.from_dataset(dataset, "data")
+        coords = xd.Coordinates._from_dataset(dataset, "data")
 
         assert coords.equals(da.coords)
 

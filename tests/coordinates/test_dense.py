@@ -94,7 +94,7 @@ class TestDenseCoordinate:
         assert DenseCoordinate([1, 2, 3])._get_indexer(2.1, method="bfill") == 2
 
     def test_get_slice_indexer(self):
-        assert DenseCoordinate([1, 2, 3]).slice_indexer(start=2) == slice(1, None)
+        assert DenseCoordinate([1, 2, 3])._slice_indexer(start=2) == slice(1, None)
 
     def test_to_index(self):
         assert DenseCoordinate([1, 2, 3]).to_index(2) == 1

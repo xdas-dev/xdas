@@ -217,15 +217,15 @@ class TestInterpCoordinate:
 
     def test_get_index_slice(self):
         coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
-        assert coord.slice_indexer(100.0, 200.0) == slice(0, 2)
-        assert coord.slice_indexer(150.0, 250.0) == slice(1, 2)
-        assert coord.slice_indexer(300.0, 500.0) == slice(2, 5)
-        assert coord.slice_indexer(0.0, 500.0) == slice(0, 5)
-        assert coord.slice_indexer(125.0, 175.0) == slice(1, 1)
-        assert coord.slice_indexer(0.0, 50.0) == slice(0, 0)
-        assert coord.slice_indexer(1000.0, 1100.0) == slice(9, 9)
-        assert coord.slice_indexer(1000.0, 500.0) == slice(9, 5)
-        assert coord.slice_indexer(None, None) == slice(None, None)
+        assert coord._slice_indexer(100.0, 200.0) == slice(0, 2)
+        assert coord._slice_indexer(150.0, 250.0) == slice(1, 2)
+        assert coord._slice_indexer(300.0, 500.0) == slice(2, 5)
+        assert coord._slice_indexer(0.0, 500.0) == slice(0, 5)
+        assert coord._slice_indexer(125.0, 175.0) == slice(1, 1)
+        assert coord._slice_indexer(0.0, 50.0) == slice(0, 0)
+        assert coord._slice_indexer(1000.0, 1100.0) == slice(9, 9)
+        assert coord._slice_indexer(1000.0, 500.0) == slice(9, 5)
+        assert coord._slice_indexer(None, None) == slice(None, None)
 
     def test_slice_index(self):
         coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})

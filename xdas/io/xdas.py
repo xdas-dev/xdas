@@ -87,7 +87,7 @@ def open_dataarray(fname, group=None):
                 raise ValueError("several possible data arrays detected")
 
         # read coordinates
-        coords = Coordinates.from_dataset(dataset, name)
+        coords = Coordinates._from_dataset(dataset, name)
 
     # read data
     if "__dask_array__" in dataset[name].attrs:

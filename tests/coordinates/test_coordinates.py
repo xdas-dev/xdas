@@ -180,22 +180,22 @@ class TestCoordinates:
 
     def test_get_query_first_last(self):
         coords = xd.Coordinates({"dim_0": [1.0, 2.0, 3.0], "dim_1": [1.0, 2.0, 3.0]})
-        q = coords.get_query({"first": slice(0, 1)})
+        q = coords._get_query({"first": slice(0, 1)})
         assert q["dim_0"] == slice(0, 1)
         assert q["dim_1"] == slice(None)
-        q = coords.get_query({"last": slice(1, 2)})
+        q = coords._get_query({"last": slice(1, 2)})
         assert q["dim_0"] == slice(None)
         assert q["dim_1"] == slice(1, 2)
 
     def test_get_query_tuple(self):
         coords = xd.Coordinates({"dim_0": [1.0, 2.0, 3.0], "dim_1": [1.0, 2.0, 3.0]})
-        q = coords.get_query((slice(0, 1), slice(1, 2)))
+        q = coords._get_query((slice(0, 1), slice(1, 2)))
         assert q["dim_0"] == slice(0, 1)
         assert q["dim_1"] == slice(1, 2)
 
     def test_get_query_else_and_return(self):
         coords = xd.Coordinates({"dim_0": [1.0, 2.0, 3.0], "dim_1": [1.0, 2.0, 3.0]})
-        q = coords.get_query(slice(0, 1))
+        q = coords._get_query(slice(0, 1))
         assert q["dim_0"] == slice(0, 1)
         assert q["dim_1"] == slice(None)
 
@@ -228,7 +228,7 @@ class TestCoordinates:
 
         coords = xd.Coordinates({"dim": [1.0, 2.0, 3.0]})
         parent = FakeParent()
-        coords.assign_parent(parent)
+        coords._assign_parent(parent)
         with pytest.raises(KeyError, match="cannot add new dimension"):
             coords["other_dim"] = [1.0, 2.0, 3.0]
         with pytest.raises(ValueError, match="conflicting sizes"):
@@ -246,7 +246,7 @@ class TestCoordinates:
 
         coords = xd.Coordinates({"dim_0": [1.0, 2.0, 3.0], "dim_1": [4.0, 5.0, 6.0]})
         with pytest.raises(ValueError, match="number of dimensions"):
-            coords.assign_parent(FakeParent())
+            coords._assign_parent(FakeParent())
 
     def test_assign_parent_size_mismatch(self):
         class FakeParent:
@@ -256,7 +256,7 @@ class TestCoordinates:
 
         coords = xd.Coordinates({"dim": [1.0, 2.0, 3.0, 4.0]})
         with pytest.raises(ValueError, match="conflicting sizes"):
-            coords.assign_parent(FakeParent())
+            coords._assign_parent(FakeParent())
 
 
 class TestCoordinateBase:
@@ -294,11 +294,11 @@ class TestCoordinateBase:
     def test_format_index_non_integer(self):
         coord = DenseCoordinate([1, 2, 3], "x")
         with pytest.raises(IndexError, match="only integer"):
-            coord.format_index(1.5)
+            coord._format_index(1.5)
 
     def test_format_index_clip(self):
         coord = DenseCoordinate([1, 2, 3], "x")
-        result = coord.format_index(np.array([-1, 0, 5]), bounds="clip")
+        result = coord._format_index(np.array([-1, 0, 5]), bounds="clip")
         assert np.all(result >= 0)
 
     def test_to_dataset_no_name(self):
@@ -336,7 +336,7 @@ class TestCoordinateBase:
 
     def test_format_index_no_bounds(self):
         coord = DenseCoordinate([1, 2, 3], "x")
-        result = coord.format_index(np.array([0, 1, 2]), bounds=None)
+        result = coord._format_index(np.array([0, 1, 2]), bounds=None)
         assert np.array_equal(result, [0, 1, 2])
 
     def test_init_subclass_no_name(self):
@@ -427,5 +427,5 @@ class TestCoordinateBase:
 
     def test_slice_indexer_endpoint_false(self):
         coord = DenseCoordinate([1.0, 2.0, 3.0], "x")
-        slc = coord.slice_indexer(stop=3.0, endpoint=False)
+        slc = coord._slice_indexer(stop=3.0, endpoint=False)
         assert slc == slice(None, 2)

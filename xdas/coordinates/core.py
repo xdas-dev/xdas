@@ -159,7 +159,7 @@ class Coordinates(dict):
         """Return ``True`` if *name* is a dimensional coordinate (i.e. its dim equals its name)."""
         return self[name].dim == name
 
-    def get_query(self, item):
+    def _get_query(self, item):
         """
         Format a query from one or multiple indexer.
 
@@ -214,7 +214,7 @@ class Coordinates(dict):
         dict
             Mapping from dimension name to integer index or slice.
         """
-        query = self.get_query(item)
+        query = self._get_query(item)
         return {dim: self[dim].to_index(query[dim], method, endpoint) for dim in query}
 
     def equals(self, other):
@@ -229,9 +229,9 @@ class Coordinates(dict):
         return True
 
     @classmethod
-    def from_dataset(cls, dataset, name):
+    def _from_dataset(cls, dataset, name):
         """Build a :class:`Coordinates` by delegating to each registered coordinate subclass."""
-        return cls(Coordinate.from_dataset(dataset, name))
+        return cls(Coordinate._from_dataset(dataset, name))
 
     def copy(self, deep=True):
         """Return a copy of this :class:`Coordinates` container.
@@ -258,7 +258,7 @@ class Coordinates(dict):
         coords = {key: value for key, value in self.items() if key not in names}
         return self.__class__(coords, self.dims)
 
-    def assign_parent(self, parent):
+    def _assign_parent(self, parent):
         """Attach this container to its parent, validating dimension counts and sizes."""
         if not len(self.dims) == parent.ndim:
             raise ValueError(
@@ -552,9 +552,9 @@ s
 
     def __getitem__(self, item):
         if isinstance(item, slice):
-            return self._slice(self.format_slice(item))
+            return self._slice(self._format_slice(item))
         else:
-            item = self.format_index(item)
+            item = self._format_index(item)
             return Coordinate(
                 self._get_value(item), None if np.ndim(item) == 0 else self.dim
             )
@@ -643,11 +643,11 @@ s
         int, array of ints or slice
         """
         if isinstance(item, slice):
-            return self.slice_indexer(item.start, item.stop, item.step, endpoint)
+            return self._slice_indexer(item.start, item.stop, item.step, endpoint)
         else:
             return self._get_indexer(item, method)
 
-    def format_index(self, idx, bounds="raise"):
+    def _format_index(self, idx, bounds="raise"):
         """
         Normalise integer index *idx*, handling negative indices and optional bounds checking.
 
@@ -675,7 +675,7 @@ s
             idx = np.clip(idx, 0, len(self))
         return idx
 
-    def format_slice(self, slc):
+    def _format_slice(self, slc):
         """
         Normalise *slc*, resolving ``None`` bounds, negative indices, and out-of-bounds.
 
@@ -695,7 +695,7 @@ s
             raise NotImplementedError("negative slice step is not implemented")
         return slice(start, stop, step)
 
-    def slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
+    def _slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
         """
         Return an integer :class:`slice` corresponding to the label range [*start*, *stop*].
 
@@ -790,7 +790,7 @@ s
     # --- IO ---
 
     @classmethod
-    def from_dataset(cls, dataset, name):
+    def _from_dataset(cls, dataset, name):
         """Read coordinates named *name* from an xarray *dataset* via each registered subclass."""
         coords = {}
         for subcls in cls.__subclasses__():
