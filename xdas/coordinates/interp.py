@@ -81,7 +81,6 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
                 "(and optionally `sampling_interval` / `tolerance`)"
             )
 
-
         tie_indices = np.asarray(data["tie_indices"])
         tie_values = np.asarray(data["tie_values"], dtype=dtype)
         sampling_interval = data.get("sampling_interval", None)
@@ -163,8 +162,16 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
     @classmethod
     @override
     def from_block(cls, start, size, step, dim=None, dtype=None):
+        # Derive the endpoint from the parsed sampling interval (not the raw
+        # `step`) so that `tie_values` stay consistent with the stored
+        # `sampling_interval`. Otherwise a lower-precision `step` (e.g. float32)
+        # makes the two disagree and the coordinate fails its own validation
+        # when rebuilt through the constructor.
+        start = np.asarray(start, dtype=dtype)
+        sampling_interval = parse_scalar_delta(step, start.dtype)
+        end = start + sampling_interval * (size - 1)
         obj = cls(
-            {"tie_indices": [0, size - 1], "tie_values": [start, start + step * (size - 1)]},
+            {"tie_indices": [0, size - 1], "tie_values": [start, end]},
             dim=dim,
             dtype=dtype,
         )
@@ -272,7 +279,11 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
 
             data = {"tie_indices": tie_indices, "tie_values": tie_values}
         if self.sampling_interval is not None:
-            data = {**data, "sampling_interval": self.sampling_interval * step_index, "tolerance": self.tolerance}
+            data = {
+                **data,
+                "sampling_interval": self.sampling_interval * step_index,
+                "tolerance": self.tolerance,
+            }
         return self.__class__(data, self.dim)
 
     @override
@@ -301,7 +312,11 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
                 if self.tolerance is not None and other.tolerance is not None
                 else None
             )
-            data = {**data, "sampling_interval": self.sampling_interval, "tolerance": tolerance}
+            data = {
+                **data,
+                "sampling_interval": self.sampling_interval,
+                "tolerance": tolerance,
+            }
         return self.__class__(data, self.dim)
 
     @override
@@ -359,13 +374,21 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
     def __add__(self, other):
         data = {"tie_indices": self.tie_indices, "tie_values": self.tie_values + other}
         if self.sampling_interval is not None:
-            data = {**data, "sampling_interval": self.sampling_interval, "tolerance": self.tolerance}
+            data = {
+                **data,
+                "sampling_interval": self.sampling_interval,
+                "tolerance": self.tolerance,
+            }
         return self.__class__(data, self.dim)
 
     def __sub__(self, other):
         data = {"tie_indices": self.tie_indices, "tie_values": self.tie_values - other}
         if self.sampling_interval is not None:
-            data = {**data, "sampling_interval": self.sampling_interval, "tolerance": self.tolerance}
+            data = {
+                **data,
+                "sampling_interval": self.sampling_interval,
+                "tolerance": self.tolerance,
+            }
         return self.__class__(data, self.dim)
 
     def _nominal_sampling_interval(self, cast=False):
@@ -441,7 +464,11 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
         )
         data = {"tie_indices": tie_indices, "tie_values": tie_values}
         if self.sampling_interval is not None:
-            data = {**data, "sampling_interval": self.sampling_interval, "tolerance": self.tolerance}
+            data = {
+                **data,
+                "sampling_interval": self.sampling_interval,
+                "tolerance": self.tolerance,
+            }
         return self.__class__(data, self.dim)
 
     @override
