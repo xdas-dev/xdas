@@ -6,8 +6,7 @@ import h5py
 import numpy as np
 
 from ..coordinates import Coordinate
-from ..core.dataarray import DataArray
-from ..core.routines import concat
+from ..core import DataArray, concat
 from ..virtual import VirtualSource
 from .core import Engine
 

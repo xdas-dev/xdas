@@ -8,7 +8,7 @@ import h5py
 import pandas as pd
 
 from ..coordinates import Coordinate
-from ..core.dataarray import DataArray
+from ..core import DataArray
 from ..virtual import VirtualSource
 from .core import Engine
 

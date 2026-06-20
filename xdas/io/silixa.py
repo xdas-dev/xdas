@@ -4,7 +4,7 @@ import dask
 import numpy as np
 
 from ..coordinates import Coordinate
-from ..core.dataarray import DataArray
+from ..core import DataArray
 from .core import Engine
 from .tdms import TdmsReader
 

@@ -872,7 +872,7 @@ class AxisCoordinate(Coordinate, ABC):
 
     def to_dataarray(self):
         """Convert this coordinate to a :class:`~xdas.DataArray` with a single dimension."""
-        from ..core.dataarray import DataArray  # TODO: avoid defered import?
+        from ..core import DataArray  # TODO: avoid deferred import?
 
         if self.name is None:
             raise ValueError("cannot convert unnamed coordinate to DataArray")

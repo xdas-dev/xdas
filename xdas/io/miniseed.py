@@ -10,8 +10,7 @@ from ..coordinates import (
     Coordinates,
     get_sampling_interval,
 )
-from ..core.dataarray import DataArray
-from ..core.routines import concat_coords
+from ..core import DataArray, concat_coords
 from .core import Engine
 
 

@@ -394,7 +394,7 @@ class DataArray(NDArrayOperatorsMixin):
                         f"dimension {dim} is not monotonic increasing, "
                         f"spliting on overlaps, slicing and concatenating can be slow..."
                     )
-                    from ..core.routines import concat, split
+                    from .routines import concat, split
 
                     chunks = [
                         chunk.sel(indexers, method, endpoint, drop)

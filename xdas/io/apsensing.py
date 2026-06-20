@@ -4,7 +4,7 @@ import h5py
 import numpy as np
 
 from ..coordinates import Coordinate
-from ..core.dataarray import DataArray
+from ..core import DataArray
 from ..virtual import VirtualSource
 from .core import Engine
 

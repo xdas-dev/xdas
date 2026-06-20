@@ -10,9 +10,7 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
-from ..core.dataarray import DataArray
-from ..core.datacollection import DataCollection
-from ..core.routines import open_datacollection
+from ..core import DataArray, DataCollection, open_datacollection
 
 
 class State:

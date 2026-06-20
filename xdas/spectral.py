@@ -8,8 +8,8 @@ import numpy as np
 from scipy.fft import fft, fftfreq, fftshift, rfft, rfftfreq
 from scipy.signal import get_window
 
-from .coordinates.core import get_sampling_interval
-from .core.dataarray import DataArray
+from .coordinates import get_sampling_interval
+from .core import DataArray
 from .parallel import parallelize
 
 

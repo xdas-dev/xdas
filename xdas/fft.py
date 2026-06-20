@@ -7,9 +7,9 @@ Includes :func:`fft`, :func:`ifft`, :func:`rfft`, :func:`irfft`,
 
 import numpy as np
 
-from .atoms.core import atomized
-from .coordinates.core import get_sampling_interval
-from .core.dataarray import DataArray
+from .atoms import atomized
+from .coordinates import get_sampling_interval
+from .core import DataArray
 from .parallel import parallelize
 
 

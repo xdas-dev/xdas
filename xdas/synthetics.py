@@ -7,8 +7,7 @@ Includes :func:`wavelet_wavefronts` and :func:`randn_wavefronts`.
 import numpy as np
 import scipy.signal as sp
 
-from .core.dataarray import DataArray
-from .core.routines import split
+from .core import DataArray, split
 
 
 def wavelet_wavefronts(

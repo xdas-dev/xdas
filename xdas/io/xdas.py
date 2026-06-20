@@ -14,9 +14,8 @@ import xarray as xr
 from dask.array import Array as DaskArray
 
 from ..coordinates import Coordinates
-from ..core.dataarray import DataArray
-from ..core.datacollection import DataCollection, DataMapping, DataSequence
-from ..dask.core import create_variable, loads
+from ..core import DataArray, DataCollection, DataMapping, DataSequence
+from ..dask import create_variable, loads
 from ..virtual import VirtualArray, VirtualSource
 from .core import Engine
 

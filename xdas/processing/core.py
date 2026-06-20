@@ -20,8 +20,7 @@ import zmq
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from ..core.dataarray import DataArray
-from ..core.routines import concat, open_dataarray
+from ..core import DataArray, concat, open_dataarray
 from .monitor import Monitor
 
 
