@@ -143,6 +143,7 @@ class DenseCoordinate(Coordinate, ctype="dense"):
     def __sub__(self, other):
         return self.__class__(self.data - other, self.dim)
 
+    @override
     def get_sampling_interval(self, cast=True):
         """
         Return the average sample spacing (end-to-end distance divided by N-1).

@@ -521,6 +521,23 @@ class Coordinate(ABC):
             passed to :class:`Coordinate`.
         """
 
+    @abstractmethod
+    def get_sampling_interval(self, cast=True):
+        """
+        Return the nominal sample spacing for this coordinate, or ``None``.
+
+        Parameters
+        ----------
+        cast : bool, optional
+            If ``True`` (default), cast timedelta64 results to seconds (float).
+
+        Returns
+        -------
+        float or None
+            ``None`` if the coordinate has fewer than two elements or has no
+            defined sampling interval.
+        """
+
     # -- properties ---
 
     #: Name of the dimension this coordinate is associated with, or ``None``.
@@ -624,6 +641,14 @@ class Coordinate(ABC):
     def isscalar(self):
         """Return ``True`` if this is a :class:`ScalarCoordinate`."""
         return False
+
+    def ispiecewise(self):
+        """Return ``True`` if this coordinate is piecewise-continuous (has segments with gaps/overlaps)."""
+        return isinstance(self, PiecewiseMixin)
+
+    def isregular(self):
+        """Return ``True`` if this coordinate has a well-defined nominal sampling interval."""
+        return self.get_sampling_interval() is not None
 
     def isdim(self):
         """Return ``True`` if this coordinate is a dimensional coordinate."""
@@ -841,13 +866,12 @@ class PiecewiseMixin(ABC):
     """
     Shared behaviour for piecewise-continuous coordinates with gaps/overlaps.
 
-    Mixed into the tie-point coordinate types (:class:`SampledCoordinate`,
-    :class:`InterpCoordinate`, :class:`RegularInterpCoordinate`). These types
-    describe a piecewise-monotonic axis composed of contiguous segments
-    separated by *gaps* (the axis jumps forward by more than one sampling
-    interval) or *overlaps* (the axis jumps backward, creating doubly-covered
-    regions). This mixin provides the shared logic for detecting, cataloguing,
-    and querying those discontinuities.
+    Mixed into the tie-point coordinate types (:class:`SampledCoordinate` and
+    :class:`InterpCoordinate`). These types describe a piecewise-monotonic axis
+    composed of contiguous segments separated by *gaps* (the axis jumps forward
+    by more than one sampling interval) or *overlaps* (the axis jumps backward,
+    creating doubly-covered regions). This mixin provides the shared logic for
+    detecting, cataloguing, and querying those discontinuities.
     """
 
     @abstractmethod
@@ -1015,32 +1039,6 @@ class PiecewiseMixin(ABC):
         return pd.DataFrame.from_records(records)
 
 
-class RegularMixin(ABC):
-    """
-    Marker for coordinates that have a single consistent nominal sampling interval.
-
-    Mixed into the coordinate types whose sample spacing is well defined and safe
-    to feed to signal-processing routines and rate comparisons
-    (:class:`SampledCoordinate`, :class:`RegularInterpCoordinate`).
-    """
-
-    @abstractmethod
-    def get_sampling_interval(self, cast=True):
-        """
-        Return the nominal sample spacing for this coordinate.
-
-        Parameters
-        ----------
-        cast : bool, optional
-            If ``True`` (default), cast timedelta64 results to seconds (float).
-
-        Returns
-        -------
-        float or None
-            ``None`` if the coordinate has fewer than two elements.
-        """
-
-
 def parse_data_dim(data, dim=None):
     """
     Normalise *data* / *dim* inputs accepted by coordinate constructors.
@@ -1156,7 +1154,7 @@ def get_sampling_interval(da, dim, cast=True):
 
     """
     coord = da[dim]
-    if isinstance(coord, RegularMixin):
+    if coord.isregular():
         return coord.get_sampling_interval(cast=cast)
     if hasattr(coord, "to_regular"):
         return coord.to_regular().get_sampling_interval(cast=cast)

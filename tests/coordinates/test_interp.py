@@ -5,7 +5,6 @@ import xarray as xr
 import xdas as xd
 from xdas.coordinates import (
     InterpCoordinate,
-    RegularInterpCoordinate,
     ScalarCoordinate,
 )
 from xdas.coordinates.core import Coordinate
@@ -58,6 +57,14 @@ class TestInterpCoordinate:
             assert InterpCoordinate._isvalid(data)
         for data in self.invalid:
             assert not InterpCoordinate._isvalid(data)
+        # with optional sampling_interval / tolerance is still valid
+        assert InterpCoordinate._isvalid(
+            {"tie_indices": [0, 8], "tie_values": [0.0, 8.0], "sampling_interval": 1.0}
+        )
+        # unknown extra key is rejected
+        assert not InterpCoordinate._isvalid(
+            {"tie_indices": [0, 8], "tie_values": [0.0, 8.0], "extra": 1}
+        )
 
     def test_init(self):
         coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
@@ -327,7 +334,7 @@ class TestInterpCoordinate:
 
 class TestInterpCoordinateExtra:
     def test_init_extra_keys(self):
-        with pytest.raises(TypeError, match="exactly"):
+        with pytest.raises(TypeError, match="tie_indices"):
             InterpCoordinate(
                 {"tie_indices": [0, 8], "tie_values": [100.0, 900.0], "extra": 1}
             )
@@ -409,11 +416,10 @@ class TestInterpCoordinateExtra:
         assert len(overlaps) >= 0
 
     def test_get_split_indices_overlaps_tolerance_false(self):
-        # Build a coord with an overlap (tie_values go backwards between segments)
         coord = InterpCoordinate(
             {
                 "tie_indices": [0, 4, 5, 9],
-                "tie_values": [0.0, 4.0, 3.0, 7.0],  # overlap at index 5 (value 3 < 4)
+                "tie_values": [0.0, 4.0, 3.0, 7.0],
             }
         )
         result = coord.get_split_indices(kind="overlaps", tolerance=False)
@@ -444,7 +450,6 @@ class TestInterpCoordinateExtra:
         assert coord._is_monotonic_increasing() is False
 
     def test_is_monotonic_increasing_multi_segment(self):
-        # Three segments all strictly increasing — must not raise ValueError from bool()
         coord = InterpCoordinate(
             {
                 "tie_indices": [0, 4, 5, 9, 10, 14],
@@ -454,8 +459,6 @@ class TestInterpCoordinateExtra:
         assert coord._is_monotonic_increasing() is True
 
     def test_slice_step_collision(self):
-        # 4 tie points; step=3 makes first inner tie collide (collision fixed) and
-        # second inner tie doesn't collide (covers the False branch → loop continues).
         coord = InterpCoordinate(
             {"tie_indices": [0, 2, 6, 12], "tie_values": [0.0, 20.0, 60.0, 120.0]}
         )
@@ -477,7 +480,8 @@ class TestInterpCoordinateExtra:
             coord.to_regular()
         # an explicit tolerance accepts it
         reg = coord.to_regular(sampling_interval=0.1, tolerance=0.1)
-        assert isinstance(reg, RegularInterpCoordinate)
+        assert isinstance(reg, InterpCoordinate)
+        assert reg.isregular()
         assert reg.sampling_interval == 0.1
 
     def test_module_helper_autoconvert(self):
@@ -545,7 +549,6 @@ class TestInterpCoordinateExtra:
         assert np.allclose(recovered["x"].tie_values, coord.tie_values)
 
     def test_to_dataset_multiple_coords_append(self):
-        # Second coord hitting the "already in attrs" branch (line 223)
         da = xd.DataArray(
             np.zeros((9, 5)),
             {
@@ -575,7 +578,9 @@ class TestInterpCoordinateExtra:
         assert dataset["time_values"].dtype == np.dtype("datetime64[ns]")
 
 
-class TestRegularInterpCoordinate:
+class TestInterpCoordinateRegular:
+    """Tests for InterpCoordinate with an enforced sampling_interval (regular mode)."""
+
     valid = [
         {
             "tie_indices": [0, 5, 9, 10, 19],
@@ -585,17 +590,17 @@ class TestRegularInterpCoordinate:
     ]
 
     def make(self):
-        return RegularInterpCoordinate(self.valid[0], "dim")
+        return InterpCoordinate(self.valid[0], "dim")
 
     def test_isvalid(self):
         for data in self.valid:
-            assert RegularInterpCoordinate._isvalid(data)
-        # missing sampling_interval is not valid Regular data
-        assert not RegularInterpCoordinate._isvalid(
+            assert InterpCoordinate._isvalid(data)
+        # plain tie-point dict without sampling_interval is also valid
+        assert InterpCoordinate._isvalid(
             {"tie_indices": [0, 8], "tie_values": [0.0, 8.0]}
         )
-        # an unexpected extra key is rejected
-        assert not RegularInterpCoordinate._isvalid(
+        # unknown extra key is rejected
+        assert not InterpCoordinate._isvalid(
             {
                 "tie_indices": [0, 8],
                 "tie_values": [0.0, 8.0],
@@ -609,17 +614,20 @@ class TestRegularInterpCoordinate:
         assert coord.sampling_interval == 0.1
         assert coord.tolerance is not None
         assert coord.dim == "dim"
+        assert coord.isregular()
 
     def test_factory_dispatch(self):
         coord = Coordinate(self.valid[0])
-        assert isinstance(coord, RegularInterpCoordinate)
-        # plain tie-point data must still route to InterpCoordinate
+        assert isinstance(coord, InterpCoordinate)
+        assert coord.isregular()
+        # plain tie-point data routes to a non-regular InterpCoordinate
         plain = Coordinate({"tie_indices": [0, 8], "tie_values": [0.0, 8.0]})
-        assert type(plain) is InterpCoordinate
+        assert isinstance(plain, InterpCoordinate)
+        assert not plain.isregular()
 
     def test_init_inconsistent(self):
         with pytest.raises(ValueError, match="not consistent"):
-            RegularInterpCoordinate(
+            InterpCoordinate(
                 {
                     "tie_indices": [0, 10],
                     "tie_values": [0.0, 10.0],
@@ -628,7 +636,7 @@ class TestRegularInterpCoordinate:
             )
 
     def test_init_tolerance_allows_jitter(self):
-        coord = RegularInterpCoordinate(
+        coord = InterpCoordinate(
             {
                 "tie_indices": [0, 10, 20],
                 "tie_values": [0.0, 1.0, 2.05],
@@ -637,31 +645,41 @@ class TestRegularInterpCoordinate:
             }
         )
         assert coord.sampling_interval == 0.1
+        assert coord.isregular()
 
     def test_empty(self):
-        coord = RegularInterpCoordinate()
+        coord = InterpCoordinate()
         assert coord.empty
         assert coord.sampling_interval is None
         assert coord.tolerance is None
         assert coord.get_sampling_interval() is None
         assert coord._nominal_sampling_interval(cast=True) is None
+        assert not coord.isregular()
 
-    def test_empty_slice_keeps_none(self):
-        # slicing an empty regular coord must not divide a None sampling_interval
-        coord = RegularInterpCoordinate()
+    def test_empty_slice_preserves_sampling_interval(self):
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 5, 9, 10, 19],
+                "tie_values": [0.0, 0.5, 0.9, 2.0, 2.9],
+                "sampling_interval": 0.1,
+            }
+        )
         sliced = coord[0:0]
-        assert isinstance(sliced, RegularInterpCoordinate)
-        assert sliced.sampling_interval is None
+        assert isinstance(sliced, InterpCoordinate)
+        assert sliced.empty
+        assert sliced.sampling_interval == 0.1
 
     def test_from_block(self):
-        coord = RegularInterpCoordinate.from_block(0.0, 10, 0.5, "dim")
+        coord = InterpCoordinate.from_block(0.0, 10, 0.5, "dim")
         assert coord.sampling_interval == 0.5
         assert len(coord) == 10
+        assert coord.isregular()
 
     def test_slice(self):
         coord = self.make()
         sliced = coord[2:12]
-        assert isinstance(sliced, RegularInterpCoordinate)
+        assert isinstance(sliced, InterpCoordinate)
+        assert sliced.isregular()
         assert sliced.sampling_interval == 0.1
         stepped = coord[::2]
         assert stepped.sampling_interval == 0.2
@@ -669,26 +687,27 @@ class TestRegularInterpCoordinate:
     def test_slice_empty(self):
         coord = self.make()
         empty = coord[5:5]
-        assert isinstance(empty, RegularInterpCoordinate)
+        assert isinstance(empty, InterpCoordinate)
         assert empty.empty
 
     def test_concat(self):
-        a = RegularInterpCoordinate(
+        a = InterpCoordinate(
             {"tie_indices": [0, 9], "tie_values": [0.0, 0.9], "sampling_interval": 0.1}
         )
-        b = RegularInterpCoordinate(
+        b = InterpCoordinate(
             {"tie_indices": [0, 9], "tie_values": [1.0, 1.9], "sampling_interval": 0.1}
         )
         result = a._concat(b)
-        assert isinstance(result, RegularInterpCoordinate)
+        assert isinstance(result, InterpCoordinate)
+        assert result.isregular()
         assert result.sampling_interval == 0.1
         assert len(result) == 20
 
     def test_concat_different_sampling_interval(self):
-        a = RegularInterpCoordinate(
+        a = InterpCoordinate(
             {"tie_indices": [0, 9], "tie_values": [0.0, 0.9], "sampling_interval": 0.1}
         )
-        b = RegularInterpCoordinate(
+        b = InterpCoordinate(
             {"tie_indices": [0, 9], "tie_values": [1.0, 2.8], "sampling_interval": 0.2}
         )
         with pytest.raises(ValueError, match="different sampling interval"):
@@ -697,14 +716,15 @@ class TestRegularInterpCoordinate:
     def test_add_sub(self):
         coord = self.make()
         shifted = coord + 1.0
-        assert isinstance(shifted, RegularInterpCoordinate)
+        assert isinstance(shifted, InterpCoordinate)
+        assert shifted.isregular()
         assert shifted.sampling_interval == 0.1
         assert shifted.start == coord.start + 1.0
         back = shifted - 1.0
         assert np.allclose(back.tie_values, coord.tie_values)
 
     def test_simplify(self):
-        coord = RegularInterpCoordinate(
+        coord = InterpCoordinate(
             {
                 "tie_indices": [0, 5, 10],
                 "tie_values": [0.0, 0.5, 1.0],
@@ -712,12 +732,13 @@ class TestRegularInterpCoordinate:
             }
         )
         simplified = coord.simplify()
-        assert isinstance(simplified, RegularInterpCoordinate)
+        assert isinstance(simplified, InterpCoordinate)
+        assert simplified.isregular()
         assert simplified.sampling_interval == 0.1
 
     def test_get_sampling_interval_datetime(self):
         t0 = np.datetime64("2000-01-01T00:00:00")
-        coord = RegularInterpCoordinate(
+        coord = InterpCoordinate(
             {
                 "tie_indices": [0, 8],
                 "tie_values": [t0, t0 + np.timedelta64(8, "s")],
@@ -736,12 +757,13 @@ class TestRegularInterpCoordinate:
         dataset["__v__"] = xr.DataArray(np.zeros(len(coord)), dims=["dim"])
         dataset["__v__"].attrs.update(attrs)
         recovered = Coordinate._from_dataset(dataset, "__v__")
-        assert isinstance(recovered["dim"], RegularInterpCoordinate)
+        assert isinstance(recovered["dim"], InterpCoordinate)
+        assert recovered["dim"].isregular()
         assert recovered["dim"].sampling_interval == 0.1
 
     def test_dataset_roundtrip_datetime(self):
         t0 = np.datetime64("2000-01-01T00:00:00")
-        coord = RegularInterpCoordinate(
+        coord = InterpCoordinate(
             {
                 "tie_indices": [0, 8],
                 "tie_values": [t0, t0 + np.timedelta64(8, "s")],
@@ -754,12 +776,11 @@ class TestRegularInterpCoordinate:
         dataset["__v__"] = xr.DataArray(np.zeros(9), dims=["time"])
         dataset["__v__"].attrs.update(attrs)
         recovered = Coordinate._from_dataset(dataset, "__v__")
-        assert isinstance(recovered["time"], RegularInterpCoordinate)
+        assert isinstance(recovered["time"], InterpCoordinate)
+        assert recovered["time"].isregular()
         assert recovered["time"].sampling_interval == np.timedelta64(1, "s")
 
     def test_collect_mixed_plain_and_regular(self):
-        # A dataset holding both a plain interp coord and a regular interp coord:
-        # the shared collector must dispatch each to the right type via the factory.
         da = xd.DataArray(
             np.zeros((20, 9)),
             {
@@ -774,8 +795,10 @@ class TestRegularInterpCoordinate:
         dataset["__v__"] = xr.DataArray(np.zeros((20, 9)), dims=["x", "y"])
         dataset["__v__"].attrs.update(attrs)
         recovered = Coordinate._from_dataset(dataset, "__v__")
-        assert isinstance(recovered["x"], RegularInterpCoordinate)
-        assert type(recovered["y"]) is InterpCoordinate
+        assert isinstance(recovered["x"], InterpCoordinate)
+        assert recovered["x"].isregular()
+        assert isinstance(recovered["y"], InterpCoordinate)
+        assert not recovered["y"].isregular()
 
     def test_file_roundtrip(self, tmp_path):
         coord = self.make()
@@ -783,7 +806,8 @@ class TestRegularInterpCoordinate:
         path = tmp_path / "reg.nc"
         da.to_netcdf(path)
         loaded = xd.open_dataarray(path)
-        assert isinstance(loaded.coords["dim"], RegularInterpCoordinate)
+        assert isinstance(loaded.coords["dim"], InterpCoordinate)
+        assert loaded.coords["dim"].isregular()
         assert loaded.coords["dim"].sampling_interval == 0.1
 
 

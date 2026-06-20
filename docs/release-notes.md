@@ -3,14 +3,16 @@
 ## 0.2.8
 
 ### New Features
-- Added `RegularInterpCoordinate` (ctype `"reginterp"`), a piecewise-linear coordinate that carries an enforced nominal `sampling_interval` (plus a `tolerance` bounding the allowed jitter). Build one from an `InterpCoordinate` via `coord.to_regular(sampling_interval=..., tolerance=...)` (@atrabattoni).
+- `InterpCoordinate` now optionally carries a nominal `sampling_interval` (and `tolerance`), making it *regular*. Build a regular coordinate from an irregular one via `coord.to_regular(sampling_interval=..., tolerance=...)`, or get one directly from `from_block`. Use `coord.isregular()` to test (@atrabattoni).
+- Added `Coordinate.ispiecewise()` and `Coordinate.isregular()` predicates to the base ABC, replacing `isinstance(coord, PiecewiseMixin)` / `isinstance(coord, RegularMixin)` type checks (@atrabattoni).
 
 ### Breaking Changes
 - Removed `DefaultCoordinate`, the `Coordinate.is*` predicate properties (`isdense`, `isdefault`, `isinterp`, `issampled`), and `to_dict`/`from_dict` from `DataArray` and coordinate types. These were internal APIs not intended for public use, so this should not affect user code (@atrabattoni).
-- Plain `InterpCoordinate` no longer exposes `get_sampling_interval`; a jittery `InterpCoordinate` must be `.simplify(tolerance)`'d, opened with a tolerance, or explicitly `.to_regular(tolerance=...)`'d before its sampling rate can be used. The module-level `xdas.get_sampling_interval(da, dim)` helper still works for uniform axes, auto-converting via `to_regular` (and raising if the axis is too irregular to have a unique rate) (@atrabattoni).
+- Removed `RegularMixin` from the public API; use `coord.isregular()` instead of `isinstance(coord, RegularMixin)` (@atrabattoni).
+- A jittery `InterpCoordinate` that has no `sampling_interval` must be `.simplify(tolerance)`'d or explicitly `.to_regular(tolerance=...)`'d before its sampling rate can be queried. The module-level `xdas.get_sampling_interval(da, dim)` helper auto-converts uniform axes and raises on genuinely irregular ones (@atrabattoni).
 
 ### Refactoring
-- `Coordinate` is now a proper ABC with an explicit abstract interface; the shared ordered-coordinate logic is split into a `PiecewiseMixin` (gaps/overlaps) and a `RegularMixin` (nominal sampling-interval marker); NumPy 2.0 `copy` keyword compliance (@atrabattoni).
+- `Coordinate` is now a proper ABC with an explicit abstract interface; the shared ordered-coordinate logic lives in `PiecewiseMixin` (gaps/overlaps/simplify); `RegularMixin` has been removed in favour of the `isregular()` predicate; NumPy 2.0 `copy` keyword compliance (@atrabattoni).
 
 ## 0.2.7
 

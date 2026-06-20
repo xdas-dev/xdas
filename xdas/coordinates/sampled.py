@@ -14,14 +14,13 @@ from .core import (
     UNITS_TO_CODE,
     Coordinate,
     PiecewiseMixin,
-    RegularMixin,
     is_monotonic_increasing,
     parse_data_dim,
     parse_scalar_delta,
 )
 
 
-class SampledCoordinate(RegularMixin, PiecewiseMixin, Coordinate, ctype="sampled"):
+class SampledCoordinate(PiecewiseMixin, Coordinate, ctype="sampled"):
     """
     Coordinate sampled at a fixed interval, with optional gaps between segments.
 
