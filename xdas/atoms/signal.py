@@ -10,7 +10,7 @@ from fractions import Fraction
 import numpy as np
 import scipy.signal as sp
 
-from ..coordinates.core import Coordinate, get_sampling_interval
+from ..coordinates import Coordinate, get_sampling_interval
 from ..core.dataarray import DataArray
 from ..core.routines import concat, split
 from ..parallel import parallelize

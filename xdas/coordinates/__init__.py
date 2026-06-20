@@ -7,6 +7,7 @@ Exports :class:`Coordinates` (container) and all concrete coordinate classes:
 """
 
 __all__ = [
+    "AxisCoordinate",
     "Coordinate",
     "Coordinates",
     "DenseCoordinate",
@@ -18,6 +19,7 @@ __all__ = [
 ]
 
 from .core import (
+    AxisCoordinate,
     Coordinate,
     Coordinates,
     PiecewiseMixin,

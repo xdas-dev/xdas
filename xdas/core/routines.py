@@ -21,7 +21,7 @@ import xarray as xr
 from loky import get_reusable_executor
 from tqdm import tqdm
 
-from ..coordinates.core import Coordinates, get_sampling_interval
+from ..coordinates import AxisCoordinate, Coordinates, get_sampling_interval
 from ..parallel import get_workers_count
 from ..virtual import VirtualSource, VirtualStack
 from .dataarray import DataArray
@@ -803,7 +803,11 @@ def combine_by_coords(
     if dim in objs[0].coords:
         objs = sorted(
             objs,
-            key=lambda da: da[dim].values if da[dim].isscalar() else da[dim][0].values,
+            key=lambda da: (
+                da[dim][0].values
+                if isinstance(da[dim], AxisCoordinate)
+                else da[dim].values
+            ),
         )
 
     # combine objs
@@ -1216,7 +1220,7 @@ def broadcast_coords(*objs):
             else:
                 sizes[dim] = size
         for name, coord in obj.coords.items():
-            if coord.isscalar():
+            if not isinstance(coord, AxisCoordinate):
                 continue
             if name in coords:
                 if not coord.equals(coords[name]):

@@ -12,6 +12,7 @@ from typing_extensions import override
 from .core import (
     CODE_TO_UNITS,
     UNITS_TO_CODE,
+    AxisCoordinate,
     Coordinate,
     PiecewiseMixin,
     is_monotonic_increasing,
@@ -20,7 +21,7 @@ from .core import (
 )
 
 
-class SampledCoordinate(PiecewiseMixin, Coordinate, ctype="sampled"):
+class SampledCoordinate(PiecewiseMixin, AxisCoordinate, ctype="sampled"):
     """
     Coordinate sampled at a fixed interval, with optional gaps between segments.
 

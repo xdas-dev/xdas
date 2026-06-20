@@ -7,7 +7,7 @@ Also known as OptaSense and Sintela format.
 import h5py
 import pandas as pd
 
-from ..coordinates.core import Coordinate
+from ..coordinates import Coordinate
 from ..core.dataarray import DataArray
 from ..virtual import VirtualSource
 from .core import Engine

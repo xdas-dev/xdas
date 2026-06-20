@@ -8,11 +8,13 @@
 
 ### Breaking Changes
 - Removed `DefaultCoordinate`, the `Coordinate.is*` predicate properties (`isdense`, `isdefault`, `isinterp`, `issampled`), and `to_dict`/`from_dict` from `DataArray` and coordinate types. These were internal APIs not intended for public use, so this should not affect user code (@atrabattoni).
+- Removed `Coordinate.isscalar()`; use `isinstance(coord, AxisCoordinate)` to test whether a coordinate labels an axis (or `not isinstance(coord, AxisCoordinate)` for scalar/non-axis coordinates) instead (@atrabattoni).
 - Removed `RegularMixin` from the public API; use `coord.isregular()` instead of `isinstance(coord, RegularMixin)` (@atrabattoni).
 - A jittery `InterpCoordinate` that has no `sampling_interval` must be `.simplify(tolerance)`'d or explicitly `.to_regular(tolerance=...)`'d before its sampling rate can be queried. The module-level `xdas.get_sampling_interval(da, dim)` helper auto-converts uniform axes and raises on genuinely irregular ones (@atrabattoni).
 
 ### Refactoring
 - `Coordinate` is now a proper ABC with an explicit abstract interface; the shared ordered-coordinate logic lives in `PiecewiseMixin` (gaps/overlaps/simplify); `RegularMixin` has been removed in favour of the `isregular()` predicate; NumPy 2.0 `copy` keyword compliance (@atrabattoni).
+- Introduced an intermediate `AxisCoordinate` ABC holding the full axis-mapping contract. `DenseCoordinate`, `InterpCoordinate`, and `SampledCoordinate` now subclass it, while `ScalarCoordinate` implements only the thin shared `Coordinate` interface (no more stub methods raising `TypeError`) (@atrabattoni).
 
 ## 0.2.7
 

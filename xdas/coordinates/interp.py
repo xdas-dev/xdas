@@ -13,6 +13,7 @@ from typing_extensions import override
 from xinterp import forward, inverse
 
 from .core import (
+    AxisCoordinate,
     Coordinate,
     PiecewiseMixin,
     decode_delta,
@@ -23,7 +24,7 @@ from .core import (
 )
 
 
-class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
+class InterpCoordinate(PiecewiseMixin, AxisCoordinate, ctype="interpolated"):
     """
     Piecewise-linear coordinate described by tie points (CF convention).
 

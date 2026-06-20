@@ -4,7 +4,12 @@ import dask
 import numpy as np
 import obspy
 
-from ..coordinates.core import Coordinate, Coordinates, get_sampling_interval
+from ..coordinates import (
+    AxisCoordinate,
+    Coordinate,
+    Coordinates,
+    get_sampling_interval,
+)
 from ..core.dataarray import DataArray
 from ..core.routines import concat_coords
 from .core import Engine
@@ -81,7 +86,9 @@ class MiniSEEDEngine(Engine, name="miniseed"):
             }
         )
 
-        shape = tuple(len(coord) for coord in coords.values() if not coord.isscalar())
+        shape = tuple(
+            len(coord) for coord in coords.values() if isinstance(coord, AxisCoordinate)
+        )
         return shape, dtype, coords, method
 
     def read_data(self, path, method, ignore_last_sample):

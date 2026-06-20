@@ -2,8 +2,8 @@
 Core coordinate infrastructure.
 
 Includes the :class:`Coordinates` container, :class:`Coordinate` factory/base
-class, and shared helpers used by all concrete coordinate types (parsing,
-interpolation, tolerance handling).
+class, :class:`AxisCoordinate` (the axis-mapping ABC), and shared helpers used by
+all concrete coordinate types (parsing, interpolation, tolerance handling).
 """
 
 import weakref
@@ -119,7 +119,7 @@ class Coordinates(dict):
         if not isinstance(key, str):
             raise TypeError("dimension names must be of type str")
         coord = Coordinate(value)
-        if coord.dim is None and not coord.isscalar():
+        if coord.dim is None and isinstance(coord, AxisCoordinate):
             coord.dim = key
         if self.parent is None:
             if coord.dim is not None and coord.dim not in self.dims:
@@ -290,20 +290,18 @@ class Coordinate(ABC):
     """
     Base class and factory for all coordinate types.
 
-    A coordinate maps the integer positions of one array axis to physical
-    values (e.g. timestamps, distances).  It supports two complementary
-    directions of lookup:
+    A coordinate attaches physical meaning to a :class:`DataArray`.  Two kinds
+    exist:
 
-    - **Index-based selection** — ``coord[i]`` or ``coord[start:stop]``:
-      given integer position(s), return the corresponding physical value(s)
-      as a new coordinate.
-    - **Label-based selection** — ``coord.to_index(v)``: given a physical
-      value (or slice of values), return the integer index (or slice) at
-      that label.  An optional *method* argument controls nearest/forward/
-      backward matching for values that fall between samples.  The returned
-      index can then be passed to ``coord[idx]`` to retrieve the
-      coordinate subset, and is also used internally to index into the
-      parent data array.
+    - **Axis coordinates** (:class:`AxisCoordinate` subclasses) map the integer
+      positions of one array axis to physical values (e.g. timestamps,
+      distances) and support index- and label-based selection.
+    - **Scalar coordinates** (:class:`ScalarCoordinate`) carry a single value
+      with no associated axis.
+
+    This base class holds only what is genuinely shared between the two: the
+    factory/registry machinery, identity/equality, copying, and (de)serialisation
+    hooks.  The full axis-mapping contract lives on :class:`AxisCoordinate`.
 
     **Factory behaviour** — calling ``Coordinate(data)`` directly acts as a
     factory: it inspects *data* and returns an instance of the most suitable
@@ -363,6 +361,190 @@ class Coordinate(ABC):
     def __init__(self, data=None, dim=None, dtype=None):
         """Initialise the coordinate from subclass-specific *data*."""
 
+    @property
+    @abstractmethod
+    def dtype(self):
+        """NumPy dtype of the underlying coordinate values."""
+
+    @staticmethod
+    @abstractmethod
+    def _isvalid(data):
+        """Return ``True`` if *data* is a valid input for this coordinate subclass."""
+
+    @property
+    @abstractmethod
+    def shape(self):
+        """Shape tuple of the coordinate (``()`` for scalar, ``(len(self),)`` for axis)."""
+
+    @abstractmethod
+    def __array__(self, dtype=None, copy=None):
+        """Materialise this coordinate as a numpy array (numpy array protocol)."""
+
+    @abstractmethod
+    def _to_dataset(self, dataset, attrs):
+        """
+        Serialise this coordinate into an xarray *dataset*, updating *attrs* in place.
+
+        Parameters
+        ----------
+        dataset : xarray.Dataset
+            Target dataset to write coordinate data into.
+        attrs : dict
+            Global attribute mapping to update (e.g. ``coordinate_interpolation``).
+
+        Returns
+        -------
+        dataset : xarray.Dataset
+        attrs : dict
+        """
+
+    @classmethod
+    @abstractmethod
+    def _collect_from_dataset(cls, dataset, name):
+        """
+        Extract coordinates of this subclass's type from *dataset* variable *name*.
+
+        Parameters
+        ----------
+        dataset : xarray.Dataset
+            Source dataset.
+        name : str
+            Name of the variable whose coordinates should be extracted.
+
+        Returns
+        -------
+        dict
+            Mapping from coordinate name to coordinate-like data, ready to be
+            passed to :class:`Coordinate`.
+        """
+
+    # -- properties ---
+
+    #: Name of the dimension this coordinate is associated with, or ``None``.
+    dim = None
+
+    @property
+    def size(self):
+        """Number of elements in this coordinate (``1`` for a scalar)."""
+        return int(np.prod(self.shape))
+
+    @property
+    def values(self):
+        """Materialised numpy array of coordinate values."""
+        return self.__array__(copy=False)
+
+    @property
+    def parent(self):
+        """The parent :class:`Coordinates` container, or ``None`` if unattached."""
+        if hasattr(self, "_parent"):
+            return self._parent()
+        else:
+            return None
+
+    @property
+    def name(self):
+        """The name under which this coordinate is stored in its parent container."""
+        if self.parent is None:
+            return self.dim
+        return next((name for name in self.parent if self.parent[name] is self), None)
+
+    # --- dunders logic ---
+
+    def __reduce__(self):
+        return self.__class__, (self.data, self.dim)
+
+    # --- queries ---
+
+    def isdim(self):
+        """Return ``True`` if this coordinate is a dimensional coordinate."""
+        if self.parent is None or self.name is None:
+            return None
+        else:
+            return self.parent.isdim(self.name)
+
+    def equals(self, other):
+        """Return ``True`` if *other* is the same coordinate type with identical dim and data.
+
+        Comparison is strict on dtype. Same type implies same ``data`` structure:
+        either a single ``np.ndarray`` or a flat ``dict[str, np.ndarray]`` with
+        the same keys.
+        """
+        if type(self) is not type(other) or self.dim != other.dim:
+            return False
+        a, b = self.data, other.data
+        if isinstance(a, dict):
+            pairs = [(a[key], b[key]) for key in a]
+        else:
+            pairs = [(a, b)]
+        for x, y in pairs:
+            x, y = np.asarray(x), np.asarray(y)
+            if x.dtype != y.dtype or not np.array_equal(x, y, equal_nan=False):
+                return False
+        return True
+
+    # --- routines ---
+
+    def copy(self, deep=True):
+        """
+        Return a copy of this coordinate.
+
+        Parameters
+        ----------
+        deep : bool, optional
+            If ``True`` (default) perform a deep copy; otherwise a shallow copy.
+
+        Returns
+        -------
+        Coordinate
+            A new coordinate of the same subclass with copied data and metadata.
+        """
+        if deep:
+            func = deepcopy
+        else:
+            func = copy
+        return self.__class__(func(self.data), func(self.dim), func(self.dtype))
+
+    # --- IO ---
+
+    @classmethod
+    def _from_dataset(cls, dataset, name):
+        """Read coordinates named *name* from an xarray *dataset* via each registered subclass."""
+        coords = {}
+        for subcls in cls._registry.values():
+            coords |= subcls._collect_from_dataset(dataset, name)
+        return coords
+
+    # --- internals ---
+
+    def _assign_parent(self, parent):
+        """Attach this coordinate to its parent :class:`Coordinates` container."""
+        self._parent = weakref.ref(parent)
+
+
+class AxisCoordinate(Coordinate, ABC):
+    """
+    Base class for coordinates that map an array axis to physical values.
+
+    Adds the full axis-mapping contract on top of :class:`Coordinate`: it
+    supports two complementary directions of lookup:
+
+    - **Index-based selection** — ``coord[i]`` or ``coord[start:stop]``:
+      given integer position(s), return the corresponding physical value(s)
+      as a new coordinate.
+    - **Label-based selection** — ``coord.to_index(v)``: given a physical
+      value (or slice of values), return the integer index (or slice) at
+      that label.  An optional *method* argument controls nearest/forward/
+      backward matching for values that fall between samples.  The returned
+      index can then be passed to ``coord[idx]`` to retrieve the
+      coordinate subset, and is also used internally to index into the
+      parent data array.
+
+    Concrete subclasses are :class:`DenseCoordinate`, :class:`InterpCoordinate`,
+    and :class:`SampledCoordinate`.
+    """
+
+    # --- abstract contract ---
+
     @classmethod
     @abstractmethod
     def from_block(cls, start, size, step, dim=None, dtype=None):
@@ -391,16 +573,6 @@ class Coordinate(ABC):
     @abstractmethod
     def __len__(self):
         """Return the number of elements along this coordinate's axis."""
-
-    @property
-    @abstractmethod
-    def dtype(self):
-        """NumPy dtype of the underlying coordinate values."""
-
-    @staticmethod
-    @abstractmethod
-    def _isvalid(data):
-        """Return ``True`` if *data* is a valid input for this coordinate subclass."""
 
     @abstractmethod
     def _is_monotonic_increasing(self):
@@ -469,56 +641,17 @@ class Coordinate(ABC):
     @abstractmethod
     def _concat(self, other):
         """
-                Return a new coordinate formed by appending *other* after this one.
+        Return a new coordinate formed by appending *other* after this one.
 
         Parameters
         ----------
-                other : Coordinate
-                    Must be the same subclass and have the same ``dim`` and ``dtype``.
+        other : Coordinate
+            Must be the same subclass and have the same ``dim`` and ``dtype``.
 
         Returns
         -------
-                Coordinate
-                    Concatenated coordinate of the same subclass.
-        s
-        """
-
-    @abstractmethod
-    def _to_dataset(self, dataset, attrs):
-        """
-        Serialise this coordinate into an xarray *dataset*, updating *attrs* in place.
-
-        Parameters
-        ----------
-        dataset : xarray.Dataset
-            Target dataset to write coordinate data into.
-        attrs : dict
-            Global attribute mapping to update (e.g. ``coordinate_interpolation``).
-
-        Returns
-        -------
-        dataset : xarray.Dataset
-        attrs : dict
-        """
-
-    @classmethod
-    @abstractmethod
-    def _collect_from_dataset(cls, dataset, name):
-        """
-        Extract coordinates of this subclass's type from *dataset* variable *name*.
-
-        Parameters
-        ----------
-        dataset : xarray.Dataset
-            Source dataset.
-        name : str
-            Name of the variable whose coordinates should be extracted.
-
-        Returns
-        -------
-        dict
-            Mapping from coordinate name to coordinate-like data, ready to be
-            passed to :class:`Coordinate`.
+        Coordinate
+            Concatenated coordinate of the same subclass.
         """
 
     @abstractmethod
@@ -538,10 +671,7 @@ class Coordinate(ABC):
             defined sampling interval.
         """
 
-    # -- properties ---
-
-    #: Name of the dimension this coordinate is associated with, or ``None``.
-    dim = None
+    # --- properties ---
 
     @property
     def ndim(self):
@@ -554,11 +684,6 @@ class Coordinate(ABC):
         return (len(self),)
 
     @property
-    def size(self):
-        """Number of elements along this coordinate's axis."""
-        return len(self)
-
-    @property
     def empty(self):
         """``True`` if the coordinate has zero length."""
         return len(self) == 0
@@ -569,11 +694,6 @@ class Coordinate(ABC):
         return np.arange(len(self))
 
     @property
-    def values(self):
-        """Materialised numpy array of coordinate values."""
-        return self.__array__(copy=False)
-
-    @property
     def start(self):
         """Value at index 0 (first element)."""
         return self._get_value(0)
@@ -582,21 +702,6 @@ class Coordinate(ABC):
     def end(self):
         """Value at the last element."""
         return self._get_value(len(self) - 1)
-
-    @property
-    def parent(self):
-        """The parent :class:`Coordinates` container, or ``None`` if unattached."""
-        if hasattr(self, "_parent"):
-            return self._parent()
-        else:
-            return None
-
-    @property
-    def name(self):
-        """The name under which this coordinate is stored in its parent container."""
-        if self.parent is None:
-            return self.dim
-        return next((name for name in self.parent if self.parent[name] is self), None)
 
     # --- dunders logic ---
 
@@ -618,9 +723,6 @@ class Coordinate(ABC):
             out = out.__array__(dtype)
         return out
 
-    def __reduce__(self):
-        return self.__class__, (self.data, self.dim)
-
     def __repr__(self):
         if self.empty:
             return "empty coordinate"
@@ -638,10 +740,6 @@ class Coordinate(ABC):
 
     # --- queries ---
 
-    def isscalar(self):
-        """Return ``True`` if this is a :class:`ScalarCoordinate`."""
-        return False
-
     def ispiecewise(self):
         """Return ``True`` if this coordinate is piecewise-continuous (has segments with gaps/overlaps)."""
         return isinstance(self, PiecewiseMixin)
@@ -649,33 +747,6 @@ class Coordinate(ABC):
     def isregular(self):
         """Return ``True`` if this coordinate has a well-defined nominal sampling interval."""
         return self.get_sampling_interval() is not None
-
-    def isdim(self):
-        """Return ``True`` if this coordinate is a dimensional coordinate."""
-        if self.parent is None or self.name is None:
-            return None
-        else:
-            return self.parent.isdim(self.name)
-
-    def equals(self, other):
-        """Return ``True`` if *other* is the same coordinate type with identical dim and data.
-
-        Comparison is strict on dtype. Same type implies same ``data`` structure:
-        either a single ``np.ndarray`` or a flat ``dict[str, np.ndarray]`` with
-        the same keys.
-        """
-        if type(self) is not type(other) or self.dim != other.dim:
-            return False
-        a, b = self.data, other.data
-        if isinstance(a, dict):
-            pairs = [(a[key], b[key]) for key in a]
-        else:
-            pairs = [(a, b)]
-        for x, y in pairs:
-            x, y = np.asarray(x), np.asarray(y)
-            if x.dtype != y.dtype or not np.array_equal(x, y, equal_nan=False):
-                return False
-        return True
 
     # --- selection / indexing ---
 
@@ -799,26 +870,6 @@ class Coordinate(ABC):
 
     # --- routines ---
 
-    def copy(self, deep=True):
-        """
-        Return a copy of this coordinate.
-
-        Parameters
-        ----------
-        deep : bool, optional
-            If ``True`` (default) perform a deep copy; otherwise a shallow copy.
-
-        Returns
-        -------
-        Coordinate
-            A new coordinate of the same subclass with copied data and metadata.
-        """
-        if deep:
-            func = deepcopy
-        else:
-            func = copy
-        return self.__class__(func(self.data), func(self.dim), func(self.dtype))
-
     def to_dataarray(self):
         """Convert this coordinate to a :class:`~xdas.DataArray` with a single dimension."""
         from ..core.dataarray import DataArray  # TODO: avoid defered import?
@@ -844,22 +895,6 @@ class Coordinate(ABC):
                 dims=[self.dim],
                 name=self.name,
             )
-
-    # --- IO ---
-
-    @classmethod
-    def _from_dataset(cls, dataset, name):
-        """Read coordinates named *name* from an xarray *dataset* via each registered subclass."""
-        coords = {}
-        for subcls in cls.__subclasses__():
-            coords |= subcls._collect_from_dataset(dataset, name)
-        return coords
-
-    # --- internals ---
-
-    def _assign_parent(self, parent):
-        """Attach this coordinate to its parent :class:`Coordinates` container."""
-        self._parent = weakref.ref(parent)
 
 
 class PiecewiseMixin(ABC):
@@ -1154,6 +1189,8 @@ def get_sampling_interval(da, dim, cast=True):
 
     """
     coord = da[dim]
+    if not isinstance(coord, AxisCoordinate):
+        return None
     if coord.isregular():
         return coord.get_sampling_interval(cast=cast)
     if hasattr(coord, "to_regular"):
@@ -1188,12 +1225,6 @@ def decode_delta(key, attrs):
             attrs[f"{key}_dtype"]
         )
     return value
-
-
-def isscalar(data):
-    """Return ``True`` if *data* converts to a 0-d non-object numpy array."""
-    data = np.asarray(data)
-    return (data.dtype != np.dtype(object)) and (data.ndim == 0)
 
 
 def is_monotonic_increasing(x):

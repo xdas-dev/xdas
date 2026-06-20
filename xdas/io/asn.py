@@ -12,7 +12,7 @@ import h5py
 import numpy as np
 import zmq
 
-from ..coordinates.core import Coordinate, get_sampling_interval
+from ..coordinates import Coordinate, get_sampling_interval
 from ..core.dataarray import DataArray
 from ..virtual import VirtualSource
 from .core import Engine

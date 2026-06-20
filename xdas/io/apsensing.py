@@ -3,7 +3,7 @@
 import h5py
 import numpy as np
 
-from ..coordinates.core import Coordinate
+from ..coordinates import Coordinate
 from ..core.dataarray import DataArray
 from ..virtual import VirtualSource
 from .core import Engine

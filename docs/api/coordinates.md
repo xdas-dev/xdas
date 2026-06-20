@@ -43,15 +43,10 @@ Attributes
    :toctree: ../_autosummary
 
    Coordinate.dtype
-   Coordinate.ndim
    Coordinate.shape
    Coordinate.size
-   Coordinate.empty
    Coordinate.dim
-   Coordinate.indices
    Coordinate.values
-   Coordinate.start
-   Coordinate.end
    Coordinate.name
 ```
 
@@ -61,17 +56,44 @@ Methods
 .. autosummary::
    :toctree: ../_autosummary
 
-   Coordinate.isscalar
-   Coordinate.ispiecewise
-   Coordinate.isregular
    Coordinate.isdim
    Coordinate.equals
-   Coordinate.get_sampling_interval
-   Coordinate.to_index
-   Coordinate.format_index
-   Coordinate.slice_indexer
    Coordinate.copy
-   Coordinate.to_dataarray
+```
+
+## AxisCoordinate
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   AxisCoordinate
+```
+
+Attributes
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   AxisCoordinate.ndim
+   AxisCoordinate.empty
+   AxisCoordinate.indices
+   AxisCoordinate.start
+   AxisCoordinate.end
+```
+
+Methods
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   AxisCoordinate.ispiecewise
+   AxisCoordinate.isregular
+   AxisCoordinate.get_sampling_interval
+   AxisCoordinate.to_index
+   AxisCoordinate.to_dataarray
 ```
 
 ## ScalarCoordinate

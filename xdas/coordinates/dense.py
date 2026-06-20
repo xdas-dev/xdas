@@ -4,10 +4,10 @@ import numpy as np
 import pandas as pd
 from typing_extensions import override
 
-from .core import Coordinate, parse_data_dim
+from .core import AxisCoordinate, parse_data_dim
 
 
-class DenseCoordinate(Coordinate, ctype="dense"):
+class DenseCoordinate(AxisCoordinate, ctype="dense"):
     """
     Coordinate backed by an explicit numpy array.
 

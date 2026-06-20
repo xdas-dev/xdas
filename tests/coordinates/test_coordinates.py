@@ -3,15 +3,22 @@ import pytest
 import xarray as xr
 
 import xdas as xd
-from xdas.coordinates import DenseCoordinate, InterpCoordinate, ScalarCoordinate
-from xdas.coordinates.core import format_datetime, isscalar
+from xdas.coordinates import (
+    AxisCoordinate,
+    DenseCoordinate,
+    InterpCoordinate,
+    ScalarCoordinate,
+)
+from xdas.coordinates.core import format_datetime
 
 
 class TestCoordinate:
     def test_new(self):
-        assert xd.Coordinate(1).isscalar()
+        assert isinstance(xd.Coordinate(1), ScalarCoordinate)
+        assert not isinstance(xd.Coordinate(1), AxisCoordinate)
         coord = xd.Coordinate(xd.Coordinate([1]), "dim")
         assert coord.dim == "dim"
+        assert isinstance(coord, AxisCoordinate)
 
     def test_empty(self):
         with pytest.raises(TypeError, match="cannot infer coordinate type"):
@@ -386,13 +393,6 @@ class TestCoordinateBase:
         )
         da = xd.DataArray([1, 2, 3], {"x": coord})
         assert get_sampling_interval(da, "x") == 5.0
-
-    def test_isscalar(self):
-        assert isscalar(1)
-        assert isscalar(1.0)
-        assert isscalar(np.array(1))
-        assert not isscalar([1])
-        assert not isscalar({"key": "value"})
 
     def test_format_datetime_no_fractional(self):
         x = np.datetime64("2000-01-01T00:00:00", "s")
