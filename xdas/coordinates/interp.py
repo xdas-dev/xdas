@@ -2,6 +2,8 @@
 :class:`InterpCoordinate`: piecewise-linear coordinate.
 
 Defined by tie points, using ``xinterp`` for forward and inverse interpolation.
+Optionally carries a nominal ``sampling_interval`` (and ``tolerance``) making the
+coordinate *regular* and providing a clean sample rate for signal-processing routines.
 """
 
 import re
@@ -13,7 +15,6 @@ from xinterp import forward, inverse
 from .core import (
     Coordinate,
     PiecewiseMixin,
-    RegularMixin,
     decode_delta,
     encode_delta,
     is_monotonic_increasing,
@@ -30,6 +31,11 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
     Discontinuities are represented by two consecutive tie points at adjacent
     indices.  Supports label-based selection via :meth:`~Coordinate.to_index`.
 
+    When *data* contains a ``sampling_interval`` key the coordinate also
+    enforces a nominal sample spacing, making it *regular*
+    (:meth:`isregular` returns ``True``).  A ``tolerance`` key may
+    accompany it to allow bounded jitter around that rate.
+
     Parameters
     ----------
     data : dict with keys ``tie_indices`` and ``tie_values``
@@ -39,6 +45,13 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
         ``tie_values`` : sequence of float or datetime64
             Values at the tie points.  Must be strictly increasing to enable
             label-based selection.  Length must match ``tie_indices``.
+        ``sampling_interval`` : scalar, optional
+            Nominal sample spacing.  When provided the coordinate is
+            *regular* and :meth:`get_sampling_interval` returns it directly.
+        ``tolerance`` : scalar, optional
+            Allowed jitter around ``sampling_interval``.  Checked for
+            consistency with the tie points at construction.  Ignored when
+            ``sampling_interval`` is absent.
     dim : str, optional
         Name of the dimension this coordinate is associated with.
     dtype : dtype-like, optional
@@ -64,10 +77,15 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
         data, dim = parse_data_dim(data, dim)
         if not InterpCoordinate._isvalid(data):
             raise TypeError(
-                "`data` must be dict-like with exactly `tie_indices` and `tie_values`"
+                "`data` must be dict-like with `tie_indices` and `tie_values` "
+                "(and optionally `sampling_interval` / `tolerance`)"
             )
+
+
         tie_indices = np.asarray(data["tie_indices"])
         tie_values = np.asarray(data["tie_values"], dtype=dtype)
+        sampling_interval = data.get("sampling_interval", None)
+        tolerance = data.get("tolerance", None)
 
         # check shapes
         if not tie_indices.ndim == 1:
@@ -91,10 +109,31 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
         ):
             raise ValueError("`tie_values` must have either numeric or datetime dtype")
 
-        # store data
+        # store base data
         tie_indices = tie_indices.astype(int)
         self.data = dict(tie_indices=tie_indices, tie_values=tie_values)
         self.dim = dim
+
+        # optional regular sampling
+        self._assign_sampling_interval(sampling_interval, tolerance)
+
+    def _assign_sampling_interval(self, sampling_interval, tolerance=None):
+        if sampling_interval is None:
+            self.data["sampling_interval"] = None
+            self.data["tolerance"] = None
+            return
+
+        sampling_interval = parse_scalar_delta(sampling_interval, self.dtype)
+        tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
+
+        if self._is_valid_sampling_interval(sampling_interval, tolerance):
+            self.data["sampling_interval"] = sampling_interval
+            self.data["tolerance"] = tolerance
+        else:
+            raise ValueError(
+                "`sampling_interval` and `tolerance` are not consistent with "
+                "the `tie_indices` and `tie_values`"
+            )
 
     @property
     def tie_indices(self):
@@ -107,6 +146,16 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
         return self.data["tie_values"]
 
     @property
+    def sampling_interval(self):
+        """Nominal sample spacing, or ``None`` when the coordinate is not regular."""
+        return self.data["sampling_interval"]
+
+    @property
+    def tolerance(self):
+        """Allowed jitter around :attr:`sampling_interval`, or ``None``."""
+        return self.data["tolerance"]
+
+    @property
     @override
     def dtype(self):
         return self.tie_values.dtype
@@ -114,11 +163,14 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
     @classmethod
     @override
     def from_block(cls, start, size, step, dim=None, dtype=None):
-        data = {
-            "tie_indices": [0, size - 1],
-            "tie_values": [start, start + step * (size - 1)],
-        }
-        return cls(data, dim=dim, dtype=dtype)
+        obj = cls(
+            {"tie_indices": [0, size - 1], "tie_values": [start, start + step * (size - 1)]},
+            dim=dim,
+            dtype=dtype,
+        )
+        obj.data["sampling_interval"] = parse_scalar_delta(step, obj.dtype)
+        obj.data["tolerance"] = parse_scalar_delta(None, obj.dtype, default_zero=True)
+        return obj
 
     @override
     def __len__(self):
@@ -131,16 +183,17 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
     @override
     def _isvalid(data):
         match data:
-            case {"tie_indices": _, "tie_values": _, **rest} if not rest:
+            case {"tie_indices": _, "tie_values": _, **rest} if set(rest) <= {
+                "sampling_interval",
+                "tolerance",
+            }:
                 return True
             case _:
                 return False
 
     @override
     def _is_monotonic_increasing(self):
-        return not self.get_split_indices(
-            "overlaps", tolerance=False
-        ).size  # TODO: do not call split_indices
+        return not self.get_split_indices("overlaps", tolerance=False).size
 
     def _is_valid_sampling_interval(self, sampling_interval, tolerance=None):
         if len(self) < 2:
@@ -190,10 +243,8 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
         )
         if stop_index - start_index <= 0:
             data = {"tie_indices": [], "tie_values": []}
-            return self._reconstruct(data, scale=step_index)
         elif (stop_index - start_index) <= step_index:
             data = {"tie_indices": [0], "tie_values": [self._get_value(start_index)]}
-            return self._reconstruct(data, scale=step_index)
         else:
             end_index = stop_index - 1
             start_value = self._get_value(start_index)
@@ -220,7 +271,9 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
                 tie_indices //= step_index
 
             data = {"tie_indices": tie_indices, "tie_values": tie_values}
-            return self._reconstruct(data, scale=step_index)
+        if self.sampling_interval is not None:
+            data = {**data, "sampling_interval": self.sampling_interval * step_index, "tolerance": self.tolerance}
+        return self.__class__(data, self.dim)
 
     @override
     def _concat(self, other):
@@ -238,7 +291,18 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
             "tie_indices": np.append(self.tie_indices, other.tie_indices + len(self)),
             "tie_values": np.append(self.tie_values, other.tie_values),
         }
-        return self._reconstruct(data, other=other)
+        if self.sampling_interval != other.sampling_interval:
+            raise ValueError(
+                "cannot append coordinate with different sampling interval"
+            )
+        if self.sampling_interval is not None:
+            tolerance = (
+                max(self.tolerance, other.tolerance)
+                if self.tolerance is not None and other.tolerance is not None
+                else None
+            )
+            data = {**data, "sampling_interval": self.sampling_interval, "tolerance": tolerance}
+        return self.__class__(data, self.dim)
 
     @override
     def _to_dataset(self, dataset, attrs):
@@ -257,6 +321,12 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
             "interpolation_name": "linear",
             "tie_points_mapping": f"{self.name}_points: {self.name}_indices {self.name}_values",
         }
+        if self.sampling_interval is not None:
+            interp_attrs.update(
+                encode_delta("sampling_interval", self.sampling_interval)
+            )
+        if self.tolerance is not None:
+            interp_attrs.update(encode_delta("tolerance", self.tolerance))
         dataset.update(
             {
                 f"{self.name}_interpolation": ((), np.nan, interp_attrs),
@@ -277,8 +347,6 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
                     "tie_indices": dataset[indices].values,
                     "tie_values": dataset[values].values,
                 }
-                # a `sampling_interval` attr marks a RegularInterpCoordinate; the
-                # `Coordinate` factory dispatches on the resulting keys.
                 interp_attrs = dataset[f"{dim}_interpolation"].attrs
                 if "sampling_interval" in interp_attrs:
                     data["sampling_interval"] = decode_delta(
@@ -290,26 +358,28 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
 
     def __add__(self, other):
         data = {"tie_indices": self.tie_indices, "tie_values": self.tie_values + other}
-        return self._reconstruct(data)
+        if self.sampling_interval is not None:
+            data = {**data, "sampling_interval": self.sampling_interval, "tolerance": self.tolerance}
+        return self.__class__(data, self.dim)
 
     def __sub__(self, other):
         data = {"tie_indices": self.tie_indices, "tie_values": self.tie_values - other}
-        return self._reconstruct(data)
-
-    def _reconstruct(self, data, scale=1, other=None):
-        """
-        Build a new coordinate of this type from rebuilt tie points.
-
-        Single extension point shared by all tie-point-rebuilding methods
-        (:meth:`_slice`, :meth:`_concat`, :meth:`simplify`, :meth:`__add__`,
-        :meth:`__sub__`). Subclasses override it to inject any extra fields their
-        constructor needs, using *scale* (the slice step, by which the sampling
-        interval scales) and *other* (the coordinate being concatenated).
-        """
+        if self.sampling_interval is not None:
+            data = {**data, "sampling_interval": self.sampling_interval, "tolerance": self.tolerance}
         return self.__class__(data, self.dim)
 
     def _nominal_sampling_interval(self, cast=False):
-        """Return the median per-segment sample spacing, ignoring unit-spaced ties."""
+        """Return the nominal per-segment sample spacing.
+
+        Uses the stored ``sampling_interval`` when the coordinate is regular;
+        otherwise estimates it as the median of per-segment rates, ignoring
+        unit-spaced tie gaps.
+        """
+        if self.sampling_interval is not None:
+            delta = self.sampling_interval
+            if cast and np.issubdtype(delta.dtype, np.timedelta64):
+                delta = delta / np.timedelta64(1, "s")
+            return delta
         if len(self) < 2:
             return None
         num = np.diff(self.tie_values)
@@ -324,9 +394,18 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
             delta = delta / np.timedelta64(1, "s")
         return delta
 
+    @override
+    def get_sampling_interval(self, cast=True):
+        delta = self.sampling_interval
+        if delta is None:
+            return None
+        if cast and np.issubdtype(delta.dtype, np.timedelta64):
+            delta = delta / np.timedelta64(1, "s")
+        return delta
+
     def to_regular(self, sampling_interval=None, tolerance=None):
         """
-        Return a :class:`RegularInterpCoordinate` with an enforced sampling interval.
+        Return a copy of this coordinate with an enforced nominal sampling interval.
 
         Parameters
         ----------
@@ -339,7 +418,8 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
 
         Returns
         -------
-        RegularInterpCoordinate
+        InterpCoordinate
+            A new coordinate with :attr:`sampling_interval` set.
         """
         if sampling_interval is None:
             sampling_interval = self._nominal_sampling_interval(cast=False)
@@ -349,7 +429,7 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
             "sampling_interval": sampling_interval,
             "tolerance": tolerance,
         }
-        return RegularInterpCoordinate(data, self.dim)
+        return self.__class__(data, self.dim)
 
     @override
     def simplify(self, tolerance=None):
@@ -360,7 +440,9 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
             self.tie_indices, self.tie_values, tolerance
         )
         data = {"tie_indices": tie_indices, "tie_values": tie_values}
-        return self._reconstruct(data)
+        if self.sampling_interval is not None:
+            data = {**data, "sampling_interval": self.sampling_interval, "tolerance": self.tolerance}
+        return self.__class__(data, self.dim)
 
     @override
     def get_split_indices(self, kind="discontinuities", tolerance=False):
@@ -401,149 +483,6 @@ class InterpCoordinate(PiecewiseMixin, Coordinate, ctype="interpolated"):
                     mask = deltas < -tolerance
 
         return self.tie_indices[indices[mask]]
-
-
-class RegularInterpCoordinate(RegularMixin, InterpCoordinate, ctype="reginterp"):
-    """
-    Piecewise-linear coordinate with an enforced nominal ``sampling_interval``.
-
-    Behaves like :class:`InterpCoordinate` (tie points interpolated to recover
-    intermediate values) but additionally carries a single nominal
-    ``sampling_interval`` — and a ``tolerance`` bounding the jitter allowed around
-    it — so a well-defined sample rate is always available for signal-processing
-    routines and rate comparisons.
-
-    Parameters
-    ----------
-    data : dict with keys ``tie_indices``, ``tie_values``, ``sampling_interval``
-        ``tie_indices`` : sequence of int
-            Positions of the tie points (start at 0, strictly increasing).
-        ``tie_values`` : sequence of float or datetime64
-            Values at the tie points (strictly increasing).
-        ``sampling_interval`` : scalar
-            Nominal sample spacing. Slight variations within ``tolerance`` are
-            authorised. Redundant with the tie points but guarantees a clean rate.
-        ``tolerance`` : scalar, optional
-            Tolerated jitter around ``sampling_interval``; checked for consistency
-            against the tie points at construction.
-    dim : str, optional
-        Name of the dimension this coordinate is associated with.
-    dtype : dtype-like, optional
-        Desired dtype for ``tie_values``.
-    """
-
-    @override
-    def __init__(self, data=None, dim=None, dtype=None):
-        if data is None:
-            data = {
-                "tie_indices": [],
-                "tie_values": [],
-                "sampling_interval": None,
-                "tolerance": None,
-            }
-
-        data, dim = parse_data_dim(data, dim)
-        sampling_interval = data["sampling_interval"]
-        tolerance = data.get("tolerance", None)
-        data = {
-            k: v for k, v in data.items() if k not in ("sampling_interval", "tolerance")
-        }
-
-        super().__init__(data, dim, dtype)
-
-        self._assign_sampling_interval(sampling_interval, tolerance)
-
-    def _assign_sampling_interval(self, sampling_interval, tolerance=None):
-        if sampling_interval is None:
-            self.data["sampling_interval"] = None
-            self.data["tolerance"] = None
-            return
-
-        sampling_interval = parse_scalar_delta(sampling_interval, self.dtype)
-        tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
-
-        if self._is_valid_sampling_interval(sampling_interval, tolerance):
-            self.data["sampling_interval"] = sampling_interval
-            self.data["tolerance"] = tolerance
-        else:
-            raise ValueError(
-                "`sampling_interval` and `tolerance` are not consistent with "
-                "the `tie_indices` and `tie_values`"
-            )
-
-    @property
-    def sampling_interval(self):
-        """Nominal sample spacing enforced by this coordinate."""
-        return self.data["sampling_interval"]
-
-    @property
-    def tolerance(self):
-        """Tolerated jitter around :attr:`sampling_interval`."""
-        return self.data["tolerance"]
-
-    @classmethod
-    @override
-    def from_block(cls, start, size, step, dim=None, dtype=None):
-        data = {
-            "tie_indices": [0, size - 1],
-            "tie_values": [start, start + step * (size - 1)],
-            "sampling_interval": step,
-        }
-        return cls(data, dim=dim, dtype=dtype)
-
-    @staticmethod
-    @override
-    def _isvalid(data):
-        match data:
-            case {
-                "tie_indices": _,
-                "tie_values": _,
-                "sampling_interval": _,
-                **rest,
-            } if set(rest) <= {"tolerance"}:
-                return True
-            case _:
-                return False
-
-    @override
-    def _reconstruct(self, data, scale=1, other=None):
-        sampling_interval = self.sampling_interval
-        if sampling_interval is not None:
-            sampling_interval = sampling_interval * scale
-        if other is None:
-            tolerance = self.tolerance
-        else:
-            if not self.sampling_interval == other.sampling_interval:
-                raise ValueError(
-                    "cannot append coordinate with different sampling interval"
-                )
-            tolerance = max(self.tolerance, other.tolerance)
-        data = {**data, "sampling_interval": sampling_interval, "tolerance": tolerance}
-        return self.__class__(data, self.dim)
-
-    @override
-    def _nominal_sampling_interval(self, cast=False):
-        delta = self.sampling_interval
-        if cast and delta is not None and np.issubdtype(delta.dtype, np.timedelta64):
-            delta = delta / np.timedelta64(1, "s")
-        return delta
-
-    @override
-    def get_sampling_interval(self, cast=True):
-        if len(self) < 2:
-            return None
-        delta = self.sampling_interval
-        if cast and np.issubdtype(delta.dtype, np.timedelta64):
-            delta = delta / np.timedelta64(1, "s")
-        return delta
-
-    @override
-    def _to_dataset(self, dataset, attrs):
-        dataset, attrs = super()._to_dataset(dataset, attrs)
-        interp_attrs = dataset[f"{self.name}_interpolation"].attrs
-        interp_attrs.update(encode_delta("sampling_interval", self.sampling_interval))
-        interp_attrs.update(encode_delta("tolerance", self.tolerance))
-        return dataset, attrs
 
 
 def _douglas_peucker(x, y, epsilon):
