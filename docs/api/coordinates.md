@@ -135,11 +135,46 @@ Methods
    :toctree: ../_autosummary
 
    InterpCoordinate.from_block
-   InterpCoordinate.get_sampling_interval
+   InterpCoordinate.to_regular
    InterpCoordinate.get_split_indices
    InterpCoordinate.get_discontinuities
    InterpCoordinate.get_availabilities
    InterpCoordinate.simplify
+```
+
+## RegularInterpCoordinate
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   RegularInterpCoordinate
+```
+
+Attributes
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   RegularInterpCoordinate.tie_indices
+   RegularInterpCoordinate.tie_values
+   RegularInterpCoordinate.sampling_interval
+   RegularInterpCoordinate.tolerance
+```
+
+Methods
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   RegularInterpCoordinate.from_block
+   RegularInterpCoordinate.get_sampling_interval
+   RegularInterpCoordinate.get_split_indices
+   RegularInterpCoordinate.get_discontinuities
+   RegularInterpCoordinate.get_availabilities
+   RegularInterpCoordinate.simplify
 ```
 
 ## SampledCoordinate
