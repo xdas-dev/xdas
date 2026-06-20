@@ -168,14 +168,22 @@ class DenseCoordinate(AxisCoordinate, ctype="dense"):
             delta = delta / np.timedelta64(1, "s")
         return delta
 
-    def get_div_points(self, tolerance=None):
-        """Return sorted split-point indices where consecutive differences exceed *tolerance*."""
-        deltas = np.diff(self.data)
-        if tolerance is not None:
-            div_points = np.nonzero(np.abs(deltas) >= tolerance)[0] + 1
-        else:
-            raise NotImplementedError(
-                "get_div_points without tolerance is not implemented for DenseCoordinate"
-            )
-        div_points = np.concatenate(([0], div_points, [len(self)]))
-        return div_points
+    @override
+    def _split_candidates(self):
+        # A dense coordinate stores every sample, so every consecutive pair is a
+        # candidate boundary. The nominal spacing is estimated as the median of
+        # the consecutive differences (suboptimal but adequate for irregular
+        # axes); each delta is the excess of the actual step over that nominal.
+        diff = np.diff(self.data)
+        positions = np.arange(1, len(self))
+        if diff.size == 0:
+            return positions, diff
+        return positions, diff - np.median(diff)
+
+    @override
+    def simplify(self, tolerance=None):
+        # A dense coordinate stores every sample explicitly and cannot drop
+        # points while remaining dense, so simplification is a no-op. The
+        # `tolerance` argument is accepted for interface compatibility and
+        # ignored.
+        return self.copy()

@@ -4,16 +4,18 @@
 
 ### New Features
 - `InterpCoordinate` now optionally carries a nominal `sampling_interval` (and `tolerance`), making it *regular*. Build a regular coordinate from an irregular one via `coord.to_regular(sampling_interval=..., tolerance=...)`, or get one directly from `from_block`. Use `coord.isregular()` to test (@atrabattoni).
-- Added `Coordinate.ispiecewise()` and `Coordinate.isregular()` predicates to the base ABC, replacing `isinstance(coord, PiecewiseMixin)` / `isinstance(coord, RegularMixin)` type checks (@atrabattoni).
+- Added the `Coordinate.isregular()` predicate to the base ABC, replacing `isinstance(coord, RegularMixin)` type checks (@atrabattoni).
+- The piecewise gaps/overlaps API (`get_split_indices`, `get_discontinuities`, `get_availabilities`, `simplify`) is now available on every `AxisCoordinate`, including `DenseCoordinate` (@atrabattoni).
 
 ### Breaking Changes
 - Removed `DefaultCoordinate`, the `Coordinate.is*` predicate properties (`isdense`, `isdefault`, `isinterp`, `issampled`), and `to_dict`/`from_dict` from `DataArray` and coordinate types. These were internal APIs not intended for public use, so this should not affect user code (@atrabattoni).
 - Removed `Coordinate.isscalar()`; use `isinstance(coord, AxisCoordinate)` to test whether a coordinate labels an axis (or `not isinstance(coord, AxisCoordinate)` for scalar/non-axis coordinates) instead (@atrabattoni).
 - Removed `RegularMixin` from the public API; use `coord.isregular()` instead of `isinstance(coord, RegularMixin)` (@atrabattoni).
+- Removed `PiecewiseMixin` and `Coordinate.ispiecewise()`; the piecewise API now lives directly on `AxisCoordinate`, so use `isinstance(coord, AxisCoordinate)` instead. `DenseCoordinate.get_div_points` has been removed in favour of the unified `get_split_indices` (@atrabattoni).
 - A jittery `InterpCoordinate` that has no `sampling_interval` must be `.simplify(tolerance)`'d or explicitly `.to_regular(tolerance=...)`'d before its sampling rate can be queried. The module-level `xdas.get_sampling_interval(da, dim)` helper auto-converts uniform axes and raises on genuinely irregular ones (@atrabattoni).
 
 ### Refactoring
-- `Coordinate` is now a proper ABC with an explicit abstract interface; the shared ordered-coordinate logic lives in `PiecewiseMixin` (gaps/overlaps/simplify); `RegularMixin` has been removed in favour of the `isregular()` predicate; NumPy 2.0 `copy` keyword compliance (@atrabattoni).
+- `Coordinate` is now a proper ABC with an explicit abstract interface; the shared ordered-coordinate logic (gaps/overlaps/simplify) lives on `AxisCoordinate`; `RegularMixin` has been removed in favour of the `isregular()` predicate; NumPy 2.0 `copy` keyword compliance (@atrabattoni).
 - Introduced an intermediate `AxisCoordinate` ABC holding the full axis-mapping contract. `DenseCoordinate`, `InterpCoordinate`, and `SampledCoordinate` now subclass it, while `ScalarCoordinate` implements only the thin shared `Coordinate` interface (no more stub methods raising `TypeError`) (@atrabattoni).
 
 ## 0.2.7

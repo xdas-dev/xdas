@@ -671,6 +671,45 @@ class AxisCoordinate(Coordinate, ABC):
             defined sampling interval.
         """
 
+    @abstractmethod
+    def _split_candidates(self):
+        """
+        Return the candidate segment boundaries used by :meth:`get_split_indices`.
+
+        Returns
+        -------
+        positions : numpy.ndarray
+            Integer index of each candidate boundary. Each ``positions[k]``
+            marks the start of a new segment (the boundary lies between element
+            ``positions[k] - 1`` and ``positions[k]``).
+        deltas : numpy.ndarray
+            Signed jump at each candidate, i.e. the value step across the
+            boundary minus the nominal sampling interval. Positive values are
+            gaps, negative values are overlaps, zero means a clean continuation.
+        """
+
+    @abstractmethod
+    def simplify(self, tolerance=None):
+        """
+        Return a simplified copy of this coordinate with redundant points removed.
+
+        Points whose removal would shift any label by no more than *tolerance*
+        are dropped, reducing memory and I/O cost without meaningfully changing
+        the represented axis. As a side effect, small gaps or overlaps that fall
+        within *tolerance* may be absorbed, merging adjacent segments into one.
+
+        Parameters
+        ----------
+        tolerance : float, timedelta, None, or ``False``, optional
+            Maximum allowed deviation from the original values.  ``None`` uses
+            zero tolerance (lossless).  ``False`` returns an unchanged copy.
+
+        Returns
+        -------
+        Coordinate
+            A new coordinate of the same subclass.
+        """
+
     # --- properties ---
 
     @property
@@ -740,13 +779,178 @@ class AxisCoordinate(Coordinate, ABC):
 
     # --- queries ---
 
-    def ispiecewise(self):
-        """Return ``True`` if this coordinate is piecewise-continuous (has segments with gaps/overlaps)."""
-        return isinstance(self, PiecewiseMixin)
-
     def isregular(self):
         """Return ``True`` if this coordinate has a well-defined nominal sampling interval."""
         return self.get_sampling_interval() is not None
+
+    def get_split_indices(self, kind="discontinuities", tolerance=False):
+        """
+        Return integer indices where this coordinate should be split.
+
+        Each returned index ``i`` marks the start of a new segment: the
+        boundary lies between element ``i - 1`` and element ``i``. The first
+        segment always starts at index 0, so 0 is never included in the result.
+
+        Parameters
+        ----------
+        kind : {"discontinuities", "gaps", "overlaps"}, optional
+            Which boundary type to return. ``"gaps"`` returns only boundaries
+            where the axis jumps forward by more than one sampling interval;
+            ``"overlaps"`` returns only boundaries where the axis jumps
+            backward. ``"discontinuities"`` (default) returns both.
+        tolerance : float, timedelta, None, or ``False``, optional
+            Minimum absolute magnitude of the jump to report. Boundaries
+            smaller than *tolerance* are silently dropped. ``None`` removes
+            only zero-magnitude jumps (i.e. consecutive equal values).
+            ``False`` (default) disables magnitude filtering and returns all
+            boundaries of the requested kind.
+
+        Returns
+        -------
+        numpy.ndarray
+            Integer indices of the start of each new segment (excluding the first).
+        """
+        valid_kinds = {"discontinuities", "gaps", "overlaps"}
+        if kind not in valid_kinds:
+            raise ValueError(f"`kind` must be one of {valid_kinds}; got {kind!r}")
+
+        positions, deltas = self._split_candidates()
+
+        # Fast path: every candidate boundary is a discontinuity by construction
+        if kind == "discontinuities" and tolerance is False:
+            return positions
+
+        if tolerance is False:
+            zero = np.timedelta64(0) if np.issubdtype(self.dtype, np.datetime64) else 0
+            match kind:
+                case "gaps":
+                    mask = deltas >= zero
+                case "overlaps":  # pragma: no branch
+                    mask = deltas < zero
+        else:
+            tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
+            match kind:
+                case "discontinuities":
+                    mask = np.abs(deltas) > tolerance
+                case "gaps":
+                    mask = deltas > tolerance
+                case "overlaps":  # pragma: no branch
+                    mask = deltas < -tolerance
+
+        return positions[mask]
+
+    def get_discontinuities(self, tolerance=None):
+        """
+        Return a DataFrame containing information about the discontinuities.
+
+        Parameters
+        ----------
+        tolerance : float, timedelta, or None, optional
+            Minimum magnitude of a gap or overlap to include.  ``None``
+            (default) reports all discontinuities regardless of size.
+
+        Returns
+        -------
+        pandas.DataFrame
+            A DataFrame with the following columns:
+
+            - start_index : int
+                The index where the discontinuity starts.
+            - end_index : int
+                The index where the discontinuity ends.
+            - start_value : float
+                The value at the start of the discontinuity.
+            - end_value : float
+                The value at the end of the discontinuity.
+            - delta : float
+                The difference between the end_value and start_value.
+            - type : str
+                The type of the discontinuity, either "gap" or "overlap".
+
+        """
+        if self.empty:
+            return pd.DataFrame(
+                columns=[
+                    "start_index",
+                    "end_index",
+                    "start_value",
+                    "end_value",
+                    "delta",
+                    "type",
+                ]
+            )
+        indices = self.get_split_indices("discontinuities", tolerance)
+        records = []
+        for index in indices:
+            start_index = index
+            end_index = index + 1
+            start_value = self._get_value(index)
+            end_value = self._get_value(index + 1)
+            delta = end_value - start_value
+            if tolerance is not None and np.abs(delta) < tolerance:
+                continue
+            record = {
+                "start_index": start_index,
+                "end_index": end_index,
+                "start_value": start_value,
+                "end_value": end_value,
+                "delta": delta,
+                "type": ("gap" if end_value > start_value else "overlap"),
+            }
+            records.append(record)
+        return pd.DataFrame.from_records(records)
+
+    def get_availabilities(self):
+        """
+        Return a DataFrame containing information about the data availability.
+
+        Returns
+        -------
+        pandas.DataFrame
+            A DataFrame with the following columns:
+
+            - start_index : int
+                The index where the discontinuity starts.
+            - end_index : int
+                The index where the discontinuity ends.
+            - start_value : float
+                The value at the start of the discontinuity.
+            - end_value : float
+                The value at the end of the discontinuity.
+            - delta : float
+                The difference between the end_value and start_value.
+            - type : str
+                The type of the discontinuity, always "data".
+
+        """
+        if self.empty:
+            return pd.DataFrame(
+                columns=[
+                    "start_index",
+                    "end_index",
+                    "start_value",
+                    "end_value",
+                    "delta",
+                    "type",
+                ]
+            )
+        indices = np.concatenate([[0], self.get_split_indices(), [len(self)]])
+        records = []
+        for start_index, stop_index in pairwise(indices):
+            end_index = stop_index - 1
+            start_value = self._get_value(start_index)
+            end_value = self._get_value(end_index)
+            records.append(
+                {
+                    "start_index": start_index,
+                    "end_index": end_index,
+                    "start_value": start_value,
+                    "end_value": end_value,
+                    "delta": end_value - start_value,
+                    "type": "data",
+                }
+            )
+        return pd.DataFrame.from_records(records)
 
     # --- selection / indexing ---
 
@@ -895,183 +1099,6 @@ class AxisCoordinate(Coordinate, ABC):
                 dims=[self.dim],
                 name=self.name,
             )
-
-
-class PiecewiseMixin(ABC):
-    """
-    Shared behaviour for piecewise-continuous coordinates with gaps/overlaps.
-
-    Mixed into the tie-point coordinate types (:class:`SampledCoordinate` and
-    :class:`InterpCoordinate`). These types describe a piecewise-monotonic axis
-    composed of contiguous segments separated by *gaps* (the axis jumps forward
-    by more than one sampling interval) or *overlaps* (the axis jumps backward,
-    creating doubly-covered regions). This mixin provides the shared logic for
-    detecting, cataloguing, and querying those discontinuities.
-    """
-
-    @abstractmethod
-    def get_split_indices(self, kind="discontinuities", tolerance=False):
-        """
-        Return integer indices where this coordinate should be split.
-
-        Each returned index ``i`` marks the start of a new segment: the
-        boundary lies between element ``i - 1`` and element ``i``. The first
-        segment always starts at index 0, so 0 is never included in the result.
-
-        Parameters
-        ----------
-        kind : {"discontinuities", "gaps", "overlaps"}, optional
-            Which boundary type to return. ``"gaps"`` returns only boundaries
-            where the axis jumps forward by more than one sampling interval;
-            ``"overlaps"`` returns only boundaries where the axis jumps
-            backward. ``"discontinuities"`` (default) returns both.
-        tolerance : float, timedelta, None, or ``False``, optional
-            Minimum absolute magnitude of the jump to report. Boundaries
-            smaller than *tolerance* are silently dropped. ``None`` removes
-            only zero-magnitude jumps (i.e. consecutive equal values).
-            ``False`` (default) disables magnitude filtering and returns all
-            boundaries of the requested kind.
-
-        Returns
-        -------
-        numpy.ndarray
-            Integer indices of the start of each new segment (excluding the first).
-        """
-
-    @abstractmethod
-    def simplify(self, tolerance=None):
-        """
-        Return a simplified copy of this coordinate with redundant tie points removed.
-
-        Tie points whose removal would shift any label by no more than *tolerance*
-        are dropped, reducing memory and I/O cost without meaningfully changing
-        the represented axis. As a side effect, small gaps or overlaps that fall
-        within *tolerance* may be absorbed, merging adjacent segments into one.
-
-        Parameters
-        ----------
-        tolerance : float, timedelta, None, or ``False``, optional
-            Maximum allowed deviation from the original values.  ``None`` uses
-            zero tolerance (lossless).  ``False`` returns an unchanged copy.
-
-        Returns
-        -------
-        Coordinate
-            A new coordinate of the same subclass with fewer stored points.
-        """
-
-    def get_discontinuities(self, tolerance=None):
-        """
-        Return a DataFrame containing information about the discontinuities.
-
-        Parameters
-        ----------
-        tolerance : float, timedelta, or None, optional
-            Minimum magnitude of a gap or overlap to include.  ``None``
-            (default) reports all discontinuities regardless of size.
-
-        Returns
-        -------
-        pandas.DataFrame
-            A DataFrame with the following columns:
-
-            - start_index : int
-                The index where the discontinuity starts.
-            - end_index : int
-                The index where the discontinuity ends.
-            - start_value : float
-                The value at the start of the discontinuity.
-            - end_value : float
-                The value at the end of the discontinuity.
-            - delta : float
-                The difference between the end_value and start_value.
-            - type : str
-                The type of the discontinuity, either "gap" or "overlap".
-
-        """
-        if self.empty:
-            return pd.DataFrame(
-                columns=[
-                    "start_index",
-                    "end_index",
-                    "start_value",
-                    "end_value",
-                    "delta",
-                    "type",
-                ]
-            )
-        indices = self.get_split_indices("discontinuities", tolerance)
-        records = []
-        for index in indices:
-            start_index = index
-            end_index = index + 1
-            start_value = self._get_value(index)
-            end_value = self._get_value(index + 1)
-            delta = end_value - start_value
-            if tolerance is not None and np.abs(delta) < tolerance:
-                continue
-            record = {
-                "start_index": start_index,
-                "end_index": end_index,
-                "start_value": start_value,
-                "end_value": end_value,
-                "delta": delta,
-                "type": ("gap" if end_value > start_value else "overlap"),
-            }
-            records.append(record)
-        return pd.DataFrame.from_records(records)
-
-    def get_availabilities(self):
-        """
-        Return a DataFrame containing information about the data availability.
-
-        Returns
-        -------
-        pandas.DataFrame
-            A DataFrame with the following columns:
-
-            - start_index : int
-                The index where the discontinuity starts.
-            - end_index : int
-                The index where the discontinuity ends.
-            - start_value : float
-                The value at the start of the discontinuity.
-            - end_value : float
-                The value at the end of the discontinuity.
-            - delta : float
-                The difference between the end_value and start_value.
-            - type : str
-                The type of the discontinuity, always "data".
-
-        """
-        if self.empty:
-            return pd.DataFrame(
-                columns=[
-                    "start_index",
-                    "end_index",
-                    "start_value",
-                    "end_value",
-                    "delta",
-                    "type",
-                ]
-            )
-        indices = np.concatenate([[0], self.get_split_indices(), [len(self)]])
-        records = []
-        for start_index, stop_index in pairwise(indices):
-            end_index = stop_index - 1
-            start_value = self._get_value(start_index)
-            end_value = self._get_value(end_index)
-            records.append(
-                {
-                    "start_index": start_index,
-                    "end_index": end_index,
-                    "start_value": start_value,
-                    "end_value": end_value,
-                    "delta": end_value - start_value,
-                    "type": "data",
-                }
-            )
-        return pd.DataFrame.from_records(records)
 
 
 def parse_data_dim(data, dim=None):

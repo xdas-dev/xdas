@@ -12,7 +12,6 @@ __all__ = [
     "Coordinates",
     "DenseCoordinate",
     "InterpCoordinate",
-    "PiecewiseMixin",
     "SampledCoordinate",
     "ScalarCoordinate",
     "get_sampling_interval",
@@ -22,7 +21,6 @@ from .core import (
     AxisCoordinate,
     Coordinate,
     Coordinates,
-    PiecewiseMixin,
     get_sampling_interval,
 )
 from .dense import DenseCoordinate

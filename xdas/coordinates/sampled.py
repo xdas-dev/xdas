@@ -14,14 +14,13 @@ from .core import (
     UNITS_TO_CODE,
     AxisCoordinate,
     Coordinate,
-    PiecewiseMixin,
     is_monotonic_increasing,
     parse_data_dim,
     parse_scalar_delta,
 )
 
 
-class SampledCoordinate(PiecewiseMixin, AxisCoordinate, ctype="sampled"):
+class SampledCoordinate(AxisCoordinate, ctype="sampled"):
     """
     Coordinate sampled at a fixed interval, with optional gaps between segments.
 
@@ -441,39 +440,8 @@ class SampledCoordinate(PiecewiseMixin, AxisCoordinate, ctype="sampled"):
         )
 
     @override
-    def get_split_indices(self, kind="discontinuities", tolerance=False):
-        valid_kinds = {"discontinuities", "gaps", "overlaps"}
-        if kind not in valid_kinds:
-            raise ValueError(f"`kind` must be one of {valid_kinds}; got {kind!r}")
-
-        indices = self.tie_indices[1:]
-
-        # Fast path: no filtering requested
-        if kind == "discontinuities" and tolerance is False:
-            return indices
-
+    def _split_candidates(self):
         deltas = self.tie_values[1:] - (
             self.tie_values[:-1] + self.sampling_interval * self.tie_lengths[:-1]
         )
-
-        if tolerance is False:
-            zero = np.timedelta64(0) if np.issubdtype(self.dtype, np.datetime64) else 0
-
-            match kind:  # pragma: no branch
-                case "gaps":
-                    mask = deltas >= zero
-                case "overlaps":  # pragma: no branch
-                    mask = deltas < zero
-
-        else:
-            tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
-
-            match kind:  # pragma: no branch
-                case "discontinuities":
-                    mask = np.abs(deltas) > tolerance
-                case "gaps":
-                    mask = deltas > tolerance
-                case "overlaps":  # pragma: no branch
-                    mask = deltas < -tolerance
-
-        return indices[mask]
+        return self.tie_indices[1:], deltas

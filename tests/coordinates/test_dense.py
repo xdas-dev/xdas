@@ -131,12 +131,33 @@ class TestDenseCoordinate:
                 DenseCoordinate(np.array([4.0, 5.0, 6.0], dtype=np.float64))
             )
 
-    def test_get_div_points(self):
+    def test_get_split_indices(self):
         coord = DenseCoordinate([1, 2, 3, 10, 11, 12])
-        div_points = coord.get_div_points(tolerance=3.0)
-        assert np.array_equal(div_points, [0, 3, 6])
-        with pytest.raises(NotImplementedError):
-            coord.get_div_points()
+        # nominal spacing is the median diff (1); the jump 3->10 is the only gap
+        np.testing.assert_array_equal(
+            coord.get_split_indices("discontinuities", tolerance=3.0), [3]
+        )
+        np.testing.assert_array_equal(
+            coord.get_split_indices("gaps", tolerance=None), [3]
+        )
+        np.testing.assert_array_equal(
+            coord.get_split_indices("overlaps", tolerance=None), []
+        )
+        # with no tolerance filtering every consecutive pair is a candidate boundary
+        np.testing.assert_array_equal(coord.get_split_indices(), [1, 2, 3, 4, 5])
+
+    def test_get_split_indices_empty(self):
+        coord = DenseCoordinate([])
+        np.testing.assert_array_equal(coord.get_split_indices(), [])
+        np.testing.assert_array_equal(
+            coord.get_split_indices("gaps", tolerance=None), []
+        )
+
+    def test_simplify_is_noop(self):
+        coord = DenseCoordinate([1, 2, 3, 10, 11, 12], "x")
+        result = coord.simplify(tolerance=5.0)
+        assert result.equals(coord)
+        assert result is not coord
 
     def test_from_block(self):
         coord = DenseCoordinate.from_block(0, 5, 1, dim="x")

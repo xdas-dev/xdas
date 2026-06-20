@@ -15,7 +15,6 @@ from xinterp import forward, inverse
 from .core import (
     AxisCoordinate,
     Coordinate,
-    PiecewiseMixin,
     decode_delta,
     encode_delta,
     is_monotonic_increasing,
@@ -24,7 +23,7 @@ from .core import (
 )
 
 
-class InterpCoordinate(PiecewiseMixin, AxisCoordinate, ctype="interpolated"):
+class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
     """
     Piecewise-linear coordinate described by tie points (CF convention).
 
@@ -473,44 +472,14 @@ class InterpCoordinate(PiecewiseMixin, AxisCoordinate, ctype="interpolated"):
         return self.__class__(data, self.dim)
 
     @override
-    def get_split_indices(self, kind="discontinuities", tolerance=False):
-        valid_kinds = {"discontinuities", "gaps", "overlaps"}
-        if kind not in valid_kinds:
-            raise ValueError(f"`kind` must be one of {valid_kinds}; got {kind!r}")
-
+    def _split_candidates(self):
         (indices,) = np.nonzero(np.diff(self.tie_indices) == 1)
         indices += 1
-
-        # Fast path: no filtering requested
-        if kind == "discontinuities" and tolerance is False:
-            return self.tie_indices[indices]
-
         sampling_interval = self._nominal_sampling_interval(cast=False)
         deltas = (
             self.tie_values[indices] - self.tie_values[indices - 1] - sampling_interval
         )
-
-        if tolerance is False:
-            zero = np.timedelta64(0) if np.issubdtype(self.dtype, np.datetime64) else 0
-
-            match kind:
-                case "gaps":
-                    mask = deltas >= zero
-                case "overlaps":  # pragma: no branch
-                    mask = deltas < zero
-
-        else:
-            tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
-
-            match kind:
-                case "discontinuities":
-                    mask = np.abs(deltas) > tolerance
-                case "gaps":
-                    mask = deltas > tolerance
-                case "overlaps":  # pragma: no branch
-                    mask = deltas < -tolerance
-
-        return self.tie_indices[indices[mask]]
+        return self.tie_indices[indices], deltas
 
 
 def _douglas_peucker(x, y, epsilon):

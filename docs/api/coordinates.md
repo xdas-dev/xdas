@@ -89,9 +89,12 @@ Methods
 .. autosummary::
    :toctree: ../_autosummary
 
-   AxisCoordinate.ispiecewise
    AxisCoordinate.isregular
    AxisCoordinate.get_sampling_interval
+   AxisCoordinate.get_split_indices
+   AxisCoordinate.get_discontinuities
+   AxisCoordinate.get_availabilities
+   AxisCoordinate.simplify
    AxisCoordinate.to_index
    AxisCoordinate.to_dataarray
 ```
@@ -131,7 +134,7 @@ Methods
 
    DenseCoordinate.from_block
    DenseCoordinate.get_sampling_interval
-   DenseCoordinate.get_div_points
+   DenseCoordinate.simplify
 ```
 
 ## InterpCoordinate
@@ -164,9 +167,6 @@ Methods
    InterpCoordinate.from_block
    InterpCoordinate.to_regular
    InterpCoordinate.get_sampling_interval
-   InterpCoordinate.get_split_indices
-   InterpCoordinate.get_discontinuities
-   InterpCoordinate.get_availabilities
    InterpCoordinate.simplify
 ```
 
@@ -199,8 +199,5 @@ Methods
 
    SampledCoordinate.from_block
    SampledCoordinate.get_sampling_interval
-   SampledCoordinate.get_split_indices
-   SampledCoordinate.get_discontinuities
-   SampledCoordinate.get_availabilities
    SampledCoordinate.simplify
 ```

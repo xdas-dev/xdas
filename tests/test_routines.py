@@ -696,7 +696,9 @@ class TestConcatEdgeCases:
 
 
 class TestConcatCoordsEdgeCases:
-    def test_tolerance_with_dense_coord_raises(self):
+    def test_tolerance_with_dense_coord_is_noop(self):
+        # Dense coordinates now implement a (degenerate) `simplify`, so passing a
+        # tolerance no longer raises; it simply has no effect.
         da1 = xd.DataArray(
             np.random.rand(5), {"x": np.array([0.0, 1.0, 2.0, 3.0, 4.0])}
         )
@@ -705,8 +707,16 @@ class TestConcatCoordsEdgeCases:
         )
         from xdas.core.routines import concat_coords
 
+        result = concat_coords([da1["x"], da2["x"]], tolerance=1.0)
+        expected = concat_coords([da1["x"], da2["x"]])
+        assert result.equals(expected)
+
+    def test_tolerance_with_scalar_coord_raises(self):
+        from xdas.core.routines import concat_coords
+
+        scalar = xd.Coordinate("SRN")
         with pytest.raises(TypeError, match="tolerance"):
-            concat_coords([da1["x"], da2["x"]], tolerance=1.0)
+            concat_coords([scalar], tolerance=1.0)
 
 
 class TestSplitEdgeCases:

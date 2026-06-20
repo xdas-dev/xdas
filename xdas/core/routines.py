@@ -1045,7 +1045,7 @@ def concat_coords(objs, *, sort=False, return_order=False, tolerance=False):
 
     # simplify
     if tolerance is not False:
-        if out.ispiecewise():
+        if isinstance(out, AxisCoordinate):
             out = out.simplify(tolerance)
         elif (
             tolerance is not None
