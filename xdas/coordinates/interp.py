@@ -473,13 +473,26 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
     @override
     def _split_candidates(self):
-        (indices,) = np.nonzero(np.diff(self.tie_indices) == 1)
-        indices += 1
-        sampling_interval = self._nominal_sampling_interval(cast=False)
-        deltas = (
-            self.tie_values[indices] - self.tie_values[indices - 1] - sampling_interval
+        # Candidate boundaries are the unit-spaced tie gaps: two consecutive tie
+        # points one index apart, each encoding a single-sample discontinuity.
+        (gaps,) = np.nonzero(np.diff(self.tie_indices) == 1)
+        n_segments = len(self.tie_indices) - 1
+        # Compare each jump against the sampling interval of the segment on its
+        # left rather than a global nominal one, so a continuous coordinate that
+        # merely changes its sampling rate across the boundary is not reported as
+        # a discontinuity. The first segment has no left neighbour: fall back to
+        # the segment on its right, or to the gap itself (leaving its delta at
+        # zero) when it is the only segment.
+        reference = np.where(
+            gaps > 0,
+            gaps - 1,
+            np.where(gaps < n_segments - 1, gaps + 1, gaps),
         )
-        return self.tie_indices[indices], deltas
+        sampling_interval = (
+            self.tie_values[reference + 1] - self.tie_values[reference]
+        ) / (self.tie_indices[reference + 1] - self.tie_indices[reference])
+        deltas = self.tie_values[gaps + 1] - self.tie_values[gaps] - sampling_interval
+        return self.tie_indices[gaps + 1], deltas
 
 
 def _douglas_peucker(x, y, epsilon):
