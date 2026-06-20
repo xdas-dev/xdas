@@ -10,25 +10,18 @@ import numpy as np
 from typing_extensions import override
 
 from .core import (
+    CODE_TO_UNITS,
+    UNITS_TO_CODE,
     Coordinate,
-    SampledMixin,
+    PiecewiseMixin,
+    RegularMixin,
     is_monotonic_increasing,
     parse_data_dim,
     parse_scalar_delta,
 )
 
-CODE_TO_UNITS = {
-    "h": "hours",
-    "m": "minutes",
-    "s": "seconds",
-    "ms": "milliseconds",
-    "us": "microseconds",
-    "ns": "nanoseconds",
-}
-UNITS_TO_CODE = {v: k for k, v in CODE_TO_UNITS.items()}
 
-
-class SampledCoordinate(SampledMixin, Coordinate, ctype="sampled"):
+class SampledCoordinate(RegularMixin, PiecewiseMixin, Coordinate, ctype="sampled"):
     """
     Coordinate sampled at a fixed interval, with optional gaps between segments.
 

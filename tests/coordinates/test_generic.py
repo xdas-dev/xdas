@@ -17,6 +17,8 @@ class TestFromBlock:
         assert isinstance(coord, xd.Coordinate[ctype])
         assert coord[0].values == start
         assert len(coord) == size
+        if type(coord) is xd.Coordinate["interpolated"]:
+            coord = coord.to_regular()
         assert coord.get_sampling_interval(cast=False) == step
 
 

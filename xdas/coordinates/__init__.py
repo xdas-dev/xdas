@@ -10,15 +10,23 @@ __all__ = [
     "Coordinate",
     "Coordinates",
     "DenseCoordinate",
-    "FixedInterpCoordinate",
     "InterpCoordinate",
+    "PiecewiseMixin",
+    "RegularInterpCoordinate",
+    "RegularMixin",
     "SampledCoordinate",
     "ScalarCoordinate",
     "get_sampling_interval",
 ]
 
-from .core import Coordinate, Coordinates, get_sampling_interval
+from .core import (
+    Coordinate,
+    Coordinates,
+    PiecewiseMixin,
+    RegularMixin,
+    get_sampling_interval,
+)
 from .dense import DenseCoordinate
-from .interp import FixedInterpCoordinate, InterpCoordinate
+from .interp import InterpCoordinate, RegularInterpCoordinate
 from .sampled import SampledCoordinate
 from .scalar import ScalarCoordinate

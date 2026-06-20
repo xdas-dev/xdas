@@ -15,6 +15,18 @@ from itertools import pairwise
 import numpy as np
 import pandas as pd
 
+#: Mapping from numpy datetime64/timedelta64 unit codes to CF-style unit names,
+#: used to serialise timedelta scalars into dataset attributes.
+CODE_TO_UNITS = {
+    "h": "hours",
+    "m": "minutes",
+    "s": "seconds",
+    "ms": "milliseconds",
+    "us": "microseconds",
+    "ns": "nanoseconds",
+}
+UNITS_TO_CODE = {v: k for k, v in CODE_TO_UNITS.items()}
+
 
 def wraps_first_last(func):
     """Resolve ``"first"`` and ``"last"`` dim aliases before calling *func*."""
@@ -825,33 +837,18 @@ class Coordinate(ABC):
         self._parent = weakref.ref(parent)
 
 
-class SampledMixin(ABC):
+class PiecewiseMixin(ABC):
     """
-    Shared behaviour for coordinates that carry sampled values along an axis.
+    Shared behaviour for piecewise-continuous coordinates with gaps/overlaps.
 
     Mixed into the tie-point coordinate types (:class:`SampledCoordinate`,
-    :class:`InterpCoordinate`). Both types describe a piecewise-monotonic axis
-    composed of contiguous segments separated by *gaps* (the axis jumps forward
-    by more than one sampling interval) or *overlaps* (the axis jumps backward,
-    creating doubly-covered regions). This mixin provides the shared logic for
-    detecting, cataloguing, and querying those discontinuities.
+    :class:`InterpCoordinate`, :class:`RegularInterpCoordinate`). These types
+    describe a piecewise-monotonic axis composed of contiguous segments
+    separated by *gaps* (the axis jumps forward by more than one sampling
+    interval) or *overlaps* (the axis jumps backward, creating doubly-covered
+    regions). This mixin provides the shared logic for detecting, cataloguing,
+    and querying those discontinuities.
     """
-
-    @abstractmethod
-    def get_sampling_interval(self, cast=True):
-        """
-        Return the nominal sample spacing for this coordinate.
-
-        Parameters
-        ----------
-        cast : bool, optional
-            If ``True`` (default), cast timedelta64 results to seconds (float).
-
-        Returns
-        -------
-        float or None
-            ``None`` if the coordinate has fewer than two elements.
-        """
 
     @abstractmethod
     def get_split_indices(self, kind="discontinuities", tolerance=False):
@@ -1017,55 +1014,31 @@ class SampledMixin(ABC):
             )
         return pd.DataFrame.from_records(records)
 
-    def to_dataarray(self):
-        from ..core.dataarray import DataArray  # TODO: avoid defered import?
 
-        if self.name is None:
-            raise ValueError("cannot convert unnamed coordinate to DataArray")
+class RegularMixin(ABC):
+    """
+    Marker for coordinates that have a single consistent nominal sampling interval.
 
-        if self.parent is None:
-            return DataArray(
-                self.values,
-                {self.dim: self},
-                dims=[self.dim],
-                name=self.name,
-            )
-        else:
-            return DataArray(
-                self.values,
-                {
-                    name: coord
-                    for name, coord in self.parent.items()
-                    if coord.dim == self.dim
-                },
-                dims=[self.dim],
-                name=self.name,
-            )
+    Mixed into the coordinate types whose sample spacing is well defined and safe
+    to feed to signal-processing routines and rate comparisons
+    (:class:`SampledCoordinate`, :class:`RegularInterpCoordinate`).
+    """
 
-    def to_dict(self):
-        raise NotImplementedError
+    @abstractmethod
+    def get_sampling_interval(self, cast=True):
+        """
+        Return the nominal sample spacing for this coordinate.
 
-    @classmethod
-    def from_dict(cls, dct):
-        return cls(**dct)
+        Parameters
+        ----------
+        cast : bool, optional
+            If ``True`` (default), cast timedelta64 results to seconds (float).
 
-    def to_dataset(self, dataset, attrs):
-        dataset = dataset.assign_coords(
-            {self.name: (self.dim, self.values) if self.dim else self.values}
-        )
-        return dataset, attrs
-
-    @classmethod
-    def from_dataset(cls, dataset, name):
-        coords = {}
-        for subcls in cls.__subclasses__():
-            if hasattr(subcls, "from_dataset"):
-                coords |= subcls.from_dataset(dataset, name)
-        return coords
-
-    @classmethod
-    def from_block(cls, start, size, step, dim=None, dtype=None):
-        raise NotImplementedError
+        Returns
+        -------
+        float or None
+            ``None`` if the coordinate has fewer than two elements.
+        """
 
 
 def parse_data_dim(data, dim=None):
@@ -1182,7 +1155,41 @@ def get_sampling_interval(da, dim, cast=True):
         The sample spacing.
 
     """
-    return da[dim].get_sampling_interval(cast=cast)
+    coord = da[dim]
+    if isinstance(coord, RegularMixin):
+        return coord.get_sampling_interval(cast=cast)
+    if hasattr(coord, "to_regular"):
+        return coord.to_regular().get_sampling_interval(cast=cast)
+    return coord.get_sampling_interval(cast=cast)
+
+
+def encode_delta(key, value):
+    """Serialise a scalar (possibly timedelta64) into a dict of dataset attributes."""
+    if value is None:
+        return {}
+    if np.issubdtype(np.asarray(value).dtype, np.timedelta64):
+        code, count = np.datetime_data(value.dtype)
+        if code == "generic":  # e.g. timedelta64(0); promote to nanoseconds
+            value = value.astype("timedelta64[ns]")
+            code, count = np.datetime_data(value.dtype)
+        return {
+            key: int(count * value.astype(int)),
+            f"{key}_dtype": "timedelta64[ns]",
+            f"{key}_units": CODE_TO_UNITS[code],
+        }
+    return {key: value}
+
+
+def decode_delta(key, attrs):
+    """Inverse of :func:`encode_delta`: read a scalar back from dataset attributes."""
+    if key not in attrs:
+        return None
+    value = attrs[key]
+    if f"{key}_units" in attrs:
+        value = np.timedelta64(value, UNITS_TO_CODE[attrs[f"{key}_units"]]).astype(
+            attrs[f"{key}_dtype"]
+        )
+    return value
 
 
 def isscalar(data):

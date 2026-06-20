@@ -378,6 +378,15 @@ class TestCoordinateBase:
         da = xd.DataArray([1, 2, 3], {"x": [10.0, 20.0, 30.0]})
         assert get_sampling_interval(da, "x") == 10.0
 
+    def test_get_sampling_interval_helper_regular(self):
+        from xdas.coordinates import SampledCoordinate, get_sampling_interval
+
+        coord = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 5.0}
+        )
+        da = xd.DataArray([1, 2, 3], {"x": coord})
+        assert get_sampling_interval(da, "x") == 5.0
+
     def test_isscalar(self):
         assert isscalar(1)
         assert isscalar(1.0)

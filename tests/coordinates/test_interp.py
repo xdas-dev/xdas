@@ -3,7 +3,12 @@ import pytest
 import xarray as xr
 
 import xdas as xd
-from xdas.coordinates import FixedInterpCoordinate, InterpCoordinate, ScalarCoordinate
+from xdas.coordinates import (
+    InterpCoordinate,
+    RegularInterpCoordinate,
+    ScalarCoordinate,
+)
+from xdas.coordinates.core import Coordinate
 
 
 class TestInterpCoordinate:
@@ -320,26 +325,18 @@ class TestInterpCoordinate:
         assert coord1._concat(coord0).equals(coord1)
 
 
-class TestFixedInterpCoordinate:
-    valid = [
-        {
-            "tie_indices": [0, 5, 9, 10, 19],
-            "tie_values": [0.0, 0.5, 0.9, 2.0, 2.9],
-            "sampling_interval": 0.1,
-        }
-    ]
+class TestInterpCoordinateExtra:
+    def test_init_extra_keys(self):
+        with pytest.raises(TypeError, match="exactly"):
+            InterpCoordinate(
+                {"tie_indices": [0, 8], "tie_values": [100.0, 900.0], "extra": 1}
+            )
 
-    def test_isvalid(self):
-        for data in self.valid:
-            assert FixedInterpCoordinate._isvalid(data)
-
-    def test_init(self):
-        for data in self.valid:
-            coord = FixedInterpCoordinate(data, "dim")
-            assert coord.sampling_interval == data["sampling_interval"]
-
+    def test_concat_errors(self):
         with pytest.raises(TypeError):
-            coord._concat(ScalarCoordinate(1))
+            InterpCoordinate({"tie_indices": [0, 2], "tie_values": [0, 20]})._concat(
+                ScalarCoordinate(1)
+            )
         with pytest.raises(ValueError, match="different dimension"):
             InterpCoordinate(
                 {"tie_indices": [0, 2], "tie_values": [0, 20]}, "x"
@@ -353,12 +350,6 @@ class TestFixedInterpCoordinate:
                 InterpCoordinate(
                     {"tie_indices": [0, 2], "tie_values": np.array([30.0, 50.0])}
                 )
-            )
-
-    def test_init_extra_keys(self):
-        with pytest.raises(ValueError, match="both"):
-            InterpCoordinate(
-                {"tie_indices": [0, 8], "tie_values": [100.0, 900.0], "extra": 1}
             )
 
     def test_init_non_monotonic(self):
@@ -380,9 +371,9 @@ class TestFixedInterpCoordinate:
         result = coord.__array__(dtype=np.float32)
         assert result.dtype == np.float32
 
-    def test_get_sampling_interval_empty(self):
+    def test_nominal_sampling_interval_empty(self):
         coord = InterpCoordinate()
-        assert coord.get_sampling_interval() is None
+        assert coord._nominal_sampling_interval() is None
 
     def test_get_indexer_overlaps(self):
         coord = InterpCoordinate(
@@ -477,19 +468,53 @@ class TestFixedInterpCoordinate:
             for i in range(len(result.tie_indices) - 1)
         )
 
-    def test_get_sampling_interval_datetime_cast(self):
+    def test_to_regular_explicit_args(self):
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 10, 20], "tie_values": [0.0, 1.0, 2.05]}
+        )
+        # strict default tolerance rejects the jitter
+        with pytest.raises(ValueError, match="not consistent"):
+            coord.to_regular()
+        # an explicit tolerance accepts it
+        reg = coord.to_regular(sampling_interval=0.1, tolerance=0.1)
+        assert isinstance(reg, RegularInterpCoordinate)
+        assert reg.sampling_interval == 0.1
+
+    def test_module_helper_autoconvert(self):
+        da = xd.DataArray(
+            np.zeros(9),
+            {"x": {"tie_indices": [0, 8], "tie_values": [0.0, 8.0]}},
+        )
+        assert xd.get_sampling_interval(da, "x") == 1.0
+
+    def test_module_helper_irregular_raises(self):
+        da = xd.DataArray(
+            np.zeros(21),
+            {"x": {"tie_indices": [0, 10, 20], "tie_values": [0.0, 1.0, 2.05]}},
+        )
+        with pytest.raises(ValueError, match="not consistent"):
+            xd.get_sampling_interval(da, "x")
+
+    def test_to_regular_datetime_cast(self):
         t0 = np.datetime64("2000-01-01T00:00:00")
         t1 = np.datetime64("2000-01-01T00:00:08")
         coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [t0, t1]})
-        result = coord.get_sampling_interval()  # cast=True by default
+        result = coord.to_regular().get_sampling_interval()  # cast=True by default
         assert result == 1.0
 
-    def test_get_sampling_interval_unit_spaced(self):
+    def test_nominal_sampling_interval_datetime_cast(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        t1 = np.datetime64("2000-01-01T00:00:08")
+        coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [t0, t1]})
+        assert coord._nominal_sampling_interval(cast=True) == 1.0
+        assert coord._nominal_sampling_interval(cast=False) == np.timedelta64(1, "s")
+
+    def test_nominal_sampling_interval_unit_spaced(self):
         # all tie-index gaps == 1 → mask is all False → returns None
         coord = InterpCoordinate(
             {"tie_indices": [0, 1, 2], "tie_values": [0.0, 1.0, 2.0]}
         )
-        assert coord.get_sampling_interval() is None
+        assert coord._nominal_sampling_interval() is None
 
     def test_add_sub(self):
         coord = InterpCoordinate({"tie_indices": [0, 4], "tie_values": [10.0, 50.0]})
@@ -548,3 +573,234 @@ class TestFixedInterpCoordinate:
         dataset, attrs = coord._to_dataset(dataset, attrs)
         assert "time_indices" in dataset
         assert dataset["time_values"].dtype == np.dtype("datetime64[ns]")
+
+
+class TestRegularInterpCoordinate:
+    valid = [
+        {
+            "tie_indices": [0, 5, 9, 10, 19],
+            "tie_values": [0.0, 0.5, 0.9, 2.0, 2.9],
+            "sampling_interval": 0.1,
+        }
+    ]
+
+    def make(self):
+        return RegularInterpCoordinate(self.valid[0], "dim")
+
+    def test_isvalid(self):
+        for data in self.valid:
+            assert RegularInterpCoordinate._isvalid(data)
+        # missing sampling_interval is not valid Regular data
+        assert not RegularInterpCoordinate._isvalid(
+            {"tie_indices": [0, 8], "tie_values": [0.0, 8.0]}
+        )
+        # an unexpected extra key is rejected
+        assert not RegularInterpCoordinate._isvalid(
+            {
+                "tie_indices": [0, 8],
+                "tie_values": [0.0, 8.0],
+                "sampling_interval": 1.0,
+                "extra": 1,
+            }
+        )
+
+    def test_init(self):
+        coord = self.make()
+        assert coord.sampling_interval == 0.1
+        assert coord.tolerance is not None
+        assert coord.dim == "dim"
+
+    def test_factory_dispatch(self):
+        coord = Coordinate(self.valid[0])
+        assert isinstance(coord, RegularInterpCoordinate)
+        # plain tie-point data must still route to InterpCoordinate
+        plain = Coordinate({"tie_indices": [0, 8], "tie_values": [0.0, 8.0]})
+        assert type(plain) is InterpCoordinate
+
+    def test_init_inconsistent(self):
+        with pytest.raises(ValueError, match="not consistent"):
+            RegularInterpCoordinate(
+                {
+                    "tie_indices": [0, 10],
+                    "tie_values": [0.0, 10.0],
+                    "sampling_interval": 0.5,
+                }
+            )
+
+    def test_init_tolerance_allows_jitter(self):
+        coord = RegularInterpCoordinate(
+            {
+                "tie_indices": [0, 10, 20],
+                "tie_values": [0.0, 1.0, 2.05],
+                "sampling_interval": 0.1,
+                "tolerance": 0.1,
+            }
+        )
+        assert coord.sampling_interval == 0.1
+
+    def test_empty(self):
+        coord = RegularInterpCoordinate()
+        assert coord.empty
+        assert coord.sampling_interval is None
+        assert coord.tolerance is None
+        assert coord.get_sampling_interval() is None
+        assert coord._nominal_sampling_interval(cast=True) is None
+
+    def test_empty_slice_keeps_none(self):
+        # slicing an empty regular coord must not divide a None sampling_interval
+        coord = RegularInterpCoordinate()
+        sliced = coord[0:0]
+        assert isinstance(sliced, RegularInterpCoordinate)
+        assert sliced.sampling_interval is None
+
+    def test_from_block(self):
+        coord = RegularInterpCoordinate.from_block(0.0, 10, 0.5, "dim")
+        assert coord.sampling_interval == 0.5
+        assert len(coord) == 10
+
+    def test_slice(self):
+        coord = self.make()
+        sliced = coord[2:12]
+        assert isinstance(sliced, RegularInterpCoordinate)
+        assert sliced.sampling_interval == 0.1
+        stepped = coord[::2]
+        assert stepped.sampling_interval == 0.2
+
+    def test_slice_empty(self):
+        coord = self.make()
+        empty = coord[5:5]
+        assert isinstance(empty, RegularInterpCoordinate)
+        assert empty.empty
+
+    def test_concat(self):
+        a = RegularInterpCoordinate(
+            {"tie_indices": [0, 9], "tie_values": [0.0, 0.9], "sampling_interval": 0.1}
+        )
+        b = RegularInterpCoordinate(
+            {"tie_indices": [0, 9], "tie_values": [1.0, 1.9], "sampling_interval": 0.1}
+        )
+        result = a._concat(b)
+        assert isinstance(result, RegularInterpCoordinate)
+        assert result.sampling_interval == 0.1
+        assert len(result) == 20
+
+    def test_concat_different_sampling_interval(self):
+        a = RegularInterpCoordinate(
+            {"tie_indices": [0, 9], "tie_values": [0.0, 0.9], "sampling_interval": 0.1}
+        )
+        b = RegularInterpCoordinate(
+            {"tie_indices": [0, 9], "tie_values": [1.0, 2.8], "sampling_interval": 0.2}
+        )
+        with pytest.raises(ValueError, match="different sampling interval"):
+            a._concat(b)
+
+    def test_add_sub(self):
+        coord = self.make()
+        shifted = coord + 1.0
+        assert isinstance(shifted, RegularInterpCoordinate)
+        assert shifted.sampling_interval == 0.1
+        assert shifted.start == coord.start + 1.0
+        back = shifted - 1.0
+        assert np.allclose(back.tie_values, coord.tie_values)
+
+    def test_simplify(self):
+        coord = RegularInterpCoordinate(
+            {
+                "tie_indices": [0, 5, 10],
+                "tie_values": [0.0, 0.5, 1.0],
+                "sampling_interval": 0.1,
+            }
+        )
+        simplified = coord.simplify()
+        assert isinstance(simplified, RegularInterpCoordinate)
+        assert simplified.sampling_interval == 0.1
+
+    def test_get_sampling_interval_datetime(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        coord = RegularInterpCoordinate(
+            {
+                "tie_indices": [0, 8],
+                "tie_values": [t0, t0 + np.timedelta64(8, "s")],
+                "sampling_interval": np.timedelta64(1, "s"),
+            }
+        )
+        assert coord.get_sampling_interval() == 1.0
+        assert coord.get_sampling_interval(cast=False) == np.timedelta64(1, "s")
+        assert coord._nominal_sampling_interval(cast=True) == 1.0
+
+    def test_dataset_roundtrip_numeric(self):
+        coord = self.make()
+        da = xd.DataArray(np.zeros(len(coord)), {"dim": coord})
+        dataset = xr.Dataset()
+        dataset, attrs = da.coords["dim"]._to_dataset(dataset, {})
+        dataset["__v__"] = xr.DataArray(np.zeros(len(coord)), dims=["dim"])
+        dataset["__v__"].attrs.update(attrs)
+        recovered = Coordinate._from_dataset(dataset, "__v__")
+        assert isinstance(recovered["dim"], RegularInterpCoordinate)
+        assert recovered["dim"].sampling_interval == 0.1
+
+    def test_dataset_roundtrip_datetime(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        coord = RegularInterpCoordinate(
+            {
+                "tie_indices": [0, 8],
+                "tie_values": [t0, t0 + np.timedelta64(8, "s")],
+                "sampling_interval": np.timedelta64(1, "s"),
+            }
+        )
+        da = xd.DataArray(np.zeros(9), {"time": coord})
+        dataset = xr.Dataset()
+        dataset, attrs = da.coords["time"]._to_dataset(dataset, {})
+        dataset["__v__"] = xr.DataArray(np.zeros(9), dims=["time"])
+        dataset["__v__"].attrs.update(attrs)
+        recovered = Coordinate._from_dataset(dataset, "__v__")
+        assert isinstance(recovered["time"], RegularInterpCoordinate)
+        assert recovered["time"].sampling_interval == np.timedelta64(1, "s")
+
+    def test_collect_mixed_plain_and_regular(self):
+        # A dataset holding both a plain interp coord and a regular interp coord:
+        # the shared collector must dispatch each to the right type via the factory.
+        da = xd.DataArray(
+            np.zeros((20, 9)),
+            {
+                "x": self.make(),
+                "y": {"tie_indices": [0, 8], "tie_values": [0.0, 8.0]},
+            },
+        )
+        dataset = xr.Dataset()
+        attrs = {}
+        dataset, attrs = da.coords["x"]._to_dataset(dataset, attrs)
+        dataset, attrs = da.coords["y"]._to_dataset(dataset, attrs)
+        dataset["__v__"] = xr.DataArray(np.zeros((20, 9)), dims=["x", "y"])
+        dataset["__v__"].attrs.update(attrs)
+        recovered = Coordinate._from_dataset(dataset, "__v__")
+        assert isinstance(recovered["x"], RegularInterpCoordinate)
+        assert type(recovered["y"]) is InterpCoordinate
+
+    def test_file_roundtrip(self, tmp_path):
+        coord = self.make()
+        da = xd.DataArray(np.zeros(len(coord)), {"dim": coord})
+        path = tmp_path / "reg.nc"
+        da.to_netcdf(path)
+        loaded = xd.open_dataarray(path)
+        assert isinstance(loaded.coords["dim"], RegularInterpCoordinate)
+        assert loaded.coords["dim"].sampling_interval == 0.1
+
+
+class TestDeltaEncoding:
+    def test_encode_none(self):
+        from xdas.coordinates.core import encode_delta
+
+        assert encode_delta("sampling_interval", None) == {}
+
+    def test_encode_decode_numeric(self):
+        from xdas.coordinates.core import decode_delta, encode_delta
+
+        attrs = encode_delta("sampling_interval", 0.1)
+        assert attrs == {"sampling_interval": 0.1}
+        assert decode_delta("sampling_interval", attrs) == 0.1
+
+    def test_decode_missing(self):
+        from xdas.coordinates.core import decode_delta
+
+        assert decode_delta("sampling_interval", {}) is None
