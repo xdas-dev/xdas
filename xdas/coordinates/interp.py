@@ -176,7 +176,7 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
     @override
     def __len__(self):
         if len(self.tie_indices) > 0:
-            return int(self.tie_indices[-1] - self.tie_indices[0] + 1)
+            return int(self.tie_indices[-1]) + 1
         else:
             return 0
 
@@ -254,7 +254,7 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
                 for k in range(1, len(tie_indices) - 1):
                     if tie_indices[k] == tie_indices[k - 1]:
                         tie_indices[k] += step_index
-                tie_values = [self._get_value(start_index + idx) for idx in tie_indices]
+                tie_values = self._get_value(start_index + tie_indices)
                 tie_indices //= step_index
 
             data = {"tie_indices": tie_indices, "tie_values": tie_values}
@@ -490,9 +490,11 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
                 if np.issubdtype(num.dtype, np.timedelta64)
                 else num.astype(float)
             )
-            i, j = _chebyshev_center_pair(num_seconds, den.astype(float))
+            pos_idx, neg_idx = _chebyshev_center_pair(num_seconds, den.astype(float))
             # Balance point of the binding pair, kept in the native dtype.
-            sampling_interval = (num[i] + num[j]) / (den[i] + den[j])
+            sampling_interval = (num[pos_idx] + num[neg_idx]) / (
+                den[pos_idx] + den[neg_idx]
+            )
 
         if isinstance(tolerance, str):
             if tolerance != "auto":
@@ -638,9 +640,9 @@ def _chebyshev_center_pair(num, den):
 
     Returns
     -------
-    i, j : int
+    pos_idx, neg_idx : int
         Segment indices of the binding positive- and negative-slope lines. A
-        single segment trivially selects itself (``i == j``).
+        single segment trivially selects itself (``pos_idx == neg_idx``).
     """
     seg = np.arange(len(den))
     # Positive-slope lines (den si - num) and negative-slope lines (num - den si).
@@ -678,7 +680,10 @@ def _upper_envelope_min_pair(slopes, intercepts, idx, order):  # pragma: no cove
         hull_s[m], hull_b[m], hull_i[m] = s, b, seg
         m += 1
     # The envelope is convex with slope increasing along x; its minimum sits at
-    # the negative-to-positive slope transition, between the binding pair.
+    # the negative-to-positive slope transition, between the binding pair. The
+    # scan is safely bounded because `_chebyshev_center_pair` always feeds in
+    # both `+den_i` and `-den_i` lines, so at least one slope of each sign
+    # reaches the hull.
     t = 0
     while hull_s[t] < 0.0:
         t += 1
