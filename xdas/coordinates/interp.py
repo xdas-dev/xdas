@@ -474,13 +474,16 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
             tolerance = max_i |si* * den_i - num_i| / 2
         """
-        # An already-regular coordinate keeps its spacing unless one is forced.
-        if self.sampling_interval is not None and sampling_interval is None:
-            return self.copy()
-
         # Spacing is judged on the continuous areas only; `den == 1` gaps are CF
         # discontinuities (see `_continuous_segments`).
         num, den = self._continuous_segments()
+
+        # Default each unspecified argument to the stored regular config; an
+        # explicit value (including ``tolerance="auto"``) still overrides it.
+        if sampling_interval is None:
+            sampling_interval = self.sampling_interval
+        if tolerance is None:
+            tolerance = self.tolerance
 
         if sampling_interval is None and num.size > 0:
             # Per-segment numerators as plain floats (seconds for datetime axes),
