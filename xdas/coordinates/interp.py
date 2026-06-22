@@ -9,6 +9,7 @@ coordinate *regular* and providing a clean sample rate for signal-processing rou
 import re
 
 import numpy as np
+from numba import njit
 from typing_extensions import override
 from xinterp import forward, inverse
 
@@ -465,6 +466,9 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
             si* = (num_i + num_j) / (den_i + den_j)
 
+        That pair is found in ``O(n log n)`` via :func:`_chebyshev_center_pair`
+        rather than scanning all pairs.
+
         The matching auto tolerance is half that worst drift, since validity
         compares the drift against ``2 * tolerance``::
 
@@ -479,24 +483,14 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         num, den = self._continuous_segments()
 
         if sampling_interval is None and num.size > 0:
-            # Per-segment rates as plain floats (seconds for datetime axes), used
-            # only to pick the binding pair without integer/timedelta overflow.
+            # Per-segment numerators as plain floats (seconds for datetime axes),
+            # used only to pick the binding pair without integer/timedelta overflow.
             num_seconds = (
                 num / np.timedelta64(1, "s")
                 if np.issubdtype(num.dtype, np.timedelta64)
                 else num.astype(float)
             )
-            den_float = den.astype(float)
-            rate = num_seconds / den_float
-            # height_ij = den_i den_j |r_i - r_j| / (den_i + den_j); the diagonal
-            # is zero, so a single segment trivially selects itself.
-            height = (
-                den_float[:, None]
-                * den_float[None, :]
-                * np.abs(rate[:, None] - rate[None, :])
-                / (den_float[:, None] + den_float[None, :])
-            )
-            i, j = np.unravel_index(np.argmax(height), height.shape)
+            i, j = _chebyshev_center_pair(num_seconds, den.astype(float))
             # Balance point of the binding pair, kept in the native dtype.
             sampling_interval = (num[i] + num[j]) / (den[i] + den[j])
 
@@ -612,3 +606,69 @@ def _douglas_peucker(x, y, epsilon):
         else:
             mask[start + 1 : stop - 1] = False
     return x[mask], y[mask]
+
+
+def _chebyshev_center_pair(num, den):
+    """
+    Segment indices binding the length-weighted Chebyshev center, in O(n log n).
+
+    Returns the pair maximising ``den_i den_j |r_i - r_j| / (den_i + den_j)`` with
+    ``r = num / den``, equivalently the lowest point of the upper envelope of the
+    ``2 n`` lines ``±(den_i si - num_i)``. That vertex is the meeting of the
+    binding negative- and positive-slope lines, found with the convex-hull trick
+    instead of the O(n^2) pairwise scan.
+
+    Parameters
+    ----------
+    num : numpy.ndarray
+        Per-segment numerators as floats (seconds for datetime axes).
+    den : numpy.ndarray
+        Per-segment denominators as floats, all strictly positive.
+
+    Returns
+    -------
+    i, j : int
+        Segment indices of the binding positive- and negative-slope lines. A
+        single segment trivially selects itself (``i == j``).
+    """
+    seg = np.arange(len(den))
+    # Positive-slope lines (den si - num) and negative-slope lines (num - den si).
+    slopes = np.concatenate([den, -den])
+    intercepts = np.concatenate([-num, num])
+    idx = np.concatenate([seg, seg])
+    # Process lines by ascending slope, equal slopes ordered by descending
+    # intercept so the dominant one comes first.
+    order = np.lexsort((-intercepts, slopes))
+    return _upper_envelope_min_pair(slopes, intercepts, idx, order)
+
+
+@njit(cache=True)
+def _upper_envelope_min_pair(slopes, intercepts, idx, order):  # pragma: no cover
+    """Binding (positive, negative) line indices at the upper-envelope minimum."""
+    n = order.size
+    hull_s = np.empty(n, dtype=slopes.dtype)
+    hull_b = np.empty(n, dtype=intercepts.dtype)
+    hull_i = np.empty(n, dtype=idx.dtype)
+    m = 0  # current hull size
+    for t in range(n):
+        k = order[t]
+        s, b, seg = slopes[k], intercepts[k], idx[k]
+        # Equal slopes: the dominant (larger intercept) one came first; skip rest.
+        if m > 0 and hull_s[m - 1] == s:
+            continue
+        # Drop any line the convex-hull trick proves can never be the maximum.
+        while m >= 2:
+            s1, b1 = hull_s[m - 2], hull_b[m - 2]
+            s2, b2 = hull_s[m - 1], hull_b[m - 1]
+            if (b - b1) / (s1 - s) <= (b2 - b1) / (s1 - s2):
+                m -= 1
+            else:
+                break
+        hull_s[m], hull_b[m], hull_i[m] = s, b, seg
+        m += 1
+    # The envelope is convex with slope increasing along x; its minimum sits at
+    # the negative-to-positive slope transition, between the binding pair.
+    t = 0
+    while hull_s[t] < 0.0:
+        t += 1
+    return hull_i[t], hull_i[t - 1]
