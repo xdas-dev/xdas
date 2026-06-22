@@ -331,6 +331,84 @@ class TestInterpCoordinate:
         assert coord0._concat(coord1).equals(coord1)
         assert coord1._concat(coord0).equals(coord1)
 
+    def test_simplify_preserves_real_discontinuity(self):
+        # A large jump across a den == 1 gap is preserved as an emergent property
+        # of the tolerance bound: both boundary points survive while the colinear
+        # interior collapses.
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 5, 10, 11, 16, 21],
+                "tie_values": [0.0, 5.0, 10.0, 1000.0, 1005.0, 1010.0],
+            }
+        )
+        result = coord.simplify()
+        assert result.equals(
+            InterpCoordinate(
+                {
+                    "tie_indices": [0, 10, 11, 21],
+                    "tie_values": [0.0, 10.0, 1000.0, 1010.0],
+                }
+            )
+        )
+
+    def test_simplify_absorbs_soft_discontinuity(self):
+        # A den == 1 gap whose jump fits within tolerance is fused away and the
+        # two areas merge into a single ramp.
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 10, 11, 21], "tie_values": [0.0, 10.0, 11.4, 21.4]}
+        )
+        result = coord.simplify(1.0)
+        assert result.equals(
+            InterpCoordinate({"tie_indices": [0, 21], "tie_values": [0.0, 21.4]})
+        )
+
+    def test_simplify_multiple_runs_and_isolated_point(self):
+        # Two real discontinuities flanking an isolated tie point: each run is
+        # thinned independently and the isolated point survives.
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 5, 10, 11, 12, 17, 22],
+                "tie_values": [0.0, 5.0, 10.0, 100.0, 200.0, 205.0, 210.0],
+            }
+        )
+        result = coord.simplify()
+        assert result.equals(
+            InterpCoordinate(
+                {
+                    "tie_indices": [0, 10, 11, 12, 22],
+                    "tie_values": [0.0, 10.0, 100.0, 200.0, 210.0],
+                }
+            )
+        )
+
+    def test_simplify_keeps_kink(self):
+        # A genuine kink inside a continuous area forces Douglas-Peucker to keep
+        # the deviating interior point.
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 5, 10], "tie_values": [0.0, 100.0, 0.0]}
+        )
+        result = coord.simplify()
+        assert result.equals(coord)
+        assert len(coord.simplify(200.0).tie_indices) == 2
+
+    def test_simplify_datetime_discontinuity(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 5, 10, 11, 16, 21],
+                "tie_values": [
+                    t0,
+                    t0 + np.timedelta64(5, "s"),
+                    t0 + np.timedelta64(10, "s"),
+                    t0 + np.timedelta64(1000, "s"),
+                    t0 + np.timedelta64(1005, "s"),
+                    t0 + np.timedelta64(1010, "s"),
+                ],
+            }
+        )
+        result = coord.simplify()
+        assert np.array_equal(result.tie_indices, [0, 10, 11, 21])
+
 
 class TestInterpCoordinateExtra:
     def test_init_extra_keys(self):

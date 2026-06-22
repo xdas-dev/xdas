@@ -526,6 +526,17 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
     @override
     def simplify(self, tolerance=None):
+        """Drop redundant tie points within *tolerance* via Douglas-Peucker.
+
+        The CF 8.3 structure is preserved as an emergent property of that bound:
+        real discontinuities are kept (any spanning line crosses them by far more
+        than *tolerance*), soft ones are fused into a single ramp, and
+        synchronisation tie points survive because removing them would, by
+        definition, drift more than *tolerance*. Surviving values are never
+        moved.
+
+        See :meth:`Coordinate.simplify` for the parameter contract.
+        """
         if tolerance is False:
             return self.copy()
         tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
