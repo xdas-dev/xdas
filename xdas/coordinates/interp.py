@@ -25,16 +25,20 @@ from .core import (
 
 class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
     """
-    Piecewise-linear coordinate described by tie points (CF convention).
+    Piecewise-linear coordinate described by tie points (CF subsampling, 8.3).
 
-    Values between tie points are recovered by linear interpolation.
-    Discontinuities are represented by two consecutive tie points at adjacent
-    indices.  Supports label-based selection via :meth:`~Coordinate.to_index`.
+    Following the CF conventions for compression by coordinate subsampling.
+    Values between tie points are recovered by linear interpolation (via
+    ``xinterp``), which also enables label-based selection through
+    :meth:`~Coordinate.to_index`.  The index axis is split into *continuous
+    areas* separated by *discontinuities*; a discontinuity is encoded as two
+    consecutive tie points at adjacent indices (a gap of one).
 
     When *data* contains a ``sampling_interval`` key the coordinate also
     enforces a nominal sample spacing, making it *regular*
-    (:meth:`isregular` returns ``True``).  A ``tolerance`` key may
-    accompany it to allow bounded jitter around that rate.
+    (:meth:`isregular` returns ``True``) and giving signal-processing routines a
+    clean sample rate.  A ``tolerance`` key may accompany it to allow bounded
+    jitter around that rate.
 
     Parameters
     ----------
@@ -56,6 +60,17 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         Name of the dimension this coordinate is associated with.
     dtype : dtype-like, optional
         Desired dtype for ``tie_values``.
+
+    Notes
+    -----
+    Regularity is judged on the continuous areas only: a tie-point gap of one
+    index (``den == 1``) is a CF discontinuity and carries no sampling-rate
+    information.  A ``sampling_interval`` is valid when, for every continuous
+    segment, the accumulated drift ``|sampling_interval * den - num|`` stays
+    within ``2 * tolerance`` (each tie value may jitter by ±``tolerance``).
+    A coordinate with no continuous area (e.g. ``tie_indices=[0, 1, 2]``) has no
+    inferable spacing, so an explicitly provided one is stored as-is.  Use
+    :meth:`to_regular` to infer or enforce a spacing from the continuous areas.
 
     Examples
     --------
@@ -115,39 +130,6 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
         # optional regular sampling
         self._assign_sampling_interval(sampling_interval, tolerance)
-
-    def _assign_sampling_interval(self, sampling_interval, tolerance=None):
-        if sampling_interval is None:
-            if tolerance is not None:
-                raise ValueError(
-                    "`tolerance` cannot be set without a `sampling_interval`"
-                )
-            self.data["sampling_interval"] = None
-            self.data["tolerance"] = None
-            return
-
-        sampling_interval = parse_scalar_delta(sampling_interval, self.dtype)
-        tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
-
-        if self._is_valid_sampling_interval(sampling_interval, tolerance):
-            self.data["sampling_interval"] = sampling_interval
-            self.data["tolerance"] = tolerance
-        else:
-            raise ValueError(
-                "`sampling_interval` and `tolerance` are not consistent with "
-                "the `tie_indices` and `tie_values`"
-            )
-
-    def _is_valid_sampling_interval(self, sampling_interval, tolerance=None):
-        num = np.diff(self.tie_values)
-        den = np.diff(self.tie_indices)
-        mask = den != 1
-        num = num[mask]
-        den = den[mask]
-        dmin = (num - 2 * tolerance) / den
-        dmax = (num + 2 * tolerance) / den
-        valid = np.all((dmin <= sampling_interval) & (sampling_interval <= dmax))
-        return bool(valid)
 
     @property
     def tie_indices(self):
@@ -397,6 +379,46 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             delta = delta / np.timedelta64(1, "s")
         return delta
 
+    def _assign_sampling_interval(self, sampling_interval, tolerance=None):
+        """Parse, validate and store the sampling interval and its tolerance.
+
+        ``None`` clears both; a value is kept only if consistent with the tie
+        points (see :meth:`_is_valid_sampling_interval`).
+        """
+        if sampling_interval is None:
+            if tolerance is not None:
+                raise ValueError(
+                    "`tolerance` cannot be set without a `sampling_interval`"
+                )
+            self.data["sampling_interval"] = None
+            self.data["tolerance"] = None
+            return
+
+        sampling_interval = parse_scalar_delta(sampling_interval, self.dtype)
+        tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
+
+        if self._is_valid_sampling_interval(sampling_interval, tolerance):
+            self.data["sampling_interval"] = sampling_interval
+            self.data["tolerance"] = tolerance
+        else:
+            raise ValueError(
+                "`sampling_interval` and `tolerance` are not consistent with "
+                "the `tie_indices` and `tie_values`"
+            )
+
+    def _is_valid_sampling_interval(self, sampling_interval, tolerance):
+        """Whether *sampling_interval* fits every continuous area within *tolerance*."""
+        num, den = self._continuous_segments()
+        # Bound the per-segment accumulated drift: each tie value may jitter by
+        # ±tolerance, so a segment span may be off by up to 2 * tolerance. With no
+        # continuous area `np.all([])` is vacuously True, accepting an explicit
+        # spacing as metadata (e.g. a two-tie-point block). Datetime bounds use
+        # integer division and are only accurate to the dtype resolution.
+        dmin = (num - 2 * tolerance) / den
+        dmax = (num + 2 * tolerance) / den
+        valid = np.all((dmin <= sampling_interval) & (sampling_interval <= dmax))
+        return bool(valid)
+
     def to_regular(self, sampling_interval=None, tolerance=None):
         """
         Return a copy of this coordinate with an enforced nominal sampling interval.
@@ -417,13 +439,15 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         -------
         InterpCoordinate
             A new coordinate with :attr:`sampling_interval` set, or with it left
-            unset when no spacing can be inferred (no segment spans more than one
-            sample).
+            unset when no spacing can be inferred (no continuous area, i.e. every
+            tie-point gap is a ``den == 1`` CF discontinuity).
 
         Notes
         -----
-        For a non-unit segment ``i`` between two tie points, ``num_i`` is the
-        change in ``tie_values`` and ``den_i`` the change in ``tie_indices``. The
+        Spacing is judged on continuous areas only, ``den == 1`` gaps being CF
+        discontinuities (see :meth:`_continuous_segments`). For such a segment
+        ``i``, ``num_i`` is the change in ``tie_values`` and ``den_i`` the change
+        in ``tie_indices``. The
         quantity ``si * den_i - num_i`` is the drift accumulated between the
         regular grid and the tie values at the end of that segment, and
         :meth:`_is_valid_sampling_interval` accepts ``si`` exactly when every
@@ -450,13 +474,9 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         if self.sampling_interval is not None and sampling_interval is None:
             return self.copy()
 
-        num = np.diff(self.tie_values)
-        den = np.diff(self.tie_indices)
-        # Only multi-sample segments carry rate information; unit gaps are
-        # ignored, consistently with `_is_valid_sampling_interval`.
-        mask = den != 1
-        num = num[mask]
-        den = den[mask]
+        # Spacing is judged on the continuous areas only; `den == 1` gaps are CF
+        # discontinuities (see `_continuous_segments`).
+        num, den = self._continuous_segments()
 
         if sampling_interval is None and num.size > 0:
             # Per-segment rates as plain floats (seconds for datetime axes), used
@@ -486,10 +506,8 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             if sampling_interval is None or num.size == 0:
                 tolerance = None
             else:
-                # Validity requires `2 * tolerance >= max drift`, so halve the
-                # worst drift. Work in float (seconds for datetime axes) and add a
-                # few ULPs at value scale so the division-based re-validation
-                # cannot reject the result on rounding alone.
+                # Half the worst drift (validity needs `2 * tolerance >= drift`),
+                # in float, plus a few ULPs so the re-validation cannot reject it.
                 is_datetime = np.issubdtype(num.dtype, np.timedelta64)
                 num_seconds = (
                     num / np.timedelta64(1, "s") if is_datetime else num.astype(float)
@@ -531,6 +549,7 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
     @override
     def _split_candidates(self):
+        """Discontinuity split points, each paired with its step's deviation from the neighbouring interval."""
         tie_intervals = np.diff(self.tie_values) / np.diff(self.tie_indices)
         (positions,) = np.nonzero(np.diff(self.tie_indices) == 1)
         references = np.where(
@@ -540,6 +559,17 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         )
         deltas = tie_intervals[positions] - tie_intervals[references]
         return self.tie_indices[positions + 1], deltas
+
+    def _continuous_segments(self):
+        """Per-segment value/index spans ``(num, den)`` for the continuous areas.
+
+        A ``den == 1`` gap is a CF discontinuity (section 8.3), not a segment, so
+        it is excluded and carries no sampling-rate information.
+        """
+        num = np.diff(self.tie_values)
+        den = np.diff(self.tie_indices)
+        mask = den != 1
+        return num[mask], den[mask]
 
 
 def _douglas_peucker(x, y, epsilon):
