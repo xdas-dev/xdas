@@ -547,10 +547,15 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         )
         data = {"tie_indices": tie_indices, "tie_values": tie_values}
         if self.sampling_interval is not None:
+            # Douglas-Peucker may fuse a soft discontinuity into a continuous
+            # ramp; the new segment then carries the absorbed jump (bounded by
+            # `tolerance` per intermediate) on top of the original jitter
+            # (`self.tolerance`). Adding the two preserves validity in that
+            # case and degrades to `self.tolerance` for a lossless simplify.
             data = {
                 **data,
                 "sampling_interval": self.sampling_interval,
-                "tolerance": self.tolerance,
+                "tolerance": self.tolerance + tolerance,
             }
         return self.__class__(data, self.dim)
 
