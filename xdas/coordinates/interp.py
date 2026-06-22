@@ -431,11 +431,10 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             Nominal sample spacing to enforce. When omitted it is inferred as the
             spacing that best satisfies :meth:`_is_valid_sampling_interval`, i.e.
             the one minimising the worst per-segment drift (see Notes).
-        tolerance : scalar or ``"auto"``, optional
+        tolerance : scalar, optional
             Tolerated jitter around *sampling_interval*. Defaults to a
             dtype-dependent epsilon, so a genuinely irregular axis raises
-            :exc:`ValueError`. Pass ``"auto"`` to set the smallest tolerance that
-            keeps *sampling_interval* valid (see Notes).
+            :exc:`ValueError`.
 
         Returns
         -------
@@ -469,18 +468,13 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
         That pair is found in ``O(n log n)`` via :func:`_chebyshev_center_pair`
         rather than scanning all pairs.
-
-        The matching auto tolerance is half that worst drift, since validity
-        compares the drift against ``2 * tolerance``::
-
-            tolerance = max_i |si* * den_i - num_i| / 2
         """
         # Spacing is judged on the continuous areas only; `den == 1` gaps are CF
         # discontinuities (see `_continuous_segments`).
         num, den = self._continuous_segments()
 
         # Default each unspecified argument to the stored regular config; an
-        # explicit value (including ``tolerance="auto"``) still overrides it.
+        # explicit value still overrides it.
         if sampling_interval is None:
             sampling_interval = self.sampling_interval
         if tolerance is None:
@@ -499,28 +493,6 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             sampling_interval = (num[pos_idx] + num[neg_idx]) / (
                 den[pos_idx] + den[neg_idx]
             )
-
-        if isinstance(tolerance, str):
-            if tolerance != "auto":
-                raise ValueError(f"unknown tolerance {tolerance!r}, expected 'auto'")
-            if sampling_interval is None or num.size == 0:
-                tolerance = None
-            else:
-                # Half the worst drift (validity needs `2 * tolerance >= drift`),
-                # in float, plus a few ULPs so the re-validation cannot reject it.
-                is_datetime = np.issubdtype(num.dtype, np.timedelta64)
-                num_seconds = (
-                    num / np.timedelta64(1, "s") if is_datetime else num.astype(float)
-                )
-                si_seconds = (
-                    sampling_interval / np.timedelta64(1, "s")
-                    if is_datetime
-                    else float(sampling_interval)
-                )
-                drift = np.abs(si_seconds * den - num_seconds).max()
-                tolerance = drift / 2 + 4 * np.spacing(np.abs(num_seconds).max())
-                if is_datetime:
-                    tolerance = np.timedelta64(int(np.ceil(tolerance * 1e9)), "ns")
 
         data = {
             "tie_indices": self.tie_indices,

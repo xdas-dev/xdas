@@ -623,46 +623,8 @@ class TestInterpCoordinateExtra:
         coord = InterpCoordinate(
             {"tie_indices": [0, 10, 12], "tie_values": [0.0, 10.0, 12.2]}
         )
-        si = coord.to_regular(tolerance="auto").sampling_interval
+        si = coord.to_regular(tolerance=1.0).sampling_interval
         np.testing.assert_allclose(si, 12.2 / 12)
-
-    def test_to_regular_auto_tolerance(self):
-        coord = InterpCoordinate(
-            {"tie_indices": [0, 10, 15], "tie_values": [0.0, 10.0, 15.55]}
-        )
-        reg = coord.to_regular(tolerance="auto")
-        assert reg.isregular()
-        assert reg.tolerance > 0
-
-    def test_to_regular_auto_tolerance_datetime(self):
-        t0 = np.datetime64("2000-01-01T00:00:00")
-        coord = InterpCoordinate(
-            {
-                "tie_indices": [0, 10, 15],
-                "tie_values": [
-                    t0,
-                    t0 + np.timedelta64(10_000_000_000, "ns"),
-                    t0 + np.timedelta64(15_550_000_000, "ns"),
-                ],
-            }
-        )
-        reg = coord.to_regular(tolerance="auto")
-        assert reg.isregular()
-        assert reg.tolerance > np.timedelta64(0)
-
-    def test_to_regular_auto_tolerance_uninferable(self):
-        # no constrained segment → nothing to infer, tolerance stays unset
-        coord = InterpCoordinate(
-            {"tie_indices": [0, 1, 2], "tie_values": [0.0, 1.0, 2.0]}
-        )
-        reg = coord.to_regular(tolerance="auto")
-        assert reg.sampling_interval is None
-        assert reg.tolerance is None
-
-    def test_to_regular_unknown_tolerance(self):
-        coord = InterpCoordinate({"tie_indices": [0, 10], "tie_values": [0.0, 10.0]})
-        with pytest.raises(ValueError, match="unknown tolerance"):
-            coord.to_regular(tolerance="nope")
 
     def test_tolerance_without_sampling_interval(self):
         with pytest.raises(ValueError, match="cannot be set without"):
