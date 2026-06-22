@@ -2,6 +2,23 @@ import numpy as np
 import pytest
 
 import xdas as xd
+from xdas.coordinates.core import parse_scalar_delta
+
+
+class TestParseScalarDelta:
+    def test_non_scalar_raises(self):
+        with pytest.raises(ValueError, match="must be a scalar"):
+            parse_scalar_delta([1, 2], np.dtype("float64"))
+
+    def test_none_without_default_raises(self):
+        with pytest.raises(ValueError, match="cannot be None"):
+            parse_scalar_delta(None, np.dtype("float64"))
+
+    def test_none_with_default_zero(self):
+        assert parse_scalar_delta(None, np.dtype("float64"), default_zero=True) == 1e-8
+        assert parse_scalar_delta(
+            None, np.dtype("datetime64[s]"), default_zero=True
+        ) == np.timedelta64(0)
 
 
 class TestFromBlock:

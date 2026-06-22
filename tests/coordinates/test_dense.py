@@ -133,7 +133,8 @@ class TestDenseCoordinate:
 
     def test_get_split_indices(self):
         coord = DenseCoordinate([1, 2, 3, 10, 11, 12])
-        # nominal spacing is the median diff (1); the jump 3->10 is the only gap
+        # local spacing is 1; only the jump 3->10 stands out as a gap, and the
+        # normal step 10->11 right after it must not be reported as an overlap
         np.testing.assert_array_equal(
             coord.get_split_indices("discontinuities", tolerance=3.0), [3]
         )
@@ -145,6 +146,25 @@ class TestDenseCoordinate:
         )
         # with no tolerance filtering every consecutive pair is a candidate boundary
         np.testing.assert_array_equal(coord.get_split_indices(), [1, 2, 3, 4, 5])
+
+    def test_get_split_indices_rate_change(self):
+        # A continuous axis whose sampling rate changes (step 1 then step 2) is
+        # not a discontinuity: the baseline follows the new rate, so only the
+        # single transition is reported and the sustained run stays clean.
+        coord = DenseCoordinate([0, 1, 2, 3, 5, 7, 9])
+        np.testing.assert_array_equal(
+            coord.get_split_indices("gaps", tolerance=0.5), [4]
+        )
+        np.testing.assert_array_equal(
+            coord.get_split_indices("discontinuities", tolerance=1.5), []
+        )
+
+    def test_get_split_indices_leading_gap(self):
+        # A discontinuity in the very first step is still detected.
+        coord = DenseCoordinate([0, 10, 11, 12])
+        np.testing.assert_array_equal(
+            coord.get_split_indices("gaps", tolerance=3.0), [1]
+        )
 
     def test_get_split_indices_empty(self):
         coord = DenseCoordinate([])

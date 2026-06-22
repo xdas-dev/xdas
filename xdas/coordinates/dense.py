@@ -170,20 +170,21 @@ class DenseCoordinate(AxisCoordinate, ctype="dense"):
 
     @override
     def _split_candidates(self):
-        # A dense coordinate stores every sample, so every consecutive pair is a
-        # candidate boundary. The nominal spacing is estimated as the median of
-        # the consecutive differences (suboptimal but adequate for irregular
-        # axes); each delta is the excess of the actual step over that nominal.
-        diff = np.diff(self.data)
+        steps = np.diff(self.data)
         positions = np.arange(1, len(self))
-        if diff.size == 0:
-            return positions, diff
-        return positions, diff - np.median(diff)
+        if steps.size == 0:
+            return positions, steps
+        reference = np.median(steps)
+        deltas = np.empty(steps.shape, dtype=np.asarray(steps[0] - reference).dtype)
+        for i in range(steps.size):
+            deltas[i] = steps[i] - reference
+            if i + 1 < steps.size and abs(steps[i + 1] - steps[i]) < abs(
+                steps[i + 1] - reference
+            ):
+                reference = steps[i]
+        return positions, deltas
 
     @override
     def simplify(self, tolerance=None):
-        # A dense coordinate stores every sample explicitly and cannot drop
-        # points while remaining dense, so simplification is a no-op. The
-        # `tolerance` argument is accepted for interface compatibility and
-        # ignored.
+        # we cannot simplify a dense coordinate
         return self.copy()

@@ -1163,14 +1163,17 @@ def parse_scalar_delta(value, dtype, default_zero=False):
     Raises
     ------
     ValueError
-        If *value* is not a scalar (i.e. has non-zero ndim).
+        If *value* is not a scalar (i.e. has non-zero ndim), or if *value* is
+        ``None`` while *default_zero* is ``False`` (no default is available).
     """
     # check shape
     if not np.ndim(value) == 0:
         raise ValueError("`value` must be a scalar value")
 
     # default
-    if value is None and default_zero:
+    if value is None:
+        if not default_zero:
+            raise ValueError("`value` cannot be None when `default_zero` is False")
         if np.issubdtype(dtype, np.datetime64):
             value = np.timedelta64(0)
         elif dtype == np.float16:
@@ -1186,7 +1189,6 @@ def parse_scalar_delta(value, dtype, default_zero=False):
     value = np.asarray(value)[()]
 
     # check dtype
-
     if np.issubdtype(dtype, np.datetime64):
         if not np.issubdtype(value.dtype, np.timedelta64):
             value = np.timedelta64(round(value * 1e9), "ns")  # TODO: not `dtype`
