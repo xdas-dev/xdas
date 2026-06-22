@@ -421,6 +421,81 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         valid = np.all((dmin <= sampling_interval) & (sampling_interval <= dmax))
         return bool(valid)
 
+    def infer_regular(self):
+        """
+        Estimate the nominal spacing and tightest tolerance for this coordinate.
+
+        Diagnostic counterpart to :meth:`to_regular`: returns the spacing that
+        minimises the worst per-segment drift and the smallest tolerance that
+        would still validate it, without enforcing either on the coordinate.
+        Handy for inspecting how regular an irregular axis really is before
+        deciding what arguments to feed :meth:`to_regular`.
+
+        Returns
+        -------
+        sampling_interval : scalar or None
+            Spacing minimising ``max_i |sampling_interval * den_i - num_i|``
+            over the continuous segments. ``None`` when no continuous segment
+            is available (every tie-point gap is a ``den == 1`` CF
+            discontinuity).
+        tolerance : scalar or None
+            Half the worst residual drift at ``sampling_interval``, plus a few
+            ULPs so the value stays valid under re-validation. ``None`` when
+            ``sampling_interval`` is ``None``.
+
+        Notes
+        -----
+        Spacing is judged on continuous areas only, ``den == 1`` gaps being CF
+        discontinuities (see :meth:`_continuous_segments`). For such a segment
+        ``i``, ``num_i`` is the change in ``tie_values`` and ``den_i`` the
+        change in ``tie_indices``. The quantity ``si * den_i - num_i`` is the
+        drift accumulated between the regular grid and the tie values at the
+        end of that segment, and :meth:`_is_valid_sampling_interval` accepts
+        ``si`` exactly when every such drift stays within ``2 * tolerance``.
+
+        The inferred spacing minimises the worst-case drift::
+
+            si* = argmin_si  max_i |si * den_i - num_i|
+
+        This convex, piecewise-linear objective is a length-weighted Chebyshev
+        center of the per-segment rates ``r = num / den``. Its minimum is
+        reached where the two most disagreeing segments balance, so over all
+        pairs the binding one maximises
+        ``den_i * den_j * |r_i - r_j| / (den_i + den_j)`` and the optimum is
+        the rate of that merged pair::
+
+            si* = (num_i + num_j) / (den_i + den_j)
+
+        That pair is found in ``O(n log n)`` via :func:`_chebyshev_center_pair`
+        rather than scanning all pairs. The matching tolerance is half the
+        worst drift, since validity compares the drift against
+        ``2 * tolerance``.
+        """
+        num, den = self._continuous_segments()
+        if num.size == 0:
+            return None, None
+        # Float seconds for datetime axes pick the binding pair without
+        # integer/timedelta overflow; the final values stay in the native dtype.
+        is_datetime = np.issubdtype(num.dtype, np.timedelta64)
+        num_seconds = (
+            num / np.timedelta64(1, "s") if is_datetime else num.astype(float)
+        )
+        pos_idx, neg_idx = _chebyshev_center_pair(num_seconds, den.astype(float))
+        sampling_interval = (num[pos_idx] + num[neg_idx]) / (
+            den[pos_idx] + den[neg_idx]
+        )
+        si_seconds = (
+            sampling_interval / np.timedelta64(1, "s")
+            if is_datetime
+            else float(sampling_interval)
+        )
+        drift = np.abs(si_seconds * den - num_seconds).max()
+        # A few ULPs of slack so re-validation cannot reject the returned pair.
+        tolerance = drift / 2 + 4 * np.spacing(np.abs(num_seconds).max())
+        if is_datetime:
+            tolerance = np.timedelta64(int(np.ceil(tolerance * 1e9)), "ns")
+        return sampling_interval, tolerance
+
     def to_regular(self, sampling_interval=None, tolerance=None):
         """
         Return a copy of this coordinate with an enforced nominal sampling interval.
@@ -428,13 +503,15 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         Parameters
         ----------
         sampling_interval : scalar, optional
-            Nominal sample spacing to enforce. When omitted it is inferred as the
-            spacing that best satisfies :meth:`_is_valid_sampling_interval`, i.e.
-            the one minimising the worst per-segment drift (see Notes).
+            Nominal sample spacing to enforce. When omitted it is inferred via
+            :meth:`infer_regular` (the length-weighted Chebyshev center of the
+            per-segment rates).
         tolerance : scalar, optional
             Tolerated jitter around *sampling_interval*. Defaults to a
             dtype-dependent epsilon, so a genuinely irregular axis raises
-            :exc:`ValueError`.
+            :exc:`ValueError`. Use :meth:`infer_regular` to discover the
+            tightest tolerance that would still keep the inferred spacing
+            valid before deciding what to pass here.
 
         Returns
         -------
@@ -442,58 +519,15 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             A new coordinate with :attr:`sampling_interval` set, or with it left
             unset when no spacing can be inferred (no continuous area, i.e. every
             tie-point gap is a ``den == 1`` CF discontinuity).
-
-        Notes
-        -----
-        Spacing is judged on continuous areas only, ``den == 1`` gaps being CF
-        discontinuities (see :meth:`_continuous_segments`). For such a segment
-        ``i``, ``num_i`` is the change in ``tie_values`` and ``den_i`` the change
-        in ``tie_indices``. The
-        quantity ``si * den_i - num_i`` is the drift accumulated between the
-        regular grid and the tie values at the end of that segment, and
-        :meth:`_is_valid_sampling_interval` accepts ``si`` exactly when every
-        such drift stays within ``2 * tolerance``.
-
-        The inferred spacing minimises the worst-case drift::
-
-            si* = argmin_si  max_i |si * den_i - num_i|
-
-        This convex, piecewise-linear objective is a length-weighted Chebyshev
-        center of the per-segment rates ``r = num / den``. Its minimum is reached
-        where the two most disagreeing segments balance, so over all pairs the
-        binding one maximises ``den_i * den_j * |r_i - r_j| / (den_i + den_j)``
-        and the optimum is the rate of that merged pair::
-
-            si* = (num_i + num_j) / (den_i + den_j)
-
-        That pair is found in ``O(n log n)`` via :func:`_chebyshev_center_pair`
-        rather than scanning all pairs.
         """
-        # Spacing is judged on the continuous areas only; `den == 1` gaps are CF
-        # discontinuities (see `_continuous_segments`).
-        num, den = self._continuous_segments()
-
         # Default each unspecified argument to the stored regular config; an
         # explicit value still overrides it.
         if sampling_interval is None:
             sampling_interval = self.sampling_interval
         if tolerance is None:
             tolerance = self.tolerance
-
-        if sampling_interval is None and num.size > 0:
-            # Per-segment numerators as plain floats (seconds for datetime axes),
-            # used only to pick the binding pair without integer/timedelta overflow.
-            num_seconds = (
-                num / np.timedelta64(1, "s")
-                if np.issubdtype(num.dtype, np.timedelta64)
-                else num.astype(float)
-            )
-            pos_idx, neg_idx = _chebyshev_center_pair(num_seconds, den.astype(float))
-            # Balance point of the binding pair, kept in the native dtype.
-            sampling_interval = (num[pos_idx] + num[neg_idx]) / (
-                den[pos_idx] + den[neg_idx]
-            )
-
+        if sampling_interval is None:
+            sampling_interval, _ = self.infer_regular()
         data = {
             "tie_indices": self.tie_indices,
             "tie_values": self.tie_values,

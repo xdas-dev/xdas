@@ -632,6 +632,43 @@ class TestInterpCoordinateExtra:
                 {"tie_indices": [0, 10], "tie_values": [0.0, 10.0], "tolerance": 0.1}
             )
 
+    def test_infer_regular(self):
+        # Numeric: rates 1.0 (den=10) and 1.0555 (den=5); the inferred spacing
+        # and tolerance must round-trip through `to_regular`.
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 10, 15], "tie_values": [0.0, 10.0, 15.55]}
+        )
+        si, tol = coord.infer_regular()
+        assert si > 0
+        assert tol > 0
+        reg = coord.to_regular(sampling_interval=si, tolerance=tol)
+        assert reg.isregular()
+
+        # Datetime variant: tolerance comes back as a timedelta64.
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        coord_dt = InterpCoordinate(
+            {
+                "tie_indices": [0, 10, 15],
+                "tie_values": [
+                    t0,
+                    t0 + np.timedelta64(10_000_000_000, "ns"),
+                    t0 + np.timedelta64(15_550_000_000, "ns"),
+                ],
+            }
+        )
+        si_dt, tol_dt = coord_dt.infer_regular()
+        assert np.issubdtype(np.asarray(tol_dt).dtype, np.timedelta64)
+        assert tol_dt > np.timedelta64(0)
+        assert coord_dt.to_regular(
+            sampling_interval=si_dt, tolerance=tol_dt
+        ).isregular()
+
+        # No continuous segment → nothing to infer.
+        unit = InterpCoordinate(
+            {"tie_indices": [0, 1, 2], "tie_values": [0.0, 1.0, 2.0]}
+        )
+        assert unit.infer_regular() == (None, None)
+
     def test_add_sub(self):
         coord = InterpCoordinate({"tie_indices": [0, 4], "tie_values": [10.0, 50.0]})
         result = coord + 5.0
