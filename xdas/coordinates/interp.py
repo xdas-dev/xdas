@@ -118,6 +118,10 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
     def _assign_sampling_interval(self, sampling_interval, tolerance=None):
         if sampling_interval is None:
+            if tolerance is not None:
+                raise ValueError(
+                    "`tolerance` cannot be set without a `sampling_interval`"
+                )
             self.data["sampling_interval"] = None
             self.data["tolerance"] = None
             return
@@ -133,6 +137,17 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
                 "`sampling_interval` and `tolerance` are not consistent with "
                 "the `tie_indices` and `tie_values`"
             )
+
+    def _is_valid_sampling_interval(self, sampling_interval, tolerance=None):
+        num = np.diff(self.tie_values)
+        den = np.diff(self.tie_indices)
+        mask = den != 1
+        num = num[mask]
+        den = den[mask]
+        dmin = (num - 2 * tolerance) / den
+        dmax = (num + 2 * tolerance) / den
+        valid = np.all((dmin <= sampling_interval) & (sampling_interval <= dmax))
+        return bool(valid)
 
     @property
     def tie_indices(self):
@@ -162,27 +177,23 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
     @classmethod
     @override
     def from_block(cls, start, size, step, dim=None, dtype=None):
-        # Derive the endpoint from the parsed sampling interval (not the raw
-        # `step`) so that `tie_values` stay consistent with the stored
-        # `sampling_interval`. Otherwise a lower-precision `step` (e.g. float32)
-        # makes the two disagree and the coordinate fails its own validation
-        # when rebuilt through the constructor.
         start = np.asarray(start, dtype=dtype)
-        sampling_interval = parse_scalar_delta(step, start.dtype)
-        end = start + sampling_interval * (size - 1)
-        obj = cls(
-            {"tie_indices": [0, size - 1], "tie_values": [start, end]},
+        step = parse_scalar_delta(step, start.dtype)
+        end = start + step * (size - 1)
+        return cls(
+            {
+                "tie_indices": [0, size - 1],
+                "tie_values": [start, end],
+                "sampling_interval": step,
+            },
             dim=dim,
             dtype=dtype,
         )
-        obj.data["sampling_interval"] = parse_scalar_delta(step, obj.dtype)
-        obj.data["tolerance"] = parse_scalar_delta(None, obj.dtype, default_zero=True)
-        return obj
 
     @override
     def __len__(self):
         if len(self.tie_indices) > 0:
-            return self.tie_indices[-1] - self.tie_indices[0] + 1
+            return int(self.tie_indices[-1] - self.tie_indices[0] + 1)
         else:
             return 0
 
@@ -201,20 +212,6 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
     @override
     def _is_monotonic_increasing(self):
         return not self.get_split_indices("overlaps", tolerance=False).size
-
-    def _is_valid_sampling_interval(self, sampling_interval, tolerance=None):
-        if len(self) < 2:
-            valid = True
-        else:
-            num = np.diff(self.tie_values)
-            den = np.diff(self.tie_indices)
-            mask = den != 1
-            num = num[mask]
-            den = den[mask]
-            dmin = (num - 2 * tolerance) / den
-            dmax = (num + 2 * tolerance) / den
-            valid = np.all((dmin <= sampling_interval) & (sampling_interval <= dmax))
-        return valid
 
     @override
     def _get_value(self, index):
@@ -391,32 +388,6 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             }
         return self.__class__(data, self.dim)
 
-    def _nominal_sampling_interval(self, cast=False):
-        """Return the nominal per-segment sample spacing.
-
-        Uses the stored ``sampling_interval`` when the coordinate is regular;
-        otherwise estimates it as the median of per-segment rates, ignoring
-        unit-spaced tie gaps.
-        """
-        if self.sampling_interval is not None:
-            delta = self.sampling_interval
-            if cast and np.issubdtype(delta.dtype, np.timedelta64):
-                delta = delta / np.timedelta64(1, "s")
-            return delta
-        if len(self) < 2:
-            return None
-        num = np.diff(self.tie_values)
-        den = np.diff(self.tie_indices)
-        mask = den != 1
-        num = num[mask]
-        den = den[mask]
-        if len(num) == 0:
-            return None
-        delta = np.median(num / den)
-        if cast and np.issubdtype(delta.dtype, np.timedelta64):
-            delta = delta / np.timedelta64(1, "s")
-        return delta
-
     @override
     def get_sampling_interval(self, cast=True):
         delta = self.sampling_interval
@@ -433,19 +404,106 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         Parameters
         ----------
         sampling_interval : scalar, optional
-            Nominal sample spacing to enforce. Inferred from the median per-segment
-            rate when omitted.
-        tolerance : scalar, optional
-            Tolerated jitter around *sampling_interval*. Defaults to a dtype-dependent
-            epsilon, so a genuinely irregular axis raises :exc:`ValueError`.
+            Nominal sample spacing to enforce. When omitted it is inferred as the
+            spacing that best satisfies :meth:`_is_valid_sampling_interval`, i.e.
+            the one minimising the worst per-segment drift (see Notes).
+        tolerance : scalar or ``"auto"``, optional
+            Tolerated jitter around *sampling_interval*. Defaults to a
+            dtype-dependent epsilon, so a genuinely irregular axis raises
+            :exc:`ValueError`. Pass ``"auto"`` to set the smallest tolerance that
+            keeps *sampling_interval* valid (see Notes).
 
         Returns
         -------
         InterpCoordinate
-            A new coordinate with :attr:`sampling_interval` set.
+            A new coordinate with :attr:`sampling_interval` set, or with it left
+            unset when no spacing can be inferred (no segment spans more than one
+            sample).
+
+        Notes
+        -----
+        For a non-unit segment ``i`` between two tie points, ``num_i`` is the
+        change in ``tie_values`` and ``den_i`` the change in ``tie_indices``. The
+        quantity ``si * den_i - num_i`` is the drift accumulated between the
+        regular grid and the tie values at the end of that segment, and
+        :meth:`_is_valid_sampling_interval` accepts ``si`` exactly when every
+        such drift stays within ``2 * tolerance``.
+
+        The inferred spacing minimises the worst-case drift::
+
+            si* = argmin_si  max_i |si * den_i - num_i|
+
+        This convex, piecewise-linear objective is a length-weighted Chebyshev
+        center of the per-segment rates ``r = num / den``. Its minimum is reached
+        where the two most disagreeing segments balance, so over all pairs the
+        binding one maximises ``den_i * den_j * |r_i - r_j| / (den_i + den_j)``
+        and the optimum is the rate of that merged pair::
+
+            si* = (num_i + num_j) / (den_i + den_j)
+
+        The matching auto tolerance is half that worst drift, since validity
+        compares the drift against ``2 * tolerance``::
+
+            tolerance = max_i |si* * den_i - num_i| / 2
         """
-        if sampling_interval is None:
-            sampling_interval = self._nominal_sampling_interval(cast=False)
+        # An already-regular coordinate keeps its spacing unless one is forced.
+        if self.sampling_interval is not None and sampling_interval is None:
+            return self.copy()
+
+        num = np.diff(self.tie_values)
+        den = np.diff(self.tie_indices)
+        # Only multi-sample segments carry rate information; unit gaps are
+        # ignored, consistently with `_is_valid_sampling_interval`.
+        mask = den != 1
+        num = num[mask]
+        den = den[mask]
+
+        if sampling_interval is None and num.size > 0:
+            # Per-segment rates as plain floats (seconds for datetime axes), used
+            # only to pick the binding pair without integer/timedelta overflow.
+            num_seconds = (
+                num / np.timedelta64(1, "s")
+                if np.issubdtype(num.dtype, np.timedelta64)
+                else num.astype(float)
+            )
+            den_float = den.astype(float)
+            rate = num_seconds / den_float
+            # height_ij = den_i den_j |r_i - r_j| / (den_i + den_j); the diagonal
+            # is zero, so a single segment trivially selects itself.
+            height = (
+                den_float[:, None]
+                * den_float[None, :]
+                * np.abs(rate[:, None] - rate[None, :])
+                / (den_float[:, None] + den_float[None, :])
+            )
+            i, j = np.unravel_index(np.argmax(height), height.shape)
+            # Balance point of the binding pair, kept in the native dtype.
+            sampling_interval = (num[i] + num[j]) / (den[i] + den[j])
+
+        if isinstance(tolerance, str):
+            if tolerance != "auto":
+                raise ValueError(f"unknown tolerance {tolerance!r}, expected 'auto'")
+            if sampling_interval is None or num.size == 0:
+                tolerance = None
+            else:
+                # Validity requires `2 * tolerance >= max drift`, so halve the
+                # worst drift. Work in float (seconds for datetime axes) and add a
+                # few ULPs at value scale so the division-based re-validation
+                # cannot reject the result on rounding alone.
+                is_datetime = np.issubdtype(num.dtype, np.timedelta64)
+                num_seconds = (
+                    num / np.timedelta64(1, "s") if is_datetime else num.astype(float)
+                )
+                si_seconds = (
+                    sampling_interval / np.timedelta64(1, "s")
+                    if is_datetime
+                    else float(sampling_interval)
+                )
+                drift = np.abs(si_seconds * den - num_seconds).max()
+                tolerance = drift / 2 + 4 * np.spacing(np.abs(num_seconds).max())
+                if is_datetime:
+                    tolerance = np.timedelta64(int(np.ceil(tolerance * 1e9)), "ns")
+
         data = {
             "tie_indices": self.tie_indices,
             "tie_values": self.tie_values,
@@ -473,26 +531,15 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
     @override
     def _split_candidates(self):
-        # Candidate boundaries are the unit-spaced tie gaps: two consecutive tie
-        # points one index apart, each encoding a single-sample discontinuity.
-        (gaps,) = np.nonzero(np.diff(self.tie_indices) == 1)
-        n_segments = len(self.tie_indices) - 1
-        # Compare each jump against the sampling interval of the segment on its
-        # left rather than a global nominal one, so a continuous coordinate that
-        # merely changes its sampling rate across the boundary is not reported as
-        # a discontinuity. The first segment has no left neighbour: fall back to
-        # the segment on its right, or to the gap itself (leaving its delta at
-        # zero) when it is the only segment.
-        reference = np.where(
-            gaps > 0,
-            gaps - 1,
-            np.where(gaps < n_segments - 1, gaps + 1, gaps),
+        tie_intervals = np.diff(self.tie_values) / np.diff(self.tie_indices)
+        (positions,) = np.nonzero(np.diff(self.tie_indices) == 1)
+        references = np.where(
+            positions > 0,
+            positions - 1,
+            np.minimum(positions + 1, len(tie_intervals) - 1),
         )
-        sampling_interval = (
-            self.tie_values[reference + 1] - self.tie_values[reference]
-        ) / (self.tie_indices[reference + 1] - self.tie_indices[reference])
-        deltas = self.tie_values[gaps + 1] - self.tie_values[gaps] - sampling_interval
-        return self.tie_indices[gaps + 1], deltas
+        deltas = tie_intervals[positions] - tie_intervals[references]
+        return self.tie_indices[positions + 1], deltas
 
 
 def _douglas_peucker(x, y, epsilon):

@@ -378,9 +378,9 @@ class TestInterpCoordinateExtra:
         result = coord.__array__(dtype=np.float32)
         assert result.dtype == np.float32
 
-    def test_nominal_sampling_interval_empty(self):
+    def test_to_regular_empty(self):
         coord = InterpCoordinate()
-        assert coord._nominal_sampling_interval() is None
+        assert coord.to_regular().sampling_interval is None
 
     def test_get_indexer_overlaps(self):
         coord = InterpCoordinate(
@@ -484,6 +484,24 @@ class TestInterpCoordinateExtra:
         assert reg.isregular()
         assert reg.sampling_interval == 0.1
 
+    def test_to_regular_already_regular_is_preserved(self):
+        # a regular coordinate keeps its stored spacing untouched
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 10, 20],
+                "tie_values": [0.0, 1.0, 2.05],
+                "sampling_interval": 0.1,
+                "tolerance": 0.1,
+            }
+        )
+        reg = coord.to_regular()
+        assert reg is not coord
+        assert reg.sampling_interval == 0.1
+        assert reg.tolerance == 0.1
+        # an explicit spacing still overrides it
+        reg2 = coord.to_regular(sampling_interval=0.103, tolerance=0.1)
+        assert reg2.sampling_interval == 0.103
+
     def test_module_helper_autoconvert(self):
         da = xd.DataArray(
             np.zeros(9),
@@ -506,19 +524,73 @@ class TestInterpCoordinateExtra:
         result = coord.to_regular().get_sampling_interval()  # cast=True by default
         assert result == 1.0
 
-    def test_nominal_sampling_interval_datetime_cast(self):
+    def test_to_regular_infer_datetime(self):
         t0 = np.datetime64("2000-01-01T00:00:00")
         t1 = np.datetime64("2000-01-01T00:00:08")
         coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [t0, t1]})
-        assert coord._nominal_sampling_interval(cast=True) == 1.0
-        assert coord._nominal_sampling_interval(cast=False) == np.timedelta64(1, "s")
+        reg = coord.to_regular()
+        assert reg.sampling_interval == np.timedelta64(1, "s")
+        assert reg.get_sampling_interval() == 1.0
 
-    def test_nominal_sampling_interval_unit_spaced(self):
-        # all tie-index gaps == 1 → mask is all False → returns None
+    def test_to_regular_unit_spaced(self):
+        # all tie-index gaps == 1 → no constrained segment → cannot infer
         coord = InterpCoordinate(
             {"tie_indices": [0, 1, 2], "tie_values": [0.0, 1.0, 2.0]}
         )
-        assert coord._nominal_sampling_interval() is None
+        assert coord.to_regular().sampling_interval is None
+
+    def test_to_regular_minimax_favours_long_segment(self):
+        # rates 1.0 (den=10) and 1.1 (den=2); minimax is pulled toward the long
+        # segment, not the median midpoint 1.05
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 10, 12], "tie_values": [0.0, 10.0, 12.2]}
+        )
+        si = coord.to_regular(tolerance="auto").sampling_interval
+        np.testing.assert_allclose(si, 12.2 / 12)
+
+    def test_to_regular_auto_tolerance(self):
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 10, 15], "tie_values": [0.0, 10.0, 15.55]}
+        )
+        reg = coord.to_regular(tolerance="auto")
+        assert reg.isregular()
+        assert reg.tolerance > 0
+
+    def test_to_regular_auto_tolerance_datetime(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 10, 15],
+                "tie_values": [
+                    t0,
+                    t0 + np.timedelta64(10_000_000_000, "ns"),
+                    t0 + np.timedelta64(15_550_000_000, "ns"),
+                ],
+            }
+        )
+        reg = coord.to_regular(tolerance="auto")
+        assert reg.isregular()
+        assert reg.tolerance > np.timedelta64(0)
+
+    def test_to_regular_auto_tolerance_uninferable(self):
+        # no constrained segment → nothing to infer, tolerance stays unset
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 1, 2], "tie_values": [0.0, 1.0, 2.0]}
+        )
+        reg = coord.to_regular(tolerance="auto")
+        assert reg.sampling_interval is None
+        assert reg.tolerance is None
+
+    def test_to_regular_unknown_tolerance(self):
+        coord = InterpCoordinate({"tie_indices": [0, 10], "tie_values": [0.0, 10.0]})
+        with pytest.raises(ValueError, match="unknown tolerance"):
+            coord.to_regular(tolerance="nope")
+
+    def test_tolerance_without_sampling_interval(self):
+        with pytest.raises(ValueError, match="cannot be set without"):
+            InterpCoordinate(
+                {"tie_indices": [0, 10], "tie_values": [0.0, 10.0], "tolerance": 0.1}
+            )
 
     def test_add_sub(self):
         coord = InterpCoordinate({"tie_indices": [0, 4], "tie_values": [10.0, 50.0]})
@@ -653,7 +725,7 @@ class TestInterpCoordinateRegular:
         assert coord.sampling_interval is None
         assert coord.tolerance is None
         assert coord.get_sampling_interval() is None
-        assert coord._nominal_sampling_interval(cast=True) is None
+        assert coord.to_regular().sampling_interval is None
         assert not coord.isregular()
 
     def test_empty_slice_preserves_sampling_interval(self):
@@ -747,7 +819,7 @@ class TestInterpCoordinateRegular:
         )
         assert coord.get_sampling_interval() == 1.0
         assert coord.get_sampling_interval(cast=False) == np.timedelta64(1, "s")
-        assert coord._nominal_sampling_interval(cast=True) == 1.0
+        assert coord.to_regular().get_sampling_interval() == 1.0
 
     def test_dataset_roundtrip_numeric(self):
         coord = self.make()
