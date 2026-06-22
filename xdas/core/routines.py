@@ -1047,6 +1047,21 @@ def concat_coords(objs, *, sort=False, return_order=False, tolerance=False):
     if tolerance is not False:
         if isinstance(out, AxisCoordinate):
             out = out.simplify(tolerance)
+            # `_concat` is strict and drops mismatched sampling intervals to
+            # irregular. When a numeric tolerance was supplied, give the merged
+            # coord a chance to recover a single shared rate within that
+            # budget (e.g. files joined at slightly different nominal rates).
+            if (
+                tolerance is not None
+                and hasattr(
+                    out, "to_regular"
+                )  # TODO: make to_regular and abstract method
+                and not out.isregular()
+            ):
+                try:
+                    out = out.to_regular(tolerance=tolerance)
+                except ValueError:
+                    pass
         elif (
             tolerance is not None
         ):  # TODO: Default to False and remove this condition here?

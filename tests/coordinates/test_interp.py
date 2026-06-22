@@ -854,14 +854,56 @@ class TestInterpCoordinateRegular:
         assert len(result) == 20
 
     def test_concat_different_sampling_interval(self):
+        # Wildly different rates cannot be reconciled under tolerance, so the
+        # merged coord falls back to irregular.
         a = InterpCoordinate(
             {"tie_indices": [0, 9], "tie_values": [0.0, 0.9], "sampling_interval": 0.1}
         )
         b = InterpCoordinate(
             {"tie_indices": [0, 9], "tie_values": [1.0, 2.8], "sampling_interval": 0.2}
         )
-        with pytest.raises(ValueError, match="different sampling interval"):
-            a._concat(b)
+        result = a._concat(b)
+        assert isinstance(result, InterpCoordinate)
+        assert not result.isregular()
+        assert result.sampling_interval is None
+        assert len(result) == 20
+
+        # Mixed regular/irregular drifts too far → irregular.
+        c = InterpCoordinate({"tie_indices": [0, 9], "tie_values": [3.0, 4.0]})
+        mixed = a._concat(c)
+        assert mixed.sampling_interval is None
+        assert len(mixed) == 20
+
+    def test_concat_coords_recovers_regular_spacing(self):
+        # `_concat` itself stays strict and drops to irregular when sampling
+        # intervals disagree; `concat_coords` then tries to reconcile a
+        # single shared rate within the user-supplied tolerance.
+        a = InterpCoordinate(
+            {
+                "tie_indices": [0, 9],
+                "tie_values": [0.0, 0.9],
+                "sampling_interval": 0.1,
+                "tolerance": 0.05,
+            },
+            "x",
+        )
+        b = InterpCoordinate(
+            {
+                "tie_indices": [0, 9],
+                "tie_values": [1.0, 1.99],
+                "sampling_interval": 0.11,
+                "tolerance": 0.05,
+            },
+            "x",
+        )
+        assert not a._concat(b).isregular()
+
+        from xdas.core.routines import concat_coords
+
+        reconciled = concat_coords([a, b], tolerance=0.5)
+        assert reconciled.isregular()
+        assert 0.1 <= reconciled.sampling_interval <= 0.11
+        assert len(reconciled) == 20
 
     def test_add_sub(self):
         coord = self.make()

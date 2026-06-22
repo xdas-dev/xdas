@@ -282,20 +282,21 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             "tie_indices": np.append(self.tie_indices, other.tie_indices + len(self)),
             "tie_values": np.append(self.tie_values, other.tie_values),
         }
-        if self.sampling_interval != other.sampling_interval:
-            raise ValueError(
-                "cannot append coordinate with different sampling interval"
-            )
-        if self.sampling_interval is not None:
-            tolerance = (
-                max(self.tolerance, other.tolerance)
-                if self.tolerance is not None and other.tolerance is not None
-                else None
-            )
+        # Strict primitive: preserve the regular contract only when both sides
+        # advertise the exact same spacing; otherwise the merged coord is
+        # irregular by construction. The joining tie pair has ``den == 1`` (a
+        # CF discontinuity) so each side's segments validate independently,
+        # and ``max(tolerance)`` bounds the union. Reconciling slightly
+        # different rates is the job of user-facing routines (see
+        # :func:`concat_coords`, which delegates to :meth:`simplify`).
+        if (
+            self.sampling_interval is not None
+            and self.sampling_interval == other.sampling_interval
+        ):
             data = {
                 **data,
                 "sampling_interval": self.sampling_interval,
-                "tolerance": tolerance,
+                "tolerance": max(self.tolerance, other.tolerance),
             }
         return self.__class__(data, self.dim)
 
