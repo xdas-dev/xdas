@@ -923,7 +923,16 @@ class Bag:
                 raise CompatibilityError("sampling intervals are not compatible")
 
 
-def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
+def concat(
+    objs,
+    dim="first",
+    tolerance=None,
+    virtual=None,
+    verbose=None,
+    *,
+    reduce=True,
+    regularize=False,
+):
     """
     Concatenate data arrays along a given dimension.
 
@@ -942,6 +951,16 @@ def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
         data arrays are virtual. By default tries to create a virtual dataset if possible.
     verbose: bool
         Whether to display a progress bar.
+    reduce : bool, optional
+        Whether to drop redundant tie points from the concatenated coordinate.
+        Default True.
+    regularize : bool, optional
+        Whether to promote the concatenated coordinate to a regular one when its
+        segments admit a single shared rate within *tolerance*. Default False.
+        Disabled by default because the signal-processing atoms and some
+        reference coordinates do not yet propagate regularity, so promoting here
+        would break round-trip equality. See
+        docs/plan_propagate_simplify_kwargs.md.
 
     Returns
     -------
@@ -980,6 +999,8 @@ def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
             sort=True,
             return_order=True,
             tolerance=tolerance,
+            reduce=reduce,
+            regularize=regularize,
         )
         objs = [objs[idx] for idx in order]
         coords[dim] = coord
@@ -1006,7 +1027,15 @@ def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
 concatenate = concat  # TODO: deprecate it
 
 
-def concat_coords(objs, *, sort=False, return_order=False, tolerance=False):
+def concat_coords(
+    objs,
+    *,
+    sort=False,
+    return_order=False,
+    tolerance=False,
+    reduce=True,
+    regularize=True,
+):
     """
     Concatenate coordinate objects.
 
@@ -1023,6 +1052,12 @@ def concat_coords(objs, *, sort=False, return_order=False, tolerance=False):
         The tolerance to consider that the end of a coordinate object is continuous
         with beginning of the following, For time coordinates, numeric values are
         considered as seconds. No simplification by default.
+    reduce : bool, optional
+        Whether to drop redundant tie points after concatenation. Default True.
+    regularize : bool, optional
+        Whether to promote the result to a regular coordinate when the merged
+        segments admit a single shared rate within *tolerance*. Default True.
+        Pass ``regularize=False`` to keep the irregular round-trip representation.
 
     Returns
     -------
@@ -1046,22 +1081,13 @@ def concat_coords(objs, *, sort=False, return_order=False, tolerance=False):
     # simplify
     if tolerance is not False:
         if isinstance(out, AxisCoordinate):
-            out = out.simplify(tolerance)
             # `_concat` is strict and drops mismatched sampling intervals to
-            # irregular. When a numeric tolerance was supplied, give the merged
-            # coord a chance to recover a single shared rate within that
-            # budget (e.g. files joined at slightly different nominal rates).
-            if (
-                tolerance is not None
-                and hasattr(
-                    out, "to_regular"
-                )  # TODO: make to_regular and abstract method
-                and not out.isregular()
-            ):
-                try:
-                    out = out.to_regular(tolerance=tolerance)
-                except ValueError:
-                    pass
+            # irregular. `simplify` then drops redundant tie points and, by
+            # default, recovers a single shared rate when the merged segments
+            # admit one within *tolerance* (e.g. files joined at slightly
+            # different nominal rates). Pass `regularize=False` to keep the
+            # irregular round-trip representation.
+            out = out.simplify(tolerance, reduce=reduce, regularize=regularize)
         elif (
             tolerance is not None
         ):  # TODO: Default to False and remove this condition here?

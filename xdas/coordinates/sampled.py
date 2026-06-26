@@ -417,8 +417,15 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
         return delta
 
     @override
-    def simplify(self, tolerance=None):
-        if tolerance is False:
+    def simplify(self, tolerance=None, *, reduce=True, regularize=False):
+        """Fuse adjacent segments whose junction drift is within *tolerance*.
+
+        The coordinate is regular by construction (it carries a single
+        ``sampling_interval``), so *regularize* is a no-op; fusing happens only
+        when *reduce* is set. See :meth:`Coordinate.simplify` for the parameter
+        contract.
+        """
+        if tolerance is False or not reduce:
             return self.copy()
         tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
         tie_values = [self.tie_values[0]]

@@ -71,7 +71,8 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
     within ``2 * tolerance`` (each tie value may jitter by ±``tolerance``).
     A coordinate with no continuous area (e.g. ``tie_indices=[0, 1, 2]``) has no
     inferable spacing, so an explicitly provided one is stored as-is.  Use
-    :meth:`to_regular` to infer or enforce a spacing from the continuous areas.
+    :meth:`simplify` to canonicalise a coordinate and acquire a spacing from
+    the continuous areas within an accuracy budget.
 
     Examples
     --------
@@ -399,6 +400,14 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         sampling_interval = parse_scalar_delta(sampling_interval, self.dtype)
         tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
 
+        # Normalise datetime deltas to the tie-value resolution so an in-memory
+        # coordinate matches the one read back after serialisation (which always
+        # encodes timedeltas at the coordinate's datetime resolution).
+        if np.issubdtype(self.dtype, np.datetime64):
+            unit = np.datetime_data(self.dtype)[0]
+            sampling_interval = sampling_interval.astype(f"timedelta64[{unit}]")
+            tolerance = tolerance.astype(f"timedelta64[{unit}]")
+
         if self._is_valid_sampling_interval(sampling_interval, tolerance):
             self.data["sampling_interval"] = sampling_interval
             self.data["tolerance"] = tolerance
@@ -421,15 +430,14 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         valid = np.all((dmin <= sampling_interval) & (sampling_interval <= dmax))
         return bool(valid)
 
-    def infer_regular(self):
+    def _infer_regular(self):
         """
         Estimate the nominal spacing and tightest tolerance for this coordinate.
 
-        Diagnostic counterpart to :meth:`to_regular`: returns the spacing that
-        minimises the worst per-segment drift and the smallest tolerance that
-        would still validate it, without enforcing either on the coordinate.
-        Handy for inspecting how regular an irregular axis really is before
-        deciding what arguments to feed :meth:`to_regular`.
+        Private helper behind :meth:`simplify` and :meth:`_to_regular`: returns
+        the spacing that minimises the worst per-segment drift and the smallest
+        tolerance that would still validate it, without enforcing either on the
+        coordinate.
 
         Returns
         -------
@@ -477,9 +485,7 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         # Float seconds for datetime axes pick the binding pair without
         # integer/timedelta overflow; the final values stay in the native dtype.
         is_datetime = np.issubdtype(num.dtype, np.timedelta64)
-        num_seconds = (
-            num / np.timedelta64(1, "s") if is_datetime else num.astype(float)
-        )
+        num_seconds = num / np.timedelta64(1, "s") if is_datetime else num.astype(float)
         pos_idx, neg_idx = _chebyshev_center_pair(num_seconds, den.astype(float))
         sampling_interval = (num[pos_idx] + num[neg_idx]) / (
             den[pos_idx] + den[neg_idx]
@@ -496,22 +502,25 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             tolerance = np.timedelta64(int(np.ceil(tolerance * 1e9)), "ns")
         return sampling_interval, tolerance
 
-    def to_regular(self, sampling_interval=None, tolerance=None):
+    def _to_regular(self, sampling_interval=None, tolerance=None):
         """
         Return a copy of this coordinate with an enforced nominal sampling interval.
+
+        Private strict counterpart to :meth:`simplify`: it raises when the
+        spacing cannot be validated, whereas :meth:`simplify` falls back to an
+        irregular result. Used by the module-level :func:`get_sampling_interval`
+        helper to extract a clean rate from a structurally-regular coordinate.
 
         Parameters
         ----------
         sampling_interval : scalar, optional
             Nominal sample spacing to enforce. When omitted it is inferred via
-            :meth:`infer_regular` (the length-weighted Chebyshev center of the
+            :meth:`_infer_regular` (the length-weighted Chebyshev center of the
             per-segment rates).
         tolerance : scalar, optional
             Tolerated jitter around *sampling_interval*. Defaults to a
             dtype-dependent epsilon, so a genuinely irregular axis raises
-            :exc:`ValueError`. Use :meth:`infer_regular` to discover the
-            tightest tolerance that would still keep the inferred spacing
-            valid before deciding what to pass here.
+            :exc:`ValueError`.
 
         Returns
         -------
@@ -527,7 +536,7 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         if tolerance is None:
             tolerance = self.tolerance
         if sampling_interval is None:
-            sampling_interval, _ = self.infer_regular()
+            sampling_interval, _ = self._infer_regular()
         data = {
             "tie_indices": self.tie_indices,
             "tie_values": self.tie_values,
@@ -537,36 +546,64 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         return self.__class__(data, self.dim)
 
     @override
-    def simplify(self, tolerance=None):
-        """Drop redundant tie points within *tolerance* via Douglas-Peucker.
+    def simplify(self, tolerance=None, *, reduce=True, regularize=False):
+        """Canonicalise within *tolerance*: drop tie points, then promote to regular.
 
-        The CF 8.3 structure is preserved as an emergent property of that bound:
-        real discontinuities are kept (any spanning line crosses them by far more
-        than *tolerance*), soft ones are fused into a single ramp, and
-        synchronisation tie points survive because removing them would, by
-        definition, drift more than *tolerance*. Surviving values are never
-        moved.
+        The *reduce* stage runs Douglas-Peucker to drop tie points whose removal
+        shifts the curve by no more than *tolerance*. The CF 8.3 structure is
+        preserved as an emergent property of that bound: real discontinuities are
+        kept (any spanning line crosses them by far more than *tolerance*), soft
+        ones are fused into a single ramp, and synchronisation tie points survive
+        because removing them would, by definition, drift more than *tolerance*.
+        Surviving values are never moved.
+
+        The *regularize* stage promotes the result to *regular* when the
+        surviving continuous segments admit a single ``sampling_interval`` within
+        *tolerance* (the internal Chebyshev fit's worst residual stays inside the
+        budget). The promotion is per-continuous-segment and sign-agnostic, so
+        two same-rate segments joined by a CF overlap are still described by one
+        spacing. An already-regular coordinate keeps its spacing regardless of
+        *regularize* and just widens its stored tolerance to absorb any jump
+        fused by the reduce stage.
 
         See :meth:`Coordinate.simplify` for the parameter contract.
         """
         if tolerance is False:
             return self.copy()
         tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
-        tie_indices, tie_values = _douglas_peucker(
-            self.tie_indices, self.tie_values, tolerance
-        )
+        if reduce:
+            tie_indices, tie_values = _douglas_peucker(
+                self.tie_indices, self.tie_values, tolerance
+            )
+        else:
+            tie_indices, tie_values = self.tie_indices, self.tie_values
         data = {"tie_indices": tie_indices, "tie_values": tie_values}
         if self.sampling_interval is not None:
-            # Douglas-Peucker may fuse a soft discontinuity into a continuous
-            # ramp; the new segment then carries the absorbed jump (bounded by
-            # `tolerance` per intermediate) on top of the original jitter
-            # (`self.tolerance`). Adding the two preserves validity in that
-            # case and degrades to `self.tolerance` for a lossless simplify.
+            # Already regular: keep the spacing. A reduce pass may fuse a soft
+            # discontinuity into a ramp; the new segment then carries the
+            # absorbed jump (bounded by `tolerance` per intermediate) on top of
+            # the original jitter (`self.tolerance`). Widening by `tolerance`
+            # preserves validity in that case and degrades to `self.tolerance`
+            # for a lossless pass.
             data = {
                 **data,
                 "sampling_interval": self.sampling_interval,
-                "tolerance": self.tolerance + tolerance,
+                "tolerance": self.tolerance + tolerance if reduce else self.tolerance,
             }
+            return self.__class__(data, self.dim)
+        # Otherwise try to promote: infer the best spacing on the surviving
+        # continuous segments and keep it only if it validates within the budget.
+        if regularize:
+            reduced = self.__class__(data, self.dim)
+            sampling_interval, _ = reduced._infer_regular()
+            if sampling_interval is not None and reduced._is_valid_sampling_interval(
+                sampling_interval, tolerance
+            ):
+                data = {
+                    **data,
+                    "sampling_interval": sampling_interval,
+                    "tolerance": tolerance,
+                }
         return self.__class__(data, self.dim)
 
     @override

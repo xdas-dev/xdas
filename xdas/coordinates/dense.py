@@ -185,6 +185,7 @@ class DenseCoordinate(AxisCoordinate, ctype="dense"):
         return positions, deltas
 
     @override
-    def simplify(self, tolerance=None):
-        # we cannot simplify a dense coordinate
+    def simplify(self, tolerance=None, *, reduce=True, regularize=False):
+        # a dense coordinate stores every value explicitly; there is nothing to
+        # drop and no spacing to promote, so both stages are no-ops.
         return self.copy()

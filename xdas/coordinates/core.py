@@ -689,20 +689,39 @@ class AxisCoordinate(Coordinate, ABC):
         """
 
     @abstractmethod
-    def simplify(self, tolerance=None):
+    def simplify(self, tolerance=None, *, reduce=True, regularize=False):
         """
-        Return a simplified copy of this coordinate with redundant points removed.
+        Return the simplest faithful copy of this coordinate within *tolerance*.
 
-        Points whose removal would shift any label by no more than *tolerance*
-        are dropped, reducing memory and I/O cost without meaningfully changing
-        the represented axis. As a side effect, small gaps or overlaps that fall
-        within *tolerance* may be absorbed, merging adjacent segments into one.
+        A coordinate carries two independent, orthogonal properties:
+
+        - **Monotonic** — tie values strictly increase, which is what makes
+          label-based selection (:meth:`to_index`) work.
+        - **Regular** — every continuous segment fits a single nominal
+          ``sampling_interval``, which signal-processing routines (FFT,
+          filtering, resampling) need for a clean sample rate.
+
+        ``simplify`` spends an accuracy budget *tolerance* across two
+        independently toggleable stages:
+
+        - *reduce* drops redundant points whose removal shifts the curve by no
+          more than *tolerance* (which also absorbs soft gaps and overlaps,
+          helping monotonicity). Surviving values are never moved.
+        - *regularize* promotes the coordinate to *regular* when the surviving
+          continuous segments admit a single spacing within *tolerance*.
 
         Parameters
         ----------
         tolerance : float, timedelta, None, or ``False``, optional
-            Maximum allowed deviation from the original values.  ``None`` uses
-            zero tolerance (lossless).  ``False`` returns an unchanged copy.
+            Accuracy budget; maximum allowed deviation from the original
+            values.  ``None`` uses zero tolerance (lossless).  ``False``
+            returns an unchanged copy regardless of the flags below.
+        reduce : bool, optional
+            Whether to drop redundant tie points. Default ``True``.
+        regularize : bool, optional
+            Whether to try to acquire a nominal ``sampling_interval``. Default
+            ``False`` (opt-in). A no-op for coordinates that are already regular
+            by construction or cannot become regular.
 
         Returns
         -------
@@ -1222,8 +1241,8 @@ def get_sampling_interval(da, dim, cast=True):
         return None
     if coord.isregular():
         return coord.get_sampling_interval(cast=cast)
-    if hasattr(coord, "to_regular"):
-        return coord.to_regular().get_sampling_interval(cast=cast)
+    if hasattr(coord, "_to_regular"):
+        return coord._to_regular().get_sampling_interval(cast=cast)
     return coord.get_sampling_interval(cast=cast)
 
 
