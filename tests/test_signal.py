@@ -13,24 +13,20 @@ class TestSignal:
         shape = (6000, 1000)
         resolution = (np.timedelta64(8, "ms"), 5.0)
         starttime = np.datetime64("2023-01-01T00:00:00")
+
         da = xd.DataArray(
             data=np.random.randn(*shape).astype("float32"),
             coords={
-                "time": {
-                    "tie_indices": [0, shape[0] - 1],
-                    "tie_values": [
-                        starttime,
-                        starttime + resolution[0] * (shape[0] - 1),
-                    ],
-                },
-                "distance": {
-                    "tie_indices": [0, shape[1] - 1],
-                    "tie_values": [0.0, resolution[1] * (shape[1] - 1)],
-                },
+                "time": xd.Coordinate["interpolated"].from_block(
+                    starttime, shape[0], resolution[0], dim="time"
+                ),
+                "distance": xd.Coordinate["interpolated"].from_block(
+                    0.0, shape[1], resolution[1], dim="distance"
+                ),
             },
         )
-        assert xs.get_sampling_interval(da, "time") == 0.008
-        assert xs.get_sampling_interval(da, "distance") == 5.0
+        assert da.coords["time"].get_sampling_interval() == 0.008
+        assert da.coords["distance"].get_sampling_interval() == 5.0
 
     def test_deterend(self):
         n = 100
@@ -182,12 +178,15 @@ class TestSignal:
 class TestSTFT:
     def test_compare_with_scipy(self):
         starttime = np.datetime64("2023-01-01T00:00:00")
-        endtime = starttime + 9999 * np.timedelta64(10, "ms")
         da = xd.DataArray(
             data=np.random.rand(10000, 11),
             coords={
-                "time": {"tie_indices": [0, 9999], "tie_values": [starttime, endtime]},
-                "distance": {"tie_indices": [0, 10], "tie_values": [0.0, 1.0]},
+                "time": xd.Coordinate["interpolated"].from_block(
+                    starttime, 10000, np.timedelta64(10, "ms"), dim="time"
+                ),
+                "distance": xd.Coordinate["interpolated"].from_block(
+                    0.0, 11, 0.1, dim="distance"
+                ),
             },
         )
         for scaling in ["spectrum", "psd"]:
@@ -205,7 +204,7 @@ class TestSTFT:
                     )
                     f, t, Zxx = sp.stft(
                         da.values,
-                        fs=1 / xs.get_sampling_interval(da, "time"),
+                        fs=1 / da.coords["time"].get_sampling_interval(),
                         window="hamming",
                         nperseg=100,
                         noverlap=50,
@@ -278,12 +277,15 @@ class TestSTFT:
 
     def test_last_dimension_with_non_dimensional_coordinates(self):
         starttime = np.datetime64("2023-01-01T00:00:00")
-        endtime = starttime + 99 * np.timedelta64(10, "ms")
         da = xd.DataArray(
             data=np.random.rand(100, 1001),
             coords={
-                "time": {"tie_indices": [0, 99], "tie_values": [starttime, endtime]},
-                "distance": {"tie_indices": [0, 1000], "tie_values": [0.0, 10_000.0]},
+                "time": xd.Coordinate["interpolated"].from_block(
+                    starttime, 100, np.timedelta64(10, "ms"), dim="time"
+                ),
+                "distance": xd.Coordinate["interpolated"].from_block(
+                    0.0, 1001, 10.0, dim="distance"
+                ),
                 "channel": ("distance", np.arange(1001)),
             },
         )
@@ -296,7 +298,7 @@ class TestSTFT:
         )
         f, t, Zxx = sp.stft(
             da.values,
-            fs=1 / xs.get_sampling_interval(da, "distance"),
+            fs=1 / da.coords["distance"].get_sampling_interval(),
             window="hamming",
             nperseg=100,
             noverlap=50,
@@ -325,7 +327,7 @@ class TestSignalMissingBranches:
     def test_sliding_mean_removal_even_window(self):
         # When wlen/d gives an even n, sliding_mean_removal increments n by 1.
         da = wavelet_wavefronts()
-        d = xs.get_sampling_interval(da, "time")
+        d = da.coords["time"].get_sampling_interval()
         # Make wlen exactly twice d so n=2 (even) → becomes 3
         result = xs.sliding_mean_removal(da, wlen=2 * d)
         assert result.shape == da.shape

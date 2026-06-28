@@ -178,7 +178,13 @@ class TestFilters:
         )
         expected = xd.DataArray(
             [3, 0, 0, 3, 0, 0, 3, 0, 0],
-            {"time": {"tie_indices": [0, 8], "tie_values": [0.0, 8.0]}},
+            {
+                "time": {
+                    "tie_indices": [0, 8],
+                    "tie_values": [0.0, 8.0],
+                    "sampling_interval": 1.0,
+                }
+            },
         )
         atom = UpSample(3, dim="time")
         result = atom(da)

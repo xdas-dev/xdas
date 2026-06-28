@@ -81,6 +81,7 @@ class TestCore:
             "time": {
                 "tie_indices": [0, da1.sizes["time"] + da2.sizes["time"] - 1],
                 "tie_values": [da1["time"][0].values, da2["time"][-1].values],
+                "sampling_interval": da1.coords["time"].sampling_interval,
             },
             "distance": da1["distance"],
         }
@@ -166,7 +167,11 @@ class TestCore:
         result = xd.concat(objs, dim="time")
         time_values = result["time"].values
         result["time"] = InterpCoordinate(
-            {"tie_indices": np.arange(len(time_values)), "tie_values": time_values},
+            {
+                "tie_indices": np.arange(len(time_values)),
+                "tie_values": time_values,
+                "sampling_interval": da.coords["time"].sampling_interval,
+            },
             "time",
         ).simplify()
         assert result.equals(da)

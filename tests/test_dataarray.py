@@ -436,10 +436,15 @@ class TestIO:
 
     def test_stream(self):
         da = wavelet_wavefronts()
-        da["time"] = {
-            "tie_indices": da["time"].tie_indices,
-            "tie_values": da["time"].tie_values.astype("datetime64[us]"),
-        }
+        # Rebuild the time coordinate as datetime64[us] with an explicit sampling_interval
+        # so that the from_stream roundtrip comparison is exact.
+        orig_t = da["time"]
+        t0_us = orig_t.tie_values[0].astype("datetime64[us]")
+        delta_s = orig_t._to_regular().get_sampling_interval(cast=True)
+        dt = np.rint(1e6 * delta_s).astype("m8[us]").astype("m8[ns]")
+        da["time"] = InterpCoordinate.from_block(
+            t0_us, da.sizes["time"], dt, dim="time"
+        )
         st = da.to_stream(dim={"distance": "time"})
         assert st[0].id == "NET.DAS00001.00.BN1"
         assert len(st) == da.sizes["distance"]

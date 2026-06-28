@@ -84,8 +84,12 @@ def wavelet_wavefronts(
     da = DataArray(
         data=data,
         coords={
-            "time": Coordinate["interpolated"].from_block(starttime, shape[0], resolution[0], dim="time"),
-            "distance": Coordinate["interpolated"].from_block(0.0, shape[1], resolution[1], dim="distance"),
+            "time": Coordinate["interpolated"].from_block(
+                starttime, shape[0], resolution[0], dim="time"
+            ),
+            "distance": Coordinate["interpolated"].from_block(
+                0.0, shape[1], resolution[1], dim="distance"
+            ),
         },
     )
     if nchunk is not None:
@@ -139,8 +143,12 @@ def randn_wavefronts():
     da = DataArray(
         data=data,
         coords={
-            "time": Coordinate["interpolated"].from_block(starttime, shape[0], resolution[0], dim="time"),
-            "distance": Coordinate["interpolated"].from_block(0.0, shape[1], resolution[1], dim="distance"),
+            "time": Coordinate["interpolated"].from_block(
+                starttime, shape[0], resolution[0], dim="time"
+            ),
+            "distance": Coordinate["interpolated"].from_block(
+                0.0, shape[1], resolution[1], dim="distance"
+            ),
         },
     )
     return da

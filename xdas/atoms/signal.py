@@ -568,14 +568,16 @@ class UpSample(Atom):
             data[slc] = da.values
         coords = da.coords.copy()
         delta = get_sampling_interval(da, self.dim, cast=False)
+        new_delta = delta / self.factor
         tie_indices = coords[self.dim].tie_indices * self.factor
         tie_values = coords[self.dim].tie_values
         tie_indices[-1] += self.factor - 1
-        tie_values[-1] += (self.factor - 1) / self.factor * delta
+        tie_values[-1] += (self.factor - 1) * new_delta
         coords[self.dim] = Coordinate(
             {
                 "tie_indices": tie_indices,
                 "tie_values": tie_values,
+                "sampling_interval": new_delta,
             },
             self.dim,
         )
