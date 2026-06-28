@@ -233,7 +233,7 @@ class TestZMQ:
         return xd.concat(result)
 
     def test_publish_and_subscribe(self):
-        expected = xd.synthetics.dummy()
+        expected = xd.testing.dummy()
         packets = xd.split(expected, 10)
         address = f"tcp://localhost:{xd.io.get_free_port()}"
 
@@ -241,7 +241,7 @@ class TestZMQ:
         assert result.equals(expected)
 
     def test_encoding(self):
-        expected = xd.synthetics.dummy()
+        expected = xd.testing.dummy()
         packets = xd.split(expected, 10)
         address = f"tcp://localhost:{xd.io.get_free_port()}"
         encoding = {"chunks": (10, 10), **hdf5plugin.Zfp(accuracy=1e-6)}
@@ -488,7 +488,7 @@ class TestZMQPublisherAliases:
     def test_write_alias(self):
         address = f"tcp://localhost:{xd.io.get_free_port()}"
         publisher = xp.ZMQPublisher(address)
-        da = xd.synthetics.dummy()
+        da = xd.testing.dummy()
         publisher.write(da)  # use write() alias
 
     def test_result_returns_none(self):

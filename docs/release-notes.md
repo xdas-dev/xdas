@@ -15,6 +15,7 @@
 - A jittery `InterpCoordinate` that has no `sampling_interval` must be `.simplify(tolerance)`'d or explicitly `.to_regular(tolerance=...)`'d before its sampling rate can be queried. The module-level `xdas.get_sampling_interval(da, dim)` helper auto-converts uniform axes and raises on genuinely irregular ones (@atrabattoni).
 
 ### Refactoring
+- Moved `xdas.synthetics.dummy` to `xdas.testing.dummy`, giving it a dedicated testing-utilities module consistent with `numpy.testing` / `xarray.testing` conventions (@atrabattoni).
 - `Coordinate` is now a proper ABC with an explicit abstract interface; the shared ordered-coordinate logic (gaps/overlaps/simplify) lives on `AxisCoordinate`; `RegularMixin` has been removed in favour of the `isregular()` predicate; NumPy 2.0 `copy` keyword compliance (@atrabattoni).
 - Introduced an intermediate `AxisCoordinate` ABC holding the full axis-mapping contract. `DenseCoordinate`, `InterpCoordinate`, and `SampledCoordinate` now subclass it, while `ScalarCoordinate` implements only the thin shared `Coordinate` interface (no more stub methods raising `TypeError`) (@atrabattoni).
 

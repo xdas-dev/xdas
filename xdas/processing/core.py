@@ -596,7 +596,7 @@ class ZMQPublisher:
 
     First we generate some data and split it into packets
 
-    >>> packets = xd.split(xd.synthetics.dummy(), 10)
+    >>> packets = xd.split(xd.testing.dummy(), 10)
 
     We initialize the publisher at a given address
 
@@ -671,7 +671,7 @@ class ZMQSubscriber:
 
     First we generate some data and split it into packets
 
-    >>> da = xd.synthetics.dummy()
+    >>> da = xd.testing.dummy()
     >>> packets = xd.split(da, 10)
 
     We then publish the packets asynchronously
