@@ -955,6 +955,93 @@ class DataArray(NDArrayOperatorsMixin):
 
         return open_dataarray(fname, group)
 
+
+    def to_zarr(
+        self,
+        fname,
+        mode="w",
+        group=None,
+        virtual=None,
+        encoding=None,
+        create_dirs=False,
+    ):
+        """
+        Write DataArray contents to a zarr file.
+
+        Parameters
+        ----------
+        fname : str
+            Path to which to save this dataset.
+        mode : {'w', 'a'}, optional
+            Write ('w') or append ('a') mode. If mode='a', the file must already exist.
+        group : str, optional
+            Path to the zarr4 group in the given file to open.
+        virtual : bool, optional
+            Weather to write a virtual dataset. The DataArray data must be a VirtualSource
+            or a VirtualLayout. Default (None) is to try to write a virtual dataset if
+            possible.
+        encoding : dict, optional
+            Dictionary of encoding attributes. Because a DataArray contains a unique
+            data variable, the encoding dictionary should not contain the variable name.
+            For more information on encoding, see the `xarray documentation
+            <http://xarray.pydata.org/en/stable/io.html#zarr>`_.
+        create_dirs : bool, optional
+            Whether to create parent directories if they do not exist. Default is False.
+
+        Examples
+        --------
+        >>> import os
+        >>> import tempfile
+
+        >>> import numpy as np
+        >>> import xdas as xd
+        >>> import hdf5plugin
+
+        Create some sample data array:
+
+        >>> da = xd.DataArray(np.random.rand(100, 100))
+
+        Save the dataset with ZFP compression:
+
+        >>> encoding = {"chunks": (10, 10), **hdf5plugin.Zfp(accuracy=0.001)}
+        >>> with tempfile.TemporaryDirectory() as tmpdir:
+        ...     tmpfile = os.path.join(tmpdir, "path.nc")
+        ...     da.to_zarr(tmpfile, encoding=encoding)
+
+        """
+        from ..io.zarr import save_dataarray_zarr
+
+        save_dataarray_zarr(self, fname, mode, group, virtual, encoding, create_dirs)
+
+
+    def to_dict(self):
+        """Convert the DataArray to a dictionary."""
+        if isinstance(self.data, VirtualArray):
+            raise NotImplementedError("cannot convert a virtual array to a dictionary")
+        elif isinstance(self.data, np.ndarray):
+            data = self.data.tolist()
+        elif isinstance(self.data, DaskArray):
+            data = to_dict(self.data)
+        return {
+            "data": data,
+            "coords": self.coords.to_dict()["coords"],
+            "dims": self.dims,
+            "name": self.name,
+            "attrs": self.attrs,
+        }
+
+    @classmethod
+    def from_dict(cls, dct):
+        """Create a DataArray from a dictionary."""
+        if isinstance(dct["data"], list):
+            data = np.array(dct["data"])
+        elif isinstance(dct["data"], dict):
+            data = from_dict(dct["data"])
+        else:
+            raise ValueError("data must be a list or a dictionary")
+        coords = Coordinates.from_dict({key: dct[key] for key in ["coords", "dims"]})
+        return cls(data, coords, dct["dims"], dct["name"], dct["attrs"])
+
     def plot(self, *args, **kwargs):
         """
         Plot a DataArray.
