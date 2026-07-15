@@ -1001,10 +1001,7 @@ class DataArrayLoader:
                     f"dimensions {da.dims}"
                 )
             if chunk_size > da.sizes[chunk_dim]:
-                raise ValueError(
-                    f"chunking size {chunk_size} is greater than `da` "
-                    f"size {da.sizes[chunk_dim]} along dim {chunk_dim}"
-                )
+              chunk_size = min(chunk_size, da.sizes[chunk_dim])
             size = da.sizes[chunk_dim]
             divs = list(range(0, size, chunk_size)) + [size]
         else:
