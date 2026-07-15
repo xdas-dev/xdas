@@ -126,10 +126,7 @@ class DataArrayLoader:
                 f"chunking dimension {chunk_dim} not found in `da` dimensions {da.dims}"
             )
         if chunk_size > da.sizes[chunk_dim]:
-            raise ValueError(
-                f"chunking size {chunk_size} is greater than `da` "
-                f"size {da.sizes[chunk_dim]} along dim {chunk_dim}"
-            )
+            chunk_size = min(chunk_size, da.sizes[chunk_dim])
         self.da = da
         self.chunk_dim = chunk_dim
         self.chunk_size = chunk_size
