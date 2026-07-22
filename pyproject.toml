@@ -11,6 +11,8 @@ authors = [
     { name = "Alister Trabattoni", email = "alister.trabattoni@gmail.com" },
 ]
 dependencies = [
+    "arro3.core",
+    "dask<2025.4.0",
     "h5netcdf",
     "h5py",
     "hdf5plugin",
