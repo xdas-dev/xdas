@@ -18,9 +18,9 @@ from .core import Engine
 class XdasZarrEngine(Engine, name="zarr"):
 
     def open_dataarray(self, fname, **kwargs):
-        return xr.open_zarr(fname, **kwargs)
+        return open_dataarray_zarr(fname, **kwargs)
 
-    def save_dataarray_zarr(self, da, fname, **kwargs):
+    def save_dataarray(self, da, fname, **kwargs):
         return save_dataarray_zarr(da, fname, **kwargs)
 
     def open_datacollection(self, fname, **kwargs):
@@ -29,60 +29,9 @@ class XdasZarrEngine(Engine, name="zarr"):
     def save_datacollection(self, dc, fname, **kwargs):
         return save_datamapping(dc, fname, **kwargs)
 
-
-def open_zarr(fname, group=None):
-    if isinstance(fname, Path):
-        fname = str(fname)
-
-    # read metadata
-    with xr.open_dataset(
-        fname, group=group, engine="zarr", decode_timedelta=False
-    ) as dataset:
-        # check file format
-        if not (
-            "Conventions" in dataset.attrs and "CF" in dataset.attrs["Conventions"]
-        ):
-            raise TypeError(
-                "file format not recognized. please provide the file format "
-                "with the `engine` keyword argument"
-            )
-
-        # identify the "main" data array
-        if len(dataset) == 1:
-            name = next(iter(dataset.keys()))
-        else:
-            data_vars = {
-                key: var
-                for key, var in dataset.items()
-                if any("coordinate" in attr for attr in var.attrs)
-            }
-            if len(data_vars) == 1:
-                name = next(iter(data_vars.keys()))
-            else:
-                raise ValueError("several possible data arrays detected")
-
-        # read coordinates
-        coords = Coordinates.from_dataset(dataset, name)
-
-    # read data
-    if "__dask_array__" in dataset[name].attrs:
-        data = loads(dataset[name].attrs.pop("__dask_array__"))
-    else:
-        with h5py.File(fname) as file:
-            if group:
-                file = file[group]
-            variable = file["__values__" if name is None else name]
-            data = VirtualSource(variable)
-
-    # pack everything
-    return DataArray(
-        data,
-        coords,
-        dataset[name].dims,
-        name,
-        None if dataset[name].attrs == {} else dataset[name].attrs,
-    )
-
+def open_dataarray_zarr(fname, **kwargs):
+    xr_da = xr.open_zarr(fname, **kwargs)
+    return DataArray(xr_da.data, xr_da.coords, xr_da.dims)
 
 def save_dataarray_zarr(
     da, fname, mode="w", group=None, virtual=None, encoding=None, create_dirs=False

@@ -2,7 +2,7 @@
 I/O subsystem: plugin-based :class:`Engine` registry and concrete engines.
 
 Supports xdas native, ASN, APSensing, Febus, MiniSEED, ProdML, Silixa, and
-Terra15 formats.
+Terra15, zarr formats.
 """
 
 __all__ = [
@@ -17,7 +17,8 @@ __all__ = [
     "silixa",
     "terra15",
     "xdas",
+    "zarr",
 ]
 
-from . import apsensing, asn, febus, miniseed, prodml, silixa, terra15, xdas
+from . import apsensing, asn, febus, miniseed, prodml, silixa, terra15, xdas, zarr
 from .core import AutoEngine, Engine, get_free_port

@@ -1013,6 +1013,27 @@ class DataArray(NDArrayOperatorsMixin):
 
         save_dataarray_zarr(self, fname, mode, group, virtual, encoding, create_dirs)
 
+    @classmethod
+    def from_zarr(cls, fname, group=None):
+        """
+        Read a data array from a zarr file.
+
+        Parameters
+        ----------
+        fname: str
+            The path of the file to open.
+        group: str, optional
+            The location of the data array within the file. Root by default
+
+        Returns
+        -------
+        DataArray
+            The openend data array.
+        """
+        from ..io.zarr import open_dataarray_zarr
+
+        return open_dataarray_zarr(fname, group)
+
 
     def to_dict(self):
         """Convert the DataArray to a dictionary."""
