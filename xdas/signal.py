@@ -9,7 +9,7 @@ import numpy as np
 import scipy.signal as sp
 
 from .atoms import atomized
-from .coordinates import get_sampling_interval
+from .coordinates import InterpCoordinate, get_sampling_interval
 from .core import DataArray
 from .parallel import parallelize
 from .spectral import stft  # noqa
@@ -252,7 +252,13 @@ def resample(da, num, dim="last", window=None, domain="time", parallel=None):
     across = int(axis == 0)
     func = parallelize(across, across, parallel)(sp.resample)
     data, t = func(da.values, num, da[dim].values, axis, window, domain)
-    new_coord = type(da.coords[dim]).from_block(t[0], num, t[1] - t[0], dim=dim)
+    source = da.coords[dim]
+    new_coord = type(source).from_block(t[0], num, t[1] - t[0], dim=dim)
+    # Resampling derives a new rate; it does not make the sample times better
+    # known, so the declared jitter carries over. Only interpolated coordinates
+    # declare one.
+    if isinstance(source, InterpCoordinate) and source.tolerance is not None:
+        new_coord = new_coord.to_regular(new_coord.sampling_interval, source.tolerance)
     coords = {
         name: new_coord if name == dim else coord
         for name, coord in da.coords.items()
@@ -351,7 +357,16 @@ def resample_poly(
     data = func(da.values, up, down, axis, window, padtype, cval)
     start = da[dim][0].values
     step = d * down / up
-    new_coord = type(da.coords[dim]).from_block(start, data.shape[axis], step, dim=dim)
+    source = da.coords[dim]
+    new_coord = type(source).from_block(start, data.shape[axis], step, dim=dim)
+    # The derived rate may not be exactly representable (integer datetime
+    # resolutions truncate), so declare that error as jitter on top of the
+    # inherited one, as UpSample does; chunk seams then stay within tolerance.
+    if isinstance(source, InterpCoordinate):
+        tolerance = np.abs(d * down - step * up)
+        if source.tolerance is not None:
+            tolerance = source.tolerance + tolerance
+        new_coord = new_coord.to_regular(step, tolerance)
     coords = {
         name: new_coord if name == dim else coord
         for name, coord in da.coords.items()

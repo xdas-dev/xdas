@@ -13,7 +13,7 @@ import numpy as np
 import zmq
 
 from ..coordinates import Coordinate, get_sampling_interval
-from ..core import DataArray
+from ..core import DataArray, concat_coords
 from ..virtual import VirtualSource
 from .core import Engine
 
@@ -42,13 +42,17 @@ class ASNEngine(Engine, name="asn"):
             # Note that this vector is not continuous for more than one ROI
             all_dists = file["cableSpec"]["sensorDistances"][...]
 
-            # Buffer for the data index at which each ROI starts/stops
-            dist_tie_inds = []
-            # Buffer for the optical distance at which each ROI starts/stops
-            dist_tie_vals = []
+            # One regular block per ROI, concatenated below
+            roi_blocks = []
+
+            # Channel spacing is dx times the ROI decimation. Some files omit
+            # roiDec; those fall back to the spacing the ROI bounds imply.
+            roi_decs = demod["roiDec"][...] if "roiDec" in demod else None
 
             # Loop over ROIs, get the start/stop index before downsampling
-            for n_start, n_end in zip(demod["roiStart"], demod["roiEnd"]):
+            for n_roi, (n_start, n_end) in enumerate(
+                zip(demod["roiStart"], demod["roiEnd"])
+            ):
                 # ASN stores ROI end as an upper boundary. Use the last sampled distance
                 # that does not exceed that boundary instead of indexing the insertion point.
                 i_start, i_end = self._get_roi_bound_indices(
@@ -57,17 +61,32 @@ class ASNEngine(Engine, name="asn"):
 
                 # Get the index where the ROI starts based on the position in the
                 # distance vector. This solves the issue of rounding during decimation
-                # Append the data index and optical distance to the buffers
-                dist_tie_inds.append(i_start)
-                dist_tie_vals.append(float(all_dists[i_start]))
-
-                # Repeat the procedure for the index/distance at which the ROI ends.
-                dist_tie_inds.append(i_end)
-                dist_tie_vals.append(float(all_dists[i_end]))
+                start = float(all_dists[i_start])
+                size = i_end - i_start + 1
+                if roi_decs is not None:
+                    # Taking the spacing from the metadata keeps it bit-identical
+                    # across ROIs that share a decimation, which is what lets
+                    # concatenation preserve a regular axis.
+                    step = dx * int(roi_decs[n_roi])
+                elif size > 1:
+                    step = (float(all_dists[i_end]) - start) / (i_end - i_start)
+                else:
+                    step = dx
+                roi_blocks.append(
+                    Coordinate[self.ctype["distance"]].from_block(
+                        start, size, step, dim="distance"
+                    )
+                )
 
         nt = data.shape[0]
         time = Coordinate[self.ctype["time"]].from_block(t0, nt, dt, dim="time")
-        distance = {"tie_indices": dist_tie_inds, "tie_values": dist_tie_vals}
+        # Concatenation keeps the declared spacing when every ROI agrees on it
+        # and drops to irregular otherwise, so unevenly decimated files stay
+        # honest without the engine having to test for it. Regularizing recovers
+        # the spacing when ROI steps differ only by float rounding (which the
+        # fallback above can produce), while genuinely different decimations
+        # still fail the fit. Reducing is off so the ROI structure is preserved.
+        distance = concat_coords(roi_blocks, reduce=False, regularize=True)
         return DataArray(data, {"time": time, "distance": distance})
 
     def _get_roi_bound_indices(self, all_dists, n_start, n_end, dx):

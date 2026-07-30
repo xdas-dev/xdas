@@ -10,6 +10,9 @@
 ### Deprecations
 - The sampling interval is now declared metadata rather than a computed end-to-end average (which was silently wrong on jittery or gappy axes). Data saved by earlier versions carries no declared rate: querying it — e.g. through any signal-processing routine — still works for now, but the rate is inferred and a `FutureWarning` explains how to make the coordinate regular (`da[dim] = da[dim].to_regular(tolerance=...)`). A future release will raise instead (@atrabattoni).
 
+### Bug Fixes
+- Fix `Sequential.reset()` silently doing nothing: it only reset `Partial` atoms, so stateful atoms such as `IIRFilter` or `ResamplePoly` kept their state and a reused sequence returned wrong data (@atrabattoni).
+
 ### Refactoring
 - Reworked the coordinate class hierarchy: `Coordinate` is now a proper ABC and the new `AxisCoordinate` ABC holds the axis-mapping contract shared by dense, interpolated, and sampled coordinates. Use `isinstance(coord, AxisCoordinate)` instead of the removed `is*` predicates (@atrabattoni).
 - Cleaned up internal-leaning APIs: removed `DefaultCoordinate`, `to_dict`/`from_dict`, `get_div_points`, `decimate`, and `from_array`; made underscore-private `concat`, `get_indexer`, `get_value`, `format_index`, `slice_index(er)`, `isvalid`, and `get_query`; NumPy 2.0 `copy` keyword compliance (@atrabattoni).

@@ -309,12 +309,6 @@ class Sequential(Atom, list):
                 s += "\n".join(f"    {e}" for e in repr(value).split("\n")[:-1]) + "\n"
         return s
 
-    def reset(self) -> None:
-        """Reset the state of all stateful atoms in the sequence."""
-        for atom in self:
-            if isinstance(atom, Partial):
-                atom.reset()
-
 
 class Partial(Atom):
     """
