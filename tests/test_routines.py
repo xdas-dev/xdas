@@ -13,7 +13,15 @@ class TestBag:
 
     def test_bag_append_initializes(self):
         da = xd.DataArray(
-            np.random.rand(10, 5), {"time": np.arange(10), "space": np.arange(5)}
+            np.random.rand(10, 5),
+            {
+                "time": {
+                    "tie_indices": [0, 9],
+                    "tie_values": [0.0, 9.0],
+                    "sampling_interval": 1.0,
+                },
+                "space": np.arange(5),
+            },
         )
         bag = Bag(dim="time")
         bag.append(da)
@@ -90,12 +98,24 @@ class TestBag:
         da1 = xd.DataArray(
             np.random.rand(10, 5),
             dims=("time", "space"),
-            coords={"time": np.arange(10)},
+            coords={
+                "time": {
+                    "tie_indices": [0, 9],
+                    "tie_values": [0.0, 9.0],
+                    "sampling_interval": 1.0,
+                }
+            },
         )
         da2 = xd.DataArray(
             np.random.rand(10, 5),
             dims=("time", "space"),
-            coords={"time": np.arange(10) * 2},
+            coords={
+                "time": {
+                    "tie_indices": [0, 9],
+                    "tie_values": [0.0, 18.0],
+                    "sampling_interval": 2.0,
+                }
+            },
         )
         bag = Bag(dim="time")
         bag.append(da1)
@@ -169,12 +189,24 @@ class TestCombineByCoords:
         da1 = xd.DataArray(
             np.random.rand(10, 5),
             dims=("time", "space"),
-            coords={"time": np.arange(10)},
+            coords={
+                "time": {
+                    "tie_indices": [0, 9],
+                    "tie_values": [0.0, 9.0],
+                    "sampling_interval": 1.0,
+                }
+            },
         )
         da2 = xd.DataArray(
             np.random.rand(10, 5),
             dims=("time", "space"),
-            coords={"time": np.arange(10) * 2},
+            coords={
+                "time": {
+                    "tie_indices": [0, 9],
+                    "tie_values": [0.0, 18.0],
+                    "sampling_interval": 2.0,
+                }
+            },
         )
         dc = xd.combine_by_coords([da1, da2], dim="time")
         assert len(dc) == 2
@@ -436,7 +468,8 @@ class TestSplit:
             [
                 xd.Coordinate[ctype].from_block(start, size, step, "dim")
                 for start in starts
-            ]
+            ],
+            tolerance=False,
         )
         return xd.DataArray(np.random.randn(len(coord)), {"dim": coord})
 
@@ -717,6 +750,12 @@ class TestConcatCoordsEdgeCases:
         scalar = xd.Coordinate("SRN")
         with pytest.raises(TypeError, match="tolerance"):
             concat_coords([scalar], tolerance=1.0)
+
+    def test_default_tolerance_with_scalar_coord_passes(self):
+        from xdas.core.routines import concat_coords
+
+        scalar = xd.Coordinate("SRN")
+        assert concat_coords([scalar]).equals(scalar)
 
 
 class TestSplitEdgeCases:

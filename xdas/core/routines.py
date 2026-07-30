@@ -21,7 +21,7 @@ import xarray as xr
 from loky import get_reusable_executor
 from tqdm import tqdm
 
-from ..coordinates import AxisCoordinate, Coordinates, get_sampling_interval
+from ..coordinates import AxisCoordinate, Coordinates
 from ..parallel import get_workers_count
 from ..virtual import VirtualSource, VirtualStack
 from .dataarray import DataArray
@@ -869,11 +869,17 @@ class Bag:
             if self.dim in self.dims
             else da.coords.drop_coords(self.dim)
         )
-        if self.dim in da.coords:
-            self.delta = get_sampling_interval(da, self.dim)
-        else:
-            self.delta = None
+        self.delta = self._get_delta(da)
         self.dtype = da.dtype
+
+    def _get_delta(self, da):
+        """Nominal sampling interval of *da* along *dim*, or ``None`` (irregular or absent)."""
+        if self.dim not in da.coords:
+            return None
+        coord = da.coords[self.dim]
+        if not isinstance(coord, AxisCoordinate):
+            return None
+        return coord.get_sampling_interval()
 
     def append(self, da):
         """Add *da* after running all compatibility checks; initialises on first call."""
@@ -918,8 +924,8 @@ class Bag:
         if self.delta is None:
             pass
         else:
-            delta = get_sampling_interval(da, self.dim)
-            if not np.isclose(delta, self.delta):
+            delta = self._get_delta(da)
+            if delta is None or not np.isclose(delta, self.delta):
                 raise CompatibilityError("sampling intervals are not compatible")
 
 
@@ -945,7 +951,9 @@ def concat(
     tolerance : float or timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
         the following, For time coordinates, numeric values are considered as seconds.
-        Zero by default.
+        By default each coordinate spends its own declared tolerance when it
+        carries one, else a zero-like default. Pass ``False`` to disable
+        simplification entirely.
     virtual : bool, optional
         Whether to create a virtual dataset. It requires that all concatenated
         data arrays are virtual. By default tries to create a virtual dataset if possible.
@@ -956,11 +964,9 @@ def concat(
         Default True.
     regularize : bool, optional
         Whether to promote the concatenated coordinate to a regular one when its
-        segments admit a single shared rate within *tolerance*. Default False.
-        Disabled by default because the signal-processing atoms and some
-        reference coordinates do not yet propagate regularity, so promoting here
-        would break round-trip equality. See
-        docs/plan_propagate_simplify_kwargs.md.
+        segments admit a single shared rate within *tolerance*. Default False:
+        regular inputs already stay regular through concatenation, so promotion
+        only matters for irregular inputs and stays opt-in.
 
     Returns
     -------
@@ -1032,9 +1038,9 @@ def concat_coords(
     *,
     sort=False,
     return_order=False,
-    tolerance=False,
+    tolerance=None,
     reduce=True,
-    regularize=True,
+    regularize=False,
 ):
     """
     Concatenate coordinate objects.
@@ -1051,13 +1057,15 @@ def concat_coords(
     tolerance : float or timedelta64, optional
         The tolerance to consider that the end of a coordinate object is continuous
         with beginning of the following, For time coordinates, numeric values are
-        considered as seconds. No simplification by default.
+        considered as seconds. By default the coordinate spends its own declared
+        tolerance when it carries one, else a zero-like default. Pass ``False``
+        to disable simplification entirely.
     reduce : bool, optional
         Whether to drop redundant tie points after concatenation. Default True.
     regularize : bool, optional
         Whether to promote the result to a regular coordinate when the merged
-        segments admit a single shared rate within *tolerance*. Default True.
-        Pass ``regularize=False`` to keep the irregular round-trip representation.
+        segments admit a single shared rate within *tolerance*. Default False:
+        regular inputs already stay regular through concatenation.
 
     Returns
     -------
@@ -1081,16 +1089,13 @@ def concat_coords(
     # simplify
     if tolerance is not False:
         if isinstance(out, AxisCoordinate):
-            # `_concat` is strict and drops mismatched sampling intervals to
-            # irregular. `simplify` then drops redundant tie points and, by
-            # default, recovers a single shared rate when the merged segments
-            # admit one within *tolerance* (e.g. files joined at slightly
-            # different nominal rates). Pass `regularize=False` to keep the
-            # irregular round-trip representation.
+            # `_concat` is strict: same-rate inputs stay regular, mismatched
+            # rates drop to irregular. `simplify` then drops redundant tie
+            # points (chunk seams within tolerance fuse away) and, with
+            # `regularize=True`, recovers a single shared rate when the merged
+            # segments admit one within *tolerance*.
             out = out.simplify(tolerance, reduce=reduce, regularize=regularize)
-        elif (
-            tolerance is not None
-        ):  # TODO: Default to False and remove this condition here?
+        elif tolerance is not None:
             raise TypeError(
                 "`tolerance` can only be used with coordinates "
                 "that implements `simplify`"

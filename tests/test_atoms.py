@@ -174,7 +174,14 @@ class TestFilters:
 
     def test_upsample(self):
         da = xd.DataArray(
-            [1, 1, 1], {"time": {"tie_indices": [0, 2], "tie_values": [0.0, 6.0]}}
+            [1, 1, 1],
+            {
+                "time": {
+                    "tie_indices": [0, 2],
+                    "tie_values": [0.0, 6.0],
+                    "sampling_interval": 3.0,
+                }
+            },
         )
         expected = xd.DataArray(
             [3, 0, 0, 3, 0, 0, 3, 0, 0],
