@@ -6,6 +6,7 @@ Also provides :class:`AutoEngine` for format auto-detection and
 """
 
 import socket
+from typing import ClassVar
 
 
 class Engine:
@@ -65,8 +66,8 @@ class Engine:
     >>> engine = Engine["nc"](ctype="dense")  # Using alias
     """
 
-    _registry = {}
-    _aliases = {}
+    _registry: ClassVar[dict] = {}
+    _aliases: ClassVar[dict] = {}
     _supported_vtypes = None
     _supported_ctypes = None
 
@@ -131,7 +132,7 @@ class Engine:
                 key: self._supported_ctypes[key][0] for key in self._supported_ctypes
             }
         elif isinstance(ctype, str):
-            ctype = {key: ctype for key in self._supported_ctypes}
+            ctype = dict.fromkeys(self._supported_ctypes, ctype)
         elif isinstance(ctype, dict):
             ctype = {
                 key: ctype.get(key, self._supported_ctypes[key][0])
@@ -206,7 +207,7 @@ class AutoEngine(Engine):
                 )
                 AutoEngine._last_successful_engine = engine
                 return out
-            except Exception:
+            except Exception:  # noqa: BLE001, S112 - try the next engine
                 continue
         message = f"no engine could open the file '{fname}'"
         if self.ctype is not None:

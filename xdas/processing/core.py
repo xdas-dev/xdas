@@ -342,9 +342,8 @@ class DataFrameWriter:
 
     def __init__(self, path, parse_dates=None, create_dirs=False):
         dirpath = os.path.dirname(path)
-        if create_dirs:
-            if dirpath:
-                os.makedirs(dirpath, exist_ok=True)
+        if create_dirs and dirpath:
+            os.makedirs(dirpath, exist_ok=True)
         if dirpath and not os.path.exists(dirpath):
             raise OSError(f"no directory {dirpath}")
         self.path = str(path) if isinstance(path, Path) else path
@@ -646,7 +645,7 @@ class ZMQPublisher:
 
     def result(self):
         """Return ``None`` — ZMQPublisher has no aggregated result."""
-        return None
+        return
 
 
 class ZMQSubscriber:

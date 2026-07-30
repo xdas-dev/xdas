@@ -112,7 +112,7 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             raise ValueError("`tie_indices` and `tie_values` must have the same length")
 
         # check dtypes
-        if not tie_indices.shape == (0,):
+        if tie_indices.shape != (0,):
             if not np.issubdtype(tie_indices.dtype, np.integer):
                 raise ValueError("`tie_indices` must be integer-like")
             if not tie_indices[0] == 0:
@@ -127,7 +127,7 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
         # store base data
         tie_indices = tie_indices.astype(int)
-        self.data = dict(tie_indices=tie_indices, tie_values=tie_values)
+        self.data = {"tie_indices": tie_indices, "tie_values": tie_values}
         self.dim = dim
 
         # optional regular sampling
@@ -225,7 +225,7 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
                     "tolerance when opening multiple files."
                 )
             else:  # pragma: no cover
-                raise e
+                raise
         return indexer
 
     @override
@@ -436,6 +436,33 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         valid = np.all((dmin <= sampling_interval) & (sampling_interval <= dmax))
         return bool(valid)
 
+    def _minimal_tolerance(self, sampling_interval):
+        """Smallest tolerance for which *sampling_interval* validates, or ``None``.
+
+        Private helper behind :meth:`simplify`. Validity bounds the accumulated
+        drift of every continuous segment by ``2 * tolerance``, so the tightest
+        admissible value is half the worst drift, rounded up at the dtype
+        resolution. Returns ``None`` when even that value fails to validate,
+        which callers treat as "this spacing cannot be declared".
+        """
+        num, den = self._continuous_segments()
+        if num.size == 0:
+            # No continuous area: any tolerance is vacuously valid.
+            return parse_scalar_delta(None, self.dtype, default_zero=True)
+        drift = np.abs(num - sampling_interval * den).max()
+        if np.issubdtype(self.dtype, np.datetime64):
+            # Integer resolution: round up so the halved drift is not truncated.
+            unit = np.datetime_data(self.dtype)[0]
+            counts = int(drift / np.timedelta64(1, unit))
+            tolerance = np.timedelta64(-(-counts // 2), unit)
+        else:
+            # A few ULPs of slack so re-validation cannot reject the value we
+            # just derived from the same quantities (as in :meth:`_infer_regular`).
+            tolerance = drift / 2 + 4 * np.spacing(np.abs(num).max())
+        if not self._is_valid_sampling_interval(sampling_interval, tolerance):
+            return None  # pragma: no cover
+        return tolerance
+
     def _infer_regular(self):
         """
         Estimate the nominal spacing and tightest tolerance for this coordinate.
@@ -586,7 +613,17 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             if reduce and not reduced._is_valid_sampling_interval(
                 self.sampling_interval, self.tolerance
             ):
-                new_tolerance = self.tolerance + tolerance
+                # Reduction fused a discontinuity, so the surviving tie points
+                # now drift further from the nominal grid than the declared
+                # jitter allows. Widen to the least value that describes them:
+                # the budget bounds how far *values* may move, not how much
+                # drift fusing a seam exposes, so it is no bound at all here.
+                new_tolerance = reduced._minimal_tolerance(self.sampling_interval)
+                if new_tolerance is None:  # pragma: no cover
+                    # Numerical safety net: the spacing cannot be declared for
+                    # the reduced tie points, so stay irregular rather than let
+                    # the constructor raise.
+                    return reduced
             else:
                 new_tolerance = self.tolerance
             data = {

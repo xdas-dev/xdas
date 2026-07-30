@@ -97,7 +97,7 @@ class TestScalarCoordinate:
         da = xd.DataArray([1, 2, 3], {"x": [1.0, 2.0, 3.0], "meta": 42})
         sc = da.coords["meta"]
         dataset = xr.Dataset()
-        dataset, attrs = sc._to_dataset(dataset, {})
+        dataset, _attrs = sc._to_dataset(dataset, {})
         assert "meta" in dataset.coords
 
 

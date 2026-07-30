@@ -90,7 +90,7 @@ class TestDataCollection:
             assert get_depth(file["instrument/das1/acquisition"]) > 0
             assert get_depth(file["instrument/das1/acquisition/0"]) == 0
             with pytest.raises(ValueError):
-                get_depth(file["instrument/das1/acquisition/0/da"]) == 0
+                get_depth(file["instrument/das1/acquisition/0/da"])
 
     def test_isel(self):
         da = xd.testing.dummy()
@@ -384,7 +384,7 @@ class TestDataCollection:
         # just verify parse propagates name
         from xdas.core.datacollection import parse
 
-        data, name = parse(dm, None)  # should propagate dm.name
+        _data, name = parse(dm, None)  # should propagate dm.name
         assert name == "original_name"
 
     def test_mapping_map_invalid_item(self):

@@ -1,5 +1,7 @@
 """I/O engine for Silixa TDMS files (:class:`SilixaEngine`)."""
 
+from typing import ClassVar
+
 import numpy as np
 
 from ..coordinates import Coordinate
@@ -13,8 +15,8 @@ from .tdms import TdmsReader
 class SilixaEngine(Engine, name="silixa"):
     """Engine for reading Silixa iDAS TDMS files as lazy tile-backed DataArrays."""
 
-    _supported_vtypes = ["tiles"]
-    _supported_ctypes = {
+    _supported_vtypes: ClassVar[list] = ["tiles"]
+    _supported_ctypes: ClassVar[dict] = {
         "time": ["interpolated", "sampled", "dense"],
         "distance": ["interpolated", "sampled", "dense"],
     }

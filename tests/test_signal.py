@@ -92,7 +92,7 @@ class TestSignal:
         da = xd.testing.dummy()
         b, a = sp.iirfilter(4, 0.5, btype="low")
         result1 = xs.lfilter(b, a, da, "time")
-        result2, zf = xs.lfilter(b, a, da, "time", zi=...)
+        result2, _zf = xs.lfilter(b, a, da, "time", zi=...)
         assert result1.equals(result2)
 
     def test_filtfilt(self):
@@ -104,7 +104,7 @@ class TestSignal:
         da = xd.testing.dummy()
         sos = sp.iirfilter(4, 0.5, btype="low", output="sos")
         result1 = xs.sosfilt(sos, da, "time")
-        result2, zf = xs.sosfilt(sos, da, "time", zi=...)
+        result2, _zf = xs.sosfilt(sos, da, "time", zi=...)
         assert result1.equals(result2)
 
     def test_sosfiltfilt(self):
@@ -307,6 +307,13 @@ class TestSignalMissingBranches:
         result = xs.stft(da, nperseg=1, noverlap=0, nfft=2, dim={"time": "frequency"})
         assert "frequency" in result.dims
 
+    def test_stft_default_dim(self):
+        # the default maps the last dimension; "first"/"last" aliases must resolve
+        da = xd.testing.dummy()
+        expected = xs.stft(da, nperseg=8, dim={"distance": "sprectrum"})
+        assert xs.stft(da, nperseg=8).equals(expected)
+        assert xs.stft(da, nperseg=8, dim={"last": "sprectrum"}).equals(expected)
+
 
 class TestFftMissingBranches:
     def test_fft_explicit_n(self):
@@ -340,3 +347,70 @@ class TestFftMissingBranches:
         n = da.sizes["time"]
         result = xfft.ifft(spectrum, n=n, dim={"frequency": "time"})
         assert result.sizes["time"] == n
+
+
+class TestResampleTolerance:
+    """The resamplers derive a new rate; the declared jitter must survive it."""
+
+    @staticmethod
+    def regular():
+        da = xd.testing.dummy(shape=(120, 3))
+        da["time"] = da["time"].to_regular(
+            da["time"].sampling_interval, np.timedelta64(1, "s")
+        )
+        return da
+
+    def test_resample_poly_carries_declared_tolerance(self):
+        da = self.regular()
+        result = xs.resample_poly(da, 1, 2, dim="time")
+        assert result["time"].isregular()
+        assert result["time"].tolerance >= da["time"].tolerance
+
+    def test_resample_poly_declares_representation_error(self):
+        # 1/3 of a 10 ms step is not representable in whole nanoseconds, so the
+        # truncation must be declared as jitter on top of the inherited bound.
+        da = self.regular()
+        delta = da["time"].sampling_interval
+        result = xs.resample_poly(da, 3, 1, dim="time")
+        step = result["time"].sampling_interval
+        assert result["time"].tolerance == da["time"].tolerance + np.abs(
+            delta - step * 3
+        )
+
+    def test_resample_carries_declared_tolerance(self):
+        da = self.regular()
+        result = xs.resample(da, da.sizes["time"] // 2, dim="time")
+        assert result["time"].isregular()
+        assert result["time"].tolerance == da["time"].tolerance
+
+    def test_resample_poly_on_irregular_coordinate(self):
+        da = xd.testing.dummy(shape=(120, 3))
+        da["time"] = xd.Coordinate(
+            {
+                "tie_indices": da["time"].tie_indices,
+                "tie_values": da["time"].tie_values,
+            },
+            "time",
+        )
+        result = xs.resample_poly(da, 1, 2, dim="time")
+        assert result.sizes["time"] == 60
+
+    def test_resample_on_irregular_coordinate(self):
+        da = xd.testing.dummy(shape=(120, 3))
+        da["time"] = xd.Coordinate(
+            {
+                "tie_indices": da["time"].tie_indices,
+                "tie_values": da["time"].tie_values,
+            },
+            "time",
+        )
+        result = xs.resample(da, 60, dim="time")
+        assert result.sizes["time"] == 60
+
+    @pytest.mark.parametrize("ctype", ["sampled", "dense"])
+    def test_resamplers_on_non_interpolated_coordinates(self, ctype):
+        # Only interpolated coordinates declare a tolerance; the others must
+        # still resample without one.
+        da = xd.testing.dummy(shape=(120, 3), ctype=ctype)
+        assert xs.resample_poly(da, 1, 2, dim="time").sizes["time"] == 60
+        assert xs.resample(da, 60, dim="time").sizes["time"] == 60

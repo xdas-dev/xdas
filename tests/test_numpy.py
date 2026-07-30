@@ -59,10 +59,10 @@ class TestFunc:
                 else:
                     result = numpy_function(da)
                     assert isinstance(result, np.ndarray)
-            elif numpy_function.__name__ == "trapezoid":
-                result = numpy_function(da)
-                assert isinstance(result, np.ndarray)
-            elif numpy_function in [np.diff, np.ediff1d]:
+            elif numpy_function.__name__ == "trapezoid" or numpy_function in [
+                np.diff,
+                np.ediff1d,
+            ]:
                 result = numpy_function(da)
                 assert isinstance(result, np.ndarray)
             elif numpy_function in [

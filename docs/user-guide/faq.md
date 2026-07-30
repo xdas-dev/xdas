@@ -41,6 +41,7 @@ within a given tolerance:
 
 ```python
 import numpy as np
+
 tolerance = np.timedelta64(30, "ms")  # typically enough for NTP-synced experiments
 da["time"] = da["time"].simplify(tolerance)
 ```

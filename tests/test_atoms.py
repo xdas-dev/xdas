@@ -446,6 +446,67 @@ class TestAtomSignalMissingBranches:
         assert result.sizes["time"] == 2 * da.sizes["time"]
 
 
+class TestLegacyIrregularCoordinates:
+    """Atoms must keep working on coordinates written before 0.2.8."""
+
+    @staticmethod
+    def legacy(**kwargs):
+        # Data saved by earlier versions declares no rate and no jitter.
+        da = xd.testing.dummy(**kwargs)
+        da["time"] = xd.Coordinate(
+            {
+                "tie_indices": da["time"].tie_indices,
+                "tie_values": da["time"].tie_values,
+            },
+            "time",
+        )
+        return da
+
+    def test_upsample_on_irregular_coordinate(self):
+        da = self.legacy(shape=(20, 3))
+        assert not da["time"].isregular()
+        result = UpSample(3, dim="time")(da)
+        assert result.sizes["time"] == 3 * da.sizes["time"]
+        # Nothing was declared upstream, so nothing is claimed downstream.
+        assert not result["time"].isregular()
+
+    def test_resample_poly_atom_on_irregular_coordinate(self):
+        da = self.legacy(shape=(100, 3))
+        target = 1.0 / (2.0 * xd.get_sampling_interval(da, "time"))
+        result = ResamplePoly(target=target, dim="time")(da)
+        assert result.sizes["time"] == da.sizes["time"] // 2
+        assert not result["time"].isregular()
+
+    def test_upsample_keeps_declaring_rate_when_input_is_regular(self):
+        da = xd.testing.dummy(shape=(20, 3))
+        assert da["time"].isregular()
+        result = UpSample(3, dim="time")(da)
+        assert result["time"].isregular()
+
+
+class TestSequentialReset:
+    def test_reset_clears_stateful_atoms(self):
+        da = xd.testing.dummy(shape=(400, 3))
+
+        def stream(sequence, nchunks=4):
+            size = da.sizes["time"] // nchunks
+            return xd.concat(
+                [
+                    sequence(
+                        da.isel(time=slice(k * size, (k + 1) * size)), chunk_dim="time"
+                    )
+                    for k in range(nchunks)
+                ],
+                "time",
+            )
+
+        sequence = Sequential([IIRFilter(4, 10.0, "lowpass", dim="time")])
+        first = stream(sequence)
+        sequence.reset()
+        second = stream(sequence)
+        np.testing.assert_array_equal(first.values, second.values)
+
+
 class TestMLPickerMissingBranches:
     def test_lazy_module_import_error(self):
         from xdas.atoms.ml import LazyModule

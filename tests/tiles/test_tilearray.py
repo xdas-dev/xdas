@@ -129,7 +129,7 @@ class TestManifest:
         with pytest.raises(ValueError, match="reserved"):
             TileArray("a", (5, NX), ENGINE, "f8", sizes_0=[5])
         dataset = manifest.dataset.copy()
-        kwargs = dict(dtype=manifest.dtype, params={"engine": manifest.engine})
+        kwargs = {"dtype": manifest.dtype, "params": {"engine": manifest.engine}}
         with pytest.raises(ValueError, match="`sizes_0`"):
             TileArray.from_dataset(dataset.drop_vars(["sizes_0", "sizes_1"]), **kwargs)
         with pytest.raises(ValueError, match="`paths`"):
@@ -571,7 +571,7 @@ class TestEdgeCases:
         manifest, _ = stack
         with pytest.raises(ValueError, match="more axes"):
             TileArray(np.full((2, 2), "a", dtype=object), ([4, 4],), ENGINE, "f8")
-        kwargs = dict(dtype=manifest.dtype, params={"engine": manifest.engine})
+        kwargs = {"dtype": manifest.dtype, "params": {"engine": manifest.engine}}
         transposed = manifest.dataset.copy()
         transposed["record"] = (("tile_1", "tile_0"), np.zeros((1, 3)))
         with pytest.raises(ValueError, match="ordered subset"):

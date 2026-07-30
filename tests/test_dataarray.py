@@ -55,12 +55,12 @@ class TestBase:
         da = xd.DataArray()
         assert np.array_equal(da.values, np.array(np.nan), equal_nan=True)
         assert da.coords == {}
-        assert da.dims == tuple()
+        assert da.dims == ()
         da = xd.DataArray([[]])
         assert da.dims == ("dim_0", "dim_1")
         assert da.ndim == 2
         da = xd.DataArray(1)
-        assert da.dims == tuple()
+        assert da.dims == ()
         assert da.ndim == 0
 
     def test_array_copy_keyword(self):

@@ -225,7 +225,7 @@ def _row_ranges(edges, shape):
     The tiling is the only blocking a tile array has, and a whole row
     bounds the memory a streaming pass holds at once.
     """
-    rows = [slice(int(lo), int(hi)) for lo, hi in zip(edges[:-1], edges[1:])]
+    rows = [slice(int(lo), int(hi)) for lo, hi in itertools.pairwise(edges)]
     return [rows] + [[slice(0, extent)] for extent in shape[1:]]
 
 

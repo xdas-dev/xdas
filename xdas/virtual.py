@@ -26,24 +26,24 @@ class VirtualArray:
         return f"{self.__class__.__name__}: {_to_human(self.nbytes)} ({self.dtype})"
 
     def __getitem__(self, key):
-        NotImplemented
+        raise NotImplementedError
 
     def __array__(self, dtype=None, copy=None):
-        NotImplemented
+        raise NotImplementedError
 
     @property
     def shape(self):
         """Tuple of array dimensions (abstract — must be overridden)."""
-        NotImplemented
+        raise NotImplementedError
 
     @property
     def dtype(self):
         """NumPy dtype of the array elements (abstract — must be overridden)."""
-        NotImplemented
+        raise NotImplementedError
 
     def to_dataset(self, file_or_group, name):
         """Write this virtual array as an HDF5 dataset (abstract — must be overridden)."""
-        NotImplemented
+        raise NotImplementedError
 
     @property
     def ndim(self):
@@ -113,11 +113,11 @@ class VirtualStack(VirtualArray):
         Concatenation axis.  Defaults to ``0``.
     """
 
-    def __init__(self, sources=[], axis=0):
-        self._sources = list()
+    def __init__(self, sources=None, axis=0):
+        self._sources = []
         self._axis = axis
         self._shape = ()
-        self.extend(sources)
+        self.extend([] if sources is None else sources)
 
     def __getitem__(self, key):
         if not isinstance(key, tuple):
@@ -344,9 +344,9 @@ class VirtualLayout(VirtualArray):
         return out
 
     def __getitem__(self, key):
-        self = copy(self)
-        self._sel = self._sel.__getitem__(key)
-        return self
+        out = copy(self)
+        out._sel = out._sel.__getitem__(key)
+        return out
 
     def __setitem__(self, key, value):
         if not self._sel._whole:
@@ -461,9 +461,9 @@ class VirtualSource(VirtualArray):
         self._sel = Selection(self._vsource.shape)
 
     def __getitem__(self, key):
-        self = copy(self)
-        self._sel = self._sel.__getitem__(key)
-        return self
+        out = copy(self)
+        out._sel = out._sel.__getitem__(key)
+        return out
 
     def __array__(self, dtype=None, copy=None):
         with h5py.File(self.vsource.path) as file:

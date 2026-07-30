@@ -4,6 +4,8 @@ I/O engine for ProdML HDF5 files (:class:`ProdML`).
 Also known as OptaSense and Sintela format.
 """
 
+from typing import ClassVar
+
 import h5py
 import pandas as pd
 
@@ -16,8 +18,8 @@ from .core import Engine
 class ProdML(Engine, name="prodml", aliases=["optasense", "sintela"]):
     """Engine for reading ProdML / OptaSense / Sintela HDF5 files."""
 
-    _supported_vtypes = ["hdf5"]
-    _supported_ctypes = {
+    _supported_vtypes: ClassVar[list] = ["hdf5"]
+    _supported_ctypes: ClassVar[dict] = {
         "time": ["interpolated"],
         "distance": ["interpolated", "sampled", "dense"],
     }

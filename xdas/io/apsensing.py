@@ -1,5 +1,7 @@
 """I/O engine for APSensing HDF5 files (:class:`APSensingEngine`)."""
 
+from typing import ClassVar
+
 import h5py
 import numpy as np
 
@@ -12,8 +14,8 @@ from .core import Engine
 class APSensingEngine(Engine, name="apsensing"):
     """Engine for reading APSensing HDF5 files."""
 
-    _supported_vtypes = ["hdf5"]
-    _supported_ctypes = {
+    _supported_vtypes: ClassVar[list] = ["hdf5"]
+    _supported_ctypes: ClassVar[dict] = {
         "time": ["interpolated", "sampled", "dense"],
         "distance": ["interpolated", "sampled", "dense"],
     }
@@ -39,7 +41,6 @@ class APSensingEngine(Engine, name="apsensing"):
         time = Coordinate[self.ctype["time"]].from_block(t0, nt, dt, dim="time")
 
         # distance
-        dx
         distance = Coordinate[self.ctype["distance"]].from_block(
             x0, nd, dx, dim="distance"
         )

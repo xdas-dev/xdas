@@ -10,11 +10,14 @@ import scipy.signal as sp
 from .coordinates import Coordinate
 from .core import DataArray, split
 
+# module-level singleton so the default is not built at each call (ruff B008)
+DEFAULT_RESOLUTION = (np.timedelta64(20, "ms"), 25.0)
+
 
 def wavelet_wavefronts(
     *,
     starttime="2023-01-01T00:00:00",
-    resolution=(np.timedelta64(20, "ms"), 25.0),
+    resolution=DEFAULT_RESOLUTION,
     nchunk=None,
 ):
     """

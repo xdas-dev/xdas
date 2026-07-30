@@ -62,3 +62,23 @@ class TestInverseTransforms:
                 assert np.allclose(result["time"].values, ref)
             else:
                 assert result[name].equals(expected[name])
+
+
+class TestDefaultDim:
+    """The default `dim` maps the last dimension; equivalent to naming it."""
+
+    def test_fft(self):
+        da = xd.testing.dummy()
+        assert xfft.fft(da).equals(xfft.fft(da, dim={"distance": "spectrum"}))
+
+    def test_rfft(self):
+        da = xd.testing.dummy()
+        assert xfft.rfft(da).equals(xfft.rfft(da, dim={"distance": "spectrum"}))
+
+    def test_ifft(self):
+        da = xd.testing.dummy()
+        assert xfft.ifft(da).equals(xfft.ifft(da, dim={"distance": "signal"}))
+
+    def test_irfft(self):
+        da = xd.testing.dummy()
+        assert xfft.irfft(da).equals(xfft.irfft(da, dim={"distance": "signal"}))

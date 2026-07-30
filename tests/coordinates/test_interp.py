@@ -91,7 +91,7 @@ class TestInterpCoordinate:
             len(InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]}))
             == 9
         )
-        assert len(InterpCoordinate(dict(tie_indices=[], tie_values=[]))) == 0
+        assert len(InterpCoordinate({"tie_indices": [], "tie_values": []})) == 0
 
     @pytest.mark.parametrize("valid_input", valid)
     def test_repr(self, valid_input):
@@ -117,15 +117,17 @@ class TestInterpCoordinate:
             coord[9]
             coord[-9]
         assert coord[0:2].equals(
-            InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[100.0, 200.0]))
+            InterpCoordinate({"tie_indices": [0, 1], "tie_values": [100.0, 200.0]})
         )
         assert coord[:].equals(coord)
-        assert coord[6:3].equals(InterpCoordinate(dict(tie_indices=[], tie_values=[])))
+        assert coord[6:3].equals(
+            InterpCoordinate({"tie_indices": [], "tie_values": []})
+        )
         assert coord[1:2].equals(
-            InterpCoordinate(dict(tie_indices=[0], tie_values=[200.0]))
+            InterpCoordinate({"tie_indices": [0], "tie_values": [200.0]})
         )
         assert coord[-3:-1].equals(
-            InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[700.0, 800.0]))
+            InterpCoordinate({"tie_indices": [0, 1], "tie_values": [700.0, 800.0]})
         )
 
     def test_setitem(self):
@@ -142,7 +144,7 @@ class TestInterpCoordinate:
         assert not InterpCoordinate(
             {"tie_indices": [0, 8], "tie_values": [100.0, 900.0]}
         ).empty
-        assert InterpCoordinate(dict(tie_indices=[], tie_values=[])).empty
+        assert InterpCoordinate({"tie_indices": [], "tie_values": []}).empty
 
     def test_dtype(self):
         coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
@@ -178,7 +180,7 @@ class TestInterpCoordinate:
         starttime = np.datetime64("2000-01-01T00:00:00")
         endtime = np.datetime64("2000-01-01T00:00:08")
         coord = InterpCoordinate(
-            dict(tie_indices=[0, 8], tie_values=[starttime, endtime])
+            {"tie_indices": [0, 8], "tie_values": [starttime, endtime]}
         )
         assert coord._get_value(0) == starttime
         assert coord._get_value(4) == np.datetime64("2000-01-01T00:00:04")
@@ -209,7 +211,7 @@ class TestInterpCoordinate:
         starttime = np.datetime64("2000-01-01T00:00:00")
         endtime = np.datetime64("2000-01-01T00:00:08")
         coord = InterpCoordinate(
-            dict(tie_indices=[0, 8], tie_values=[starttime, endtime])
+            {"tie_indices": [0, 8], "tie_values": [starttime, endtime]}
         )
         assert coord._get_indexer(starttime) == 0
         assert coord._get_indexer(endtime) == 8
@@ -240,45 +242,53 @@ class TestInterpCoordinate:
     def test_slice_index(self):
         coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert coord[0:2].equals(
-            InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[100.0, 200.0]))
+            InterpCoordinate({"tie_indices": [0, 1], "tie_values": [100.0, 200.0]})
         )
         assert coord[7:].equals(
-            InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[800.0, 900.0]))
+            InterpCoordinate({"tie_indices": [0, 1], "tie_values": [800.0, 900.0]})
         )
         assert coord[:].equals(coord)
-        assert coord[0:0].equals(InterpCoordinate(dict(tie_indices=[], tie_values=[])))
-        assert coord[4:2].equals(InterpCoordinate(dict(tie_indices=[], tie_values=[])))
-        assert coord[9:9].equals(InterpCoordinate(dict(tie_indices=[], tie_values=[])))
-        assert coord[3:3].equals(InterpCoordinate(dict(tie_indices=[], tie_values=[])))
+        assert coord[0:0].equals(
+            InterpCoordinate({"tie_indices": [], "tie_values": []})
+        )
+        assert coord[4:2].equals(
+            InterpCoordinate({"tie_indices": [], "tie_values": []})
+        )
+        assert coord[9:9].equals(
+            InterpCoordinate({"tie_indices": [], "tie_values": []})
+        )
+        assert coord[3:3].equals(
+            InterpCoordinate({"tie_indices": [], "tie_values": []})
+        )
         assert coord[0:-1].equals(
-            InterpCoordinate(dict(tie_indices=[0, 7], tie_values=[100.0, 800.0]))
+            InterpCoordinate({"tie_indices": [0, 7], "tie_values": [100.0, 800.0]})
         )
         assert coord[0:-2].equals(
-            InterpCoordinate(dict(tie_indices=[0, 6], tie_values=[100.0, 700.0]))
+            InterpCoordinate({"tie_indices": [0, 6], "tie_values": [100.0, 700.0]})
         )
         assert coord[-2:].equals(
-            InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[800.0, 900.0]))
+            InterpCoordinate({"tie_indices": [0, 1], "tie_values": [800.0, 900.0]})
         )
         assert coord[1:2].equals(
-            InterpCoordinate(dict(tie_indices=[0], tie_values=[200.0]))
+            InterpCoordinate({"tie_indices": [0], "tie_values": [200.0]})
         )
         assert coord[1:3:2].equals(
-            InterpCoordinate(dict(tie_indices=[0], tie_values=[200.0]))
+            InterpCoordinate({"tie_indices": [0], "tie_values": [200.0]})
         )
         assert coord[::2].equals(
-            InterpCoordinate(dict(tie_indices=[0, 4], tie_values=[100.0, 900.0]))
+            InterpCoordinate({"tie_indices": [0, 4], "tie_values": [100.0, 900.0]})
         )
         assert coord[::3].equals(
-            InterpCoordinate(dict(tie_indices=[0, 2], tie_values=[100.0, 700.0]))
+            InterpCoordinate({"tie_indices": [0, 2], "tie_values": [100.0, 700.0]})
         )
         assert coord[::4].equals(
-            InterpCoordinate(dict(tie_indices=[0, 2], tie_values=[100.0, 900.0]))
+            InterpCoordinate({"tie_indices": [0, 2], "tie_values": [100.0, 900.0]})
         )
         assert coord[::5].equals(
-            InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[100.0, 600.0]))
+            InterpCoordinate({"tie_indices": [0, 1], "tie_values": [100.0, 600.0]})
         )
         assert coord[2:7:3].equals(
-            InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[300.0, 600.0]))
+            InterpCoordinate({"tie_indices": [0, 1], "tie_values": [300.0, 600.0]})
         )
 
     def test_to_index(self):
@@ -1092,7 +1102,9 @@ class TestSimplifyToleranceDefaults:
         assert result.equals(coord)
 
     def test_widen_only_when_needed(self):
-        # Fusing a jump beyond the declared tolerance widens it by the budget.
+        # Fusing a jump beyond the declared tolerance widens it to the least
+        # value that describes the surviving tie points: the fused coordinate
+        # spans 13 s over 11 intervals, so it drifts 2 s from the nominal grid.
         t0 = np.datetime64("2000-01-01T00:00:00", "ns")
         s = np.timedelta64(1, "s").astype("m8[ns]")
         coord = InterpCoordinate(
@@ -1106,7 +1118,63 @@ class TestSimplifyToleranceDefaults:
         result = coord.simplify(np.timedelta64(3, "s"))
         assert len(result.tie_indices) == 2
         assert result.sampling_interval == s
-        assert result.tolerance == np.timedelta64(3, "s").astype("m8[ns]")
+        assert result.tolerance == np.timedelta64(1, "s").astype("m8[ns]")
+        assert result._is_valid_sampling_interval(s, result.tolerance)
+
+    def test_widening_beyond_the_budget_never_raises(self):
+        # Douglas-Peucker bounds how far values move, not how much drift fusing
+        # a discontinuity exposes, so the required tolerance can exceed the
+        # budget. Real OptoDAS seams: 2 ms late every 10 s at 125 Hz.
+        t0 = np.datetime64("2021-10-27T15:44:10.721999872", "ns")
+        offsets = [
+            0,
+            9992000000,
+            10002000128,
+            19994000128,
+            20002000128,
+            29994000128,
+            30004000256,
+            39996000256,
+        ]
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 1249, 1250, 2499, 2500, 3749, 3750, 4999],
+                "tie_values": t0 + np.array(offsets, dtype="timedelta64[ns]"),
+                "sampling_interval": np.timedelta64(8_000_000, "ns"),
+                "tolerance": np.timedelta64(0, "ns"),
+            }
+        )
+        result = coord.simplify(np.timedelta64(1_000_000, "ns"))
+        assert result.isregular()
+        assert result.sampling_interval == np.timedelta64(8_000_000, "ns")
+        # Four times the 1 ms budget, and the smallest value that validates.
+        assert result.tolerance == np.timedelta64(2_000_128, "ns")
+        assert result._is_valid_sampling_interval(
+            result.sampling_interval, result.tolerance
+        )
+
+    def test_widen_only_when_needed_on_float_axis(self):
+        # Same widening on a float axis: fusing the 4.0 seam leaves a coordinate
+        # spanning 64.0 over 21 intervals, 1.0 off the nominal 3.0 grid.
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 10, 11, 21],
+                "tie_values": [0.0, 30.0, 34.0, 64.0],
+                "sampling_interval": 3.0,
+                "tolerance": 0.0,
+            }
+        )
+        result = coord.simplify(2.0)
+        assert len(result.tie_indices) == 2
+        assert result.sampling_interval == 3.0
+        assert result.tolerance == pytest.approx(0.5, abs=1e-9)
+        assert result._is_valid_sampling_interval(3.0, result.tolerance)
+
+    def test_minimal_tolerance_without_continuous_area(self):
+        # Nothing to constrain the spacing: the zero-like default is enough.
+        coord = InterpCoordinate({"tie_indices": [0, 1], "tie_values": [0.0, 5.0]})
+        tolerance = coord._minimal_tolerance(1.0)
+        assert coord._is_valid_sampling_interval(1.0, tolerance)
 
 
 class TestSimplifyNoReduce:

@@ -5,12 +5,13 @@ Use :func:`get` and :func:`set` to read and write configuration values.
 """
 
 import os
+from typing import ClassVar
 
 
 class Config:
     """Global configuration store backed by a plain dict."""
 
-    config = {"n_workers": os.cpu_count()}
+    config: ClassVar[dict] = {"n_workers": os.cpu_count()}
 
 
 def get(key):

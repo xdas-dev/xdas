@@ -1,5 +1,7 @@
 """I/O engine for MiniSEED files via ObsPy (:class:`MiniSEEDEngine`)."""
 
+from typing import ClassVar
+
 import numpy as np
 import obspy
 
@@ -18,8 +20,8 @@ from .core import Engine
 class MiniSEEDEngine(Engine, name="miniseed"):
     """Engine for reading MiniSEED files via ObsPy as lazy tile-backed DataArrays."""
 
-    _supported_vtypes = ["tiles"]
-    _supported_ctypes = {
+    _supported_vtypes: ClassVar[list] = ["tiles"]
+    _supported_ctypes: ClassVar[dict] = {
         "time": ["interpolated", "sampled", "dense"],
     }
 
@@ -140,7 +142,7 @@ def to_stream(
     station="DAS{:05}",
     location="00",
     channel="{:1}N1",
-    dim={"last": "first"},
+    dim=None,
 ):
     """
     Convert a 2-D :class:`DataArray` to an :class:`obspy.Stream`.
@@ -159,6 +161,8 @@ def to_stream(
     -------
     obspy.Stream
     """
+    if dim is None:
+        dim = {"last": "first"}
     dimdist, dimtime = dim.copy().popitem()
     if not da.ndim == 2:
         raise ValueError("the data array must be 2D")
@@ -221,7 +225,7 @@ def get_time_coord(tr, ignore_last_sample, ctype):
 def uniquifiy(seq):
     """Return the unique elements of *seq* in order; unwrap to scalar if only one."""
     seen = set()
-    seq = list(x for x in seq if x not in seen and not seen.add(x))
+    seq = [x for x in seq if x not in seen and not seen.add(x)]
     if len(seq) == 1:
         return seq[0]
     else:
