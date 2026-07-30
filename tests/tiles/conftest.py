@@ -4,7 +4,8 @@ import h5py
 import numpy as np
 import pytest
 
-from xdas.tiles import ENGINES, Engine, TileArray
+from xdas.io import Engine
+from xdas.tiles import TileArray
 
 NX = 5
 
@@ -15,13 +16,14 @@ class H5pyEngine(Engine, name="h5py"):
     """Read any HDF5 dataset — the engine of the synthetic test files.
 
     The format engines each read their own layout; test files belong to
-    no format, so they are described by this generic load-only engine.
-    Extra leading selection axes (virtually expanded arrays) pad the
-    output rank, as the production engines do.
+    no format, so they are described by this generic load-only engine
+    (its opening half stays abstract). Extra leading selection axes
+    (virtually expanded arrays) pad the output rank, as the production
+    engines do.
     """
 
     @staticmethod
-    def load(path, selection, *, dataset):
+    def load_tile(path, selection, *, dataset):
         with h5py.File(path, "r") as file:
             source = file[dataset]
             extra = len(selection) - source.ndim
@@ -101,11 +103,11 @@ def windowed(tmp_path):
 def engine_calls(monkeypatch):
     """Record the path of every h5py engine read, delegating to the real one."""
     calls = []
-    original = ENGINES["h5py"].load
+    original = Engine["h5py"].load_tile
 
     def counting(path, selection, **params):
         calls.append(path)
         return original(path, selection, **params)
 
-    monkeypatch.setattr(ENGINES["h5py"], "load", counting)
+    monkeypatch.setattr(Engine["h5py"], "load_tile", counting)
     return calls

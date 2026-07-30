@@ -1,64 +1,43 @@
-"""Tile engine registry — the format plugin socket of :mod:`xdas.tiles`.
+"""Engine lookup of the tiles machinery.
 
-A tile engine is a subclass of :class:`Engine`, one per format,
-registered by subclassing with a ``name``. It carries a ``load`` half
-that reads one tile of a source file; the :class:`~xdas.tiles.TileArray`
-read path looks it up by the ``name`` key of its engine specification.
-This registry is distinct from :class:`xdas.io.Engine`, which handles
-whole-file opening and saving of labeled arrays.
-
-Ported from the 0.3 line (``xdas/virtual/registry.py``).
+The 0.2 line keeps a single per-format plugin socket: :class:`xdas.io.Engine`.
+Tile decoding is its ``load_tile`` half; :func:`get_engine` resolves the
+``name`` key of the engine specifications stored in tile manifests against
+that registry. The 0.3 line hosts the same lookup over its own registry,
+keeping :mod:`xdas.tiles.tilearray` identical in both lines.
 """
 
-ENGINES = {}
 
+def get_engine(name):
+    """Return the engine class registered under *name*.
 
-class Engine:
-    """Base class of the tile format engines; subclassing registers.
+    Parameters
+    ----------
+    name : str
+        The ``name`` key of a tile manifest's engine specification.
 
-    ``class MyEngine(Engine, name="myformat")`` registers the subclass
-    in :data:`ENGINES` under *name* (omit it for unregistered
-    intermediate bases). An engine implements one or both halves as
-    static methods — a format only referenced by stored manifests needs
-    only ``load``:
+    Returns
+    -------
+    type
+        The :class:`xdas.io.Engine` subclass registered under *name*; its
+        ``load_tile`` static method decodes tiles of that format.
 
-    - ``open(path, **kwargs)``: read only the metadata of one file and
-      return a lazy tile-backed array. Unused by the 0.2 line, where
-      the :class:`xdas.io.Engine` subclasses do the opening; kept for
-      forward compatibility with the 0.3 stack.
-    - ``load(path, selection, **params)``: read one tile — open the
-      source itself (h5py, obspy, ...) and return exactly the selected
-      sub-box of the decoded source as a numpy array, *selection* being
-      one source-local, possibly strided :class:`slice` per source
-      axis. The keyword parameters are the manifest's engine
-      specification merged with the per-tile manifest variables (a
-      per-tile value shadows a same-named spec constant).
+    Raises
+    ------
+    KeyError
+        If no engine is registered under *name*.
     """
+    from ..io.core import Engine
 
-    name = None
-
-    def __init_subclass__(cls, /, name=None, **kwargs):
-        super().__init_subclass__(**kwargs)
-        if name is not None:
-            cls.name = name
-            ENGINES[name] = cls
-
-    @classmethod
-    def open(cls, path, **kwargs):
-        """Scan *path* lazily; overridden by engines that open files."""
-        raise NotImplementedError(
-            f"engine {cls.name!r} cannot open files (no `open` method)"
-        )
-
-    @classmethod
-    def load(cls, path, selection, **params):
-        """Read one tile of *path*; overridden by engines that load data."""
-        raise NotImplementedError(
-            f"engine {cls.name!r} cannot load tile data (no `load` method)"
-        )
+    try:
+        return Engine[name]
+    except KeyError:
+        raise KeyError(
+            f"no engine registered under {name!r}; "
+            f"available: {sorted(Engine._registry)}"
+        ) from None
 
 
 __all__ = [
-    "ENGINES",
-    "Engine",
+    "get_engine",
 ]

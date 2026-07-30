@@ -12,7 +12,6 @@ from ..coordinates import (
     get_sampling_interval,
 )
 from ..core import DataArray, concat_coords
-from ..tiles import Engine as TileEngine
 from ..tiles import TileArray
 from .core import Engine
 
@@ -94,7 +93,8 @@ class MiniSEEDEngine(Engine, name="miniseed"):
         )
         return shape, dtype, coords, method
 
-    def read_data(self, path, method, ignore_last_sample):
+    @staticmethod
+    def read_data(path, method, ignore_last_sample):
         """Load and return the raw data array from *path* using *method*."""
         st = obspy.read(path)
         if method == "synchronized":
@@ -115,20 +115,16 @@ class MiniSEEDEngine(Engine, name="miniseed"):
                 data.append(np.concatenate(channel_data))
             return np.array(data)
 
-
-class MiniSEEDTileEngine(TileEngine, name="miniseed"):
-    """Tile reader for MiniSEED sources, decoding with ObsPy."""
-
     @staticmethod
-    def load(path, selection, *, method, ignore_last_sample):
-        """Read a source selection of a MiniSEED file.
+    def load_tile(path, selection, *, method="synchronized", ignore_last_sample=False):
+        """Read a source selection of a MiniSEED file, decoding with ObsPy.
 
         Decodes the whole file with ObsPy (as the legacy dask path did)
         and crops to *selection*. The decoded rank is padded with unit
         leading axes for virtually expanded arrays, or squeezed when a
         scalar channel folded an axis away.
         """
-        data = MiniSEEDEngine().read_data(path, method, ignore_last_sample)
+        data = MiniSEEDEngine.read_data(path, method, ignore_last_sample)
         if data.ndim < len(selection):
             data = data.reshape((1,) * (len(selection) - data.ndim) + data.shape)
         elif data.ndim > len(selection):

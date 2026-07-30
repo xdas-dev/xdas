@@ -29,11 +29,11 @@ load only when tiles are read. Positive-step slicing folds into the
 geometry and returns a new :class:`TileArray` (as lazy and
 self-described as its input); any other indexing reads the bounding box
 of the selection and resolves the rest in memory. ``np.asarray``
-materializes: tiles are read one by one by the registered *engine*,
-whose ``load`` opens each tile's path itself and returns the tile's
-*source selection* (one possibly strided slice per axis, see
-:class:`~xdas.tiles.registry.Engine`), every part landing
-directly in the output array.
+materializes: tiles are read one by one by the registered *engine*
+(resolved with :func:`~xdas.tiles.registry.get_engine`), whose
+``load_tile`` opens each tile's path itself and returns the tile's
+*source selection* (one possibly strided slice per axis), every part
+landing directly in the output array.
 
 A tile array is used *raw* as the data of a :class:`xdas.DataArray`
 (``DataArray(arr, coords)``), so ``da.data`` returns the inspectable
@@ -62,7 +62,7 @@ import math
 import numpy as np
 import xarray as xr
 
-from .registry import ENGINES
+from .registry import get_engine
 
 TILE_PREFIX = "tile_"
 """Prefix of the tile-grid dimensions of a manifest dataset."""
@@ -259,9 +259,9 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         the number of tiles along the axis).
     engine : dict
         The engine specification: the key ``"name"`` selects a
-        registered :class:`~xdas.virtual.registry.Engine`; the
-        remaining keys are passed to its ``load`` as keyword
-        parameters.
+        registered engine (resolved with
+        :func:`~xdas.tiles.registry.get_engine`); the remaining keys
+        are passed to its ``load_tile`` as keyword parameters.
     dtype : str or numpy.dtype
         Element type of the virtual array (little-endian or
         single-byte).
@@ -396,11 +396,7 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         engine = json.loads(json.dumps(engine))
         if not isinstance(engine, dict) or "name" not in engine:
             raise ValueError("the engine specification must have a `name` key")
-        if engine["name"] not in ENGINES:
-            raise KeyError(
-                f"no engine registered under {engine['name']!r}; "
-                f"available: {sorted(ENGINES)}"
-            )
+        get_engine(engine["name"])
         self._engine = engine
         self.dtype = np.dtype(dtype)
         if self.dtype.byteorder == ">":
@@ -671,10 +667,10 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
 
     @functools.cached_property
     def _engine_impl(self):
-        """The ``(load, spec)`` of the engine specification."""
+        """The ``(load_tile, spec)`` of the engine specification."""
         spec = dict(self.engine)
         name = spec.pop("name")
-        return ENGINES[name].load, spec
+        return get_engine(name).load_tile, spec
 
     def __array__(self, dtype=None, copy=None):
         """Read every tile and return the values as a numpy array.
@@ -868,7 +864,7 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         expands the data with :func:`numpy.expand_dims`; this keeps
         that path lazy instead of materializing. Only the leading
         position is supported: the new axis holds one tile of size
-        one, and the engine ``load`` receives one extra leading
+        one, and the engine ``load_tile`` receives one extra leading
         ``slice(0, 1)`` per expanded axis, padding its output rank
         accordingly (see the silixa and miniseed engines).
 

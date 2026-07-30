@@ -5,11 +5,8 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-from xdas.tiles import (
-    ENGINES,
-    Engine,
-    TileArray,
-)
+from xdas.io import Engine
+from xdas.tiles import TileArray, get_engine
 
 NX = 5
 
@@ -156,26 +153,26 @@ class TestManifest:
     def test_engine_registration(self):
         class DummyEngine(Engine, name="dummy"):
             @staticmethod
-            def load(path, selection):
+            def load_tile(path, selection):
                 return np.zeros((1, 1))
 
         try:
-            assert ENGINES["dummy"] is DummyEngine
-            assert DummyEngine.name == "dummy"
-            # the unimplemented half keeps a telling error
-            with pytest.raises(NotImplementedError, match="'dummy' cannot open"):
-                DummyEngine.open("some/path")
+            assert get_engine("dummy") is DummyEngine
         finally:
-            del ENGINES["dummy"]
+            del Engine._registry["dummy"]
 
-    def test_unregistered_base_subclass(self):
-        class HalfBaked(Engine):
+    def test_engine_without_tile_loader(self):
+        # a registered engine that predates the tiles machinery resolves
+        # but fails loudly when a manifest asks it to decode
+        class NoTilesEngine(Engine, name="notiles"):
             pass
 
-        assert HalfBaked.name is None
-        assert HalfBaked not in ENGINES.values()
-        with pytest.raises(NotImplementedError, match="cannot load"):
-            HalfBaked.load("some/path", (slice(0, 1),))
+        try:
+            arr = TileArray("a", (5, NX), {"name": "notiles"}, "f8")
+            with pytest.raises(NotImplementedError):
+                np.asarray(arr)
+        finally:
+            del Engine._registry["notiles"]
 
     def test_repr(self, stack):
         manifest, _ = stack
@@ -474,7 +471,7 @@ class TestEngineContract:
 
         class ProbeEngine(Engine, name="probe"):
             @staticmethod
-            def load(path, selection, *, record, flavor):
+            def load_tile(path, selection, *, record, flavor):
                 seen.append((path, record, flavor))
                 widths = tuple(
                     len(range(entry.start, entry.stop, entry.step or 1))
@@ -493,14 +490,14 @@ class TestEngineContract:
             assert [entry[1] for entry in seen] == [0, 1, 2]
             assert {entry[2] for entry in seen} == {"spec"}
         finally:
-            del ENGINES["probe"]
+            del Engine._registry["probe"]
 
     def test_wrong_shape_fails_loudly(self, stack):
         manifest, _ = stack
 
         class BadShapeEngine(Engine, name="badshape"):
             @staticmethod
-            def load(path, selection):
+            def load_tile(path, selection):
                 return np.zeros((1, 1))
 
         try:
@@ -512,7 +509,7 @@ class TestEngineContract:
             with pytest.raises(ValueError, match="shape"):
                 np.asarray(bad[0:5])
         finally:
-            del ENGINES["badshape"]
+            del Engine._registry["badshape"]
 
 
 class TestEdgeCases:

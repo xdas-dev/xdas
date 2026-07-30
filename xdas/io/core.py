@@ -109,6 +109,21 @@ class Engine:
         """Write *dc* to *fname* (abstract)."""
         raise NotImplementedError
 
+    @staticmethod
+    def load_tile(path, selection, **kwargs):
+        """Read the selected sub-box of one tile of *path* (abstract).
+
+        The decode half of the tiles machinery: called on the class by
+        :class:`~xdas.tiles.TileArray` once per tile touched, with one
+        source-local, possibly strided :class:`slice` per source axis and
+        the manifest's engine specification (merged with the per-tile
+        variables) as keyword arguments. It must return exactly the
+        selected sub-box of the decoded source as a numpy array, and must
+        depend only on its arguments — never on engine instance state —
+        so that stored manifests decode identically everywhere.
+        """
+        raise NotImplementedError
+
     def _parse_vtype(self, vtype):
         if self._supported_vtypes is None:
             return vtype

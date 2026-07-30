@@ -6,7 +6,6 @@ import numpy as np
 
 from ..coordinates import Coordinate
 from ..core import DataArray
-from ..tiles import Engine as TileEngine
 from ..tiles import TileArray
 from .core import Engine
 from .tdms import TdmsReader
@@ -56,13 +55,9 @@ class SilixaEngine(Engine, name="silixa"):
             data = tdms.get_data()
         return data
 
-
-class SilixaTileEngine(TileEngine, name="silixa"):
-    """Tile reader for Silixa TDMS sources (rows are time samples)."""
-
     @staticmethod
-    def load(path, selection):
-        """Read a source selection of a Silixa TDMS file.
+    def load_tile(path, selection):
+        """Read a source selection of a Silixa TDMS file (rows are time samples).
 
         :class:`~xdas.io.tdms.TdmsReader` performs the decoding
         (``get_data`` bounds are inclusive, hence the ``stop - 1``); the

@@ -41,14 +41,17 @@ Methods
    TileArray.equals
 ```
 
-## Engine registry
+## Engine lookup
+
+Tiles are decoded by the ``load_tile`` half of the
+{class}`xdas.io.Engine` format plugins; {func}`~xdas.tiles.get_engine`
+resolves the engine names stored in tile manifests.
 
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
 
-   Engine
-   Engine.open
-   Engine.load
+   get_engine
+   xdas.io.Engine.load_tile
    extract_array
 ```
