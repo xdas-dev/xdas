@@ -7,6 +7,7 @@ import numpy as np
 
 from ..coordinates import Coordinate
 from ..core import DataArray
+from ..tiles import TileArray
 from ..virtual import VirtualSource
 from .core import Engine
 
@@ -14,7 +15,7 @@ from .core import Engine
 class APSensingEngine(Engine, name="apsensing"):
     """Engine for reading APSensing HDF5 files."""
 
-    _supported_vtypes: ClassVar[list] = ["hdf5"]
+    _supported_vtypes: ClassVar[list] = ["hdf5", "tiles"]
     _supported_ctypes: ClassVar[dict] = {
         "time": ["interpolated", "sampled", "dense"],
         "distance": ["interpolated", "sampled", "dense"],
@@ -27,7 +28,15 @@ class APSensingEngine(Engine, name="apsensing"):
             fs = file["ProcessingServer"]["DataRate"][()].item()
             dx = file["ProcessingServer"]["SpatialSampling"][()].item()
             x0 = file["DAQ"]["PositionStart"][()].item()
-            data = VirtualSource(file["DAS"])
+            if self.vtype == "tiles":
+                data = TileArray(
+                    str(fname),
+                    file["DAS"].shape,
+                    {"name": "apsensing"},
+                    file["DAS"].dtype,
+                )
+            else:
+                data = VirtualSource(file["DAS"])
 
         nt, nd = data.shape
 
@@ -45,6 +54,12 @@ class APSensingEngine(Engine, name="apsensing"):
             x0, nd, dx, dim="distance"
         )
         return DataArray(data, {"time": time, "distance": distance})
+
+    @staticmethod
+    def load_tile(path, selection):
+        """Read a source selection of the ``/DAS`` dataset of an APSensing file."""
+        with h5py.File(path, "r") as file:
+            return file["/DAS"][selection]
 
         # NOTE: Distance sample are left aligned. The original number of samples is
         # `round((xend - xstart) / dx) + 1` with xstart / xend located  in

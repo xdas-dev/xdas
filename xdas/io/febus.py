@@ -7,7 +7,8 @@ import h5py
 import numpy as np
 
 from ..coordinates import Coordinate
-from ..core import DataArray, concat
+from ..core import DataArray, concat, concat_coords
+from ..tiles import TileArray
 from ..virtual import VirtualSource
 from .core import Engine
 
@@ -15,7 +16,7 @@ from .core import Engine
 class FebusEngine(Engine, name="febus"):
     """Engine for reading Febus HDF5 files."""
 
-    _supported_vtypes: ClassVar[list] = ["hdf5"]
+    _supported_vtypes: ClassVar[list] = ["hdf5", "tiles"]
     _supported_ctypes: ClassVar[dict] = {
         "time": ["interpolated", "sampled", "dense"],
         "distance": ["interpolated", "sampled", "dense"],
@@ -67,6 +68,7 @@ class FebusEngine(Engine, name="febus"):
                     "Could not find the block size, please check file header"
                 )
             (name,) = list(zone.keys())
+            dataset_path = zone[name].name
             chunks = VirtualSource(zone[name])
             delta = (zone.attrs["Spacing"][1] / 1000.0, zone.attrs["Spacing"][0])
             x0 = zone.attrs["Extent"][0] * delta[1] + zone.attrs["Origin"][0]
@@ -101,13 +103,41 @@ class FebusEngine(Engine, name="febus"):
             case _:
                 raise ValueError("offset must be an integer")
 
-        chunks = chunks[:, overlaps[0] : -overlaps[-1], :]
         times = times + (overlaps[0] - offset) * delta[0]
 
         dt, dx = delta
-        _, nt, nx = chunks.shape
+        nblocks, block_size, nx = chunks.shape
+        nt = block_size - overlaps[0] - overlaps[1]
 
         dt = np.rint(1e6 * dt).astype("m8[us]").astype("m8[ns]")
+
+        if self.vtype == "tiles":
+            # one tile spans the whole file: the block arithmetic (trimming
+            # and 3-D to 2-D fusing) lives in `load_tile`, not the manifest
+            time = concat_coords(
+                [
+                    Coordinate[self.ctype["time"]].from_block(
+                        np.rint(1e6 * t0).astype("M8[us]").astype("M8[ns]"),
+                        nt,
+                        dt,
+                        dim="time",
+                    )
+                    for t0 in times
+                ]
+            )
+            distance = Coordinate[self.ctype["distance"]].from_block(
+                x0, nx, dx, dim="distance"
+            )
+            engine = {
+                "name": "febus",
+                "dataset": dataset_path,
+                "block_size": int(block_size),
+                "overlaps": [int(overlaps[0]), int(overlaps[1])],
+            }
+            data = TileArray(str(fname), (nblocks * nt, nx), engine, chunks.dtype)
+            return DataArray(data, {"time": time, "distance": distance}, name=name)
+
+        chunks = chunks[:, overlaps[0] : -overlaps[-1], :]
 
         dc = []
         for t0, chunk in zip(times, chunks):
@@ -120,3 +150,40 @@ class FebusEngine(Engine, name="febus"):
             dc.append(da)
 
         return concat(dc, "time")
+
+    @staticmethod
+    def load_tile(path, selection, *, dataset, block_size, overlaps):
+        """Read a post-trim source selection of a Febus file.
+
+        Febus files store a 3-D stack of overlapping ``(time, distance)``
+        blocks. Rows are counted post-trim: each block contributes
+        ``block_size - sum(overlaps)`` rows. Only the blocks overlapping the
+        requested rows are read; overlap rows are sliced away without being
+        copied.
+
+        Parameters
+        ----------
+        path : str
+            Path of the Febus HDF5 file.
+        selection : tuple of slice
+            The source selection to read, one possibly strided slice per
+            axis, post-trim rows along axis 0.
+        dataset : str
+            Location of the block stack within the file.
+        block_size : int
+            Rows of one untrimmed block.
+        overlaps : tuple of int
+            Rows trimmed at the start and end of each block.
+        """
+        rows = selection[0]
+        start, stop = rows.start, rows.stop
+        keep = block_size - overlaps[0] - overlaps[1]
+        with h5py.File(path, "r") as file:
+            blocks = file[dataset]
+            parts = []
+            for block in range(start // keep, (stop - 1) // keep + 1):
+                lo = max(start - block * keep, 0) + overlaps[0]
+                hi = min(stop - block * keep, keep) + overlaps[0]
+                parts.append(blocks[block, lo:hi])
+        rows = np.concatenate(parts) if len(parts) > 1 else parts[0]
+        return rows[(slice(None, None, selection[0].step), *selection[1:])]

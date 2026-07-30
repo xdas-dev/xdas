@@ -11,14 +11,17 @@ import pandas as pd
 
 from ..coordinates import Coordinate
 from ..core import DataArray
+from ..tiles import TileArray
 from ..virtual import VirtualSource
 from .core import Engine
+
+_RAWDATA = "/Acquisition/Raw[0]/RawData"
 
 
 class ProdML(Engine, name="prodml", aliases=["optasense", "sintela"]):
     """Engine for reading ProdML / OptaSense / Sintela HDF5 files."""
 
-    _supported_vtypes: ClassVar[list] = ["hdf5"]
+    _supported_vtypes: ClassVar[list] = ["hdf5", "tiles"]
     _supported_ctypes: ClassVar[dict] = {
         "time": ["interpolated"],
         "distance": ["interpolated", "sampled", "dense"],
@@ -43,7 +46,14 @@ class ProdML(Engine, name="prodml", aliases=["optasense", "sintela"]):
                 .tz_localize(None)
                 .to_numpy()
             )
-            data = VirtualSource(rawdata)
+            if self.vtype == "tiles":
+                # the manifest keeps the on-disk layout, whichever way the
+                # dims are labeled, so the spec needs no `transpose`
+                data = TileArray(
+                    str(fname), rawdata.shape, {"name": "prodml"}, rawdata.dtype
+                )
+            else:
+                data = VirtualSource(rawdata)
 
         if swapped_dims:
             nd, nt = data.shape
@@ -68,3 +78,17 @@ class ProdML(Engine, name="prodml", aliases=["optasense", "sintela"]):
             else {"time": time, "distance": distance}
         )
         return DataArray(data, coords)
+
+    @staticmethod
+    def load_tile(path, selection, *, transpose=False):
+        """Read a source selection of the raw data of a ProdML file.
+
+        With ``transpose`` the on-disk layout is distance-major
+        ``(distance, time)``; rows are then columns on disk and are
+        transposed on the way out.
+        """
+        with h5py.File(path, "r") as file:
+            data = file[_RAWDATA]
+            if transpose:
+                return data[selection[1], selection[0]].T
+            return data[selection]

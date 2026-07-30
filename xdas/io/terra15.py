@@ -7,6 +7,7 @@ import pandas as pd
 
 from ..coordinates import Coordinate
 from ..core import DataArray
+from ..tiles import TileArray
 from ..virtual import VirtualSource
 from .core import Engine
 
@@ -14,7 +15,7 @@ from .core import Engine
 class Terra15Engine(Engine, name="terra15"):
     """Engine for reading Terra15 HDF5 files."""
 
-    _supported_vtypes: ClassVar[list] = ["hdf5"]
+    _supported_vtypes: ClassVar[list] = ["hdf5", "tiles"]
     _supported_ctypes: ClassVar[dict] = {
         "time": ["interpolated"],
         "distance": ["interpolated", "sampled", "dense"],
@@ -37,7 +38,13 @@ class Terra15Engine(Engine, name="terra15"):
             )
             d0 = file.attrs["sensing_range_start"]
             dx = file.attrs["dx"]
-            data = VirtualSource(file["data_product"]["data"])
+            source = file["data_product"]["data"]
+            if self.vtype == "tiles":
+                data = TileArray(
+                    str(fname), source.shape, {"name": "terra15"}, source.dtype
+                )
+            else:
+                data = VirtualSource(source)
         nt, nd = data.shape
         # time (regular by declaration, rate derived from the file's own stamps)
         time = {
@@ -49,3 +56,9 @@ class Terra15Engine(Engine, name="terra15"):
             d0, nd, dx, dim="distance"
         )
         return DataArray(data, {"time": time, "distance": distance})
+
+    @staticmethod
+    def load_tile(path, selection):
+        """Read a source selection of the data product of a Terra15 file."""
+        with h5py.File(path, "r") as file:
+            return file["/data_product/data"][selection]

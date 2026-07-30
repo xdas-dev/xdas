@@ -8,6 +8,7 @@ import json
 import os
 import warnings
 from pathlib import Path
+from typing import ClassVar
 
 import h5netcdf
 import h5py
@@ -29,9 +30,11 @@ TILES_GROUP = "__tiles__"
 class XdasEngine(Engine, name="xdas"):
     """Engine for the native xdas HDF5/NetCDF4 format."""
 
+    _supported_vtypes: ClassVar[list] = ["hdf5", "tiles"]
+
     def open_dataarray(self, fname, **kwargs):
         """Delegate to module-level :func:`open_dataarray`."""
-        return open_dataarray(fname, **kwargs)
+        return open_dataarray(fname, vtype=self.vtype, **kwargs)
 
     def save_dataarray(self, da, fname, **kwargs):
         """Delegate to module-level :func:`save_dataarray`."""
@@ -45,8 +48,28 @@ class XdasEngine(Engine, name="xdas"):
         """Delegate to module-level :func:`save_datacollection`."""
         return save_datacollection(dc, fname, **kwargs)
 
+    @staticmethod
+    def load_tile(path, selection, *, dataset):
+        """Read a source selection of a native xdas file.
 
-def open_dataarray(fname, group=None):
+        The variable is read with h5py, which resolves any HDF5 virtual
+        dataset the file may store transparently.
+
+        Parameters
+        ----------
+        path : str
+            Path of the NetCDF4/HDF5 file.
+        selection : tuple of slice
+            The source selection to read, one possibly strided slice per
+            axis.
+        dataset : str
+            Location of the data variable within the file.
+        """
+        with h5py.File(path, "r") as file:
+            return file[dataset][selection]
+
+
+def open_dataarray(fname, group=None, vtype=None):
     """
     Read a :class:`DataArray` from a native xdas NetCDF4/HDF5 file.
 
@@ -56,6 +79,11 @@ def open_dataarray(fname, group=None):
         Path to the file.
     group : str, optional
         HDF5 group path inside the file.
+    vtype : str, optional
+        Virtualization backing of the returned data: ``"hdf5"`` (default,
+        an HDF5 virtual source) or ``"tiles"`` (a lazy
+        :class:`~xdas.tiles.TileArray` over the stored variable). Files
+        that store a tile manifest reopen as tile arrays regardless.
 
     Returns
     -------
@@ -110,7 +138,15 @@ def open_dataarray(fname, group=None):
             if group:
                 file = file[group]
             variable = file["__values__" if name is None else name]
-            data = VirtualSource(variable)
+            if vtype == "tiles":
+                data = TileArray(
+                    str(fname),
+                    variable.shape,
+                    {"name": "xdas", "dataset": variable.name},
+                    variable.dtype,
+                )
+            else:
+                data = VirtualSource(variable)
 
     # pack everything
     return DataArray(
