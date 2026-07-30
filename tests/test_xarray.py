@@ -2,12 +2,11 @@ import numpy as np
 
 import xdas as xd
 import xdas.core.methods as xm
-from xdas.synthetics import wavelet_wavefronts
 
 
 class TestXarray:
     def test_returns_dataarray(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         for name, func in xm.HANDLED_METHODS.items():
             if callable(func):
                 if name in [
@@ -30,7 +29,7 @@ class TestXarray:
                     assert isinstance(result, xd.DataArray)
 
     def test_mean(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         result = xm.mean(da, "time")
         result_method = da.mean("time")
         expected = np.mean(da, 0)

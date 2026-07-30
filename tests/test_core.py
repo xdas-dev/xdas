@@ -8,24 +8,6 @@ from xdas.virtual import VirtualStack
 
 
 class TestCore:
-    def generate(self, datetime):
-        shape = (300, 100)
-        if datetime:
-            t = {
-                "tie_indices": [0, shape[0] - 1],
-                "tie_values": [np.datetime64(0, "ms"), np.datetime64(2990, "ms")],
-            }
-        else:
-            t = {"tie_indices": [0, shape[0] - 1], "tie_values": [0, 3.0 - 1 / 100]}
-        s = {"tie_indices": [0, shape[1] - 1], "tie_values": [0, 990.0]}
-        return xd.DataArray(
-            data=np.random.randn(*shape),
-            coords={
-                "time": t,
-                "distance": s,
-            },
-        )
-
     def test_open_mfdataarray(self, tmp_path):
         wavelet_wavefronts().to_netcdf(tmp_path / "sample.nc")
         for idx, da in enumerate(wavelet_wavefronts(nchunk=3), start=1):
@@ -188,7 +170,7 @@ class TestCore:
             xd.open_datacollection("not_existing_file.nc")
 
     def test_asdataarray(self):
-        da = self.generate(False)
+        da = xd.testing.dummy(shape=(300, 100), datetime=False)
         out = xd.asdataarray(da.to_xarray())
         assert np.array_equal(out.data, da.data)
         for dim in da.dims:

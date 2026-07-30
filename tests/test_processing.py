@@ -14,12 +14,11 @@ import xdas as xd
 import xdas.processing as xp
 from xdas.atoms import Partial, Sequential
 from xdas.signal import sosfilt
-from xdas.synthetics import wavelet_wavefronts
 
 
 class TestDataArrayLoader:
     def test_init(self):
-        da = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
+        da = xd.testing.dummy(shape=(1000, 100))
         dl = xp.DataArrayLoader(da, {"time": 100})
         assert dl.da is da
         assert dl.chunk_dim == "time"
@@ -38,14 +37,14 @@ class TestDataArrayLoader:
         ],
     )
     def test_chunks_integrity(self, max_buffers, max_workers):
-        da = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
+        da = xd.testing.dummy(shape=(1000, 100))
         dl = xp.DataArrayLoader(da, {"time": 100}, max_buffers, max_workers)
         chunks = [chunk for chunk in dl]
         result = xd.concat(chunks)
         assert result.equals(da)
 
     def test_error_handling(self):
-        da = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
+        da = xd.testing.dummy(shape=(1000, 100))
         with pytest.raises(TypeError):
             xp.DataArrayLoader(None, None)
         with pytest.raises(TypeError):
@@ -71,7 +70,7 @@ class TestDataArrayWriter:
         ],
     )
     def test_chunk_integrity(self, max_buffers, max_workers, tmp_path):
-        expected = xd.DataArray(np.random.rand(1000, 100), dims=("time", "distance"))
+        expected = xd.testing.dummy(shape=(1000, 100))
         dw = xp.DataArrayWriter(tmp_path, None, max_buffers, max_workers)
         chunks = xd.split(expected, 10, dim="time")
         for chunk in chunks:
@@ -96,7 +95,7 @@ class TestProcessing:
         sample_path = tmp_path / "sample.nc"
 
         # generate test dataarray
-        wavelet_wavefronts().to_netcdf(sample_path)
+        xd.testing.dummy().to_netcdf(sample_path)
         da = xd.open(sample_path)
 
         # declare processing sequence
@@ -117,13 +116,7 @@ class TestProcessing:
         assert result1.equals(result2)
 
     def test_small_last_chunk(self, tmp_path):
-        da = xd.DataArray(
-            data=np.random.randn(1001, 100),
-            coords={
-                "time": xd.Coordinate["interpolated"].from_block(0, 1001, 0.01),
-                "distance": xd.Coordinate["interpolated"].from_block(0, 100, 10.0),
-            },
-        )
+        da = xd.testing.dummy(shape=(1001, 100), datetime=False)
 
         # declare processing sequence
         sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
@@ -428,7 +421,7 @@ class TestStreamWriter:
 
 class TestProcessNoNbytes:
     def test_loader_without_nbytes(self, tmp_path):
-        da = xd.DataArray(np.random.rand(100, 10), dims=("time", "distance"))
+        da = xd.testing.dummy(shape=(100, 10))
         chunks = xd.split(da, 10, dim="time")
 
         class SimpleLoader:
@@ -448,7 +441,7 @@ class TestProcessNoNbytes:
 
 class TestDataArrayLoaderMaxBuffers:
     def test_max_buffers_exceeds_chunks(self):
-        da = xd.DataArray(np.random.rand(10, 5), dims=("time", "distance"))
+        da = xd.testing.dummy(shape=(10, 5))
         dl = xp.DataArrayLoader(da, {"time": 5}, max_buffers=10)
         chunks = list(dl)
         assert len(chunks) == 2
@@ -506,19 +499,7 @@ class TestHandlerDirect:
 
         from xdas.processing.core import Handler
 
-        da = xd.DataArray(
-            np.zeros((10, 5), dtype=np.float32),
-            {
-                "time": {
-                    "tie_indices": [0, 9],
-                    "tie_values": [
-                        np.datetime64("2020-01-01T00:00:00.000000000"),
-                        np.datetime64("2020-01-01T00:00:09.000000000"),
-                    ],
-                },
-                "distance": {"tie_indices": [0, 4], "tie_values": [0.0, 40.0]},
-            },
-        )
+        da = xd.testing.dummy(shape=(10, 5), step=(1.0, 10.0), dtype=np.float32)
         path = str(tmp_path / "test.nc")
         da.to_netcdf(path)
 
@@ -541,19 +522,7 @@ class TestRealTimeLoader:
         assert iter(loader) is loader
 
         # put a DataArray directly into the queue
-        da = xd.DataArray(
-            np.zeros((5, 3), dtype=np.float32),
-            {
-                "time": {
-                    "tie_indices": [0, 4],
-                    "tie_values": [
-                        np.datetime64("2020-01-01T00:00:00.000000000"),
-                        np.datetime64("2020-01-01T00:00:04.000000000"),
-                    ],
-                },
-                "distance": {"tie_indices": [0, 2], "tie_values": [0.0, 20.0]},
-            },
-        )
+        da = xd.testing.dummy(shape=(5, 3), step=(1.0, 10.0), dtype=np.float32)
         loader.queue.put(da)
         result = next(loader)
         assert result.equals(da)

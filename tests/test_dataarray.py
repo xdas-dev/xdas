@@ -9,7 +9,6 @@ import pytest
 
 import xdas as xd
 from xdas.coordinates import Coordinates, DenseCoordinate, InterpCoordinate
-from xdas.synthetics import wavelet_wavefronts
 
 
 def generate(dense=False):
@@ -126,7 +125,7 @@ class TestSetters:
             da.dims = ("other_dim",)
 
     def test_data_setter(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         data = np.arange(np.prod(da.shape)).reshape(da.shape)
         da.data = data
         assert np.array_equal(da.data, data)
@@ -170,7 +169,7 @@ class TestSelection:
         assert da.sel(dim=slice(100.0, 300.0)).equals(da[0:3])
         assert da.sel(dim=slice(100.0, 300.0), endpoint=False).equals(da[0:2])
         # drop
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         result = da.sel(distance=0, method="nearest", drop=True)
         assert "distance" not in result.coords
 
@@ -225,7 +224,7 @@ class TestSelection:
             da.sel(time=0.1, method="nearest")
 
     def test_isel(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         result = da.isel(first=0)
         excepted = da.isel(time=0)
         assert result.equals(excepted)
@@ -233,7 +232,7 @@ class TestSelection:
         excepted = da.isel(distance=0)
         assert result.equals(excepted)
         # drop
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         result = da.sel(distance=0, drop=True)
         assert "distance" not in result.coords
 
@@ -314,7 +313,7 @@ class TestCoorinates:
 
 class TestManipulation:
     def test_transpose(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         result = da.transpose("distance", "time")
         assert result.dims == ("distance", "time")
         assert np.array_equal(result.values, da.values.T)
@@ -328,7 +327,7 @@ class TestManipulation:
             da.transpose("space", "frequency")
 
     def test_ufunc(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         result = np.add(da, 1)
         assert np.array_equal(result.data, da.data + 1)
         result = np.add(da, np.ones(da.shape[-1]))
@@ -339,7 +338,7 @@ class TestManipulation:
         assert np.array_equal(result.data, da.data + da.data[0])
 
     def test_arithmetics(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         result = da + 1
         assert np.array_equal(result.data, da.data + 1)
         result = da + np.array(1)
@@ -435,18 +434,9 @@ class TestIO:
         assert np.array_equal(result["dim"].values, da["dim"].values)
 
     def test_stream(self):
-        da = wavelet_wavefronts()
-        # Rebuild the time coordinate as datetime64[us] with an explicit sampling_interval
-        # so that the from_stream roundtrip comparison is exact.
-        orig_t = da["time"]
-        t0_us = orig_t.tie_values[0].astype("datetime64[us]")
-        delta_s = orig_t.to_regular().get_sampling_interval(cast=True)
-        dt = np.rint(1e6 * delta_s).astype("m8[us]").astype("m8[ns]")
-        da["time"] = InterpCoordinate.from_block(
-            t0_us, da.sizes["time"], dt, dim="time"
-        )
+        da = xd.testing.dummy()
         st = da.to_stream(dim={"distance": "time"})
-        assert st[0].id == "NET.DAS00001.00.BN1"
+        assert st[0].id == "NET.DAS00001.00.HN1"
         assert len(st) == da.sizes["distance"]
         assert st[0].stats.npts == da.sizes["time"]
         assert np.datetime64(st[0].stats.starttime.datetime) == da["time"][0].values
@@ -487,7 +477,7 @@ class TestIO:
         assert result.equals(da)
 
         da_path = tmp_path / "da.nc"
-        da = wavelet_wavefronts().assign_coords(lon=("distance", np.arange(401)))
+        da = xd.testing.dummy().assign_coords(lon=("distance", np.arange(10)))
         da.to_netcdf(da_path)
         tmp = xd.open_dataarray(da_path)
         vds_path = tmp_path / "vds.nc"
@@ -497,7 +487,7 @@ class TestIO:
 
     def test_io(self, tmp_path):
         # both coords interpolated
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         path = tmp_path / "interp.nc"
         da.to_netcdf(path)
         da_recovered = xd.DataArray.from_netcdf(path)
@@ -670,7 +660,7 @@ class TestDataArrayMissingBranches:
         assert "DaskArray" in r
 
     def test_repr_virtual(self, tmp_path):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         da.to_netcdf(tmp_path / "a.nc")
         da2 = xd.open(tmp_path / "a.nc")
         r = repr(da2)
@@ -779,12 +769,12 @@ class TestDataArrayMissingBranches:
         assert "x" in result.coords
 
     def test_isel_drop_non_scalar(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         result = da.isel(time=slice(0, 3), drop=True)
         assert "time" in result.coords
 
     def test_sel_drop_non_scalar(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         t0 = da["time"].tie_values[0]
         t1 = da["time"].tie_values[-1]
         result = da.sel(time=slice(t0, t1), drop=True)

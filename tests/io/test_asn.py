@@ -16,31 +16,8 @@ def get_free_local_address():
     return f"tcp://localhost:{port}"
 
 
-coords = {
-    "time": {
-        "tie_indices": [0, 99],
-        "tie_values": [
-            np.datetime64("2020-01-01T00:00:00.000000000"),
-            np.datetime64("2020-01-01T00:00:09.900000000"),
-        ],
-        "sampling_interval": np.timedelta64(100, "ms"),
-    },
-    "distance": {
-        "tie_indices": [0, 9],
-        "tie_values": [0.0, 90.0],
-        "sampling_interval": 10.0,
-    },
-}
-
-da_float32 = xd.DataArray(
-    np.random.randn(100, 10).astype("float32"),
-    coords,
-)
-
-da_int16 = xd.DataArray(
-    np.random.randn(100, 10).astype("int16"),
-    coords,
-)
+da_float32 = xd.testing.dummy(shape=(100, 10), step=(0.1, 10.0), dtype="float32")
+da_int16 = xd.testing.dummy(shape=(100, 10), step=(0.1, 10.0), dtype="int16")
 
 
 class TestASNEngineROIBounds:

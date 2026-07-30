@@ -132,14 +132,7 @@ class TestCombineByCoords:
         assert combined.shape == (20, 5)
 
         # with coords
-        da1 = xd.DataArray(
-            np.random.rand(10, 5),
-            coords={"time": np.arange(10), "space": np.arange(5)},
-        )
-        da2 = xd.DataArray(
-            np.random.rand(10, 5),
-            coords={"time": np.arange(10, 20), "space": np.arange(5)},
-        )
+        da1, da2 = xd.split(xd.testing.dummy(dims=("time", "space"), shape=(20, 5)), 2)
         combined = xd.combine_by_coords([da1, da2], dim="time", squeeze=True)
         assert combined.shape == (20, 5)
 
@@ -232,13 +225,7 @@ class TestCombineByCoords:
 
 class TestOpenMFDataArray:
     def test_warn_on_corrupted_files(self, tmp_path):
-        expected = xd.DataArray(
-            np.random.rand(10, 5),
-            coords={
-                "time": np.arange(10),
-                "space": np.arange(5),
-            },  # TODO: should work without coords
-        )
+        expected = xd.testing.dummy(dims=("time", "space"), shape=(10, 5))
         for index, chunk in enumerate(xd.split(expected, 3, "time"), start=1):
             chunk.to_netcdf(tmp_path / f"chunk_{index}.nc")
         result = xd.open_mfdataarray(tmp_path / "*.nc")
@@ -257,26 +244,14 @@ class TestOpenMFDataArray:
         assert result.equals(expected)
 
     def test_verbose_single_worker(self, tmp_path):
-        expected = xd.DataArray(
-            np.random.rand(10, 5),
-            coords={
-                "time": np.arange(10),
-                "space": np.arange(5),
-            },  # TODO: should work without coords
-        )
+        expected = xd.testing.dummy(dims=("time", "space"), shape=(10, 5))
         for index, chunk in enumerate(xd.split(expected, 3, "time"), start=1):
             chunk.to_netcdf(tmp_path / f"chunk_{index}.nc")
         result = xd.open_mfdataarray(tmp_path / "*.nc", verbose=True, parallel=1)
         assert result.equals(expected)
 
     def test_verbose_multiple_workers(self, tmp_path):
-        expected = xd.DataArray(
-            np.random.rand(10, 5),
-            coords={
-                "time": np.arange(10),
-                "space": np.arange(5),
-            },  # TODO: should work without coords
-        )
+        expected = xd.testing.dummy(dims=("time", "space"), shape=(10, 5))
         for index, chunk in enumerate(xd.split(expected, 3, "time"), start=1):
             chunk.to_netcdf(tmp_path / f"chunk_{index}.nc")
         result = xd.open_mfdataarray(tmp_path / "*.nc", verbose=True, parallel=2)
@@ -285,13 +260,7 @@ class TestOpenMFDataArray:
 
 class TestOpen:  # TODO: those tests are weirdly slow...
     def test_open_single_dataarray(self, tmp_path):
-        expected = xd.DataArray(
-            np.random.rand(10, 5),
-            coords={
-                "time": np.arange(10),
-                "space": np.arange(5),
-            },
-        )
+        expected = xd.testing.dummy(dims=("time", "space"), shape=(10, 5))
 
         path = tmp_path / "dataarray.nc"
         expected.to_netcdf(path)
@@ -300,13 +269,7 @@ class TestOpen:  # TODO: those tests are weirdly slow...
         assert result.equals(expected)
 
     def test_open_multiple_file_dataarray(self, tmp_path):
-        expected = xd.DataArray(
-            np.random.rand(10, 5),
-            coords={
-                "time": np.arange(10),
-                "space": np.arange(5),
-            },
-        )
+        expected = xd.testing.dummy(dims=("time", "space"), shape=(10, 5))
 
         file_paths = []
         for index, chunk in enumerate(xd.split(expected, 3, "time"), start=1):
@@ -330,27 +293,11 @@ class TestOpen:  # TODO: those tests are weirdly slow...
         expected = xd.DataCollection(
             {
                 "DAS01": xd.DataCollection(
-                    [
-                        xd.DataArray(
-                            np.random.rand(10, 5),
-                            coords={
-                                "time": np.arange(10),
-                                "space": np.arange(5),
-                            },
-                        )
-                    ],
+                    [xd.testing.dummy(dims=("time", "space"), shape=(10, 5))],
                     name="acquisition",
                 ),
                 "DAS02": xd.DataCollection(
-                    [
-                        xd.DataArray(
-                            np.random.rand(7, 3),
-                            coords={
-                                "time": np.arange(7),
-                                "space": np.arange(3),
-                            },
-                        )
-                    ],
+                    [xd.testing.dummy(dims=("time", "space"), shape=(7, 3))],
                     name="acquisition",
                 ),
             },
@@ -370,15 +317,7 @@ class TestOpen:  # TODO: those tests are weirdly slow...
 
     def test_open_single_datacollection(self, tmp_path):
         expected = xd.DataCollection(
-            [
-                xd.DataArray(
-                    np.random.rand(10, 5),
-                    coords={
-                        "time": np.arange(10),
-                        "space": np.arange(5),
-                    },
-                )
-            ]
+            [xd.testing.dummy(dims=("time", "space"), shape=(10, 5))]
         )
 
         expected.to_netcdf(tmp_path / "collection.nc")
@@ -390,27 +329,11 @@ class TestOpen:  # TODO: those tests are weirdly slow...
         expected = xd.DataCollection(
             {
                 "DAS01": xd.DataCollection(
-                    [
-                        xd.DataArray(
-                            np.random.rand(10, 5),
-                            coords={
-                                "time": np.arange(10),
-                                "space": np.arange(5),
-                            },
-                        )
-                    ],
+                    [xd.testing.dummy(dims=("time", "space"), shape=(10, 5))],
                     name="acquisition",
                 ),
                 "DAS02": xd.DataCollection(
-                    [
-                        xd.DataArray(
-                            np.random.rand(7, 3),
-                            coords={
-                                "time": np.arange(7),
-                                "space": np.arange(3),
-                            },
-                        )
-                    ],
+                    [xd.testing.dummy(dims=("time", "space"), shape=(7, 3))],
                     name="acquisition",
                 ),
             },
@@ -547,7 +470,7 @@ class TestOpenEdgeCases:
             xd.open(123)
 
     def test_callable_engine(self, tmp_path):
-        da = xd.DataArray(np.random.rand(10, 5), dims=("time", "distance"))
+        da = xd.testing.dummy(shape=(10, 5))
         path = str(tmp_path / "test.nc")
         da.to_netcdf(path)
 
@@ -558,7 +481,7 @@ class TestOpenEdgeCases:
         assert result.equals(da)
 
     def test_invalid_engine_type_raises(self, tmp_path):
-        da = xd.DataArray(np.random.rand(10, 5), dims=("time", "distance"))
+        da = xd.testing.dummy(shape=(10, 5))
         path = str(tmp_path / "test.nc")
         da.to_netcdf(path)
         with pytest.raises(ValueError, match="engine"):
@@ -575,7 +498,7 @@ class TestOpenMFDatacollectionEdgeCases:
             xd.open_mfdatacollection(str(tmp_path / "*.nc"))
 
     def test_verbose_single_worker(self, tmp_path):
-        da = xd.DataArray(np.random.rand(10, 5), dims=("time", "distance"))
+        da = xd.testing.dummy(shape=(10, 5))
         dc = xd.DataCollection([da, da])
         path1 = str(tmp_path / "dc1.nc")
         path2 = str(tmp_path / "dc2.nc")
@@ -587,7 +510,7 @@ class TestOpenMFDatacollectionEdgeCases:
         assert isinstance(result, xd.DataCollection)
 
     def test_verbose_multiple_worker(self, tmp_path):
-        da = xd.DataArray(np.random.rand(10, 5), dims=("time", "distance"))
+        da = xd.testing.dummy(shape=(10, 5))
         dc = xd.DataCollection([da, da])
         path1 = str(tmp_path / "dc1.nc")
         path2 = str(tmp_path / "dc2.nc")
@@ -609,10 +532,7 @@ class TestOpenMFDataArrayEdgeCases:
             xd.open_mfdataarray(123)
 
     def test_parallel_path(self, tmp_path):
-        expected = xd.DataArray(
-            np.random.rand(10, 5),
-            coords={"time": np.arange(10), "space": np.arange(5)},
-        )
+        expected = xd.testing.dummy(dims=("time", "space"), shape=(10, 5))
         for i, chunk in enumerate(xd.split(expected, 3, "time"), 1):
             chunk.to_netcdf(tmp_path / f"chunk_{i}.nc")
         result = xd.open_mfdataarray(tmp_path / "*.nc", parallel=2)
@@ -625,7 +545,7 @@ class TestOpenMFDataArrayEdgeCases:
 
 class TestOpenMFDatacollectionParallel:
     def test_parallel_path(self, tmp_path):
-        da = xd.DataArray(np.random.rand(10, 5), dims=("time", "distance"))
+        da = xd.testing.dummy(shape=(10, 5))
         dc = xd.DataCollection([da, da])
         path1 = str(tmp_path / "dc1.nc")
         path2 = str(tmp_path / "dc2.nc")
@@ -641,11 +561,9 @@ class TestOpenMFDataTree:
         dirnames = [tmp_path / key for key in keys]
         for dirname in dirnames:
             dirname.mkdir()
-            for idx, da in enumerate(
-                xd.synthetics.wavelet_wavefronts(nchunk=3), start=1
-            ):
+            for idx, da in enumerate(xd.split(xd.testing.dummy(), 3), start=1):
                 da.to_netcdf(dirname / f"{idx:03d}.nc")
-        da = xd.synthetics.wavelet_wavefronts()
+        da = xd.testing.dummy()
         dc = xd.open_mfdatatree(tmp_path / "{node}" / "00[acquisition].nc")
         assert list(dc.keys()) == keys
         for key in keys:
@@ -655,11 +573,11 @@ class TestOpenMFDataTree:
         dc = xd.DataCollection(
             {
                 "NET01": {
-                    "STA01": xd.synthetics.wavelet_wavefronts(nchunk=1),
+                    "STA01": xd.split(xd.testing.dummy(), 1),
                 },
                 "NET02": {
-                    "STA02": xd.synthetics.wavelet_wavefronts(nchunk=2),
-                    "STA03": xd.synthetics.wavelet_wavefronts(nchunk=3),
+                    "STA02": xd.split(xd.testing.dummy(), 2),
+                    "STA03": xd.split(xd.testing.dummy(), 3),
                 },
             }
         )
@@ -760,12 +678,12 @@ class TestConcatCoordsEdgeCases:
 
 class TestSplitEdgeCases:
     def test_n_zero_raises(self):
-        da = xd.DataArray(np.random.rand(10), dims=("time",))
+        da = xd.testing.dummy(dims=("time",), shape=(10,), step=0.01)
         with pytest.raises(ValueError, match="`n` must be larger than 0"):
             xd.split(da, 0)
 
     def test_n_too_large_raises(self):
-        da = xd.DataArray(np.random.rand(10), dims=("time",))
+        da = xd.testing.dummy(dims=("time",), shape=(10,), step=0.01)
         with pytest.raises(ValueError, match="`n` must be smaller"):
             xd.split(da, 10)
 
@@ -786,51 +704,18 @@ class TestBroadcastCoordsScalar:
 
 class TestPlotAvailability:
     def test_dataarray_plot(self):
-        da = xd.DataArray(
-            np.random.rand(100),
-            {
-                "time": {
-                    "tie_indices": [0, 99],
-                    "tie_values": [
-                        np.datetime64("2020-01-01"),
-                        np.datetime64("2020-01-01T00:00:09.900"),
-                    ],
-                }
-            },
-        )
+        da = xd.testing.dummy(dims=("time",), shape=(100,), step=0.01)
         fig = xd.plot_availability(da)
         assert fig is not None
 
     def test_datassequence_plot(self):
-        da = xd.DataArray(
-            np.random.rand(100),
-            {
-                "time": {
-                    "tie_indices": [0, 99],
-                    "tie_values": [
-                        np.datetime64("2020-01-01"),
-                        np.datetime64("2020-01-01T00:00:09.900"),
-                    ],
-                }
-            },
-        )
+        da = xd.testing.dummy(dims=("time",), shape=(100,), step=0.01)
         dc = xd.DataCollection([da, da])
         fig = xd.plot_availability(dc)
         assert fig is not None
 
     def test_datamapping_plot(self):
-        da = xd.DataArray(
-            np.random.rand(100),
-            {
-                "time": {
-                    "tie_indices": [0, 99],
-                    "tie_values": [
-                        np.datetime64("2020-01-01"),
-                        np.datetime64("2020-01-01T00:00:09.900"),
-                    ],
-                }
-            },
-        )
+        da = xd.testing.dummy(dims=("time",), shape=(100,), step=0.01)
         dm = xd.DataCollection({"a": da, "b": da})
         fig = xd.plot_availability(dm)
         assert fig is not None
