@@ -57,6 +57,7 @@ import inspect
 import itertools
 import json
 import math
+import os
 
 import numpy as np
 import xarray as xr
@@ -248,7 +249,9 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         Source file of each tile. A scalar describes a
         one-tile-per-axis grid; an array is padded with trailing
         length-1 axes up to the rank. A path may appear in several
-        tiles.
+        tiles. Relative paths are made absolute at construction — the
+        working directory cannot be trusted later, as reads are lazy
+        and stored views outlive the session.
     sizes : sequence of int or 1-D array-like
         One entry per axis (this defines the rank): the samples each
         tile contributes along that axis. An int is uniform across the
@@ -291,6 +294,9 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         if paths.ndim > ndim:
             raise ValueError("`paths` has more axes than `sizes` entries")
         paths = paths.reshape(paths.shape + (1,) * (ndim - paths.ndim))
+        # reads are lazy and stored views outlive the session: anchor the
+        # paths now, while the scan's working directory still applies
+        paths = np.frompyfunc(os.path.abspath, 1, 1)(paths)
         data = {}
         counts = []
         for k, entry in enumerate(sizes):

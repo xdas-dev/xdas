@@ -1,4 +1,5 @@
 import math
+import os
 
 import h5py
 import numpy as np
@@ -180,6 +181,16 @@ class TestManifest:
         assert "'h5py'" in repr(manifest)
         assert manifest._repr_inline_(40) == "TileArray (3 tiles)"
         assert manifest._repr_inline_(10) == "TileArray"
+
+    def test_relative_paths_are_anchored(self, tmp_path, monkeypatch):
+        """Relative paths absolutize at construction and survive a chdir."""
+        data = np.arange(4.0 * NX).reshape(4, NX)
+        _tile_file(tmp_path / "rel.h5", data)
+        monkeypatch.chdir(tmp_path)
+        manifest = TileArray("rel.h5", (4, NX), ENGINE, "f8")
+        assert os.path.isabs(manifest._grid_values("paths").item(0))
+        monkeypatch.chdir(tmp_path.parent)
+        npt.assert_array_equal(np.asarray(manifest), data)
 
     def test_attrs(self, stack):
         manifest, _ = stack
