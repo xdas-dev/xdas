@@ -157,9 +157,10 @@ class FebusEngine(Engine, name="febus"):
 
         Febus files store a 3-D stack of overlapping ``(time, distance)``
         blocks. Rows are counted post-trim: each block contributes
-        ``block_size - sum(overlaps)`` rows. Only the blocks overlapping the
-        requested rows are read; overlap rows are sliced away without being
-        copied.
+        ``block_size - sum(overlaps)`` rows. The touched blocks' trimmed
+        windows are read as a single hyperslab (overlap rows are never
+        read) and fused; the partial first and last blocks crop away in
+        memory.
 
         Parameters
         ----------
@@ -176,14 +177,13 @@ class FebusEngine(Engine, name="febus"):
             Rows trimmed at the start and end of each block.
         """
         rows = selection[0]
-        start, stop = rows.start, rows.stop
         keep = block_size - overlaps[0] - overlaps[1]
+        first = rows.start // keep
+        last = (rows.stop - 1) // keep
+        # the touched blocks' trimmed windows form one rectangular
+        # hyperslab; the partial first/last blocks crop away afterwards
+        key = (slice(first, last + 1), slice(overlaps[0], overlaps[0] + keep))
         with h5py.File(path, "r") as file:
-            blocks = file[dataset]
-            parts = []
-            for block in range(start // keep, (stop - 1) // keep + 1):
-                lo = max(start - block * keep, 0) + overlaps[0]
-                hi = min(stop - block * keep, keep) + overlaps[0]
-                parts.append(blocks[block, lo:hi])
-        rows = np.concatenate(parts) if len(parts) > 1 else parts[0]
-        return rows[(slice(None, None, selection[0].step), *selection[1:])]
+            data = file[dataset][key + selection[1:]]
+        data = data.reshape(-1, *data.shape[2:])
+        return data[rows.start - first * keep : rows.stop - first * keep : rows.step]
