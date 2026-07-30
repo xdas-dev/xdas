@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xdas"
-version = "0.2.8rc0"
+dynamic = ["version"]
 requires-python = ">= 3.10"
 authors = [
     { name = "Alister Trabattoni", email = "alister.trabattoni@gmail.com" },
@@ -43,6 +43,10 @@ docs = [
     "sphinx",
 ]
 tests = ["dascore", "psutil", "seisbench", "torch"]
+
+# Single source of truth for the version: xdas/__init__.py
+[tool.setuptools.dynamic]
+version = { attr = "xdas.__version__" }
 
 [tool.ruff.lint]
 extend-select = ["I", "D"]

@@ -4,6 +4,8 @@
 # list see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
+from xdas import __version__
+
 # -- Project information -----------------------------------------------------
 
 project = "xdas"
@@ -11,7 +13,7 @@ copyright = "2024, Alister Trabattoni"
 author = "Alister Trabattoni"
 
 # The full version, including alpha/beta/rc tags
-release = "0.2.7"
+release = __version__
 
 
 # -- General configuration ---------------------------------------------------
