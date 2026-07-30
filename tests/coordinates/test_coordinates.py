@@ -295,8 +295,9 @@ class TestCoordinateBase:
         t0 = np.datetime64("2000-01-01T00:00:00")
         t1 = np.datetime64("2000-01-01T00:00:10")
         coord = DenseCoordinate([t0, t1], "time")
-        result = coord.get_sampling_interval(cast=True)
-        assert result == 10.0
+        assert coord.get_sampling_interval(cast=True) is None
+        assert not coord.isregular()
+        assert coord.to_regular().get_sampling_interval(cast=True) == 10.0
 
     def test_format_index_non_integer(self):
         coord = DenseCoordinate([1, 2, 3], "x")
@@ -383,7 +384,27 @@ class TestCoordinateBase:
         from xdas.coordinates import get_sampling_interval
 
         da = xd.DataArray([1, 2, 3], {"x": [10.0, 20.0, 30.0]})
+        with pytest.warns(FutureWarning, match="implicit inference is deprecated"):
+            assert get_sampling_interval(da, "x") == 10.0
+        da["x"] = da["x"].to_regular()
         assert get_sampling_interval(da, "x") == 10.0
+
+    def test_get_sampling_interval_helper_jittery_dense_raises(self):
+        from xdas.coordinates import get_sampling_interval
+
+        da = xd.DataArray([1, 2, 3], {"x": [0.0, 1.0, 5.0]})
+        with pytest.raises(ValueError, match="none could be inferred"):
+            get_sampling_interval(da, "x")
+
+    def test_get_sampling_interval_helper_single_sample_raises(self):
+        from xdas.coordinates import SampledCoordinate, get_sampling_interval
+
+        coord = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [1], "sampling_interval": 5.0}, "x"
+        )
+        da = xd.DataArray([1], {"x": coord})
+        with pytest.raises(ValueError, match="none could be inferred"):
+            get_sampling_interval(da, "x")
 
     def test_get_sampling_interval_helper_regular(self):
         from xdas.coordinates import SampledCoordinate, get_sampling_interval
@@ -443,3 +464,29 @@ class TestCoordinateBase:
         coord = DenseCoordinate([1.0, 2.0, 3.0], "x")
         slc = coord._slice_indexer(stop=3.0, endpoint=False)
         assert slc == slice(None, 2)
+
+
+class TestEncodeDelta:
+    def test_generic_timedelta_promoted_to_ns(self):
+        from xdas.coordinates.core import decode_delta, encode_delta
+
+        attrs = encode_delta("tolerance", np.timedelta64(0))
+        assert attrs == {
+            "tolerance": 0,
+            "tolerance_units": "nanoseconds",
+            "tolerance_dtype": "timedelta64[ns]",
+        }
+        assert decode_delta("tolerance", attrs) == np.timedelta64(0, "ns")
+
+    def test_none_is_omitted(self):
+        from xdas.coordinates.core import encode_delta
+
+        assert encode_delta("tolerance", None) == {}
+
+
+class TestGetSamplingIntervalHelperNonAxis:
+    def test_scalar_coordinate_returns_none(self):
+        from xdas.coordinates import get_sampling_interval
+
+        da = xd.DataArray(np.zeros(3), {"x": [0.0, 1.0, 2.0], "meta": 0})
+        assert get_sampling_interval(da, "meta") is None

@@ -959,3 +959,32 @@ class TestSampledCoordinateMissingBranches:
         dataset = xr.Dataset({"data": xr.DataArray(np.zeros(3))})
         result = SampledCoordinate._collect_from_dataset(dataset, "data")
         assert result == {}
+
+
+class TestSampledCoordinateToRegular:
+    def test_returns_copy(self):
+        coord = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [5], "sampling_interval": 2.0}, "x"
+        )
+        reg = coord.to_regular()
+        assert reg.equals(coord)
+        assert reg is not coord
+
+    def test_matching_explicit_interval(self):
+        coord = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [5], "sampling_interval": 2.0}, "x"
+        )
+        assert coord.to_regular(sampling_interval=2.0).equals(coord)
+
+    def test_mismatching_interval_raises(self):
+        coord = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [5], "sampling_interval": 2.0}, "x"
+        )
+        with pytest.raises(ValueError, match="does not match"):
+            coord.to_regular(sampling_interval=3.0)
+
+    def test_mismatch_within_tolerance(self):
+        coord = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [5], "sampling_interval": 2.0}, "x"
+        )
+        assert coord.to_regular(sampling_interval=2.05, tolerance=0.1).equals(coord)

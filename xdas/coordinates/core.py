@@ -6,6 +6,7 @@ class, :class:`AxisCoordinate` (the axis-mapping ABC), and shared helpers used b
 all concrete coordinate types (parsing, interpolation, tolerance handling).
 """
 
+import warnings
 import weakref
 from abc import ABC, abstractmethod
 from copy import copy, deepcopy
@@ -14,6 +15,7 @@ from itertools import pairwise
 
 import numpy as np
 import pandas as pd
+from typing_extensions import override
 
 #: Mapping from numpy datetime64/timedelta64 unit codes to CF-style unit names,
 #: used to serialise timedelta scalars into dataset attributes.
@@ -462,6 +464,16 @@ class Coordinate(ABC):
         else:
             return self.parent.isdim(self.name)
 
+    def isregular(self):
+        """
+        Return ``True`` if this coordinate carries a nominal sampling interval.
+
+        Scalar coordinates are never regular. Axis coordinates are regular when
+        :meth:`AxisCoordinate.get_sampling_interval` returns a value, i.e. when
+        an explicit nominal spacing is part of their data.
+        """
+        return False
+
     def equals(self, other):
         """Return ``True`` if *other* is the same coordinate type with identical dim and data.
 
@@ -672,6 +684,35 @@ class AxisCoordinate(Coordinate, ABC):
         """
 
     @abstractmethod
+    def to_regular(self, sampling_interval=None, tolerance=None):
+        """
+        Return a regular version of this coordinate, raising when impossible.
+
+        The strict conversion entry point: the result always satisfies
+        :meth:`isregular` (it carries a nominal ``sampling_interval``), or a
+        :exc:`ValueError` is raised when the coordinate values cannot be
+        described by a single spacing within *tolerance*.
+
+        Parameters
+        ----------
+        sampling_interval : scalar, optional
+            Nominal sample spacing to enforce. When omitted it is taken from
+            the coordinate itself when available, or inferred from the values.
+        tolerance : scalar, optional
+            Tolerated jitter around *sampling_interval*. Defaults to the
+            coordinate's declared tolerance when present, else a zero-like
+            default (exact zero for datetime axes, a dtype epsilon for floats),
+            so a genuinely irregular axis raises.
+
+        Returns
+        -------
+        AxisCoordinate
+            A regular coordinate. The subclass may change: a
+            :class:`DenseCoordinate` converts to a regular
+            :class:`InterpCoordinate`.
+        """
+
+    @abstractmethod
     def _split_candidates(self):
         """
         Return the candidate segment boundaries used by :meth:`get_split_indices`.
@@ -714,7 +755,9 @@ class AxisCoordinate(Coordinate, ABC):
         ----------
         tolerance : float, timedelta, None, or ``False``, optional
             Accuracy budget; maximum allowed deviation from the original
-            values.  ``None`` uses zero tolerance (lossless).  ``False``
+            values.  ``None`` (default) spends the coordinate's own declared
+            tolerance when it carries one, else a zero-like default (exact
+            zero for datetime axes, a dtype epsilon for floats).  ``False``
             returns an unchanged copy regardless of the flags below.
         reduce : bool, optional
             Whether to drop redundant tie points. Default ``True``.
@@ -798,8 +841,8 @@ class AxisCoordinate(Coordinate, ABC):
 
     # --- queries ---
 
+    @override
     def isregular(self):
-        """Return ``True`` if this coordinate has a well-defined nominal sampling interval."""
         return self.get_sampling_interval() is not None
 
     def get_split_indices(self, kind="discontinuities", tolerance=False):
@@ -1219,7 +1262,20 @@ def parse_scalar_delta(value, dtype, default_zero=False):
 
 def get_sampling_interval(da, dim, cast=True):
     """
-    Return the sample spacing along a given dimension.
+    Return the nominal sample spacing along a given dimension.
+
+    Convenience used by every signal-processing routine: the coordinate should
+    be regular (carry a nominal sampling interval). Convert an irregular
+    coordinate first, e.g. ``da[dim] = da[dim].to_regular(tolerance=...)``, or
+    open the files with a tolerance so gaps and jitter are absorbed upfront.
+
+    .. deprecated:: 0.2.8
+        For backward compatibility with data saved by earlier versions (whose
+        coordinates carry no ``sampling_interval``), an irregular coordinate
+        currently falls back to inferring a spacing and emits a
+        :exc:`FutureWarning` stating the inferred value and the tolerance it
+        requires. This fallback will be removed in a future release, after
+        which irregular coordinates will raise.
 
     Parameters
     ----------
@@ -1232,18 +1288,60 @@ def get_sampling_interval(da, dim, cast=True):
 
     Returns
     -------
-    float
-        The sample spacing.
+    float or None
+        The sample spacing. ``None`` when *dim* has no axis coordinate.
+
+    Raises
+    ------
+    ValueError
+        If the coordinate is not regular and no spacing can be inferred.
 
     """
+    from .interp import InterpCoordinate  # avoid circular import
+
     coord = da[dim]
     if not isinstance(coord, AxisCoordinate):
         return None
-    if coord.isregular():
-        return coord.get_sampling_interval(cast=cast)
-    if hasattr(coord, "_to_regular"):
-        return coord._to_regular().get_sampling_interval(cast=cast)
-    return coord.get_sampling_interval(cast=cast)
+    delta = coord.get_sampling_interval(cast=cast)
+    if delta is not None:
+        return delta
+
+    # Deprecated fallback: data written by earlier versions carries no
+    # sampling_interval metadata, so infer one rather than break every
+    # signal-processing call on existing archives.
+    hint = (
+        f"make the coordinate regular with `da[{dim!r}] = "
+        f"da[{dim!r}].to_regular(tolerance=...)`, or open the files with a "
+        f"tolerance"
+    )
+    if isinstance(coord, InterpCoordinate):
+        sampling_interval, tolerance = coord._infer_regular()
+    else:
+        try:
+            regular = coord.to_regular()
+        except ValueError as exc:
+            raise ValueError(
+                f"coordinate {dim!r} has no nominal sampling interval and "
+                f"none could be inferred ({exc}); {hint}"
+            ) from exc
+        sampling_interval = regular.get_sampling_interval(cast=False)
+        tolerance = regular.tolerance if sampling_interval is not None else None
+    if sampling_interval is None:
+        raise ValueError(
+            f"coordinate {dim!r} has no nominal sampling interval and none "
+            f"could be inferred; {hint}"
+        )
+    warnings.warn(
+        f"coordinate {dim!r} has no declared sampling interval; inferred "
+        f"{sampling_interval} (accepting jitter up to tolerance={tolerance}). "
+        f"This implicit inference is deprecated and will raise in a future "
+        f"release; {hint}",
+        FutureWarning,
+        stacklevel=2,
+    )
+    if cast and np.issubdtype(np.asarray(sampling_interval).dtype, np.timedelta64):
+        sampling_interval = sampling_interval / np.timedelta64(1, "s")
+    return sampling_interval
 
 
 def encode_delta(key, value):

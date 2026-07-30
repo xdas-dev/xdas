@@ -4,7 +4,8 @@ import numpy as np
 import pandas as pd
 from typing_extensions import override
 
-from .core import AxisCoordinate, parse_data_dim
+from .core import AxisCoordinate, parse_data_dim, parse_scalar_delta
+from .interp import InterpCoordinate
 
 
 class DenseCoordinate(AxisCoordinate, ctype="dense"):
@@ -146,27 +147,44 @@ class DenseCoordinate(AxisCoordinate, ctype="dense"):
     @override
     def get_sampling_interval(self, cast=True):
         """
-        Return the average sample spacing (end-to-end distance divided by N-1).
+        Return ``None``: a dense coordinate never carries a nominal spacing.
 
-        Parameters
-        ----------
-        cast : bool, optional
-            If ``True`` (default), cast timedelta64 results to seconds (float).
+        The raw values may happen to be evenly spaced, but regularity is an
+        explicit declaration; convert with :meth:`to_regular` to obtain a
+        regular :class:`InterpCoordinate`.
+        """
+        return None
 
-        Returns
-        -------
-        float or None
-            ``None`` if the coordinate has fewer than two elements.
+    @override
+    def to_regular(self, sampling_interval=None, tolerance=None):
+        """Convert to a regular :class:`InterpCoordinate` (single continuous ramp).
+
+        The spacing defaults to the end-to-end slope, and every value must lie
+        within *tolerance* of the regular grid anchored at the first value;
+        otherwise a :exc:`ValueError` is raised. See
+        :meth:`AxisCoordinate.to_regular` for the parameter contract.
         """
         if len(self) < 2:
-            return None
-        delta = (self[-1].values - self[0].values) / (len(self) - 1)
-        delta = np.asarray(
-            delta
-        )  # plain Python floats have no .dtype; np.asarray adds it
-        if cast and np.issubdtype(delta.dtype, np.timedelta64):
-            delta = delta / np.timedelta64(1, "s")
-        return delta
+            raise ValueError(
+                "cannot make a regular coordinate from fewer than two values"
+            )
+        tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
+        if sampling_interval is None:
+            sampling_interval = (self.data[-1] - self.data[0]) / (len(self) - 1)
+        else:
+            sampling_interval = parse_scalar_delta(sampling_interval, self.dtype)
+        grid = self.data[0] + sampling_interval * np.arange(len(self))
+        if not np.all(np.abs(self.data - grid) <= tolerance):
+            raise ValueError(
+                "values are not evenly spaced by `sampling_interval` within `tolerance`"
+            )
+        data = {
+            "tie_indices": [0, len(self) - 1],
+            "tie_values": [self.data[0], self.data[-1]],
+            "sampling_interval": sampling_interval,
+            "tolerance": tolerance,
+        }
+        return InterpCoordinate(data, self.dim)
 
     @override
     def _split_candidates(self):

@@ -458,7 +458,8 @@ class TestInterpCoordinateExtra:
 
     def test_to_regular_empty(self):
         coord = InterpCoordinate()
-        assert coord._to_regular().sampling_interval is None
+        with pytest.raises(ValueError, match="cannot infer"):
+            coord.to_regular()
 
     def test_get_indexer_overlaps(self):
         coord = InterpCoordinate(
@@ -555,9 +556,9 @@ class TestInterpCoordinateExtra:
         )
         # strict default tolerance rejects the jitter
         with pytest.raises(ValueError, match="not consistent"):
-            coord._to_regular()
+            coord.to_regular()
         # an explicit tolerance accepts it
-        reg = coord._to_regular(sampling_interval=0.1, tolerance=0.1)
+        reg = coord.to_regular(sampling_interval=0.1, tolerance=0.1)
         assert isinstance(reg, InterpCoordinate)
         assert reg.isregular()
         assert reg.sampling_interval == 0.1
@@ -572,41 +573,79 @@ class TestInterpCoordinateExtra:
                 "tolerance": 0.1,
             }
         )
-        reg = coord._to_regular()
+        reg = coord.to_regular()
         assert reg is not coord
         assert reg.sampling_interval == 0.1
         assert reg.tolerance == 0.1
         # an explicit spacing still overrides it
-        reg2 = coord._to_regular(sampling_interval=0.103, tolerance=0.1)
+        reg2 = coord.to_regular(sampling_interval=0.103, tolerance=0.1)
         assert reg2.sampling_interval == 0.103
 
-    def test_module_helper_autoconvert(self):
+    def test_module_helper_infers_with_warning(self):
         da = xd.DataArray(
             np.zeros(9),
             {"x": {"tie_indices": [0, 8], "tie_values": [0.0, 8.0]}},
         )
+        with pytest.warns(FutureWarning, match="implicit inference is deprecated"):
+            assert xd.get_sampling_interval(da, "x") == 1.0
+        da["x"] = da["x"].to_regular()
         assert xd.get_sampling_interval(da, "x") == 1.0
 
-    def test_module_helper_irregular_raises(self):
+    def test_module_helper_jittery_infers_with_warning(self):
+        # The fallback states the tolerance required to accept the jitter; the
+        # strict conversion still rejects it.
         da = xd.DataArray(
             np.zeros(21),
             {"x": {"tie_indices": [0, 10, 20], "tie_values": [0.0, 1.0, 2.05]}},
         )
+        with pytest.warns(FutureWarning, match="accepting jitter up to tolerance"):
+            result = xd.get_sampling_interval(da, "x")
+        assert 0.1 <= result <= 0.105
         with pytest.raises(ValueError, match="not consistent"):
+            da["x"].to_regular()
+
+    def test_module_helper_datetime_cast(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        da = xd.DataArray(
+            np.zeros(21),
+            {
+                "time": {
+                    "tie_indices": [0, 10, 20],
+                    "tie_values": [
+                        t0,
+                        t0 + np.timedelta64(10, "s"),
+                        t0 + np.timedelta64(21, "s"),
+                    ],
+                }
+            },
+        )
+        with pytest.warns(FutureWarning, match="implicit inference is deprecated"):
+            result = xd.get_sampling_interval(da, "time")
+        assert 1.0 <= result <= 1.1
+        with pytest.warns(FutureWarning):
+            result = xd.get_sampling_interval(da, "time", cast=False)
+        assert isinstance(result, np.timedelta64)
+
+    def test_module_helper_no_continuous_area_raises(self):
+        da = xd.DataArray(
+            np.zeros(2),
+            {"x": {"tie_indices": [0, 1], "tie_values": [0.0, 1.0]}},
+        )
+        with pytest.raises(ValueError, match="none could be inferred"):
             xd.get_sampling_interval(da, "x")
 
     def test_to_regular_datetime_cast(self):
         t0 = np.datetime64("2000-01-01T00:00:00")
         t1 = np.datetime64("2000-01-01T00:00:08")
         coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [t0, t1]})
-        result = coord._to_regular().get_sampling_interval()  # cast=True by default
+        result = coord.to_regular().get_sampling_interval()  # cast=True by default
         assert result == 1.0
 
     def test_to_regular_infer_datetime(self):
         t0 = np.datetime64("2000-01-01T00:00:00")
         t1 = np.datetime64("2000-01-01T00:00:08")
         coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [t0, t1]})
-        reg = coord._to_regular()
+        reg = coord.to_regular()
         assert reg.sampling_interval == np.timedelta64(1, "s")
         assert reg.get_sampling_interval() == 1.0
 
@@ -615,7 +654,8 @@ class TestInterpCoordinateExtra:
         coord = InterpCoordinate(
             {"tie_indices": [0, 1, 2], "tie_values": [0.0, 1.0, 2.0]}
         )
-        assert coord._to_regular().sampling_interval is None
+        with pytest.raises(ValueError, match="cannot infer"):
+            coord.to_regular()
 
     def test_to_regular_minimax_favours_long_segment(self):
         # rates 1.0 (den=10) and 1.1 (den=2); minimax is pulled toward the long
@@ -623,7 +663,7 @@ class TestInterpCoordinateExtra:
         coord = InterpCoordinate(
             {"tie_indices": [0, 10, 12], "tie_values": [0.0, 10.0, 12.2]}
         )
-        si = coord._to_regular(tolerance=1.0).sampling_interval
+        si = coord.to_regular(tolerance=1.0).sampling_interval
         np.testing.assert_allclose(si, 12.2 / 12)
 
     def test_tolerance_without_sampling_interval(self):
@@ -634,14 +674,14 @@ class TestInterpCoordinateExtra:
 
     def test_infer_regular(self):
         # Numeric: rates 1.0 (den=10) and 1.0555 (den=5); the inferred spacing
-        # and tolerance must round-trip through `_to_regular`.
+        # and tolerance must round-trip through `to_regular`.
         coord = InterpCoordinate(
             {"tie_indices": [0, 10, 15], "tie_values": [0.0, 10.0, 15.55]}
         )
         si, tol = coord._infer_regular()
         assert si > 0
         assert tol > 0
-        reg = coord._to_regular(sampling_interval=si, tolerance=tol)
+        reg = coord.to_regular(sampling_interval=si, tolerance=tol)
         assert reg.isregular()
 
         # Datetime variant: tolerance comes back as a timedelta64.
@@ -659,7 +699,7 @@ class TestInterpCoordinateExtra:
         si_dt, tol_dt = coord_dt._infer_regular()
         assert np.issubdtype(np.asarray(tol_dt).dtype, np.timedelta64)
         assert tol_dt > np.timedelta64(0)
-        assert coord_dt._to_regular(
+        assert coord_dt.to_regular(
             sampling_interval=si_dt, tolerance=tol_dt
         ).isregular()
 
@@ -802,7 +842,8 @@ class TestInterpCoordinateRegular:
         assert coord.sampling_interval is None
         assert coord.tolerance is None
         assert coord.get_sampling_interval() is None
-        assert coord._to_regular().sampling_interval is None
+        with pytest.raises(ValueError, match="cannot infer"):
+            coord.to_regular()
         assert not coord.isregular()
 
     def test_empty_slice_preserves_sampling_interval(self):
@@ -899,7 +940,7 @@ class TestInterpCoordinateRegular:
 
         from xdas.core.routines import concat_coords
 
-        reconciled = concat_coords([a, b], tolerance=0.5)
+        reconciled = concat_coords([a, b], tolerance=0.5, regularize=True)
         assert reconciled.isregular()
         assert 0.1 <= reconciled.sampling_interval <= 0.11
         assert len(reconciled) == 20
@@ -938,7 +979,7 @@ class TestInterpCoordinateRegular:
         )
         assert coord.get_sampling_interval() == 1.0
         assert coord.get_sampling_interval(cast=False) == np.timedelta64(1, "s")
-        assert coord._to_regular().get_sampling_interval() == 1.0
+        assert coord.to_regular().get_sampling_interval() == 1.0
 
     def test_dataset_roundtrip_numeric(self):
         coord = self.make()
@@ -1019,3 +1060,90 @@ class TestDeltaEncoding:
         from xdas.coordinates.core import decode_delta
 
         assert decode_delta("sampling_interval", {}) is None
+
+
+class TestSimplifyToleranceDefaults:
+    def test_default_budget_is_stored_tolerance(self):
+        # A seam 1.0 off the nominal rate fuses away under the declared
+        # tolerance of 2.0 without passing any explicit budget.
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 10, 11, 21],
+                "tie_values": [0.0, 30.0, 34.0, 64.0],
+                "sampling_interval": 3.0,
+                "tolerance": 2.0,
+            }
+        )
+        result = coord.simplify()
+        assert len(result.tie_indices) == 2
+        assert result.sampling_interval == 3.0
+        assert result.tolerance == 2.0
+
+    def test_lossless_pass_keeps_tolerance(self):
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 9],
+                "tie_values": [0.0, 9.0],
+                "sampling_interval": 1.0,
+                "tolerance": 0.5,
+            }
+        )
+        result = coord.simplify()
+        assert result.equals(coord)
+
+    def test_widen_only_when_needed(self):
+        # Fusing a jump beyond the declared tolerance widens it by the budget.
+        t0 = np.datetime64("2000-01-01T00:00:00", "ns")
+        s = np.timedelta64(1, "s").astype("m8[ns]")
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 5, 6, 11],
+                "tie_values": [t0, t0 + 5 * s, t0 + 8 * s, t0 + 13 * s],
+                "sampling_interval": s,
+                "tolerance": np.timedelta64(0, "ns"),
+            }
+        )
+        result = coord.simplify(np.timedelta64(3, "s"))
+        assert len(result.tie_indices) == 2
+        assert result.sampling_interval == s
+        assert result.tolerance == np.timedelta64(3, "s").astype("m8[ns]")
+
+
+class TestSimplifyNoReduce:
+    def test_regularize_without_reduce(self):
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 5, 10], "tie_values": [0.0, 5.0, 10.0]}
+        )
+        result = coord.simplify(reduce=False, regularize=True)
+        assert len(result.tie_indices) == 3
+        assert result.isregular()
+        assert result.get_sampling_interval() == 1.0
+
+
+class TestSimplifyRegularizeFallback:
+    def test_no_continuous_area_stays_irregular(self):
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 1, 2], "tie_values": [0.0, 1.0, 5.0]}
+        )
+        result = coord.simplify(reduce=False, regularize=True)
+        assert not result.isregular()
+
+    def test_invalid_fit_stays_irregular(self):
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 10, 20], "tie_values": [0.0, 1.0, 2.05]}
+        )
+        result = coord.simplify(reduce=False, regularize=True)
+        assert not result.isregular()
+
+
+class TestFromBlockShort:
+    def test_single_sample(self):
+        coord = InterpCoordinate.from_block(0.0, 1, 2.0, dim="x")
+        assert len(coord) == 1
+        assert coord.values == [0.0]
+        assert coord.sampling_interval == 2.0
+
+    def test_empty(self):
+        coord = InterpCoordinate.from_block(0.0, 0, 2.0, dim="x")
+        assert coord.empty
+        assert coord.sampling_interval == 2.0

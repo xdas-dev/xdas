@@ -230,3 +230,40 @@ class TestDenseCoordinate:
         dataset["x"] = dataset["x"].astype(object)
         result = DenseCoordinate._collect_from_dataset(dataset, "x")
         assert "x" in result
+
+
+class TestDenseCoordinateToRegular:
+    def test_never_regular(self):
+        coord = DenseCoordinate([0.0, 1.0, 2.0], "x")
+        assert coord.get_sampling_interval() is None
+        assert not coord.isregular()
+
+    def test_to_regular_uniform(self):
+        coord = DenseCoordinate([0.0, 1.0, 2.0, 3.0], "x")
+        reg = coord.to_regular()
+        assert reg.isregular()
+        assert reg.get_sampling_interval() == 1.0
+        assert reg.dim == "x"
+        np.testing.assert_array_equal(reg.values, coord.values)
+
+    def test_to_regular_explicit_args(self):
+        coord = DenseCoordinate([0.0, 1.05, 2.0], "x")
+        reg = coord.to_regular(sampling_interval=1.0, tolerance=0.1)
+        assert reg.get_sampling_interval() == 1.0
+
+    def test_to_regular_irregular_raises(self):
+        coord = DenseCoordinate([0.0, 1.0, 5.0], "x")
+        with pytest.raises(ValueError, match="not evenly spaced"):
+            coord.to_regular()
+
+    def test_to_regular_too_short_raises(self):
+        with pytest.raises(ValueError, match="fewer than two"):
+            DenseCoordinate([1.0], "x").to_regular()
+
+    def test_to_regular_datetime(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        values = t0 + np.timedelta64(1, "s") * np.arange(5)
+        coord = DenseCoordinate(values, "time")
+        reg = coord.to_regular()
+        assert reg.get_sampling_interval() == 1.0
+        np.testing.assert_array_equal(reg.values, coord.values)

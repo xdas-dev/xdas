@@ -163,16 +163,22 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
     def from_block(cls, start, size, step, dim=None, dtype=None):
         start = np.asarray(start, dtype=dtype)
         step = parse_scalar_delta(step, start.dtype)
-        end = start + step * (size - 1)
-        return cls(
-            {
+        if size < 2:
+            # A single (or zero) sample cannot span two tie points; keep the
+            # declared spacing as metadata.
+            data = {
+                "tie_indices": [0][:size],
+                "tie_values": [start][:size],
+                "sampling_interval": step,
+            }
+        else:
+            end = start + step * (size - 1)
+            data = {
                 "tie_indices": [0, size - 1],
                 "tie_values": [start, end],
                 "sampling_interval": step,
-            },
-            dim=dim,
-            dtype=dtype,
-        )
+            }
+        return cls(data, dim=dim, dtype=dtype)
 
     @override
     def __len__(self):
@@ -434,7 +440,7 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         """
         Estimate the nominal spacing and tightest tolerance for this coordinate.
 
-        Private helper behind :meth:`simplify` and :meth:`_to_regular`: returns
+        Private helper behind :meth:`simplify` and :meth:`to_regular`: returns
         the spacing that minimises the worst per-segment drift and the smallest
         tolerance that would still validate it, without enforcing either on the
         coordinate.
@@ -502,32 +508,16 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             tolerance = np.timedelta64(int(np.ceil(tolerance * 1e9)), "ns")
         return sampling_interval, tolerance
 
-    def _to_regular(self, sampling_interval=None, tolerance=None):
-        """
-        Return a copy of this coordinate with an enforced nominal sampling interval.
+    @override
+    def to_regular(self, sampling_interval=None, tolerance=None):
+        """Enforce a nominal sampling interval, inferring it when omitted.
 
-        Private strict counterpart to :meth:`simplify`: it raises when the
-        spacing cannot be validated, whereas :meth:`simplify` falls back to an
-        irregular result. Used by the module-level :func:`get_sampling_interval`
-        helper to extract a clean rate from a structurally-regular coordinate.
-
-        Parameters
-        ----------
-        sampling_interval : scalar, optional
-            Nominal sample spacing to enforce. When omitted it is inferred via
-            :meth:`_infer_regular` (the length-weighted Chebyshev center of the
-            per-segment rates).
-        tolerance : scalar, optional
-            Tolerated jitter around *sampling_interval*. Defaults to a
-            dtype-dependent epsilon, so a genuinely irregular axis raises
-            :exc:`ValueError`.
-
-        Returns
-        -------
-        InterpCoordinate
-            A new coordinate with :attr:`sampling_interval` set, or with it left
-            unset when no spacing can be inferred (no continuous area, i.e. every
-            tie-point gap is a ``den == 1`` CF discontinuity).
+        The inferred spacing is the length-weighted Chebyshev center of the
+        per-segment rates (see :meth:`_infer_regular`). Raises when no spacing
+        can be inferred (no continuous area, i.e. every tie-point gap is a
+        ``den == 1`` CF discontinuity) or when the spacing does not fit the tie
+        points within *tolerance*. See :meth:`AxisCoordinate.to_regular` for
+        the parameter contract.
         """
         # Default each unspecified argument to the stored regular config; an
         # explicit value still overrides it.
@@ -537,6 +527,11 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             tolerance = self.tolerance
         if sampling_interval is None:
             sampling_interval, _ = self._infer_regular()
+        if sampling_interval is None:
+            raise ValueError(
+                "cannot infer a sampling interval: the coordinate has no "
+                "continuous area; pass `sampling_interval` explicitly"
+            )
         data = {
             "tie_indices": self.tie_indices,
             "tie_values": self.tie_values,
@@ -570,6 +565,9 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         """
         if tolerance is False:
             return self.copy()
+        if tolerance is None:
+            # Default the budget to the coordinate's own declared jitter.
+            tolerance = self.tolerance
         tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
         if reduce:
             tie_indices, tie_values = _douglas_peucker(
@@ -580,15 +578,21 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         data = {"tie_indices": tie_indices, "tie_values": tie_values}
         if self.sampling_interval is not None:
             # Already regular: keep the spacing. A reduce pass may fuse a soft
-            # discontinuity into a ramp; the new segment then carries the
-            # absorbed jump (bounded by `tolerance` per intermediate) on top of
-            # the original jitter (`self.tolerance`). Widening by `tolerance`
-            # preserves validity in that case and degrades to `self.tolerance`
-            # for a lossless pass.
+            # discontinuity into a ramp whose absorbed jump exceeds the declared
+            # jitter; keep the declared tolerance when it still validates and
+            # only widen by the spent budget when it does not, so a lossless or
+            # seam-only reduction round-trips the exact regular metadata.
+            reduced = self.__class__(data, self.dim)
+            if reduce and not reduced._is_valid_sampling_interval(
+                self.sampling_interval, self.tolerance
+            ):
+                new_tolerance = self.tolerance + tolerance
+            else:
+                new_tolerance = self.tolerance
             data = {
                 **data,
                 "sampling_interval": self.sampling_interval,
-                "tolerance": self.tolerance + tolerance if reduce else self.tolerance,
+                "tolerance": new_tolerance,
             }
             return self.__class__(data, self.dim)
         # Otherwise try to promote: infer the best spacing on the surviving

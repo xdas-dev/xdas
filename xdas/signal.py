@@ -9,6 +9,7 @@ import numpy as np
 import scipy.signal as sp
 
 from .atoms import atomized
+from .coordinates import get_sampling_interval
 from .core import DataArray
 from .parallel import parallelize
 from .spectral import stft  # noqa
@@ -118,9 +119,7 @@ def filter(da, freq, btype, corners=4, zerophase=False, dim="last", parallel=Non
     """
     axis = da.get_axis_num(dim)
     dim = da.dims[axis]
-    d = da.coords[dim].get_sampling_interval()
-    if d is None:
-        raise ValueError(f"coordinate '{dim}' has no sampling interval")
+    d = get_sampling_interval(da, dim)
     across = int(axis == 0)
     fs = 1.0 / d
     sos = sp.iirfilter(corners, freq, btype=btype, ftype="butter", output="sos", fs=fs)
@@ -249,9 +248,7 @@ def resample(da, num, dim="last", window=None, domain="time", parallel=None):
     """
     axis = da.get_axis_num(dim)
     dim = da.dims[axis]
-    si = da.coords[dim].get_sampling_interval(cast=False)
-    if si is None:
-        raise ValueError(f"coordinate '{dim}' has no sampling interval")
+    get_sampling_interval(da, dim)  # warn or raise on irregular axes upfront
     across = int(axis == 0)
     func = parallelize(across, across, parallel)(sp.resample)
     data, t = func(da.values, num, da[dim].values, axis, window, domain)
@@ -348,9 +345,7 @@ def resample_poly(
     """
     axis = da.get_axis_num(dim)
     dim = da.dims[axis]
-    d = da.coords[dim].get_sampling_interval(cast=False)
-    if d is None:
-        raise ValueError(f"coordinate '{dim}' has no sampling interval")
+    d = get_sampling_interval(da, dim, cast=False)
     across = int(axis == 0)
     func = parallelize(across, across, parallel)(sp.resample_poly)
     data = func(da.values, up, down, axis, window, padtype, cval)
@@ -797,9 +792,7 @@ def integrate(da, midpoints=False, dim="last", parallel=None):
     """
     axis = da.get_axis_num(dim)
     dim = da.dims[axis]
-    d = da.coords[dim].get_sampling_interval()
-    if d is None:
-        raise ValueError(f"coordinate '{dim}' has no sampling interval")
+    d = get_sampling_interval(da, dim)
 
     def func(x):
         return np.cumsum(x, axis=axis) * d
@@ -843,9 +836,7 @@ def differentiate(da, midpoints=False, dim="last", parallel=None):
     """
     axis = da.get_axis_num(dim)
     dim = da.dims[axis]
-    d = da.coords[dim].get_sampling_interval()
-    if d is None:
-        raise ValueError(f"coordinate '{dim}' has no sampling interval")
+    d = get_sampling_interval(da, dim)
 
     def func(x):
         return np.diff(x, axis=axis) / d
@@ -929,9 +920,7 @@ def sliding_mean_removal(
     """
     axis = da.get_axis_num(dim)
     dim = da.dims[axis]
-    d = da.coords[dim].get_sampling_interval()
-    if d is None:
-        raise ValueError(f"coordinate '{dim}' has no sampling interval")
+    d = get_sampling_interval(da, dim)
     n = round(wlen / d)
     if n % 2 == 0:
         n += 1

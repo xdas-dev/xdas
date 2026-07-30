@@ -417,6 +417,21 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
         return delta
 
     @override
+    def to_regular(self, sampling_interval=None, tolerance=None):
+        """Regular by construction: validate any explicit spacing and return a copy.
+
+        See :meth:`AxisCoordinate.to_regular` for the parameter contract.
+        """
+        if sampling_interval is not None:
+            sampling_interval = parse_scalar_delta(sampling_interval, self.dtype)
+            tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
+            if np.abs(sampling_interval - self.sampling_interval) > tolerance:
+                raise ValueError(
+                    "`sampling_interval` does not match the stored sampling interval"
+                )
+        return self.copy()
+
+    @override
     def simplify(self, tolerance=None, *, reduce=True, regularize=False):
         """Fuse adjacent segments whose junction drift is within *tolerance*.
 

@@ -99,3 +99,8 @@ class TestScalarCoordinate:
         dataset = xr.Dataset()
         dataset, attrs = sc._to_dataset(dataset, {})
         assert "meta" in dataset.coords
+
+
+class TestScalarCoordinateRegularity:
+    def test_never_regular(self):
+        assert not ScalarCoordinate(42).isregular()
