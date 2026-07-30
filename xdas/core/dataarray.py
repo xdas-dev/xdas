@@ -134,7 +134,7 @@ class DataArray(NDArrayOperatorsMixin):
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         from .routines import broadcast_coords, broadcast_to  # TODO: circular import
 
-        if not method == "__call__":
+        if method != "__call__":
             return NotImplemented
 
         coords = broadcast_coords(
@@ -281,19 +281,17 @@ class DataArray(NDArrayOperatorsMixin):
     def equals(self, other):
         """Return ``True`` if *other* has equal data, coordinates, dims, name, and attrs."""
         if isinstance(other, self.__class__):
-            if not self.dtype == other.dtype:
+            if self.dtype != other.dtype:
                 return False
             if not np.array_equal(self.values, other.values, equal_nan=True):
                 return False
             if not self.coords.equals(other.coords):
                 return False
-            if not self.dims == other.dims:
+            if self.dims != other.dims:
                 return False
-            if not self.name == other.name:
+            if self.name != other.name:
                 return False
-            if not self.attrs == other.attrs:
-                return False
-            return True
+            return self.attrs == other.attrs
         else:
             return False
 
@@ -647,7 +645,7 @@ class DataArray(NDArrayOperatorsMixin):
                 raise KeyError(
                     f"dimension {dim} not found in current object with dims {self.dims}"
                 )
-        dims = tuple(dims_dict[dim] if dim in dims_dict else dim for dim in self.dims)
+        dims = tuple(dims_dict.get(dim, dim) for dim in self.dims)
         coords = {}
         for name, coord in self.coords.copy(deep=False).items():
             if coord.dim in dims_dict:
@@ -817,7 +815,7 @@ class DataArray(NDArrayOperatorsMixin):
         station="DAS{:05}",
         location="00",
         channel="{:1}N1",
-        dim={"last": "first"},
+        dim=None,
     ):
         """
         Convert a data array into an obspy stream.
@@ -1006,11 +1004,11 @@ class DimSizer(dict):
     """Dict-like mapping from dimension names to their sizes, returned by :attr:`DataArray.sizes`."""
 
     def __init__(self, obj):
-        super().__init__({dim: size for dim, size in zip(obj.dims, obj.shape)})
+        super().__init__(dict(zip(obj.dims, obj.shape)))
 
     def __getitem__(self, key):
         if key == "first":
-            key = list(self.keys())[0]
+            key = next(iter(self.keys()))
         if key == "last":
             key = list(self.keys())[-1]
         return super().__getitem__(key)

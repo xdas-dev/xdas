@@ -109,13 +109,12 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
             if not np.ndim(sampling_interval) == 0:
                 raise ValueError("`sampling_interval` must be a scalar value")
             sampling_interval = np.asarray(sampling_interval)[()]  # ensure numpy scalar
-            if np.issubdtype(tie_values.dtype, np.datetime64):
-                if not np.issubdtype(
-                    np.asarray(sampling_interval).dtype, np.timedelta64
-                ):
-                    raise ValueError(
-                        "`sampling_interval` must be timedelta64 for datetime64 `tie_values`"
-                    )
+            if np.issubdtype(tie_values.dtype, np.datetime64) and not np.issubdtype(
+                np.asarray(sampling_interval).dtype, np.timedelta64
+            ):
+                raise ValueError(
+                    "`sampling_interval` must be timedelta64 for datetime64 `tie_values`"
+                )
 
         # store data
         self.data = {

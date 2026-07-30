@@ -114,7 +114,7 @@ class TestVirtualStack:
         assert stack.empty
         assert stack.shape == ()
         with pytest.raises(AttributeError, match="no dtype"):
-            stack.dtype
+            _ = stack.dtype
         assert stack.ndim == 0
         assert stack.size == 0
         assert stack.nbytes == 0
@@ -354,7 +354,7 @@ class TestSliceSelector:
         sel = SliceSelector(5)
         assert isinstance(sel[0:1], SliceSelector)
         assert sel[:]._range == range(5)
-        assert sel[0:1]._range == range(0, 1)
+        assert sel[0:1]._range == range(1)
         assert sel[1:0]._range == range(1, 0)
         assert sel._range == range(5)
         sel = sel[1:-1]
@@ -391,12 +391,16 @@ class TestSliceSelector:
 class TestVirtualArrayAbstract:
     def test_abstract_stubs(self):
         va = VirtualArray()
-        va.__getitem__(0)
-        va.__array__()
-        _ = va.shape
-        _ = va.dtype
-        va.to_dataset(None, None)
-        assert isinstance(repr(va), str)
+        with pytest.raises(NotImplementedError):
+            _ = va[0]
+        with pytest.raises(NotImplementedError):
+            va.__array__()
+        with pytest.raises(NotImplementedError):
+            _ = va.shape
+        with pytest.raises(NotImplementedError):
+            _ = va.dtype
+        with pytest.raises(NotImplementedError):
+            va.to_dataset(None, None)
 
 
 class TestVirtualStackExtra:

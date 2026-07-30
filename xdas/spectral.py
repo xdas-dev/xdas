@@ -20,7 +20,7 @@ def stft(
     noverlap=None,
     nfft=None,
     return_onesided=True,
-    dim={"last": "sprectrum"},
+    dim=None,
     scaling="spectrum",
     parallel=None,
 ):
@@ -79,9 +79,12 @@ def stft(
         noverlap = nperseg // 2
     if nfft is None:
         nfft = nperseg
+    if dim is None:
+        dim = {"last": "sprectrum"}
     win = get_window(window, nperseg)
     input_dim, output_dim = next(iter(dim.items()))
     axis = da.get_axis_num(input_dim)
+    input_dim = da.dims[axis]  # resolve "first"/"last" aliases
     dt = get_sampling_interval(da, input_dim)
     if scaling == "spectrum":
         scale = 1.0 / win.sum() ** 2

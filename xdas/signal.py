@@ -5,6 +5,8 @@ Includes filtering, resampling, tapering, detrending, and spectral helpers,
 all coordinate-aware and multi-threaded via :func:`~xdas.parallel.parallelize`.
 """
 
+import itertools
+
 import numpy as np
 import scipy.signal as sp
 
@@ -262,7 +264,7 @@ def resample(da, num, dim="last", window=None, domain="time", parallel=None):
     coords = {
         name: new_coord if name == dim else coord
         for name, coord in da.coords.items()
-        if not (coord.dim == dim and not name == dim)  # don't handle non-dimensional
+        if not (coord.dim == dim and name != dim)  # don't handle non-dimensional
     }
     return DataArray(data, coords, da.dims, da.name, da.attrs)
 
@@ -370,7 +372,7 @@ def resample_poly(
     coords = {
         name: new_coord if name == dim else coord
         for name, coord in da.coords.items()
-        if not (coord.dim == dim and not name == dim)  # don't handle non-dimensional
+        if not (coord.dim == dim and name != dim)  # don't handle non-dimensional
     }
     return DataArray(data, coords, da.dims, da.name, da.attrs)
 
@@ -888,7 +890,7 @@ def segment_mean_removal(da, limits, window="hann", dim="last"):  # TODO: parall
     """
     out = da.copy()
     axis = da.get_axis_num(dim)
-    for sstart, send in zip(limits[:-1], limits[1:]):
+    for sstart, send in itertools.pairwise(limits):
         key = {dim: slice(sstart, np.nextafter(send, -np.inf))}
         data = out.loc[key].values
         win = sp.get_window(window, data.shape[axis])
@@ -1003,8 +1005,8 @@ def medfilt(da, kernel_dim):  # TODO: parallelize
       * distance (distance): 0.000 to 10000.000
 
     """
-    if not all(dim in da.dims for dim in kernel_dim.keys()):
+    if not all(dim in da.dims for dim in kernel_dim):
         raise ValueError("dims provided not in dataarray")
-    kernel_size = tuple(kernel_dim[dim] if dim in kernel_dim else 1 for dim in da.dims)
+    kernel_size = tuple(kernel_dim.get(dim, 1) for dim in da.dims)
     data = sp.medfilt(da.values, kernel_size)
     return da.copy(data=data)

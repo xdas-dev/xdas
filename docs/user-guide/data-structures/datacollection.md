@@ -84,7 +84,7 @@ If your data paths are something like: "/data/REKA/RK1/20231119/proc/*.hdf5" and
 
 ```python
 path = "/data/{network}/{cable}/20231119/proc/[acquisition].hdf5"
-dc = xd.open(path, engine='asn')
+dc = xd.open(path, engine="asn")
 dc
 ```
 ```text
@@ -148,7 +148,7 @@ Coordinates:
 
 ```python
 # Add the dataarray to the datacollection at the acquisition number 0
-dc['REKA']['RK2'].insert(0, da)
+dc["REKA"]["RK2"].insert(0, da)
 dc
 ```
 ```text

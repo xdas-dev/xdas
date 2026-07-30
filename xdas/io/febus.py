@@ -1,6 +1,7 @@
 """I/O engine for Febus HDF5 files (:class:`FebusEngine`)."""
 
 import warnings
+from typing import ClassVar
 
 import h5py
 import numpy as np
@@ -14,8 +15,8 @@ from .core import Engine
 class FebusEngine(Engine, name="febus"):
     """Engine for reading Febus HDF5 files."""
 
-    _supported_vtypes = ["hdf5"]
-    _supported_ctypes = {
+    _supported_vtypes: ClassVar[list] = ["hdf5"]
+    _supported_ctypes: ClassVar[dict] = {
         "time": ["interpolated", "sampled", "dense"],
         "distance": ["interpolated", "sampled", "dense"],
     }

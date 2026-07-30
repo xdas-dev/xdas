@@ -39,7 +39,7 @@ class TestDataArrayLoader:
     def test_chunks_integrity(self, max_buffers, max_workers):
         da = xd.testing.dummy(shape=(1000, 100))
         dl = xp.DataArrayLoader(da, {"time": 100}, max_buffers, max_workers)
-        chunks = [chunk for chunk in dl]
+        chunks = list(dl)
         result = xd.concat(chunks)
         assert result.equals(da)
 

@@ -212,7 +212,7 @@ class TestDenseCoordinate:
 
         da = xd.DataArray([0, 0, 0], {"x": coord})
         dataset = xr.Dataset()
-        dataset, attrs = da.coords["x"]._to_dataset(dataset, {})
+        dataset, _attrs = da.coords["x"]._to_dataset(dataset, {})
         assert "x" in dataset.coords
 
     def test_to_dataset_no_name(self):

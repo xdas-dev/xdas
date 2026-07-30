@@ -8,7 +8,7 @@ for common DAS instrument formats.
 
 __version__ = "0.2.8"
 
-__all__ = [
+__all__ = [  # noqa: RUF022 - grouped by kind, not alphabetically
     # submodules
     "atoms",
     "config",
@@ -108,4 +108,4 @@ from .core import (
     routines,
     split,
 )
-from .core.methods import *  # noqa: F403
+from .core.methods import *

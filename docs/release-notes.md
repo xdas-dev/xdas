@@ -12,12 +12,15 @@
 
 ### Bug Fixes
 - Fix `Sequential.reset()` silently doing nothing: it only reset `Partial` atoms, so stateful atoms such as `IIRFilter` or `ResamplePoly` kept their state and a reused sequence returned wrong data (@atrabattoni).
+- Fix `stft` ignoring the `"first"`/`"last"` dimension aliases — including its own default `dim` — which raised a size-conflict error instead of transforming the named axis (@atrabattoni).
 
 ### Refactoring
 - Reworked the coordinate class hierarchy: `Coordinate` is now a proper ABC and the new `AxisCoordinate` ABC holds the axis-mapping contract shared by dense, interpolated, and sampled coordinates. Use `isinstance(coord, AxisCoordinate)` instead of the removed `is*` predicates (@atrabattoni).
 - Cleaned up internal-leaning APIs: removed `DefaultCoordinate`, `to_dict`/`from_dict`, `get_div_points`, `decimate`, and `from_array`; made underscore-private `concat`, `get_indexer`, `get_value`, `format_index`, `slice_index(er)`, `isvalid`, and `get_query`; NumPy 2.0 `copy` keyword compliance (@atrabattoni).
 - `concat_coords` now simplifies its result by default, like `concat`; values are unchanged, only redundant tie points are dropped (@atrabattoni).
 - Added `xdas.testing.dummy`, a configurable fixture generator replacing `xdas.synthetics.dummy` (@atrabattoni).
+- Comply with ruff 0.16, whose default rule set is considerably broader (`B`, `C4`, `SIM`, `RUF`, `PERF`, `TRY`, `BLE`, `S`, `DTZ`, `FLY`, `PL`…). Mutable argument defaults (the `dim={...}` mappings of `fft`, `rfft`, `ifft`, `irfft`, `stft`, `to_stream`) became `None` sentinels documenting the same defaults; class-level registries and engine specs are annotated `ClassVar`; deliberate patterns (engine-fallback blind excepts, the long-lived TDMS handle, the grouped `__all__`) carry targeted `noqa`. `TRY004` is disabled project-wide, since xdas raises `ValueError` for all argument validation, including type checks (@atrabattoni).
+- The abstract `VirtualArray` stubs (`__getitem__`, `__array__`, `shape`, `dtype`, `to_dataset`) now raise `NotImplementedError` instead of silently returning `None` (@atrabattoni).
 
 ## 0.2.7
 

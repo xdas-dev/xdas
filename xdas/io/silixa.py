@@ -1,5 +1,7 @@
 """I/O engine for Silixa TDMS files (:class:`SilixaEngine`)."""
 
+from typing import ClassVar
+
 import dask
 import numpy as np
 
@@ -12,8 +14,8 @@ from .tdms import TdmsReader
 class SilixaEngine(Engine, name="silixa"):
     """Engine for reading Silixa iDAS TDMS files as lazy dask-backed DataArrays."""
 
-    _supported_vtypes = ["dask"]
-    _supported_ctypes = {
+    _supported_vtypes: ClassVar[list] = ["dask"]
+    _supported_ctypes: ClassVar[dict] = {
         "time": ["interpolated", "sampled", "dense"],
         "distance": ["interpolated", "sampled", "dense"],
     }

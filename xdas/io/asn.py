@@ -7,6 +7,7 @@ Includes :class:`ASNEngine` and a ZMQ-based real-time subscriber
 
 import json
 from bisect import bisect_left, bisect_right
+from typing import ClassVar
 
 import h5py
 import numpy as np
@@ -21,8 +22,8 @@ from .core import Engine
 class ASNEngine(Engine, name="asn"):
     """Engine for reading ASN HDF5 files."""
 
-    _supported_vtypes = ["hdf5"]
-    _supported_ctypes = {
+    _supported_vtypes: ClassVar[list] = ["hdf5"]
+    _supported_ctypes: ClassVar[dict] = {
         "time": ["interpolated", "sampled", "dense"],
         "distance": ["interpolated"],
     }
@@ -298,7 +299,7 @@ class ZMQPublisher:
         header = self._get_header(da)
         if self.header is None:
             self.header = header
-        if not header == self.header:
+        if header != self.header:
             self.header = header
             self._send_header()
         self._send_data(da)

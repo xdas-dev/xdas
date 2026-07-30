@@ -1,5 +1,7 @@
 """I/O engine for Terra15 HDF5 files (:class:`Terra15Engine`)."""
 
+from typing import ClassVar
+
 import h5py
 import pandas as pd
 
@@ -12,8 +14,8 @@ from .core import Engine
 class Terra15Engine(Engine, name="terra15"):
     """Engine for reading Terra15 HDF5 files."""
 
-    _supported_vtypes = ["hdf5"]
-    _supported_ctypes = {
+    _supported_vtypes: ClassVar[list] = ["hdf5"]
+    _supported_ctypes: ClassVar[dict] = {
         "time": ["interpolated"],
         "distance": ["interpolated", "sampled", "dense"],
     }

@@ -143,7 +143,7 @@ def open(
     elif isinstance(paths, list):
         method = "multi-file"
     else:
-        raise Exception(
+        raise ValueError(
             f"`paths` must be either a string or a list, found {type(paths)}"
         )
     match method:
@@ -151,7 +151,7 @@ def open(
             if engine is None:
                 try:
                     return open_datacollection(paths)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 - fall back to dataarray
                     pass
             return open_dataarray(paths, engine=engine, **kwargs)
         case "multi-file":
@@ -165,7 +165,7 @@ def open(
                         parallel=parallel,
                         verbose=verbose,
                     )
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 - fall back to mfdataarray
                     pass
             return open_mfdataarray(
                 paths,
@@ -468,7 +468,7 @@ def collect(
 def defaulttree(depth):
     """Generate a default tree of lists with given depth."""
     if depth == 1:
-        return list()
+        return []
     else:
         return defaultdict(lambda: defaulttree(depth - 1))
 
@@ -555,7 +555,7 @@ def open_mfdataarray(
         for path in iterator:
             try:
                 objs.append(open_dataarray(path, engine=engine, **kwargs))
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001 - collected and warned below
                 failures.append((path, error))
                 warnings.warn(f"could not open {path}: {error}", RuntimeWarning)
     else:
@@ -575,7 +575,7 @@ def open_mfdataarray(
         for future in iterator:
             try:
                 obj = future.result()
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001 - collected and warned below
                 path = futures_to_paths[future]
                 failures.append((path, error))
                 warnings.warn(f"could not open {path}: {error}", RuntimeWarning)
@@ -738,7 +738,7 @@ def combine_by_field(
         dc.name = leaves[0].name
         return dc
     elif nodes and not leaves:
-        (name,) = set(dc.name for dc in nodes)
+        (name,) = {dc.name for dc in nodes}
         keys = sorted(set.union(*[set(dc.keys()) for dc in nodes]))
         return DataCollection(
             {
@@ -861,9 +861,7 @@ class Bag:
         """Set *da* as the first element and record its shape, coords, sampling interval, and dtype."""
         self.objs = [da]
         self.dims = da.dims
-        self.subshape = tuple(
-            size for dim, size in da.sizes.items() if not dim == self.dim
-        )
+        self.subshape = tuple(size for dim, size in da.sizes.items() if dim != self.dim)
         self.subcoords = (
             da.coords.drop_dims(self.dim)
             if self.dim in self.dims
@@ -900,7 +898,7 @@ class Bag:
 
     def check_shape(self, da):
         """Raise :exc:`CompatibilityError` if *da* has a different non-concat shape."""
-        subshape = tuple(size for dim, size in da.sizes.items() if not dim == self.dim)
+        subshape = tuple(size for dim, size in da.sizes.items() if dim != self.dim)
         if not self.subshape == subshape:
             raise CompatibilityError("shapes are not compatible")
 
@@ -1017,8 +1015,7 @@ def concat(
     data = []
     for da in iterator:
         if isinstance(da.data, VirtualStack):
-            for source in da.data.sources:
-                data.append(source)
+            data.extend(da.data.sources)
         else:
             data.append(da.data)
 

@@ -112,8 +112,8 @@ class TestCoordinates:
         assert coords.isdim("dim_0")
         assert not coords.isdim("dim_1")
         coords = xd.Coordinates()
-        assert coords == dict()
-        assert coords.dims == tuple()
+        assert coords == {}
+        assert coords.dims == ()
 
     def test_first_last(self):
         coords = xd.Coordinates({"dim_0": [1.0, 2.0, 3.0], "dim_1": [1.0, 2.0, 3.0]})

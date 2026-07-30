@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Copyright (c) 2018 Silixa Ltd.
 
@@ -49,10 +48,9 @@ def write_property_dict(prop_dict, out_file):
     """Write *prop_dict* as a Python-literal assignment to *out_file*."""
     from pprint import pformat
 
-    f = open(out_file, "w")
-    f.write("tdms_property_map=")
-    f.write(pformat(prop_dict))
-    f.close()
+    with open(out_file, "w") as f:
+        f.write("tdms_property_map=")
+        f.write(pformat(prop_dict))
 
 
 def type_not_supported(vargin):
@@ -68,7 +66,8 @@ def parse_time_stamp(fractions, seconds):
     1/1/1904). Returns datetime.datetime or None.
     """
     if fractions is not None and seconds is not None and fractions + seconds > 0:
-        return datetime.timedelta(0, fractions * 2**-64 + seconds) + datetime.datetime(
+        # the TDMS epoch is naive by spec; callers convert to tz-naive datetime64
+        return datetime.timedelta(0, fractions * 2**-64 + seconds) + datetime.datetime(  # noqa: DTZ001
             1904, 1, 1
         )
     else:
@@ -77,56 +76,52 @@ def parse_time_stamp(fractions, seconds):
 
 # Enum mapping TDM data types to description string, numpy type where exists
 # See Ref[2] for enum values
-TDS_DATA_TYPE = dict(
-    {
-        0x00: "void",  # tdsTypeVoid
-        0x01: "int8",  # tdsTypeI8
-        0x02: "int16",  # tdsTypeI16
-        0x03: "int32",  # tdsTypeI32
-        0x04: "int64",  # tdsTypeI64
-        0x05: "uint8",  # tdsTypeU8
-        0x06: "uint16",  # tdsTypeU16
-        0x07: "uint32",  # tdsTypeU32
-        0x08: "uint64",  # tdsTypeU64
-        0x09: "float32",  # tdsTypeSingleFloat
-        0x0A: "float64",  # tdsTypeDoubleFloat
-        0x0B: "float128",  # tdsTypeExtendedFloat
-        0x19: "singleFloatWithUnit",  # tdsTypeSingleFloatWithUnit
-        0x1A: "doubleFloatWithUnit",  # tdsTypeDoubleFloatWithUnit
-        0x1B: "extendedFloatWithUnit",  # tdsTypeExtendedFloatWithUnit
-        0x20: "str",  # tdsTypeString
-        0x21: "bool",  # tdsTypeBoolean
-        0x44: "datetime",  # tdsTypeTimeStamp
-        0xFFFFFFFF: "raw",  # tdsTypeDAQmxRawData
-    }
-)
+TDS_DATA_TYPE = {
+    0x00: "void",  # tdsTypeVoid
+    0x01: "int8",  # tdsTypeI8
+    0x02: "int16",  # tdsTypeI16
+    0x03: "int32",  # tdsTypeI32
+    0x04: "int64",  # tdsTypeI64
+    0x05: "uint8",  # tdsTypeU8
+    0x06: "uint16",  # tdsTypeU16
+    0x07: "uint32",  # tdsTypeU32
+    0x08: "uint64",  # tdsTypeU64
+    0x09: "float32",  # tdsTypeSingleFloat
+    0x0A: "float64",  # tdsTypeDoubleFloat
+    0x0B: "float128",  # tdsTypeExtendedFloat
+    0x19: "singleFloatWithUnit",  # tdsTypeSingleFloatWithUnit
+    0x1A: "doubleFloatWithUnit",  # tdsTypeDoubleFloatWithUnit
+    0x1B: "extendedFloatWithUnit",  # tdsTypeExtendedFloatWithUnit
+    0x20: "str",  # tdsTypeString
+    0x21: "bool",  # tdsTypeBoolean
+    0x44: "datetime",  # tdsTypeTimeStamp
+    0xFFFFFFFF: "raw",  # tdsTypeDAQmxRawData
+}
 
 # Function mapping for reading TDMS data types
-TDS_READ_VAL = dict(
-    {
-        "void": lambda f: None,  # tdsTypeVoid
-        "int8": lambda f: struct.unpack("<b", f.read(1))[0],
-        "int16": lambda f: struct.unpack("<h", f.read(2))[0],
-        "int32": lambda f: struct.unpack("<i", f.read(4))[0],
-        "int64": lambda f: struct.unpack("<q", f.read(8))[0],
-        "uint8": lambda f: struct.unpack("<B", f.read(1))[0],
-        "uint16": lambda f: struct.unpack("<H", f.read(2))[0],
-        "uint32": lambda f: struct.unpack("<I", f.read(4))[0],
-        "uint64": lambda f: struct.unpack("<Q", f.read(8))[0],
-        "float32": lambda f: struct.unpack("<f", f.read(4))[0],
-        "float64": lambda f: struct.unpack("<d", f.read(8))[0],
-        "float128": type_not_supported,
-        "singleFloatWithUnit": type_not_supported,
-        "doubleFloatWithUnit": type_not_supported,
-        "extendedFloatWithUnit": type_not_supported,
-        "str": lambda f: f.read(struct.unpack("<i", f.read(4))[0]),
-        "bool": lambda f: struct.unpack("<?", f.read(1))[0],
-        "datetime": lambda f: parse_time_stamp(
-            struct.unpack("<Q", f.read(8))[0], struct.unpack("<q", f.read(8))[0]
-        ),
-        "raw": type_not_supported,
-    }
-)
+TDS_READ_VAL = {
+    "void": lambda f: None,  # tdsTypeVoid
+    "int8": lambda f: struct.unpack("<b", f.read(1))[0],
+    "int16": lambda f: struct.unpack("<h", f.read(2))[0],
+    "int32": lambda f: struct.unpack("<i", f.read(4))[0],
+    "int64": lambda f: struct.unpack("<q", f.read(8))[0],
+    "uint8": lambda f: struct.unpack("<B", f.read(1))[0],
+    "uint16": lambda f: struct.unpack("<H", f.read(2))[0],
+    "uint32": lambda f: struct.unpack("<I", f.read(4))[0],
+    "uint64": lambda f: struct.unpack("<Q", f.read(8))[0],
+    "float32": lambda f: struct.unpack("<f", f.read(4))[0],
+    "float64": lambda f: struct.unpack("<d", f.read(8))[0],
+    "float128": type_not_supported,
+    "singleFloatWithUnit": type_not_supported,
+    "doubleFloatWithUnit": type_not_supported,
+    "extendedFloatWithUnit": type_not_supported,
+    "str": lambda f: f.read(struct.unpack("<i", f.read(4))[0]),
+    "bool": lambda f: struct.unpack("<?", f.read(1))[0],
+    "datetime": lambda f: parse_time_stamp(
+        struct.unpack("<Q", f.read(8))[0], struct.unpack("<q", f.read(8))[0]
+    ),
+    "raw": type_not_supported,
+}
 
 DECIMATE_MASK = 0b00100000
 LEAD_IN_LENGTH = 28
@@ -139,7 +134,7 @@ FILEINFO_NAMES = (
 )
 
 
-class TdmsReader(object):
+class TdmsReader:
     """A TDMS file reader object for reading properties and data."""
 
     def __init__(self, filename):
@@ -159,7 +154,8 @@ class TdmsReader(object):
         self._seg2_length = None
 
         # TODO: Error if file not big enough to hold header
-        self._tdms_file = open(filename, "rb")
+        # handle outlives __init__ on purpose: reads are lazy, closed in __exit__
+        self._tdms_file = open(filename, "rb")  # noqa: SIM115
         # Read lead in (28 bytes):
         lead_in = self._tdms_file.read(LEAD_IN_LENGTH)
         # lead_in is 28 bytes:
@@ -179,9 +175,10 @@ class TdmsReader(object):
         self.fileinfo["file_size"] = os.path.getsize(self._tdms_file.name)
 
         # TODO: Validate lead in:
-        if self.fileinfo["next_segment_offset"] > self.file_size:
-            self.fileinfo["next_segment_offset"] = self.file_size
-            # raise(ValueError, "Next Segment Offset too large in TDMS header")
+        self.fileinfo["next_segment_offset"] = min(
+            self.fileinfo["next_segment_offset"], self.file_size
+        )
+        # raise(ValueError, "Next Segment Offset too large in TDMS header")
 
     def __enter__(self):
         return self
@@ -238,9 +235,7 @@ class TdmsReader(object):
         # Read length of object path:
         var = struct.unpack("<i", self._tdms_file.read(4))[0]
         # Read property name and type:
-        name, data_type = struct.unpack(
-            "<{0}si".format(var), self._tdms_file.read(var + 4)
-        )
+        name, data_type = struct.unpack(f"<{var}si", self._tdms_file.read(var + 4))
         # Lookup function to read and parse property value based on type:
         value = TDS_READ_VAL[TDS_DATA_TYPE[data_type]](self._tdms_file)
         name = name.decode()
@@ -292,7 +287,7 @@ class TdmsReader(object):
             struct.unpack("<i", self._tdms_file.read(4))[0]
         )
         if self._data_type not in ("int16", "float32"):
-            raise Exception("Unsupported TDMS data type: " + self._data_type)
+            raise ValueError("Unsupported TDMS data type: " + self._data_type)
 
         # Read Dimension of the raw data array (has to be 1):
         _ = struct.unpack("<i", self._tdms_file.read(4))[0]
@@ -462,7 +457,7 @@ class TdmsReader(object):
             if self.fileinfo["decimated"]:
                 n_complete_blk2 = int(self._seg2_length / self._chunk_size)
             else:
-                n_complete_blk2 = int(0)
+                n_complete_blk2 = 0
             self._raw_data2 = np.ndarray(
                 (n_complete_blk2, nch, self._chunk_size),
                 dtype=self._data_type,
@@ -508,7 +503,7 @@ if __name__ == "__main__":
 
     file_path = "path_to_tdms_file.tdms"
 
-    print("File: {0}".format(file_path))
+    print(f"File: {file_path}")
 
     tdms = TdmsReader(file_path)
 
@@ -522,9 +517,9 @@ if __name__ == "__main__":
     depth = zero_offset + np.arange(n_channels) * channel_spacing
     fs = props.get("SamplingFrequency[Hz]")
 
-    print("Number of channels in file: {0}".format(n_channels))
-    print("Time samples in file: {0}".format(tdms.channel_length))
-    print("Sampling frequency (Hz): {0}".format(fs))
+    print(f"Number of channels in file: {n_channels}")
+    print(f"Time samples in file: {tdms.channel_length}")
+    print(f"Sampling frequency (Hz): {fs}")
 
     first_channel = 250
     last_channel = 2275
@@ -534,7 +529,7 @@ if __name__ == "__main__":
     some_data = tdms.get_data(
         first_channel, last_channel, first_time_sample, last_time_sample
     )
-    print("Size of data loaded: {0}".format(some_data.shape))
+    print(f"Size of data loaded: {some_data.shape}")
 
     import matplotlib.pyplot as plt
 

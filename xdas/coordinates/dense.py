@@ -153,7 +153,7 @@ class DenseCoordinate(AxisCoordinate, ctype="dense"):
         explicit declaration; convert with :meth:`to_regular` to obtain a
         regular :class:`InterpCoordinate`.
         """
-        return None
+        return
 
     @override
     def to_regular(self, sampling_interval=None, tolerance=None):

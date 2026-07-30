@@ -364,9 +364,8 @@ class TestOpen:  # TODO: those tests are weirdly slow...
             f.write(b"corrupted")
         with (tmp_path / "corrupted2.nc").open("wb") as f:
             f.write(b"corrupted")
-        with pytest.warns(RuntimeWarning):
-            with pytest.raises(RuntimeError):
-                xd.open_mfdataarray(str(tmp_path / "*.nc"))
+        with pytest.warns(RuntimeWarning), pytest.raises(RuntimeError):
+            xd.open_mfdataarray(str(tmp_path / "*.nc"))
 
 
 class TestSplit:

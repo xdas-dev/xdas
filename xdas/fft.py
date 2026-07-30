@@ -14,7 +14,7 @@ from .parallel import parallelize
 
 
 @atomized
-def fft(da, n=None, dim={"last": "spectrum"}, norm=None, parallel=None):
+def fft(da, n=None, dim=None, norm=None, parallel=None):
     """
     Compute the discrete Fourier Transform along a given dimension.
 
@@ -61,6 +61,8 @@ def fft(da, n=None, dim={"last": "spectrum"}, norm=None, parallel=None):
       * frequency (frequency): -0.500 to 0.250
 
     """
+    if dim is None:
+        dim = {"last": "spectrum"}
     ((olddim, newdim),) = dim.items()
     olddim = da.dims[da.get_axis_num(olddim)]
     if n is None:
@@ -86,7 +88,7 @@ def fft(da, n=None, dim={"last": "spectrum"}, norm=None, parallel=None):
 
 
 @atomized
-def rfft(da, n=None, dim={"last": "spectrum"}, norm=None, parallel=None):
+def rfft(da, n=None, dim=None, norm=None, parallel=None):
     """
     Compute the discrete Fourier Transform  for real inputs along a given dimension.
 
@@ -134,6 +136,8 @@ def rfft(da, n=None, dim={"last": "spectrum"}, norm=None, parallel=None):
       * frequency (frequency): 0.000 to 0.500
 
     """
+    if dim is None:
+        dim = {"last": "spectrum"}
     ((olddim, newdim),) = dim.items()
     olddim = da.dims[da.get_axis_num(olddim)]
     if n is None:
@@ -154,7 +158,7 @@ def rfft(da, n=None, dim={"last": "spectrum"}, norm=None, parallel=None):
 
 
 @atomized
-def ifft(da, n=None, dim={"last": "signal"}, norm=None, parallel=None):
+def ifft(da, n=None, dim=None, norm=None, parallel=None):
     """
     Compute the inverse of `fft`.
 
@@ -197,6 +201,8 @@ def ifft(da, n=None, dim={"last": "signal"}, norm=None, parallel=None):
     >>> assert np.real(result).equals(signal)
 
     """
+    if dim is None:
+        dim = {"last": "signal"}
     ((olddim, newdim),) = dim.items()
     olddim = da.dims[da.get_axis_num(olddim)]
     if n is None:
@@ -222,7 +228,7 @@ def ifft(da, n=None, dim={"last": "signal"}, norm=None, parallel=None):
 
 
 @atomized
-def irfft(da, n=None, dim={"last": "signal"}, norm=None, parallel=None):
+def irfft(da, n=None, dim=None, norm=None, parallel=None):
     """
     Compute the inverse of `rfft`.
 
@@ -274,6 +280,8 @@ def irfft(da, n=None, dim={"last": "signal"}, norm=None, parallel=None):
     >>> assert np.real(result).equals(signal)
 
     """
+    if dim is None:
+        dim = {"last": "signal"}
     ((olddim, newdim),) = dim.items()
     olddim = da.dims[da.get_axis_num(olddim)]
     if n is None:

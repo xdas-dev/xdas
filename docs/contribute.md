@@ -84,30 +84,30 @@ You need to add multiline string that follows the [numpydoc](https://numpydoc.re
 
 ```python
 def your_function(arg1, arg2=None):
-   """
-   Explain in one line the main objective.
+    """
+    Explain in one line the main objective.
 
-   Add additional information with with as many comments as you wants. You will need to wrap you code (ideally max 88 char per line).
+    Add additional information with with as many comments as you wants. You will need to wrap you code (ideally max 88 char per line).
 
-   Parameters
-   ----------
-   arg1: type (e.g., float)
-       Some description.
-   arg2: type, optional
-       Some description.
+    Parameters
+    ----------
+    arg1: type (e.g., float)
+        Some description.
+    arg2: type, optional
+        Some description.
 
-   Returns
-   -------
-   type:
-       Some description.
+    Returns
+    -------
+    type:
+        Some description.
 
-   Examples
-   --------
-   >>> your_function(1, "value")
-   "result"
+    Examples
+    --------
+    >>> your_function(1, "value")
+    "result"
 
-   """
-   return do_something_with_args(arg1, arg2)
+    """
+    return do_something_with_args(arg1, arg2)
 ```
 
 Note that the outputs of the examples will be used as tests. `pytest` will check that the hard coded output matches what the code actually outputs. This is a first quick way to add tests to your function.
@@ -129,11 +129,12 @@ If you are working on a function in a script in `xdas/dir/file.py` then test mus
 ```python
 import pytest
 
+
 class TestMyModule:
-   def test_my_function(self): # here self is generally unused
-       assert mu_function(0) == 42  # it must be True otherwise the test doesn't pass
-       with pytest.raises(ValueError):  # check it raise the correct error
-           my_function(-1)
+    def test_my_function(self):  # here self is generally unused
+        assert mu_function(0) == 42  # it must be True otherwise the test doesn't pass
+        with pytest.raises(ValueError):  # check it raise the correct error
+            my_function(-1)
 ```
 
 Note that here we have one test class for the entire module (the `file.py`) but we could have one test class per function if those require to test a lot of things. When testing classes, one testing class per developed class is generally the way to go.

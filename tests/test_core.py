@@ -145,7 +145,7 @@ class TestCore:
         assert xd.concat((da1, da2), dim="time").equals(expected)
         # stack
         da = wavelet_wavefronts()
-        objs = [obj for obj in da]
+        objs = list(da)
         result = xd.concat(objs, dim="time")
         time_values = result["time"].values
         result["time"] = InterpCoordinate(

@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 from copy import copy, deepcopy
 from functools import wraps
 from itertools import pairwise
+from typing import ClassVar
 
 import numpy as np
 import pandas as pd
@@ -202,11 +203,11 @@ class Coordinates(dict):
                 query[self.dims[k]] = item[k]
         else:
             query[self.dims[0]] = item
-        for dim, item in query.items():
-            if isinstance(item, tuple):
-                msg = f"cannot use tuple {item} to index dim '{dim}'"
-                if len(item) == 2:
-                    msg += f". Did you mean: {dim}=slice({item[0]}, {item[1]})?"
+        for dim, indexer in query.items():
+            if isinstance(indexer, tuple):
+                msg = f"cannot use tuple {indexer} to index dim '{dim}'"
+                if len(indexer) == 2:
+                    msg += f". Did you mean: {dim}=slice({indexer[0]}, {indexer[1]})?"
                 raise TypeError(msg)
         return query
 
@@ -328,7 +329,7 @@ class Coordinate(ABC):
 
     # --- class machinery ---
 
-    _registry = {}
+    _registry: ClassVar[dict] = {}
 
     def __init_subclass__(cls, *, ctype=None, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -341,6 +342,7 @@ class Coordinate(ABC):
     def __new__(cls, data=None, dim=None, dtype=None):
         """Instantiate the appropriate Coordinate subclass based on *data*."""
         # class factory if instantiating Coordinate directly
+        target = cls
         if cls is Coordinate:
             if data is None:
                 raise TypeError("cannot infer coordinate type if no `data` is provided")
@@ -349,13 +351,13 @@ class Coordinate(ABC):
 
             for subcls in Coordinate._registry.values():
                 if subcls._isvalid(data):
-                    cls = subcls
+                    target = subcls
                     break
             else:
                 raise TypeError("could not parse `data`")
 
         # normal allocation
-        return super().__new__(cls)
+        return super().__new__(target)
 
     # --- abstract contract ---
 
@@ -1385,6 +1387,6 @@ def format_datetime(x):
     if "." in string:
         datetime, digits = string.split(".")
         digits = digits[:3]
-        return ".".join([datetime, digits])
+        return f"{datetime}.{digits}"
     else:
         return string

@@ -169,7 +169,7 @@ class Atom:
         """Reset all state entries to ``...`` (uninitialised sentinel)."""
         for key in self._state:
             setattr(self, key, State(...))
-        for _, filter in self._atoms.items():
+        for filter in self._atoms.values():
             filter.reset()
 
     def save_state(self, path):

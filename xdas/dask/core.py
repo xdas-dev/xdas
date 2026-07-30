@@ -80,14 +80,11 @@ def fuse(graph):
 
 def iskey(obj):
     """Return ``True`` if *obj* looks like a dask graph key (string or ``(str, int…)`` tuple)."""
-    if isinstance(obj, str) and len(obj) > 0:
-        return True
-    elif (
+    if isinstance(obj, str):
+        return len(obj) > 0
+    return (
         isinstance(obj, tuple)
         and len(obj) > 1
         and isinstance(obj[0], str)
         and all(isinstance(index, int) for index in obj[1:])
-    ):
-        return True
-    else:
-        return False
+    )

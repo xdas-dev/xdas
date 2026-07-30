@@ -92,7 +92,7 @@ class TestSignal:
         da = xd.testing.dummy()
         b, a = sp.iirfilter(4, 0.5, btype="low")
         result1 = xs.lfilter(b, a, da, "time")
-        result2, zf = xs.lfilter(b, a, da, "time", zi=...)
+        result2, _zf = xs.lfilter(b, a, da, "time", zi=...)
         assert result1.equals(result2)
 
     def test_filtfilt(self):
@@ -104,7 +104,7 @@ class TestSignal:
         da = xd.testing.dummy()
         sos = sp.iirfilter(4, 0.5, btype="low", output="sos")
         result1 = xs.sosfilt(sos, da, "time")
-        result2, zf = xs.sosfilt(sos, da, "time", zi=...)
+        result2, _zf = xs.sosfilt(sos, da, "time", zi=...)
         assert result1.equals(result2)
 
     def test_sosfiltfilt(self):
@@ -306,6 +306,13 @@ class TestSignalMissingBranches:
         # nfft=2 avoids single-element frequency axis (which would make tie_indices=[0,0])
         result = xs.stft(da, nperseg=1, noverlap=0, nfft=2, dim={"time": "frequency"})
         assert "frequency" in result.dims
+
+    def test_stft_default_dim(self):
+        # the default maps the last dimension; "first"/"last" aliases must resolve
+        da = xd.testing.dummy()
+        expected = xs.stft(da, nperseg=8, dim={"distance": "sprectrum"})
+        assert xs.stft(da, nperseg=8).equals(expected)
+        assert xs.stft(da, nperseg=8, dim={"last": "sprectrum"}).equals(expected)
 
 
 class TestFftMissingBranches:

@@ -112,7 +112,7 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             raise ValueError("`tie_indices` and `tie_values` must have the same length")
 
         # check dtypes
-        if not tie_indices.shape == (0,):
+        if tie_indices.shape != (0,):
             if not np.issubdtype(tie_indices.dtype, np.integer):
                 raise ValueError("`tie_indices` must be integer-like")
             if not tie_indices[0] == 0:
@@ -127,7 +127,7 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
         # store base data
         tie_indices = tie_indices.astype(int)
-        self.data = dict(tie_indices=tie_indices, tie_values=tie_values)
+        self.data = {"tie_indices": tie_indices, "tie_values": tie_values}
         self.dim = dim
 
         # optional regular sampling
@@ -225,7 +225,7 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
                     "tolerance when opening multiple files."
                 )
             else:  # pragma: no cover
-                raise e
+                raise
         return indexer
 
     @override

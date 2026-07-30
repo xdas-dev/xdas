@@ -26,7 +26,7 @@ def compress(src_path: str, dst_path: str, dataset_location: str, encoding: dict
         - 'compression': the compression algorithm to use and its parameters, part of the hdf5plugin library
         - 'chunks': the chunk size for the dataset, should be a tuple of integers, default to False for no chunking
     """
-    if "chunks" in encoding.keys() and not encoding["chunks"]:
+    if "chunks" in encoding and not encoding["chunks"]:
         encoding.pop("chunks")
 
     with h5py.File(src_path, "r") as src_file, h5py.File(dst_path, "w") as dst_file:

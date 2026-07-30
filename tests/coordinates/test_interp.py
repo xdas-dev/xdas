@@ -91,7 +91,7 @@ class TestInterpCoordinate:
             len(InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]}))
             == 9
         )
-        assert len(InterpCoordinate(dict(tie_indices=[], tie_values=[]))) == 0
+        assert len(InterpCoordinate({"tie_indices": [], "tie_values": []})) == 0
 
     @pytest.mark.parametrize("valid_input", valid)
     def test_repr(self, valid_input):
@@ -117,15 +117,17 @@ class TestInterpCoordinate:
             coord[9]
             coord[-9]
         assert coord[0:2].equals(
-            InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[100.0, 200.0]))
+            InterpCoordinate({"tie_indices": [0, 1], "tie_values": [100.0, 200.0]})
         )
         assert coord[:].equals(coord)
-        assert coord[6:3].equals(InterpCoordinate(dict(tie_indices=[], tie_values=[])))
+        assert coord[6:3].equals(
+            InterpCoordinate({"tie_indices": [], "tie_values": []})
+        )
         assert coord[1:2].equals(
-            InterpCoordinate(dict(tie_indices=[0], tie_values=[200.0]))
+            InterpCoordinate({"tie_indices": [0], "tie_values": [200.0]})
         )
         assert coord[-3:-1].equals(
-            InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[700.0, 800.0]))
+            InterpCoordinate({"tie_indices": [0, 1], "tie_values": [700.0, 800.0]})
         )
 
     def test_setitem(self):
@@ -142,7 +144,7 @@ class TestInterpCoordinate:
         assert not InterpCoordinate(
             {"tie_indices": [0, 8], "tie_values": [100.0, 900.0]}
         ).empty
-        assert InterpCoordinate(dict(tie_indices=[], tie_values=[])).empty
+        assert InterpCoordinate({"tie_indices": [], "tie_values": []}).empty
 
     def test_dtype(self):
         coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
@@ -178,7 +180,7 @@ class TestInterpCoordinate:
         starttime = np.datetime64("2000-01-01T00:00:00")
         endtime = np.datetime64("2000-01-01T00:00:08")
         coord = InterpCoordinate(
-            dict(tie_indices=[0, 8], tie_values=[starttime, endtime])
+            {"tie_indices": [0, 8], "tie_values": [starttime, endtime]}
         )
         assert coord._get_value(0) == starttime
         assert coord._get_value(4) == np.datetime64("2000-01-01T00:00:04")
@@ -209,7 +211,7 @@ class TestInterpCoordinate:
         starttime = np.datetime64("2000-01-01T00:00:00")
         endtime = np.datetime64("2000-01-01T00:00:08")
         coord = InterpCoordinate(
-            dict(tie_indices=[0, 8], tie_values=[starttime, endtime])
+            {"tie_indices": [0, 8], "tie_values": [starttime, endtime]}
         )
         assert coord._get_indexer(starttime) == 0
         assert coord._get_indexer(endtime) == 8
@@ -240,45 +242,53 @@ class TestInterpCoordinate:
     def test_slice_index(self):
         coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert coord[0:2].equals(
-            InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[100.0, 200.0]))
+            InterpCoordinate({"tie_indices": [0, 1], "tie_values": [100.0, 200.0]})
         )
         assert coord[7:].equals(
-            InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[800.0, 900.0]))
+            InterpCoordinate({"tie_indices": [0, 1], "tie_values": [800.0, 900.0]})
         )
         assert coord[:].equals(coord)
-        assert coord[0:0].equals(InterpCoordinate(dict(tie_indices=[], tie_values=[])))
-        assert coord[4:2].equals(InterpCoordinate(dict(tie_indices=[], tie_values=[])))
-        assert coord[9:9].equals(InterpCoordinate(dict(tie_indices=[], tie_values=[])))
-        assert coord[3:3].equals(InterpCoordinate(dict(tie_indices=[], tie_values=[])))
+        assert coord[0:0].equals(
+            InterpCoordinate({"tie_indices": [], "tie_values": []})
+        )
+        assert coord[4:2].equals(
+            InterpCoordinate({"tie_indices": [], "tie_values": []})
+        )
+        assert coord[9:9].equals(
+            InterpCoordinate({"tie_indices": [], "tie_values": []})
+        )
+        assert coord[3:3].equals(
+            InterpCoordinate({"tie_indices": [], "tie_values": []})
+        )
         assert coord[0:-1].equals(
-            InterpCoordinate(dict(tie_indices=[0, 7], tie_values=[100.0, 800.0]))
+            InterpCoordinate({"tie_indices": [0, 7], "tie_values": [100.0, 800.0]})
         )
         assert coord[0:-2].equals(
-            InterpCoordinate(dict(tie_indices=[0, 6], tie_values=[100.0, 700.0]))
+            InterpCoordinate({"tie_indices": [0, 6], "tie_values": [100.0, 700.0]})
         )
         assert coord[-2:].equals(
-            InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[800.0, 900.0]))
+            InterpCoordinate({"tie_indices": [0, 1], "tie_values": [800.0, 900.0]})
         )
         assert coord[1:2].equals(
-            InterpCoordinate(dict(tie_indices=[0], tie_values=[200.0]))
+            InterpCoordinate({"tie_indices": [0], "tie_values": [200.0]})
         )
         assert coord[1:3:2].equals(
-            InterpCoordinate(dict(tie_indices=[0], tie_values=[200.0]))
+            InterpCoordinate({"tie_indices": [0], "tie_values": [200.0]})
         )
         assert coord[::2].equals(
-            InterpCoordinate(dict(tie_indices=[0, 4], tie_values=[100.0, 900.0]))
+            InterpCoordinate({"tie_indices": [0, 4], "tie_values": [100.0, 900.0]})
         )
         assert coord[::3].equals(
-            InterpCoordinate(dict(tie_indices=[0, 2], tie_values=[100.0, 700.0]))
+            InterpCoordinate({"tie_indices": [0, 2], "tie_values": [100.0, 700.0]})
         )
         assert coord[::4].equals(
-            InterpCoordinate(dict(tie_indices=[0, 2], tie_values=[100.0, 900.0]))
+            InterpCoordinate({"tie_indices": [0, 2], "tie_values": [100.0, 900.0]})
         )
         assert coord[::5].equals(
-            InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[100.0, 600.0]))
+            InterpCoordinate({"tie_indices": [0, 1], "tie_values": [100.0, 600.0]})
         )
         assert coord[2:7:3].equals(
-            InterpCoordinate(dict(tie_indices=[0, 1], tie_values=[300.0, 600.0]))
+            InterpCoordinate({"tie_indices": [0, 1], "tie_values": [300.0, 600.0]})
         )
 
     def test_to_index(self):
