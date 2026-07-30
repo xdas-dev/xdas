@@ -1,29 +1,28 @@
 """I/O engine for Silixa TDMS files (:class:`SilixaEngine`)."""
 
-import dask
 import numpy as np
 
 from ..coordinates import Coordinate
 from ..core import DataArray
+from ..tiles import Engine as TileEngine
+from ..tiles import TileArray
 from .core import Engine
 from .tdms import TdmsReader
 
 
 class SilixaEngine(Engine, name="silixa"):
-    """Engine for reading Silixa iDAS TDMS files as lazy dask-backed DataArrays."""
+    """Engine for reading Silixa iDAS TDMS files as lazy tile-backed DataArrays."""
 
-    _supported_vtypes = ["dask"]
+    _supported_vtypes = ["tiles"]
     _supported_ctypes = {
         "time": ["interpolated", "sampled", "dense"],
         "distance": ["interpolated", "sampled", "dense"],
     }
 
     def open_dataarray(self, fname):
-        """Return a lazy dask-backed :class:`DataArray` for the TDMS file *fname*."""
+        """Return a lazy tile-backed :class:`DataArray` for the TDMS file *fname*."""
         shape, dtype, coords = self.read_header(fname)
-        data = dask.array.from_delayed(
-            dask.delayed(self.read_data)(fname), shape, dtype
-        )
+        data = TileArray(str(fname), shape, {"name": "silixa"}, np.dtype(dtype))
         return DataArray(data, coords)
 
     def read_header(self, fname):
@@ -54,3 +53,24 @@ class SilixaEngine(Engine, name="silixa"):
         with TdmsReader(fname) as tdms:
             data = tdms.get_data()
         return data
+
+
+class SilixaTileEngine(TileEngine, name="silixa"):
+    """Tile reader for Silixa TDMS sources (rows are time samples)."""
+
+    @staticmethod
+    def load(path, selection):
+        """Read a source selection of a Silixa TDMS file.
+
+        :class:`~xdas.io.tdms.TdmsReader` performs the decoding
+        (``get_data`` bounds are inclusive, hence the ``stop - 1``); the
+        residual crop applies as numpy views. Leading extra selection
+        axes come from virtually expanded arrays and pad the output
+        rank.
+        """
+        extra = len(selection) - 2
+        rows = selection[extra]
+        with TdmsReader(path) as tdms:
+            data = tdms.get_data(first_s=rows.start, last_s=rows.stop - 1)
+        data = data[(slice(None, None, rows.step), *selection[extra + 1 :])]
+        return data.reshape((1,) * extra + data.shape)
