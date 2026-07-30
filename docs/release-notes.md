@@ -1,5 +1,14 @@
 # Release notes
 
+## 0.2.9 (unreleased)
+
+### New Features
+- **Tile-backed virtual arrays.** The new `xdas.tiles` package (ported from the 0.3 line) exposes multi-file archives as one lazy `TileArray`: positive-step slicing, concatenation (including along a new dimension), and whole-array reductions all stay lazy, and reads touch only the tiles a selection overlaps. The Silixa TDMS and MiniSEED engines now emit tile-backed data arrays, replacing the serialized-dask-graph fallback; Silixa reads gained time-axis push-down (@atrabattoni).
+- Tile-backed data arrays round-trip through the native xdas netCDF format: the tile manifest is stored as a `__tiles__` sibling group (@atrabattoni).
+
+### Deprecations
+- Writing dask-backed virtual arrays (`__dask_array__` attribute) is deprecated and emits a `FutureWarning`; existing files still open. The tile-backed engines replace this mechanism (@atrabattoni).
+
 ## 0.2.8
 
 ### New Features

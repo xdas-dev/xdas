@@ -4,7 +4,9 @@ I/O engine for the native xdas HDF5/NetCDF4 format (:class:`XdasEngine`).
 Supports :class:`DataArray`, :class:`DataSequence`, and :class:`DataMapping`.
 """
 
+import json
 import os
+import warnings
 from pathlib import Path
 
 import h5netcdf
@@ -16,8 +18,12 @@ from dask.array import Array as DaskArray
 from ..coordinates import Coordinates
 from ..core import DataArray, DataCollection, DataMapping, DataSequence
 from ..dask import create_variable, loads
+from ..tiles import TileArray
 from ..virtual import VirtualArray, VirtualSource
 from .core import Engine
+
+TILES_GROUP = "__tiles__"
+"""Name of the sibling group holding a virtual variable's tile manifest."""
 
 
 class XdasEngine(Engine, name="xdas"):
@@ -89,7 +95,15 @@ def open_dataarray(fname, group=None):
         coords = Coordinates._from_dataset(dataset, name)
 
     # read data
-    if "__dask_array__" in dataset[name].attrs:
+    if "__tile_array__" in dataset[name].attrs:
+        spec = json.loads(dataset[name].attrs.pop("__tile_array__"))
+        location = TILES_GROUP if group is None else f"{group}/{TILES_GROUP}"
+        with xr.open_dataset(fname, group=location, engine="h5netcdf") as manifest:
+            manifest = manifest.load()
+        data = TileArray.from_dataset(
+            manifest, dtype=spec["dtype"], params={"engine": spec["engine"]}
+        )
+    elif "__dask_array__" in dataset[name].attrs:
         data = loads(dataset[name].attrs.pop("__dask_array__"))
     else:
         with h5py.File(fname) as file:
@@ -135,7 +149,7 @@ def save_dataarray(
         fname = str(fname)
 
     if virtual is None:
-        virtual = isinstance(da.data, (VirtualArray, DaskArray))
+        virtual = isinstance(da.data, (VirtualArray, DaskArray, TileArray))
 
     # initialize
     dataset = xr.Dataset(attrs={"Conventions": "CF-1.9"})
@@ -175,7 +189,17 @@ def save_dataarray(
                 variable = da.data.create_variable(
                     file, variable_name, da.dims, da.dtype
                 )
+            elif isinstance(da.data, TileArray):
+                variable = file.create_variable(variable_name, da.dims, da.dtype)
+                variable.attrs["__tile_array__"] = json.dumps(
+                    {"engine": da.data.engine, "dtype": str(da.data.dtype)}
+                )
             elif isinstance(da.data, DaskArray):
+                warnings.warn(
+                    "writing dask-backed virtual arrays is deprecated; the "
+                    "tile-backed engines (xdas.tiles) replace them",
+                    FutureWarning,
+                )
                 variable = create_variable(
                     da.data, file, variable_name, da.dims, da.dtype
                 )
@@ -190,6 +214,16 @@ def save_dataarray(
 
     # write metadata
     dataset.to_netcdf(fname, mode="a", group=group, engine="h5netcdf")
+
+    # write the tile manifest as a sibling group
+    if virtual and isinstance(da.data, TileArray):
+        manifest, _ = da.data.to_dataset()
+        for name in list(manifest.variables):
+            manifest[name].encoding.clear()
+            if manifest[name].dtype == object:
+                manifest[name] = manifest[name].astype(str)
+        location = TILES_GROUP if group is None else f"{group}/{TILES_GROUP}"
+        manifest.to_netcdf(fname, mode="a", group=location, engine="h5netcdf")
 
 
 def open_datacollection(fname, group=None):
