@@ -117,3 +117,53 @@ Once the class is created and instanciated you can then use it :
 da = xd.open("other_format.hdf5", engine="my_engine", ctype="sampled")
 da
 ```
+
+### Tile-backed engines
+
+Beside the `hdf5` vtype shown above (an HDF5 virtual source), an engine can
+offer the `tiles` vtype: `open_dataarray` then backs the data array with a lazy
+{py:class}`xdas.tiles.TileArray` describing the file, and the engine implements
+the decoding half as a `load_tile` static method — called once per tile
+touched, with one source-local slice per axis and the manifest's engine
+specification as keyword arguments, returning exactly the selected sub-box:
+
+```{code-cell}
+from xdas.tiles import TileArray
+
+class MyTileEngine(Engine, name="my_tile_engine"):
+    _supported_vtypes = ["hdf5", "tiles"]
+    _supported_ctypes = {
+        "distance": ["interpolated", "sampled", "dense"],
+        "time": ["interpolated", "sampled", "dense"],
+    }
+
+    def open_dataarray(self, fname):
+        with h5py.File(fname, "r") as file:
+            t0 = np.datetime64(file["dataset"].attrs["t0"]).astype("datetime64[ms]")
+            dt = np.timedelta64(int(file["dataset"].attrs["dt"]*1e3), "ms")
+            x0 = file["dataset"].attrs["x0"][()]
+            dx = file["dataset"].attrs["dx"][()]
+            if self.vtype == "tiles":
+                data = TileArray(
+                    str(fname),
+                    file["dataset"].shape,
+                    {"name": "my_tile_engine"},
+                    file["dataset"].dtype,
+                )
+            else:
+                data = VirtualSource(file["dataset"])
+        nt, nx = data.shape
+        t = Coordinate[self.ctype["time"]].from_block(t0, nt, dt, dim="time")
+        x = Coordinate[self.ctype["distance"]].from_block(x0, nx, dx, dim="distance")
+        return DataArray(data, {"time": t, "distance": x})
+
+    @staticmethod
+    def load_tile(path, selection):
+        with h5py.File(path, "r") as file:
+            return file["dataset"][selection]
+```
+
+`load_tile` must depend only on its arguments — never on engine instance
+state — so that saved tile views decode identically everywhere. This is the
+backing used by default for the formats that HDF5 virtual datasets cannot
+serve (Silixa TDMS, MiniSEED), and optionally by every built-in HDF5 engine.
