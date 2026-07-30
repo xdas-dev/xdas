@@ -20,8 +20,7 @@ import zmq
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from ..core.dataarray import DataArray
-from ..core.routines import concat, open_dataarray
+from ..core import DataArray, concat, open_dataarray
 from .monitor import Monitor
 
 
@@ -438,6 +437,7 @@ class StreamWriter:
     ...         "time": {
     ...             "tie_indices": [0, data.shape[0] - 1],
     ...             "tie_values": [starttime, endtime],
+    ...             "sampling_interval": np.timedelta64(10, "ms"),
     ...         },
     ...         "distance": distance,
     ...     },
@@ -597,7 +597,7 @@ class ZMQPublisher:
 
     First we generate some data and split it into packets
 
-    >>> packets = xd.split(xd.synthetics.dummy(), 10)
+    >>> packets = xd.split(xd.testing.dummy(), 10)
 
     We initialize the publisher at a given address
 
@@ -672,7 +672,7 @@ class ZMQSubscriber:
 
     First we generate some data and split it into packets
 
-    >>> da = xd.synthetics.dummy()
+    >>> da = xd.testing.dummy()
     >>> packets = xd.split(da, 10)
 
     We then publish the packets asynchronously

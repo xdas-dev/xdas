@@ -12,8 +12,8 @@ import h5py
 import numpy as np
 import zmq
 
-from ..coordinates.core import Coordinate, get_sampling_interval
-from ..core.dataarray import DataArray
+from ..coordinates import Coordinate, get_sampling_interval
+from ..core import DataArray
 from ..virtual import VirtualSource
 from .core import Engine
 
@@ -122,7 +122,7 @@ class ZMQSubscriber:
         >>> address = f"tcp://localhost:{port}"
         >>> publisher = ZMQPublisher(address)
 
-        >>> da = xd.synthetics.dummy()
+        >>> da = xd.testing.dummy()
         >>> chunks = xd.split(da, 10)
 
         >>> def publish():
@@ -174,18 +174,20 @@ class ZMQSubscriber:
         roiTable = header["roiTable"][0]
         di = (roiTable["roiStart"] // roiTable["roiDec"]) * header["dx"]
         de = (roiTable["roiEnd"] // roiTable["roiDec"]) * header["dx"]
-        self.distance = {  # TODO: use from_block
+        self.distance = {
             "tie_indices": [0, header["nChannels"] - 1],
             "tie_values": [di, de],
+            "sampling_interval": (de - di) / (header["nChannels"] - 1),
         }
         self.delta = float_to_timedelta(header["dt"], header["dtUnit"])
 
     def _unpack(self, message):
         t0 = np.frombuffer(message[:8], "datetime64[ns]").reshape(())
         data = np.frombuffer(message[8:], self.dtype).reshape(self.shape)
-        time = {  # TODO: use from_block
+        time = {
             "tie_indices": [0, self.shape[0] - 1],
             "tie_values": [t0, t0 + (self.shape[0] - 1) * self.delta],
+            "sampling_interval": self.delta,
         }
         return DataArray(data, {"time": time, "distance": self.distance})
 
@@ -214,7 +216,7 @@ class ZMQPublisher:
     >>> import xdas as xd
     >>> from xdas.io.asn import ZMQPublisher
 
-    >>> da = xd.synthetics.dummy()
+    >>> da = xd.testing.dummy()
 
     >>> port = xd.io.get_free_port()
     >>> address = f"tcp://localhost:{port}"

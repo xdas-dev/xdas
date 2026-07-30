@@ -19,7 +19,6 @@ Methods
    :toctree: ../_autosummary
 
    Coordinates.isdim
-   Coordinates.get_query
    Coordinates.to_index
    Coordinates.equals
    Coordinates.copy
@@ -43,15 +42,10 @@ Attributes
    :toctree: ../_autosummary
 
    Coordinate.dtype
-   Coordinate.ndim
    Coordinate.shape
    Coordinate.size
-   Coordinate.empty
    Coordinate.dim
-   Coordinate.indices
    Coordinate.values
-   Coordinate.start
-   Coordinate.end
    Coordinate.name
 ```
 
@@ -61,14 +55,49 @@ Methods
 .. autosummary::
    :toctree: ../_autosummary
 
-   Coordinate.isscalar
    Coordinate.isdim
+   Coordinate.isregular
    Coordinate.equals
-   Coordinate.to_index
-   Coordinate.format_index
-   Coordinate.slice_indexer
    Coordinate.copy
-   Coordinate.to_dataarray
+```
+
+## AxisCoordinate
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   AxisCoordinate
+```
+
+Attributes
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   AxisCoordinate.ndim
+   AxisCoordinate.empty
+   AxisCoordinate.indices
+   AxisCoordinate.start
+   AxisCoordinate.end
+```
+
+Methods
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   AxisCoordinate.isregular
+   AxisCoordinate.get_sampling_interval
+   AxisCoordinate.to_regular
+   AxisCoordinate.get_split_indices
+   AxisCoordinate.get_discontinuities
+   AxisCoordinate.get_availabilities
+   AxisCoordinate.simplify
+   AxisCoordinate.to_index
+   AxisCoordinate.to_dataarray
 ```
 
 ## ScalarCoordinate
@@ -106,7 +135,8 @@ Methods
 
    DenseCoordinate.from_block
    DenseCoordinate.get_sampling_interval
-   DenseCoordinate.get_div_points
+   DenseCoordinate.to_regular
+   DenseCoordinate.simplify
 ```
 
 ## InterpCoordinate
@@ -126,6 +156,8 @@ Attributes
 
    InterpCoordinate.tie_indices
    InterpCoordinate.tie_values
+   InterpCoordinate.sampling_interval
+   InterpCoordinate.tolerance
 ```
 
 Methods
@@ -135,10 +167,8 @@ Methods
    :toctree: ../_autosummary
 
    InterpCoordinate.from_block
+   InterpCoordinate.to_regular
    InterpCoordinate.get_sampling_interval
-   InterpCoordinate.get_split_indices
-   InterpCoordinate.get_discontinuities
-   InterpCoordinate.get_availabilities
    InterpCoordinate.simplify
 ```
 
@@ -171,8 +201,15 @@ Methods
 
    SampledCoordinate.from_block
    SampledCoordinate.get_sampling_interval
-   SampledCoordinate.get_split_indices
-   SampledCoordinate.get_discontinuities
-   SampledCoordinate.get_availabilities
+   SampledCoordinate.to_regular
    SampledCoordinate.simplify
+```
+
+## Functions
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   get_sampling_interval
 ```

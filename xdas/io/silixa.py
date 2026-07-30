@@ -3,8 +3,8 @@
 import dask
 import numpy as np
 
-from ..coordinates.core import Coordinate
-from ..core.dataarray import DataArray
+from ..coordinates import Coordinate
+from ..core import DataArray
 from .core import Engine
 from .tdms import TdmsReader
 

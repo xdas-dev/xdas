@@ -10,9 +10,8 @@ from fractions import Fraction
 import numpy as np
 import scipy.signal as sp
 
-from ..coordinates.core import Coordinate, get_sampling_interval
-from ..core.dataarray import DataArray
-from ..core.routines import concat, split
+from ..coordinates import Coordinate, get_sampling_interval
+from ..core import DataArray, concat, split
 from ..parallel import parallelize
 from .core import Atom, State
 
@@ -569,14 +568,22 @@ class UpSample(Atom):
             data[slc] = da.values
         coords = da.coords.copy()
         delta = get_sampling_interval(da, self.dim, cast=False)
-        tie_indices = coords[self.dim].tie_indices * self.factor
-        tie_values = coords[self.dim].tie_values
+        new_delta = delta / self.factor
+        coord = coords[self.dim]
+        tie_indices = coord.tie_indices * self.factor
+        tie_values = coord.tie_values
         tie_indices[-1] += self.factor - 1
-        tie_values[-1] += (self.factor - 1) / self.factor * delta
+        tie_values[-1] += (self.factor - 1) * new_delta
+        # The derived rate may not be exactly representable (integer datetime
+        # resolutions truncate), so declare the representation error as jitter
+        # on top of the inherited one; chunk seams then stay within tolerance.
+        tolerance = coord.tolerance + np.abs(delta - new_delta * self.factor)
         coords[self.dim] = Coordinate(
             {
                 "tie_indices": tie_indices,
                 "tie_values": tie_values,
+                "sampling_interval": new_delta,
+                "tolerance": tolerance,
             },
             self.dim,
         )

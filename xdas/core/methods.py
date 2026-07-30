@@ -6,7 +6,7 @@ Methods are dispatched through ``HANDLED_METHODS``.
 
 import numpy as np
 
-from ..atoms.core import atomized
+from ..atoms import atomized
 from .dataarray import HANDLED_METHODS
 
 

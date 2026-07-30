@@ -7,8 +7,8 @@ Includes :func:`wavelet_wavefronts` and :func:`randn_wavefronts`.
 import numpy as np
 import scipy.signal as sp
 
-from .core.dataarray import DataArray
-from .core.routines import split
+from .coordinates import Coordinate
+from .core import DataArray, split
 
 
 def wavelet_wavefronts(
@@ -84,14 +84,12 @@ def wavelet_wavefronts(
     da = DataArray(
         data=data,
         coords={
-            "time": {
-                "tie_indices": [0, shape[0] - 1],
-                "tie_values": [starttime, starttime + resolution[0] * (shape[0] - 1)],
-            },
-            "distance": {
-                "tie_indices": [0, shape[1] - 1],
-                "tie_values": [0.0, resolution[1] * (shape[1] - 1)],
-            },
+            "time": Coordinate["interpolated"].from_block(
+                starttime, shape[0], resolution[0], dim="time"
+            ),
+            "distance": Coordinate["interpolated"].from_block(
+                0.0, shape[1], resolution[1], dim="distance"
+            ),
         },
     )
     if nchunk is not None:
@@ -145,42 +143,12 @@ def randn_wavefronts():
     da = DataArray(
         data=data,
         coords={
-            "time": {
-                "tie_indices": [0, shape[0] - 1],
-                "tie_values": [starttime, starttime + resolution[0] * (shape[0] - 1)],
-            },
-            "distance": {
-                "tie_indices": [0, shape[1] - 1],
-                "tie_values": [0.0, resolution[1] * (shape[1] - 1)],
-            },
+            "time": Coordinate["interpolated"].from_block(
+                starttime, shape[0], resolution[0], dim="time"
+            ),
+            "distance": Coordinate["interpolated"].from_block(
+                0.0, shape[1], resolution[1], dim="distance"
+            ),
         },
     )
     return da
-
-
-def dummy(shape=(1000, 100)):
-    """
-    Return a minimal random :class:`DataArray` for quick testing.
-
-    Parameters
-    ----------
-    shape : tuple of int, optional
-        ``(n_time, n_distance)`` shape.  Defaults to ``(1000, 100)``.
-
-    Returns
-    -------
-    DataArray
-        DataArray filled with Gaussian noise, sampled at 10 Hz over
-        ``[0, 1000]`` m with ``time`` starting at 2024-01-01.
-    """
-    starttime = np.datetime64("2024-01-01T00:00:00.000000000")
-    endtime = starttime + (shape[0] - 1) * np.timedelta64(100, "ms")
-    time = {"tie_indices": [0, shape[0] - 1], "tie_values": [starttime, endtime]}
-    distance = {"tie_indices": [0, shape[1] - 1], "tie_values": [0.0, 1000.0]}
-    return DataArray(
-        data=np.random.randn(*shape),
-        coords={
-            "time": time,
-            "distance": distance,
-        },
-    )

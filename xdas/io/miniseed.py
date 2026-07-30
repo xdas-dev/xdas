@@ -4,9 +4,13 @@ import dask
 import numpy as np
 import obspy
 
-from ..coordinates.core import Coordinate, Coordinates, get_sampling_interval
-from ..core.dataarray import DataArray
-from ..core.routines import concat_coords
+from ..coordinates import (
+    AxisCoordinate,
+    Coordinate,
+    Coordinates,
+    get_sampling_interval,
+)
+from ..core import DataArray, concat_coords
 from .core import Engine
 
 
@@ -81,7 +85,9 @@ class MiniSEEDEngine(Engine, name="miniseed"):
             }
         )
 
-        shape = tuple(len(coord) for coord in coords.values() if not coord.isscalar())
+        shape = tuple(
+            len(coord) for coord in coords.values() if isinstance(coord, AxisCoordinate)
+        )
         return shape, dtype, coords, method
 
     def read_data(self, path, method, ignore_last_sample):
@@ -174,13 +180,11 @@ def from_stream(st, dims=("channel", "time")):
     """
     data = np.stack([tr.data for tr in st])
     channel = [tr.id for tr in st]
-    time = {
-        "tie_indices": [0, st[0].stats.npts - 1],
-        "tie_values": [
-            np.datetime64(st[0].stats.starttime.datetime),
-            np.datetime64(st[0].stats.endtime.datetime),
-        ],
-    }
+    # Regular by construction from the stream's own sample rate, at ns
+    # resolution so a `to_stream` round trip preserves the coordinate.
+    t0 = np.datetime64(st[0].stats.starttime.datetime)
+    dt = np.rint(1e6 * st[0].stats.delta).astype("m8[us]").astype("m8[ns]")
+    time = Coordinate["interpolated"].from_block(t0, st[0].stats.npts, dt, dim=dims[1])
     return DataArray(data, {dims[0]: channel, dims[1]: time})
 
 

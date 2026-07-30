@@ -14,7 +14,7 @@ import xarray as xr
 from dask.array import Array as DaskArray
 from numpy.lib.mixins import NDArrayOperatorsMixin
 
-from ..coordinates import Coordinates
+from ..coordinates import AxisCoordinate, Coordinates
 from ..virtual import _to_human
 
 HANDLED_NUMPY_FUNCTIONS = {}
@@ -347,7 +347,7 @@ class DataArray(NDArrayOperatorsMixin):
         da = self[indexers]
         if drop:
             for dim in indexers:
-                if da[dim].isscalar():
+                if not isinstance(da[dim], AxisCoordinate):
                     da = da.drop_coords(dim)
         return da
 
@@ -394,7 +394,7 @@ class DataArray(NDArrayOperatorsMixin):
                         f"dimension {dim} is not monotonic increasing, "
                         f"spliting on overlaps, slicing and concatenating can be slow..."
                     )
-                    from ..core.routines import concat, split
+                    from .routines import concat, split
 
                     chunks = [
                         chunk.sel(indexers, method, endpoint, drop)
@@ -411,7 +411,7 @@ class DataArray(NDArrayOperatorsMixin):
         da = self[key]
         if drop:
             for dim in indexers:
-                if da[dim].isscalar():
+                if not isinstance(da[dim], AxisCoordinate):
                     da = da.drop_coords(dim)
         return da
 
@@ -777,7 +777,7 @@ class DataArray(NDArrayOperatorsMixin):
             raise ValueError(f"cannot expand on existing dimension {dim}")
         coords = self.coords.copy()
         if dim in coords:
-            if coords[dim].isscalar():
+            if not isinstance(coords[dim], AxisCoordinate):
                 coords[dim] = [coords[dim].values]
             else:
                 raise ValueError(

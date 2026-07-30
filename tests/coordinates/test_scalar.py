@@ -3,7 +3,7 @@ import pytest
 import xarray as xr
 
 import xdas as xd
-from xdas.coordinates import ScalarCoordinate
+from xdas.coordinates import AxisCoordinate, ScalarCoordinate
 
 
 class TestScalarCoordinate:
@@ -38,16 +38,13 @@ class TestScalarCoordinate:
             with pytest.raises(TypeError):
                 ScalarCoordinate(data)
 
-    def test_getitem(self):
-        with pytest.raises(TypeError):
-            ScalarCoordinate(1)[...]
-        with pytest.raises(TypeError):
-            ScalarCoordinate(1)[:]
-        with pytest.raises(TypeError):
-            ScalarCoordinate(1)[0]
-
-    def test_len(self):
-        assert len(ScalarCoordinate(1)) == 1
+    def test_not_axis_coordinate(self):
+        # a scalar coordinate is not an axis coordinate and carries no axis API
+        coord = ScalarCoordinate(1)
+        assert not isinstance(coord, AxisCoordinate)
+        assert not hasattr(coord, "from_block")
+        assert not hasattr(coord, "_get_value")
+        assert not hasattr(coord, "to_index")
 
     def test_repr(self):
         for data in self.valid:
@@ -92,52 +89,9 @@ class TestScalarCoordinate:
         assert ScalarCoordinate(1).equals(ScalarCoordinate(np.array(1)))
         assert not ScalarCoordinate(1).equals(42)
 
-    def test_to_index(self):
-        with pytest.raises(NotImplementedError):
-            ScalarCoordinate(1).to_index("item")
-
-    def test_is_monotonic_increasing(self):
-        with pytest.raises(TypeError):
-            ScalarCoordinate(1)._is_monotonic_increasing()
-
-    def test_concat(self):
-        with pytest.raises(TypeError):
-            ScalarCoordinate(1)._concat(ScalarCoordinate(2))
-
-    def test_from_block(self):
-        with pytest.raises(TypeError):
-            ScalarCoordinate.from_block(0, 5, 1)
-
     def test_empty(self):
         with pytest.raises(TypeError, match="cannot be empty"):
             ScalarCoordinate()
-
-    def test_indices(self):
-        with pytest.raises(TypeError):
-            ScalarCoordinate(1).indices
-
-    def test_start(self):
-        with pytest.raises(TypeError):
-            ScalarCoordinate(1).start
-
-    def test_end(self):
-        with pytest.raises(TypeError):
-            ScalarCoordinate(1).end
-
-    def test_get_value(self):
-        with pytest.raises(TypeError):
-            ScalarCoordinate(1)._get_value(0)
-
-    def test_get_indexer(self):
-        with pytest.raises(TypeError):
-            ScalarCoordinate(1)._get_indexer(1)
-
-    def test_slice(self):
-        with pytest.raises(TypeError):
-            ScalarCoordinate(1)._slice(slice(None))
-
-    def test_get_sampling_interval(self):
-        assert ScalarCoordinate(1).get_sampling_interval() is None
 
     def test_to_dataset_with_name(self):
         da = xd.DataArray([1, 2, 3], {"x": [1.0, 2.0, 3.0], "meta": 42})
@@ -145,3 +99,8 @@ class TestScalarCoordinate:
         dataset = xr.Dataset()
         dataset, attrs = sc._to_dataset(dataset, {})
         assert "meta" in dataset.coords
+
+
+class TestScalarCoordinateRegularity:
+    def test_never_regular(self):
+        assert not ScalarCoordinate(42).isregular()

@@ -10,8 +10,8 @@ import pandas as pd
 from numba import njit
 
 from .atoms.core import Atom, State, atomized
-from .coordinates.core import Coordinate
-from .core.routines import concat_coords
+from .coordinates import Coordinate
+from .core import concat_coords
 
 
 class Trigger(Atom):

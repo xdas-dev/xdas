@@ -16,26 +16,8 @@ def get_free_local_address():
     return f"tcp://localhost:{port}"
 
 
-coords = {
-    "time": {
-        "tie_indices": [0, 99],
-        "tie_values": [
-            np.datetime64("2020-01-01T00:00:00.000000000"),
-            np.datetime64("2020-01-01T00:00:09.900000000"),
-        ],
-    },
-    "distance": {"tie_indices": [0, 9], "tie_values": [0.0, 90.0]},
-}
-
-da_float32 = xd.DataArray(
-    np.random.randn(100, 10).astype("float32"),
-    coords,
-)
-
-da_int16 = xd.DataArray(
-    np.random.randn(100, 10).astype("int16"),
-    coords,
-)
+da_float32 = xd.testing.dummy(shape=(100, 10), step=(0.1, 10.0), dtype="float32")
+da_int16 = xd.testing.dummy(shape=(100, 10), step=(0.1, 10.0), dtype="int16")
 
 
 class TestASNEngineROIBounds:
@@ -229,7 +211,11 @@ class TestZMQSubscriber:
         assert sub.packet_size == 4008
         assert sub.shape == (100, 10)
         assert sub.dtype == np.float32
-        assert sub.distance == {"tie_indices": [0, 9], "tie_values": [0.0, 90.0]}
+        assert sub.distance == {
+            "tie_indices": [0, 9],
+            "tie_values": [0.0, 90.0],
+            "sampling_interval": 10.0,
+        }
         assert sub.delta == np.timedelta64(100, "ms")
         result = next(sub)
         assert result.equals(da_float32)
@@ -249,7 +235,11 @@ class TestZMQSubscriber:
         assert sub.packet_size == 808
         assert sub.shape == (20, 10)
         assert sub.dtype == np.float32
-        assert sub.distance == {"tie_indices": [0, 9], "tie_values": [0.0, 90.0]}
+        assert sub.distance == {
+            "tie_indices": [0, 9],
+            "tie_values": [0.0, 90.0],
+            "sampling_interval": 10.0,
+        }
         assert sub.delta == np.timedelta64(100, "ms")
         for chunk in chunks:
             result = next(sub)
@@ -343,6 +333,7 @@ class TestZMQSubscriber:
         assert sub.distance == {
             "tie_indices": [0, 16001],
             "tie_values": [0.0, 163418.2435258568],
+            "sampling_interval": 163418.2435258568 / 16001,
         }
 
     def test_iter(self):

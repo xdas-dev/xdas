@@ -18,8 +18,15 @@ metadata) and supports both integer-index access and label-based selection.
 |:---|:---|:---:|:---|
 | {py:class}`~xdas.coordinates.ScalarCoordinate` | Scalar metadata, not tied to any axis | `scalar` | scalar-like |
 | {py:class}`~xdas.coordinates.DenseCoordinate` | One stored value per element | `dense` | `array-like` |
-| {py:class}`~xdas.coordinates.InterpCoordinate` | Piecewise-linear from tie points | `interpolated` | `{"tie_indices": array-like[int], "tie_values": array-like}` |
+| {py:class}`~xdas.coordinates.InterpCoordinate` | Piecewise-linear from tie points | `interpolated` | `{"tie_indices": array-like[int], "tie_values": array-like}` plus optional `"sampling_interval"` and `"tolerance"` scalars |
 | {py:class}`~xdas.coordinates.SampledCoordinate` | Uniform grid with optional gaps | `sampled` | `{"tie_values": array-like, "tie_lengths": array-like[int], "sampling_interval": scalar}` |
+
+The three axis-mapping types (`DenseCoordinate`, `InterpCoordinate`,
+`SampledCoordinate`) share the {py:class}`~xdas.coordinates.AxisCoordinate`
+base, which defines the index/label selection contract. `ScalarCoordinate`
+carries a single value with no axis and implements only the thin
+{py:class}`~xdas.coordinates.Coordinate` interface. Use
+`isinstance(coord, AxisCoordinate)` to test whether a coordinate labels an axis.
 
 ## Creating coordinates
 

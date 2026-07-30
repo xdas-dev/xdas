@@ -8,9 +8,9 @@ all coordinate-aware and multi-threaded via :func:`~xdas.parallel.parallelize`.
 import numpy as np
 import scipy.signal as sp
 
-from .atoms.core import atomized
-from .coordinates.core import Coordinate, get_sampling_interval
-from .core.dataarray import DataArray
+from .atoms import atomized
+from .coordinates import get_sampling_interval
+from .core import DataArray
 from .parallel import parallelize
 from .spectral import stft  # noqa
 
@@ -118,8 +118,10 @@ def filter(da, freq, btype, corners=4, zerophase=False, dim="last", parallel=Non
 
     """
     axis = da.get_axis_num(dim)
+    dim = da.dims[axis]
+    d = get_sampling_interval(da, dim)
     across = int(axis == 0)
-    fs = 1.0 / get_sampling_interval(da, dim)
+    fs = 1.0 / d
     sos = sp.iirfilter(corners, freq, btype=btype, ftype="butter", output="sos", fs=fs)
     if zerophase:
         func = parallelize((None, across), across, parallel)(sp.sosfiltfilt)
@@ -246,10 +248,11 @@ def resample(da, num, dim="last", window=None, domain="time", parallel=None):
     """
     axis = da.get_axis_num(dim)
     dim = da.dims[axis]
+    get_sampling_interval(da, dim)  # warn or raise on irregular axes upfront
     across = int(axis == 0)
     func = parallelize(across, across, parallel)(sp.resample)
     data, t = func(da.values, num, da[dim].values, axis, window, domain)
-    new_coord = {"tie_indices": [0, num - 1], "tie_values": [t[0], t[-1]]}
+    new_coord = type(da.coords[dim]).from_block(t[0], num, t[1] - t[0], dim=dim)
     coords = {
         name: new_coord if name == dim else coord
         for name, coord in da.coords.items()
@@ -342,20 +345,13 @@ def resample_poly(
     """
     axis = da.get_axis_num(dim)
     dim = da.dims[axis]
+    d = get_sampling_interval(da, dim, cast=False)
     across = int(axis == 0)
     func = parallelize(across, across, parallel)(sp.resample_poly)
     data = func(da.values, up, down, axis, window, padtype, cval)
     start = da[dim][0].values
-    d = da[dim][-1].values - da[dim][-2].values
-    end = da[dim][-1].values + d
-    new_coord = Coordinate(
-        {
-            "tie_indices": [0, data.shape[axis]],
-            "tie_values": [start, end],
-        },
-        dim,
-    )
-    new_coord = new_coord[:-1]
+    step = d * down / up
+    new_coord = type(da.coords[dim]).from_block(start, data.shape[axis], step, dim=dim)
     coords = {
         name: new_coord if name == dim else coord
         for name, coord in da.coords.items()
@@ -795,6 +791,7 @@ def integrate(da, midpoints=False, dim="last", parallel=None):
 
     """
     axis = da.get_axis_num(dim)
+    dim = da.dims[axis]
     d = get_sampling_interval(da, dim)
 
     def func(x):
@@ -838,6 +835,7 @@ def differentiate(da, midpoints=False, dim="last", parallel=None):
 
     """
     axis = da.get_axis_num(dim)
+    dim = da.dims[axis]
     d = get_sampling_interval(da, dim)
 
     def func(x):
@@ -921,6 +919,7 @@ def sliding_mean_removal(
 
     """
     axis = da.get_axis_num(dim)
+    dim = da.dims[axis]
     d = get_sampling_interval(da, dim)
     n = round(wlen / d)
     if n % 2 == 0:

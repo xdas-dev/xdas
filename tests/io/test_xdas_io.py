@@ -21,19 +21,7 @@ from xdas.io.xdas import (
 
 
 def make_da():
-    return xd.DataArray(
-        np.zeros((10, 5), dtype=np.float32),
-        {
-            "time": {
-                "tie_indices": [0, 9],
-                "tie_values": [
-                    np.datetime64("2020-01-01T00:00:00.000000000"),
-                    np.datetime64("2020-01-01T00:00:09.000000000"),
-                ],
-            },
-            "distance": {"tie_indices": [0, 4], "tie_values": [0.0, 40.0]},
-        },
-    )
+    return xd.testing.dummy(shape=(10, 5), step=(1.0, 10.0), dtype=np.float32)
 
 
 class TestXdasEngineDelegates:

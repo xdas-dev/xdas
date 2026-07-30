@@ -10,25 +10,17 @@ import numpy as np
 from typing_extensions import override
 
 from .core import (
+    CODE_TO_UNITS,
+    UNITS_TO_CODE,
+    AxisCoordinate,
     Coordinate,
-    SampledMixin,
     is_monotonic_increasing,
-    parse,
-    parse_tolerance,
+    parse_data_dim,
+    parse_scalar_delta,
 )
 
-CODE_TO_UNITS = {
-    "h": "hours",
-    "m": "minutes",
-    "s": "seconds",
-    "ms": "milliseconds",
-    "us": "microseconds",
-    "ns": "nanoseconds",
-}
-UNITS_TO_CODE = {v: k for k, v in CODE_TO_UNITS.items()}
 
-
-class SampledCoordinate(SampledMixin, Coordinate, ctype="sampled"):
+class SampledCoordinate(AxisCoordinate, ctype="sampled"):
     """
     Coordinate sampled at a fixed interval, with optional gaps between segments.
 
@@ -78,8 +70,8 @@ class SampledCoordinate(SampledMixin, Coordinate, ctype="sampled"):
             empty = False
 
         # parse data
-        data, dim = parse(data, dim)
-        if not self.__class__._isvalid(data):
+        data, dim = parse_data_dim(data, dim)
+        if not self._isvalid(data):
             raise ValueError(
                 "`data` must be dict-like and contain `tie_values`, `tie_lengths`, and "
                 "`sampling_interval`"
@@ -425,10 +417,32 @@ class SampledCoordinate(SampledMixin, Coordinate, ctype="sampled"):
         return delta
 
     @override
-    def simplify(self, tolerance=None):
-        if tolerance is False:
+    def to_regular(self, sampling_interval=None, tolerance=None):
+        """Regular by construction: validate any explicit spacing and return a copy.
+
+        See :meth:`AxisCoordinate.to_regular` for the parameter contract.
+        """
+        if sampling_interval is not None:
+            sampling_interval = parse_scalar_delta(sampling_interval, self.dtype)
+            tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
+            if np.abs(sampling_interval - self.sampling_interval) > tolerance:
+                raise ValueError(
+                    "`sampling_interval` does not match the stored sampling interval"
+                )
+        return self.copy()
+
+    @override
+    def simplify(self, tolerance=None, *, reduce=True, regularize=False):
+        """Fuse adjacent segments whose junction drift is within *tolerance*.
+
+        The coordinate is regular by construction (it carries a single
+        ``sampling_interval``), so *regularize* is a no-op; fusing happens only
+        when *reduce* is set. See :meth:`Coordinate.simplify` for the parameter
+        contract.
+        """
+        if tolerance is False or not reduce:
             return self.copy()
-        tolerance = parse_tolerance(tolerance, self.dtype)
+        tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
         tie_values = [self.tie_values[0]]
         tie_lengths = [self.tie_lengths[0]]
         for value, length in zip(self.tie_values[1:], self.tie_lengths[1:]):
@@ -448,39 +462,8 @@ class SampledCoordinate(SampledMixin, Coordinate, ctype="sampled"):
         )
 
     @override
-    def get_split_indices(self, kind="discontinuities", tolerance=False):
-        valid_kinds = {"discontinuities", "gaps", "overlaps"}
-        if kind not in valid_kinds:
-            raise ValueError(f"`kind` must be one of {valid_kinds}; got {kind!r}")
-
-        indices = self.tie_indices[1:]
-
-        # Fast path: no filtering requested
-        if kind == "discontinuities" and tolerance is False:
-            return indices
-
+    def _split_candidates(self):
         deltas = self.tie_values[1:] - (
             self.tie_values[:-1] + self.sampling_interval * self.tie_lengths[:-1]
         )
-
-        if tolerance is False:
-            zero = np.timedelta64(0) if np.issubdtype(self.dtype, np.datetime64) else 0
-
-            match kind:  # pragma: no branch
-                case "gaps":
-                    mask = deltas >= zero
-                case "overlaps":  # pragma: no branch
-                    mask = deltas < zero
-
-        else:
-            tolerance = parse_tolerance(tolerance, self.dtype)
-
-            match kind:  # pragma: no branch
-                case "discontinuities":
-                    mask = np.abs(deltas) > tolerance
-                case "gaps":
-                    mask = deltas > tolerance
-                case "overlaps":  # pragma: no branch
-                    mask = deltas < -tolerance
-
-        return indices[mask]
+        return self.tie_indices[1:], deltas

@@ -2,11 +2,19 @@
 
 ## 0.2.8
 
-### Breaking Changes
-- Removed `DefaultCoordinate`, the `Coordinate.is*` predicate properties (`isdense`, `isdefault`, `isinterp`, `issampled`), and `to_dict`/`from_dict` from `DataArray` and coordinate types. These were internal APIs not intended for public use, so this should not affect user code (@atrabattoni).
+### New Features
+- **Regular coordinates.** A coordinate can now declare a nominal `sampling_interval` (with a `tolerance` bounding the allowed jitter). Query it with `isregular()` / `get_sampling_interval()`; promote an irregular coordinate with `to_regular()`. File engines, `from_block`, and the `fft`/`stft` outputs produce regular coordinates out of the box (@atrabattoni).
+- Chunked and unchunked processing now yield identical coordinates: operations that derive a new rate record their rounding error in `tolerance`, and `simplify`/`concat` spend the declared tolerance by default, fusing chunk seams away (@atrabattoni).
+- `simplify` gained `reduce` and `regularize` keywords, and the gaps/overlaps API now works on every axis coordinate, including dense ones (@atrabattoni).
+
+### Deprecations
+- The sampling interval is now declared metadata rather than a computed end-to-end average (which was silently wrong on jittery or gappy axes). Data saved by earlier versions carries no declared rate: querying it — e.g. through any signal-processing routine — still works for now, but the rate is inferred and a `FutureWarning` explains how to make the coordinate regular (`da[dim] = da[dim].to_regular(tolerance=...)`). A future release will raise instead (@atrabattoni).
 
 ### Refactoring
-- `Coordinate` is now a proper ABC with an explicit abstract interface; shared ordered-coordinate logic is consolidated in `SampledMixin`; NumPy 2.0 `copy` keyword compliance (@atrabattoni).
+- Reworked the coordinate class hierarchy: `Coordinate` is now a proper ABC and the new `AxisCoordinate` ABC holds the axis-mapping contract shared by dense, interpolated, and sampled coordinates. Use `isinstance(coord, AxisCoordinate)` instead of the removed `is*` predicates (@atrabattoni).
+- Cleaned up internal-leaning APIs: removed `DefaultCoordinate`, `to_dict`/`from_dict`, `get_div_points`, `decimate`, and `from_array`; made underscore-private `concat`, `get_indexer`, `get_value`, `format_index`, `slice_index(er)`, `isvalid`, and `get_query`; NumPy 2.0 `copy` keyword compliance (@atrabattoni).
+- `concat_coords` now simplifies its result by default, like `concat`; values are unchanged, only redundant tie points are dropped (@atrabattoni).
+- Added `xdas.testing.dummy`, a configurable fixture generator replacing `xdas.synthetics.dummy` (@atrabattoni).
 
 ## 0.2.7
 

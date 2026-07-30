@@ -3,8 +3,8 @@
 import h5py
 import pandas as pd
 
-from ..coordinates.core import Coordinate
-from ..core.dataarray import DataArray
+from ..coordinates import Coordinate
+from ..core import DataArray
 from ..virtual import VirtualSource
 from .core import Engine
 
@@ -37,10 +37,12 @@ class Terra15Engine(Engine, name="terra15"):
             dx = file.attrs["dx"]
             data = VirtualSource(file["data_product"]["data"])
         nt, nd = data.shape
+        # time (regular by declaration, rate derived from the file's own stamps)
         time = {
             "tie_indices": [0, nt - 1],
             "tie_values": [ti, tf],
-        }  # TODO: use from_block
+            "sampling_interval": (tf - ti) / (nt - 1),
+        }
         distance = Coordinate[self.ctype["distance"]].from_block(
             d0, nd, dx, dim="distance"
         )

@@ -131,12 +131,53 @@ class TestDenseCoordinate:
                 DenseCoordinate(np.array([4.0, 5.0, 6.0], dtype=np.float64))
             )
 
-    def test_get_div_points(self):
+    def test_get_split_indices(self):
         coord = DenseCoordinate([1, 2, 3, 10, 11, 12])
-        div_points = coord.get_div_points(tolerance=3.0)
-        assert np.array_equal(div_points, [0, 3, 6])
-        with pytest.raises(NotImplementedError):
-            coord.get_div_points()
+        # local spacing is 1; only the jump 3->10 stands out as a gap, and the
+        # normal step 10->11 right after it must not be reported as an overlap
+        np.testing.assert_array_equal(
+            coord.get_split_indices("discontinuities", tolerance=3.0), [3]
+        )
+        np.testing.assert_array_equal(
+            coord.get_split_indices("gaps", tolerance=None), [3]
+        )
+        np.testing.assert_array_equal(
+            coord.get_split_indices("overlaps", tolerance=None), []
+        )
+        # with no tolerance filtering every consecutive pair is a candidate boundary
+        np.testing.assert_array_equal(coord.get_split_indices(), [1, 2, 3, 4, 5])
+
+    def test_get_split_indices_rate_change(self):
+        # A continuous axis whose sampling rate changes (step 1 then step 2) is
+        # not a discontinuity: the baseline follows the new rate, so only the
+        # single transition is reported and the sustained run stays clean.
+        coord = DenseCoordinate([0, 1, 2, 3, 5, 7, 9])
+        np.testing.assert_array_equal(
+            coord.get_split_indices("gaps", tolerance=0.5), [4]
+        )
+        np.testing.assert_array_equal(
+            coord.get_split_indices("discontinuities", tolerance=1.5), []
+        )
+
+    def test_get_split_indices_leading_gap(self):
+        # A discontinuity in the very first step is still detected.
+        coord = DenseCoordinate([0, 10, 11, 12])
+        np.testing.assert_array_equal(
+            coord.get_split_indices("gaps", tolerance=3.0), [1]
+        )
+
+    def test_get_split_indices_empty(self):
+        coord = DenseCoordinate([])
+        np.testing.assert_array_equal(coord.get_split_indices(), [])
+        np.testing.assert_array_equal(
+            coord.get_split_indices("gaps", tolerance=None), []
+        )
+
+    def test_simplify_is_noop(self):
+        coord = DenseCoordinate([1, 2, 3, 10, 11, 12], "x")
+        result = coord.simplify(tolerance=5.0)
+        assert result.equals(coord)
+        assert result is not coord
 
     def test_from_block(self):
         coord = DenseCoordinate.from_block(0, 5, 1, dim="x")
@@ -189,3 +230,40 @@ class TestDenseCoordinate:
         dataset["x"] = dataset["x"].astype(object)
         result = DenseCoordinate._collect_from_dataset(dataset, "x")
         assert "x" in result
+
+
+class TestDenseCoordinateToRegular:
+    def test_never_regular(self):
+        coord = DenseCoordinate([0.0, 1.0, 2.0], "x")
+        assert coord.get_sampling_interval() is None
+        assert not coord.isregular()
+
+    def test_to_regular_uniform(self):
+        coord = DenseCoordinate([0.0, 1.0, 2.0, 3.0], "x")
+        reg = coord.to_regular()
+        assert reg.isregular()
+        assert reg.get_sampling_interval() == 1.0
+        assert reg.dim == "x"
+        np.testing.assert_array_equal(reg.values, coord.values)
+
+    def test_to_regular_explicit_args(self):
+        coord = DenseCoordinate([0.0, 1.05, 2.0], "x")
+        reg = coord.to_regular(sampling_interval=1.0, tolerance=0.1)
+        assert reg.get_sampling_interval() == 1.0
+
+    def test_to_regular_irregular_raises(self):
+        coord = DenseCoordinate([0.0, 1.0, 5.0], "x")
+        with pytest.raises(ValueError, match="not evenly spaced"):
+            coord.to_regular()
+
+    def test_to_regular_too_short_raises(self):
+        with pytest.raises(ValueError, match="fewer than two"):
+            DenseCoordinate([1.0], "x").to_regular()
+
+    def test_to_regular_datetime(self):
+        t0 = np.datetime64("2000-01-01T00:00:00")
+        values = t0 + np.timedelta64(1, "s") * np.arange(5)
+        coord = DenseCoordinate(values, "time")
+        reg = coord.to_regular()
+        assert reg.get_sampling_interval() == 1.0
+        np.testing.assert_array_equal(reg.values, coord.values)

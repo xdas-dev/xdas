@@ -57,7 +57,7 @@ coord
 
 A major advantage of {py:class}`~xdas.coordinates.InterpCoordinate` is
 that it enables label-based selection.  To retrieve the integer index
-corresponding to a given value, use the {py:meth}`~xdas.coordinates.Coordinate.to_index`
+corresponding to a given value, use the {py:meth}`~xdas.coordinates.AxisCoordinate.to_index`
 method:
 
 ```{code-cell}
@@ -92,6 +92,51 @@ second tie point carries no additional information and is safely discarded:
 coord = coord.simplify(tolerance=0.0)
 coord
 ```
+
+## Regular coordinates
+
+An interpolated coordinate can optionally carry a nominal
+`sampling_interval` (and a `tolerance` bounding the allowed jitter around
+it), making it *regular*.  Signal-processing routines (filtering, FFT,
+resampling) require a regular coordinate to obtain a clean sample rate;
+{py:meth}`~xdas.coordinates.Coordinate.isregular` tells whether a
+coordinate carries one.  Coordinates built by the file engines or by
+{py:meth}`~xdas.coordinates.InterpCoordinate.from_block` are regular out
+of the box:
+
+```{code-cell}
+coord = xd.Coordinate(
+    {
+        "tie_indices": [0, 9],
+        "tie_values": [0.0, 90.0],
+        "sampling_interval": 10.0,
+    }
+)
+coord.isregular()
+```
+
+An irregular coordinate whose values are in fact evenly spaced can be
+promoted explicitly with
+{py:meth}`~xdas.coordinates.AxisCoordinate.to_regular`, which infers the
+spacing when it is not given and raises on genuinely irregular axes.
+Data saved by earlier *xdas* versions carries no declared spacing; for
+now, signal-processing routines fall back to inferring one and emit a
+{py:exc}`FutureWarning` telling you the tolerance required — promote the
+coordinate as shown below to silence it:
+
+```{code-cell}
+coord = xd.Coordinate({"tie_indices": [0, 9], "tie_values": [0.0, 90.0]})
+coord.to_regular().get_sampling_interval()
+```
+
+For jittery axes, pass a `tolerance`: the declared spacing is accepted as
+long as every continuous segment stays within it.  The stored tolerance
+is also the default accuracy budget of
+{py:meth}`~xdas.coordinates.InterpCoordinate.simplify`, so chunk seams
+introduced by piecewise processing fuse back automatically on
+concatenation.  `simplify(regularize=True)` combines both steps: it drops
+redundant tie points and promotes the result to regular when the
+surviving segments admit a single spacing within the budget.
 
 ## Temporal coordinates
 

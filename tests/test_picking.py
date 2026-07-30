@@ -13,6 +13,7 @@ class TestTaperedSelection:
                 "distance": {
                     "tie_indices": [0, 4],
                     "tie_values": [0.0, 400.0],
+                    "sampling_interval": 100.0,
                 },
                 "time": {
                     "tie_indices": [0, 9],
@@ -20,6 +21,7 @@ class TestTaperedSelection:
                         np.datetime64("2023-01-01T00:00:00"),
                         np.datetime64("2023-01-01T00:00:09"),
                     ],
+                    "sampling_interval": np.timedelta64(1, "s"),
                 },
             },
         )
@@ -248,6 +250,7 @@ class TestTaperedSelection:
                         np.datetime64("2023-01-01T00:00:00"),
                         np.datetime64("2023-01-01T00:00:09"),
                     ],
+                    "sampling_interval": np.timedelta64(1, "s"),
                 },
                 "station": "ABC",
             },
@@ -280,6 +283,7 @@ class TestTaperedSelection:
                         np.datetime64("2023-01-01T00:00:00"),
                         np.datetime64("2023-01-01T00:00:09"),
                     ],
+                    "sampling_interval": np.timedelta64(1, "s"),
                 },
                 "quality": (
                     "time",

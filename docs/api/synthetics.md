@@ -10,5 +10,4 @@
 
    wavelet_wavefronts
    randn_wavefronts
-   dummy
 ```

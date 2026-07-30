@@ -7,8 +7,8 @@ Also known as OptaSense and Sintela format.
 import h5py
 import pandas as pd
 
-from ..coordinates.core import Coordinate
-from ..core.dataarray import DataArray
+from ..coordinates import Coordinate
+from ..core import DataArray
 from ..virtual import VirtualSource
 from .core import Engine
 
@@ -48,11 +48,12 @@ class ProdML(Engine, name="prodml", aliases=["optasense", "sintela"]):
         else:
             nt, nd = data.shape
 
-        # time
+        # time (regular by declaration, rate derived from the file's own stamps)
         time = {
             "tie_indices": [0, nt - 1],
             "tie_values": [tstart, tend],
-        }  # TODO: use from_block
+            "sampling_interval": (tend - tstart) / (nt - 1),
+        }
 
         # distance
         distance = Coordinate[self.ctype["distance"]].from_block(

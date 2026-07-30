@@ -3,7 +3,6 @@ import numpy as np
 import pytest
 
 import xdas as xd
-from xdas.synthetics import wavelet_wavefronts
 from xdas.virtual import (
     Selection,
     Selectors,
@@ -19,7 +18,7 @@ from xdas.virtual import (
 
 class TestFunctional:  # TODO: move elsewhere
     def test_all(self, tmp_path):
-        expected = wavelet_wavefronts()
+        expected = xd.testing.dummy()
         chunks = xd.split(expected, 3)
         for index, chunk in enumerate(chunks, start=1):
             chunk.to_netcdf(tmp_path / f"{index:03d}.nc")
@@ -437,7 +436,7 @@ class TestVirtualStackExtra:
 
 class TestVirtualLayoutExtra:
     def test_array_with_dtype(self, tmp_path):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         da.to_netcdf(tmp_path / "c.nc")
         da2 = xd.open(tmp_path / "c.nc")
         layout = da2.data._to_layout()
@@ -445,7 +444,7 @@ class TestVirtualLayoutExtra:
         assert result.dtype == np.float32
 
     def test_setitem_with_virtual_source(self, tmp_path):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         da.to_netcdf(tmp_path / "d.nc")
         with h5py.File(tmp_path / "d.nc", "r") as f:
             src = VirtualSource(f["__values__"])
