@@ -188,7 +188,7 @@ class DataArray(NDArrayOperatorsMixin):
 
     @property
     def data(self):
-        """The underlying array (numpy, dask, or :class:`~xdas.virtual.VirtualArray`)."""
+        """The underlying array (numpy, dask, :class:`~xdas.virtual.VirtualArray`, or :class:`~xdas.tiles.TileArray`)."""
         return self._data
 
     @data.setter

@@ -25,6 +25,7 @@ __all__ = [
     "signal",
     "synthetics",
     "testing",
+    "tiles",
     "virtual",
     # classes
     "Coordinate",
@@ -69,6 +70,7 @@ from . import (
     signal,
     synthetics,
     testing,
+    tiles,
     virtual,
 )
 from .coordinates import (
