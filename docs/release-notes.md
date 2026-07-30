@@ -31,6 +31,7 @@
 - Added `xdas.testing.dummy`, a configurable fixture generator replacing `xdas.synthetics.dummy` (@atrabattoni).
 - Comply with ruff 0.16, whose default rule set is considerably broader (`B`, `C4`, `SIM`, `RUF`, `PERF`, `TRY`, `BLE`, `S`, `DTZ`, `FLY`, `PL`…). Mutable argument defaults (the `dim={...}` mappings of `fft`, `rfft`, `ifft`, `irfft`, `stft`, `to_stream`) became `None` sentinels documenting the same defaults; class-level registries and engine specs are annotated `ClassVar`; deliberate patterns (engine-fallback blind excepts, the long-lived TDMS handle, the grouped `__all__`) carry targeted `noqa`. `TRY004` is disabled project-wide, since xdas raises `ValueError` for all argument validation, including type checks (@atrabattoni).
 - The abstract `VirtualArray` stubs (`__getitem__`, `__array__`, `shape`, `dtype`, `to_dataset`) now raise `NotImplementedError` instead of silently returning `None` (@atrabattoni).
+- The package version is declared in a single place, `xdas/__init__.py`: `pyproject.toml` marks it dynamic and setuptools reads it from there, and `docs/conf.py` derives its `release` from it. The three copies had already drifted — the documentation still advertised 0.2.7 (@atrabattoni).
 
 ## 0.2.7
 
