@@ -9,7 +9,7 @@ from xdas.io.core import AutoEngine, Engine
 
 class TestEngineRegistry:
     def test_unknown_engine_raises_key_error(self):
-        with pytest.raises(KeyError, match="not found"):
+        with pytest.raises(KeyError, match="no engine registered"):
             Engine["nonexistent_engine_xyz"]
 
     def test_invalid_vtype_raises_value_error(self):

@@ -6,7 +6,7 @@ import numpy.testing as npt
 import pytest
 
 from xdas.io import Engine
-from xdas.tiles import TileArray, get_engine
+from xdas.tiles import TileArray
 
 NX = 5
 
@@ -157,7 +157,7 @@ class TestManifest:
                 return np.zeros((1, 1))
 
         try:
-            assert get_engine("dummy") is DummyEngine
+            assert Engine["dummy"] is DummyEngine
         finally:
             del Engine._registry["dummy"]
 

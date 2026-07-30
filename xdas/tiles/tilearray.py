@@ -30,10 +30,9 @@ geometry and returns a new :class:`TileArray` (as lazy and
 self-described as its input); any other indexing reads the bounding box
 of the selection and resolves the rest in memory. ``np.asarray``
 materializes: tiles are read one by one by the registered *engine*
-(resolved with :func:`~xdas.tiles.registry.get_engine`), whose
-``load_tile`` opens each tile's path itself and returns the tile's
-*source selection* (one possibly strided slice per axis), every part
-landing directly in the output array.
+(``xdas.io.Engine[name]``), whose ``load_tile`` opens each tile's path
+itself and returns the tile's *source selection* (one possibly strided
+slice per axis), every part landing directly in the output array.
 
 A tile array is used *raw* as the data of a :class:`xdas.DataArray`
 (``DataArray(arr, coords)``), so ``da.data`` returns the inspectable
@@ -61,8 +60,6 @@ import math
 
 import numpy as np
 import xarray as xr
-
-from .registry import get_engine
 
 TILE_PREFIX = "tile_"
 """Prefix of the tile-grid dimensions of a manifest dataset."""
@@ -259,9 +256,8 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         the number of tiles along the axis).
     engine : dict
         The engine specification: the key ``"name"`` selects a
-        registered engine (resolved with
-        :func:`~xdas.tiles.registry.get_engine`); the remaining keys
-        are passed to its ``load_tile`` as keyword parameters.
+        registered engine (``xdas.io.Engine[name]``); the remaining
+        keys are passed to its ``load_tile`` as keyword parameters.
     dtype : str or numpy.dtype
         Element type of the virtual array (little-endian or
         single-byte).
@@ -396,7 +392,10 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         engine = json.loads(json.dumps(engine))
         if not isinstance(engine, dict) or "name" not in engine:
             raise ValueError("the engine specification must have a `name` key")
-        get_engine(engine["name"])
+        # imported here: xdas.io imports this module at package init
+        from ..io.core import Engine
+
+        Engine[engine["name"]]  # fail fast on unregistered engines
         self._engine = engine
         self.dtype = np.dtype(dtype)
         if self.dtype.byteorder == ">":
@@ -668,9 +667,11 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
     @functools.cached_property
     def _engine_impl(self):
         """The ``(load_tile, spec)`` of the engine specification."""
+        from ..io.core import Engine
+
         spec = dict(self.engine)
         name = spec.pop("name")
-        return get_engine(name).load_tile, spec
+        return Engine[name].load_tile, spec
 
     def __array__(self, dtype=None, copy=None):
         """Read every tile and return the values as a numpy array.

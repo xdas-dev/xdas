@@ -91,7 +91,10 @@ class Engine:
         elif item in cls._aliases:
             return cls._registry[cls._aliases[item]]
         else:
-            raise KeyError(f"Item '{item}' not found in registry or aliases")
+            raise KeyError(
+                f"no engine registered under {item!r}; "
+                f"available: {sorted([*cls._registry, *cls._aliases])}"
+            )
 
     def open_dataarray(self, fname, **kwargs):
         """Open *fname* and return a :class:`DataArray` (abstract)."""
