@@ -19,7 +19,6 @@ Methods
    :toctree: ../_autosummary
 
    Coordinates.isdim
-   Coordinates.get_query
    Coordinates.to_index
    Coordinates.equals
    Coordinates.copy
@@ -57,6 +56,7 @@ Methods
    :toctree: ../_autosummary
 
    Coordinate.isdim
+   Coordinate.isregular
    Coordinate.equals
    Coordinate.copy
 ```
@@ -91,6 +91,7 @@ Methods
 
    AxisCoordinate.isregular
    AxisCoordinate.get_sampling_interval
+   AxisCoordinate.to_regular
    AxisCoordinate.get_split_indices
    AxisCoordinate.get_discontinuities
    AxisCoordinate.get_availabilities
@@ -134,6 +135,7 @@ Methods
 
    DenseCoordinate.from_block
    DenseCoordinate.get_sampling_interval
+   DenseCoordinate.to_regular
    DenseCoordinate.simplify
 ```
 
@@ -199,5 +201,15 @@ Methods
 
    SampledCoordinate.from_block
    SampledCoordinate.get_sampling_interval
+   SampledCoordinate.to_regular
    SampledCoordinate.simplify
+```
+
+## Functions
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   get_sampling_interval
 ```

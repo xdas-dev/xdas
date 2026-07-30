@@ -35,7 +35,7 @@ from xdas.processing import ZMQPublisher, ZMQSubscriber
 First we generate some data and split it into packets
 
 ```{code-cell}
-da = xd.synthetics.dummy()
+da = xd.testing.dummy()
 packets = xd.split(da, 5)
 ```
 
