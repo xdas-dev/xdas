@@ -43,6 +43,7 @@ class TestSignal:
         s = (d / 2) + d * np.arange(n)
         da = xr.DataArray(np.ones(n), {"distance": s})
         da = xd.DataArray.from_xarray(da)
+        da["distance"] = da["distance"].to_regular()
         da = xs.differentiate(da, midpoints=True)
         assert np.allclose(da.values, np.zeros(n - 1))
 
@@ -52,6 +53,7 @@ class TestSignal:
         s = (d / 2) + d * np.arange(n)
         da = xr.DataArray(np.ones(n), {"distance": s})
         da = xd.DataArray.from_xarray(da)
+        da["distance"] = da["distance"].to_regular()
         da = xs.integrate(da, midpoints=True)
         assert np.allclose(da.values, da["distance"].values)
 
@@ -77,6 +79,7 @@ class TestSignal:
         data = np.ones(n)
         da = xr.DataArray(data, {"distance": s})
         da = xd.DataArray.from_xarray(da)
+        da["distance"] = da["distance"].to_regular()
         da = xs.sliding_mean_removal(da, 0.1 * n * d)
         assert np.allclose(da.values, 0)
 
@@ -241,6 +244,7 @@ class TestSTFT:
             data=data,
             coords={"time": time},
         )
+        da["time"] = da["time"].to_regular()
         result = xs.stft(
             da, nperseg=1000, noverlap=500, window="hann", dim={"time": "frequency"}
         )
@@ -253,8 +257,16 @@ class TestSTFT:
         da = xd.DataArray(
             data=np.random.rand(10000, 11),
             coords={
-                "time": {"tie_indices": [0, 9999], "tie_values": [starttime, endtime]},
-                "distance": {"tie_indices": [0, 10], "tie_values": [0.0, 1.0]},
+                "time": {
+                    "tie_indices": [0, 9999],
+                    "tie_values": [starttime, endtime],
+                    "sampling_interval": np.timedelta64(10, "ms"),
+                },
+                "distance": {
+                    "tie_indices": [0, 10],
+                    "tie_values": [0.0, 1.0],
+                    "sampling_interval": 0.1,
+                },
             },
         )
         serial = xs.stft(
@@ -371,6 +383,13 @@ class TestFftMissingBranches:
         n = da.sizes["time"]
         result = xfft.rfft(da, n=n, dim={"time": "frequency"})
         assert "frequency" in result.dims
+
+    def test_rfft_single_frequency(self):
+        import xdas.fft as xfft
+
+        da = wavelet_wavefronts().isel(distance=0)
+        result = xfft.rfft(da, n=1, dim={"time": "frequency"})
+        assert result.sizes["frequency"] == 1
 
     def test_ifft_explicit_n(self):
         import xdas.fft as xfft

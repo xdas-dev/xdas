@@ -180,13 +180,11 @@ def from_stream(st, dims=("channel", "time")):
     """
     data = np.stack([tr.data for tr in st])
     channel = [tr.id for tr in st]
-    time = {
-        "tie_indices": [0, st[0].stats.npts - 1],
-        "tie_values": [
-            np.datetime64(st[0].stats.starttime.datetime),
-            np.datetime64(st[0].stats.endtime.datetime),
-        ],
-    }
+    # Regular by construction from the stream's own sample rate, at ns
+    # resolution so a `to_stream` round trip preserves the coordinate.
+    t0 = np.datetime64(st[0].stats.starttime.datetime)
+    dt = np.rint(1e6 * st[0].stats.delta).astype("m8[us]").astype("m8[ns]")
+    time = Coordinate["interpolated"].from_block(t0, st[0].stats.npts, dt, dim=dims[1])
     return DataArray(data, {dims[0]: channel, dims[1]: time})
 
 

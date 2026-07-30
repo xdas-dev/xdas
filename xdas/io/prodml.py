@@ -48,11 +48,12 @@ class ProdML(Engine, name="prodml", aliases=["optasense", "sintela"]):
         else:
             nt, nd = data.shape
 
-        # time
+        # time (regular by declaration, rate derived from the file's own stamps)
         time = {
             "tie_indices": [0, nt - 1],
             "tie_values": [tstart, tend],
-        }  # TODO: use from_block
+            "sampling_interval": (tend - tstart) / (nt - 1),
+        }
 
         # distance
         distance = Coordinate[self.ctype["distance"]].from_block(

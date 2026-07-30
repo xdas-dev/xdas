@@ -437,6 +437,7 @@ class StreamWriter:
     ...         "time": {
     ...             "tie_indices": [0, data.shape[0] - 1],
     ...             "tie_values": [starttime, endtime],
+    ...             "sampling_interval": np.timedelta64(10, "ms"),
     ...         },
     ...         "distance": distance,
     ...     },

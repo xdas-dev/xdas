@@ -23,8 +23,13 @@ coords = {
             np.datetime64("2020-01-01T00:00:00.000000000"),
             np.datetime64("2020-01-01T00:00:09.900000000"),
         ],
+        "sampling_interval": np.timedelta64(100, "ms"),
     },
-    "distance": {"tie_indices": [0, 9], "tie_values": [0.0, 90.0]},
+    "distance": {
+        "tie_indices": [0, 9],
+        "tie_values": [0.0, 90.0],
+        "sampling_interval": 10.0,
+    },
 }
 
 da_float32 = xd.DataArray(
@@ -229,7 +234,11 @@ class TestZMQSubscriber:
         assert sub.packet_size == 4008
         assert sub.shape == (100, 10)
         assert sub.dtype == np.float32
-        assert sub.distance == {"tie_indices": [0, 9], "tie_values": [0.0, 90.0]}
+        assert sub.distance == {
+            "tie_indices": [0, 9],
+            "tie_values": [0.0, 90.0],
+            "sampling_interval": 10.0,
+        }
         assert sub.delta == np.timedelta64(100, "ms")
         result = next(sub)
         assert result.equals(da_float32)
@@ -249,7 +258,11 @@ class TestZMQSubscriber:
         assert sub.packet_size == 808
         assert sub.shape == (20, 10)
         assert sub.dtype == np.float32
-        assert sub.distance == {"tie_indices": [0, 9], "tie_values": [0.0, 90.0]}
+        assert sub.distance == {
+            "tie_indices": [0, 9],
+            "tie_values": [0.0, 90.0],
+            "sampling_interval": 10.0,
+        }
         assert sub.delta == np.timedelta64(100, "ms")
         for chunk in chunks:
             result = next(sub)
@@ -343,6 +356,7 @@ class TestZMQSubscriber:
         assert sub.distance == {
             "tie_indices": [0, 16001],
             "tie_values": [0.0, 163418.2435258568],
+            "sampling_interval": 163418.2435258568 / 16001,
         }
 
     def test_iter(self):
