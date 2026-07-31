@@ -25,6 +25,37 @@ class TestCore:
     with pytest.raises(FileNotFoundError):
         xd.open_mfdataarray(["not_existing_file.nc"])
 
+    def test_open_mfdataarray_file_limit(self, tmp_path, monkeypatch):
+        from xdas.core import routines
+
+        for idx, da in enumerate(wavelet_wavefronts(nchunk=3), start=1):
+            da.to_netcdf(tmp_path / f"{idx:03}.nc")
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES_DEFAULT", 2)
+        with pytest.raises(NotImplementedError, match="the limit is 2"):
+            xd.open_mfdataarray(tmp_path / "00*.nc")
+
+    def test_open_mfdataarray_file_limit_is_higher_for_tiles(
+        self, tmp_path, monkeypatch
+    ):
+        from xdas.core import routines
+
+        for idx, da in enumerate(wavelet_wavefronts(nchunk=3), start=1):
+            da.to_netcdf(tmp_path / f"{idx:03}.nc")
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES_DEFAULT", 2)
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", {"tiles": 3})
+        da = xd.open_mfdataarray(tmp_path / "00*.nc", engine="xdas", vtype="tiles")
+        assert da.shape == wavelet_wavefronts().shape
+
+    def test_effective_vtype(self):
+        from xdas.core.routines import _effective_vtype
+
+        assert _effective_vtype("asn", None) == "hdf5"  # engine default
+        assert _effective_vtype("asn", "tiles") == "tiles"
+        assert _effective_vtype("miniseed", None) == "tiles"  # only vtype
+        assert _effective_vtype(lambda fname: None, "tiles") is None  # read function
+        assert _effective_vtype("not_an_engine", None) is None
+        assert _effective_vtype("asn", "not_a_vtype") is None
+
     def test_open_mfdataarray_grouping(self, tmp_path):
         acqs = [
             {

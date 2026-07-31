@@ -473,6 +473,27 @@ def defaulttree(depth):
         return defaultdict(lambda: defaulttree(depth - 1))
 
 
+def _effective_vtype(engine, vtype):
+    """Return the vtype *engine* will use, or None if it has no say."""
+    if callable(engine):
+        return None
+    from ..io.core import Engine
+
+    try:
+        return Engine[engine](vtype=vtype).vtype
+    except (KeyError, NotImplementedError, ValueError):
+        # a bad engine name or vtype: let opening the first file report it
+        return None
+
+
+# How many files one call may scan, per virtualization type. Every vtype
+# holds one data array per file in memory until they are combined; the hdf5
+# one additionally builds an HDF5 virtual mapping per file, which dominates
+# both the memory and the time. Tiles pays neither, so it gets far more room.
+MAX_OPEN_FILES = {"tiles": 2_000_000}
+MAX_OPEN_FILES_DEFAULT = 100_000
+
+
 def open_mfdataarray(
     paths,
     dim="first",
@@ -526,6 +547,12 @@ def open_mfdataarray(
     ------
     FileNotFound
         If no file can be found.
+    NotImplementedError
+        If more files are given than the vtype allows in one call. Scanning
+        keeps one data array per file in memory until they are combined, so the
+        ceiling is `MAX_OPEN_FILES_DEFAULT` and `MAX_OPEN_FILES["tiles"]` for
+        the much lighter tiles manifests. Larger sets must be opened in batches
+        and combined with `combine_by_coords`.
     """
     paths = _ensure_str_paths(paths)
     if isinstance(paths, str):
@@ -540,10 +567,14 @@ def open_mfdataarray(
         )
     if len(paths) == 0:
         raise FileNotFoundError("no file to open")
-    if len(paths) > 100_000:
+    vtype = _effective_vtype(engine, kwargs.get("vtype"))
+    limit = MAX_OPEN_FILES.get(vtype, MAX_OPEN_FILES_DEFAULT)
+    if len(paths) > limit:
         raise NotImplementedError(
-            "The maximum number of file that can be opened at once is for now limited "
-            "to 100 000."
+            f"cannot open {len(paths)} files at once: the limit is {limit} for "
+            f"vtype {vtype!r} because the scan holds one data array per file in "
+            "memory until they are combined. Open the files in batches and pass "
+            "the results to `combine_by_coords`."
         )
     max_workers = get_workers_count(parallel)
     objs = []
