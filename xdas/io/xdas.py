@@ -354,8 +354,19 @@ def save_datasequence(
 
 
 def _get_depth(group):
+    """Nesting depth of *group*, ignoring any tile manifest it contains.
+
+    A tile-backed data array keeps its manifest in a `TILES_GROUP`
+    sibling of its variables. That group must not count, or the data
+    array would look one level deeper than it is and be mistaken for a
+    nested collection.
+    """
     if not isinstance(group, h5py.Group):
         raise ValueError("not a group")
-    depths = []
-    group.visit(lambda name: depths.append(name.count("/")))
+    depths = [0]
+    group.visit(
+        lambda name: (
+            None if TILES_GROUP in name.split("/") else depths.append(name.count("/"))
+        )
+    )
     return max(depths)

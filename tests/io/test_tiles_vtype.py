@@ -176,3 +176,38 @@ def test_xdas_engine_tiles_vtype(tmp_path):
     assert isinstance(result.data, TileArray)
     assert result.data.engine == {"name": "xdas", "dataset": "/__values__"}
     assert result.equals(da)
+
+
+def test_tiles_datacollection_roundtrip(tmp_path):
+    """Collections of tile-backed arrays reopen as collections, not as errors.
+
+    The manifest lives in a sibling group of the data array's variables, which
+    used to make the array look like a nested collection to the reader.
+    """
+    das = [
+        xd.testing.dummy(shape=(10, 5), step=(1.0, 10.0), dtype=np.float32)
+        for _ in range(2)
+    ]
+    paths = []
+    for k, da in enumerate(das):
+        path = str(tmp_path / f"da{k}.nc")
+        da.to_netcdf(path)
+        paths.append(path)
+    tiled = [xd.open_dataarray(path, engine="xdas", vtype="tiles") for path in paths]
+
+    sequence = xd.DataCollection(tiled, name="acquisition")
+    fname = str(tmp_path / "sequence.nc")
+    sequence.to_netcdf(fname, virtual=True)
+    result = xd.open_datacollection(fname)
+    assert len(result) == 2
+    for expected, actual in zip(das, result):
+        assert isinstance(actual.data, TileArray)
+        npt.assert_array_equal(actual.values, expected.values)
+
+    mapping = xd.DataCollection({"a": sequence, "b": sequence}, name="node")
+    fname = str(tmp_path / "mapping.nc")
+    mapping.to_netcdf(fname, virtual=True)
+    result = xd.open_datacollection(fname)
+    assert sorted(result) == ["a", "b"]
+    assert isinstance(result["a"][1].data, TileArray)
+    npt.assert_array_equal(result["b"][0].values, das[0].values)
