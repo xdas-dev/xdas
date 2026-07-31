@@ -5,9 +5,6 @@
 
 ## Coordinates
 
-Constructor
-
-
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
@@ -22,23 +19,19 @@ Methods
    :toctree: ../_autosummary
 
    Coordinates.isdim
-   Coordinates.get_query
    Coordinates.to_index
    Coordinates.equals
-   Coordinates.to_dict
    Coordinates.copy
-   Coordinates.drop_dims 
-   Coordinates.drop_coords 
+   Coordinates.drop_dims
+   Coordinates.drop_coords
 ```
 
-### Coordinate
-
-Constructor
+## Coordinate
 
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
-   
+
    Coordinate
 ```
 
@@ -49,9 +42,11 @@ Attributes
    :toctree: ../_autosummary
 
    Coordinate.dtype
-   Coordinate.ndim
    Coordinate.shape
+   Coordinate.size
+   Coordinate.dim
    Coordinate.values
+   Coordinate.name
 ```
 
 Methods
@@ -60,16 +55,52 @@ Methods
 .. autosummary::
    :toctree: ../_autosummary
 
-   Coordinate.to_index
-   Coordinate.isscalar
-   Coordinate.isdense
-   Coordinate.isinterp
+   Coordinate.isdim
+   Coordinate.isregular
+   Coordinate.equals
+   Coordinate.copy
 ```
 
+## AxisCoordinate
 
-### ScalarCoordinate
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
 
-Constructor
+   AxisCoordinate
+```
+
+Attributes
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   AxisCoordinate.ndim
+   AxisCoordinate.empty
+   AxisCoordinate.indices
+   AxisCoordinate.start
+   AxisCoordinate.end
+```
+
+Methods
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   AxisCoordinate.isregular
+   AxisCoordinate.get_sampling_interval
+   AxisCoordinate.to_regular
+   AxisCoordinate.get_split_indices
+   AxisCoordinate.get_discontinuities
+   AxisCoordinate.get_availabilities
+   AxisCoordinate.simplify
+   AxisCoordinate.to_index
+   AxisCoordinate.to_dataarray
+```
+
+## ScalarCoordinate
 
 ```{eval-rst}
 .. autosummary::
@@ -78,21 +109,7 @@ Constructor
    ScalarCoordinate
 ```
 
-Methods
-
-```{eval-rst}
-.. autosummary::
-   :toctree: ../_autosummary
-
-   ScalarCoordinate.isvalid
-   ScalarCoordinate.equals
-   ScalarCoordinate.to_index
-   ScalarCoordinate.to_dict
-```
-
-### DenseCoordinate
-
-Constructor
+## DenseCoordinate
 
 ```{eval-rst}
 .. autosummary::
@@ -101,22 +118,28 @@ Constructor
    DenseCoordinate
 ```
 
+Attributes
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   DenseCoordinate.index
+```
+
 Methods
 
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
 
-   DenseCoordinate.isvalid
-   DenseCoordinate.index
-   DenseCoordinate.get_indexer
-   DenseCoordinate.slice_indexer
-   DenseCoordinate.to_dict
+   DenseCoordinate.from_block
+   DenseCoordinate.get_sampling_interval
+   DenseCoordinate.to_regular
+   DenseCoordinate.simplify
 ```
 
-### InterpCoordinate
-
-Constructor
+## InterpCoordinate
 
 ```{eval-rst}
 .. autosummary::
@@ -127,19 +150,14 @@ Constructor
 
 Attributes
 
-
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
 
    InterpCoordinate.tie_indices
    InterpCoordinate.tie_values
-   InterpCoordinate.empty
-   InterpCoordinate.dtype
-   InterpCoordinate.ndim
-   InterpCoordinate.shape
-   InterpCoordinate.indices
-   InterpCoordinate.values
+   InterpCoordinate.sampling_interval
+   InterpCoordinate.tolerance
 ```
 
 Methods
@@ -148,24 +166,13 @@ Methods
 .. autosummary::
    :toctree: ../_autosummary
 
-   InterpCoordinate.isvalid
-   InterpCoordinate.equals
-   InterpCoordinate.get_value
-   InterpCoordinate.format_index
-   InterpCoordinate.slice_index
-   InterpCoordinate.get_indexer
-   InterpCoordinate.slice_indexer
-   InterpCoordinate.decimate
+   InterpCoordinate.from_block
+   InterpCoordinate.to_regular
+   InterpCoordinate.get_sampling_interval
    InterpCoordinate.simplify
-   InterpCoordinate.get_discontinuities
-   InterpCoordinate.from_array
-   InterpCoordinate.to_dict
 ```
 
-
-### SampledCoordinate
-
-Constructor
+## SampledCoordinate
 
 ```{eval-rst}
 .. autosummary::
@@ -176,7 +183,6 @@ Constructor
 
 Attributes
 
-
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
@@ -185,12 +191,6 @@ Attributes
    SampledCoordinate.tie_lengths
    SampledCoordinate.tie_indices
    SampledCoordinate.sampling_interval
-   SampledCoordinate.empty
-   SampledCoordinate.dtype
-   SampledCoordinate.ndim
-   SampledCoordinate.shape
-   SampledCoordinate.indices
-   SampledCoordinate.values
 ```
 
 Methods
@@ -199,18 +199,17 @@ Methods
 .. autosummary::
    :toctree: ../_autosummary
 
-   SampledCoordinate.concat
-   SampledCoordinate.decimate
-   SampledCoordinate.equals
-   SampledCoordinate.from_array
    SampledCoordinate.from_block
-   SampledCoordinate.get_indexer
    SampledCoordinate.get_sampling_interval
-   SampledCoordinate.get_split_indices
-   SampledCoordinate.get_value
-   SampledCoordinate.isvalid
+   SampledCoordinate.to_regular
    SampledCoordinate.simplify
-   SampledCoordinate.slice_index
-   SampledCoordinate.slice_indexer
-   SampledCoordinate.to_dict
+```
+
+## Functions
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   get_sampling_interval
 ```

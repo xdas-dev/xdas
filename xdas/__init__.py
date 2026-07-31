@@ -6,9 +6,9 @@ types for physical axes, multi-threaded signal processing pipelines, and I/O eng
 for common DAS instrument formats.
 """
 
-__version__ = "0.2.7"
+__version__ = "0.2.8rc0"
 
-__all__ = [
+__all__ = [  # noqa: RUF022 - grouped by kind, not alphabetically
     # submodules
     "atoms",
     "config",
@@ -24,6 +24,7 @@ __all__ = [
     "routines",
     "signal",
     "synthetics",
+    "testing",
     "virtual",
     # classes
     "Coordinate",
@@ -32,7 +33,6 @@ __all__ = [
     "DataCollection",
     "DataMapping",
     "DataSequence",
-    "DefaultCoordinate",
     "DenseCoordinate",
     "InterpCoordinate",
     "SampledCoordinate",
@@ -68,23 +68,23 @@ from . import (
     processing,
     signal,
     synthetics,
+    testing,
     virtual,
 )
 from .coordinates import (
     Coordinate,
     Coordinates,
-    DefaultCoordinate,
     DenseCoordinate,
     InterpCoordinate,
     SampledCoordinate,
     ScalarCoordinate,
     get_sampling_interval,
 )
-from .core import dataarray, datacollection, methods, numpy, routines
-from .core.dataarray import DataArray
-from .core.datacollection import DataCollection, DataMapping, DataSequence
-from .core.methods import *  # noqa: F403
-from .core.routines import (
+from .core import (
+    DataArray,
+    DataCollection,
+    DataMapping,
+    DataSequence,
     align,
     asdataarray,
     broadcast_coords,
@@ -94,6 +94,10 @@ from .core.routines import (
     concat,
     concat_coords,
     concatenate,
+    dataarray,
+    datacollection,
+    methods,
+    numpy,
     open,
     open_dataarray,
     open_datacollection,
@@ -101,5 +105,7 @@ from .core.routines import (
     open_mfdatacollection,
     open_mfdatatree,
     plot_availability,
+    routines,
     split,
 )
+from .core.methods import *

@@ -14,9 +14,8 @@ import xarray as xr
 from dask.array import Array as DaskArray
 from numpy.lib.mixins import NDArrayOperatorsMixin
 
-from ..coordinates import Coordinates
-from ..dask.core import from_dict, to_dict
-from ..virtual import VirtualArray, _to_human
+from ..coordinates import AxisCoordinate, Coordinates
+from ..virtual import _to_human
 
 HANDLED_NUMPY_FUNCTIONS = {}
 HANDLED_METHODS = {}
@@ -79,7 +78,7 @@ class DataArray(NDArrayOperatorsMixin):
         if isinstance(key, str):
             return self.coords[key]
         else:
-            query = self.coords.get_query(key)
+            query = self.coords._get_query(key)
             data = self.data.__getitem__(tuple(query.values()))
             coords = {
                 name: (
@@ -96,7 +95,7 @@ class DataArray(NDArrayOperatorsMixin):
         if isinstance(key, str):
             self.coords[key] = value
         else:
-            query = self.coords.get_query(key)
+            query = self.coords._get_query(key)
             self.data.__setitem__(tuple(query.values()), value)
 
     def __repr__(self):
@@ -126,16 +125,16 @@ class DataArray(NDArrayOperatorsMixin):
     def __len__(self):
         return self.shape[0]
 
-    def __array__(self, dtype=None):
-        if dtype is None:
-            return self.data.__array__()
-        else:
-            return self.data.__array__(dtype)
+    def __array__(self, dtype=None, copy=None):
+        out = np.asarray(self.data, dtype=dtype)
+        if copy:
+            out = out.copy()
+        return out
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         from .routines import broadcast_coords, broadcast_to  # TODO: circular import
 
-        if not method == "__call__":
+        if method != "__call__":
             return NotImplemented
 
         coords = broadcast_coords(
@@ -267,7 +266,7 @@ class DataArray(NDArrayOperatorsMixin):
     @property
     def values(self):
         """Materialised numpy array of all values."""
-        return self.__array__()
+        return self.__array__(copy=False)
 
     @property
     def empty(self):
@@ -282,19 +281,17 @@ class DataArray(NDArrayOperatorsMixin):
     def equals(self, other):
         """Return ``True`` if *other* has equal data, coordinates, dims, name, and attrs."""
         if isinstance(other, self.__class__):
-            if not self.dtype == other.dtype:
+            if self.dtype != other.dtype:
                 return False
             if not np.array_equal(self.values, other.values, equal_nan=True):
                 return False
             if not self.coords.equals(other.coords):
                 return False
-            if not self.dims == other.dims:
+            if self.dims != other.dims:
                 return False
-            if not self.name == other.name:
+            if self.name != other.name:
                 return False
-            if not self.attrs == other.attrs:
-                return False
-            return True
+            return self.attrs == other.attrs
         else:
             return False
 
@@ -348,7 +345,7 @@ class DataArray(NDArrayOperatorsMixin):
         da = self[indexers]
         if drop:
             for dim in indexers:
-                if da[dim].isscalar():
+                if not isinstance(da[dim], AxisCoordinate):
                     da = da.drop_coords(dim)
         return da
 
@@ -389,13 +386,13 @@ class DataArray(NDArrayOperatorsMixin):
 
         # handle not monotonic increasing coordinates
         for dim in indexers:
-            if not self[dim].is_monotonic_increasing():
+            if not self[dim]._is_monotonic_increasing():
                 if isinstance(indexers[dim], slice):
                     warnings.warn(
                         f"dimension {dim} is not monotonic increasing, "
                         f"spliting on overlaps, slicing and concatenating can be slow..."
                     )
-                    from ..core.routines import concat, split
+                    from .routines import concat, split
 
                     chunks = [
                         chunk.sel(indexers, method, endpoint, drop)
@@ -412,7 +409,7 @@ class DataArray(NDArrayOperatorsMixin):
         da = self[key]
         if drop:
             for dim in indexers:
-                if da[dim].isscalar():
+                if not isinstance(da[dim], AxisCoordinate):
                     da = da.drop_coords(dim)
         return da
 
@@ -648,7 +645,7 @@ class DataArray(NDArrayOperatorsMixin):
                 raise KeyError(
                     f"dimension {dim} not found in current object with dims {self.dims}"
                 )
-        dims = tuple(dims_dict[dim] if dim in dims_dict else dim for dim in self.dims)
+        dims = tuple(dims_dict.get(dim, dim) for dim in self.dims)
         coords = {}
         for name, coord in self.coords.copy(deep=False).items():
             if coord.dim in dims_dict:
@@ -778,7 +775,7 @@ class DataArray(NDArrayOperatorsMixin):
             raise ValueError(f"cannot expand on existing dimension {dim}")
         coords = self.coords.copy()
         if dim in coords:
-            if coords[dim].isscalar():
+            if not isinstance(coords[dim], AxisCoordinate):
                 coords[dim] = [coords[dim].values]
             else:
                 raise ValueError(
@@ -818,7 +815,7 @@ class DataArray(NDArrayOperatorsMixin):
         station="DAS{:05}",
         location="00",
         channel="{:1}N1",
-        dim={"last": "first"},
+        dim=None,
     ):
         """
         Convert a data array into an obspy stream.
@@ -956,34 +953,6 @@ class DataArray(NDArrayOperatorsMixin):
 
         return open_dataarray(fname, group)
 
-    def to_dict(self):
-        """Convert the DataArray to a dictionary."""
-        if isinstance(self.data, VirtualArray):
-            raise NotImplementedError("cannot convert a virtual array to a dictionary")
-        elif isinstance(self.data, np.ndarray):
-            data = self.data.tolist()
-        elif isinstance(self.data, DaskArray):  # pragma: no branch
-            data = to_dict(self.data)
-        return {
-            "data": data,
-            "coords": self.coords.to_dict()["coords"],
-            "dims": self.dims,
-            "name": self.name,
-            "attrs": self.attrs,
-        }
-
-    @classmethod
-    def from_dict(cls, dct):
-        """Create a DataArray from a dictionary."""
-        if isinstance(dct["data"], list):
-            data = np.array(dct["data"])
-        elif isinstance(dct["data"], dict):
-            data = from_dict(dct["data"])
-        else:
-            raise ValueError("data must be a list or a dictionary")
-        coords = Coordinates.from_dict({key: dct[key] for key in ["coords", "dims"]})
-        return cls(data, coords, dct["dims"], dct["name"], dct["attrs"])
-
     def plot(self, *args, **kwargs):
         """
         Plot a DataArray.
@@ -1035,11 +1004,11 @@ class DimSizer(dict):
     """Dict-like mapping from dimension names to their sizes, returned by :attr:`DataArray.sizes`."""
 
     def __init__(self, obj):
-        super().__init__({dim: size for dim, size in zip(obj.dims, obj.shape)})
+        super().__init__(dict(zip(obj.dims, obj.shape)))
 
     def __getitem__(self, key):
         if key == "first":
-            key = list(self.keys())[0]
+            key = next(iter(self.keys()))
         if key == "last":
             key = list(self.keys())[-1]
         return super().__getitem__(key)

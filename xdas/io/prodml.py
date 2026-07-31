@@ -4,11 +4,13 @@ I/O engine for ProdML HDF5 files (:class:`ProdML`).
 Also known as OptaSense and Sintela format.
 """
 
+from typing import ClassVar
+
 import h5py
 import pandas as pd
 
-from ..coordinates.core import Coordinate
-from ..core.dataarray import DataArray
+from ..coordinates import Coordinate
+from ..core import DataArray
 from ..virtual import VirtualSource
 from .core import Engine
 
@@ -16,8 +18,8 @@ from .core import Engine
 class ProdML(Engine, name="prodml", aliases=["optasense", "sintela"]):
     """Engine for reading ProdML / OptaSense / Sintela HDF5 files."""
 
-    _supported_vtypes = ["hdf5"]
-    _supported_ctypes = {
+    _supported_vtypes: ClassVar[list] = ["hdf5"]
+    _supported_ctypes: ClassVar[dict] = {
         "time": ["interpolated"],
         "distance": ["interpolated", "sampled", "dense"],
     }
@@ -48,11 +50,12 @@ class ProdML(Engine, name="prodml", aliases=["optasense", "sintela"]):
         else:
             nt, nd = data.shape
 
-        # time
+        # time (regular by declaration, rate derived from the file's own stamps)
         time = {
             "tie_indices": [0, nt - 1],
             "tie_values": [tstart, tend],
-        }  # TODO: use from_block
+            "sampling_interval": (tend - tstart) / (nt - 1),
+        }
 
         # distance
         distance = Coordinate[self.ctype["distance"]].from_block(

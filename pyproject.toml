@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xdas"
-version = "0.2.7"
+dynamic = ["version"]
 requires-python = ">= 3.10"
 authors = [
     { name = "Alister Trabattoni", email = "alister.trabattoni@gmail.com" },
@@ -24,6 +24,7 @@ dependencies = [
     "setuptools<82.0.0",
     "scipy",
     "tqdm",
+    "typing_extensions",
     "watchdog",
     "xarray",
     "xinterp",
@@ -43,15 +44,24 @@ docs = [
 ]
 tests = ["dascore", "psutil", "seisbench", "torch"]
 
+# Single source of truth for the version: xdas/__init__.py
+[tool.setuptools.dynamic]
+version = { attr = "xdas.__version__" }
+
 [tool.ruff.lint]
 extend-select = ["I", "D"]
-extend-ignore = ["D105"]
+extend-ignore = [
+    "D105",
+    # xdas raises ValueError for all argument validation, including type checks,
+    # and that is what the public API and its tests assert.
+    "TRY004",
+]
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["D"]
+"tests/**" = ["D", "RUF012"]  # class attrs in test classes are fixture tables
 "docs/**" = ["D"]
 
 [tool.pytest.ini_options]

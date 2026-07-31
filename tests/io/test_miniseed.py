@@ -61,7 +61,6 @@ def test_miniseed(tmp_path):
     da = xd.open(paths[0], engine="miniseed")
     assert da.shape == (3, 100)
     assert da.dims == ("channel", "time")
-    assert da.coords["time"].isinterp()
     assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
     assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:00:00.990")
     assert da.coords["network"].values == "DX"
@@ -73,7 +72,6 @@ def test_miniseed(tmp_path):
     da = xd.open(paths[0], engine="miniseed", ignore_last_sample=True)
     assert da.shape == (3, 99)
     assert da.dims == ("channel", "time")
-    assert da.coords["time"].isinterp()
     assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
     assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:00:00.980")
     assert da.coords["network"].values == "DX"
@@ -87,7 +85,6 @@ def test_miniseed(tmp_path):
     da = xd.open(paths[0], engine="miniseed")
     assert da.shape == (3, 90)
     assert da.dims == ("channel", "time")
-    assert da.coords["time"].isinterp()
     assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
     assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:01:00.390")
     assert da.coords["network"].values == "DX"
@@ -99,7 +96,6 @@ def test_miniseed(tmp_path):
     da = xd.open(paths[0], engine="miniseed", ignore_last_sample=True)
     assert da.shape == (3, 89)
     assert da.dims == ("channel", "time")
-    assert da.coords["time"].isinterp()
     assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
     assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:01:00.380")
     assert da.coords["network"].values == "DX"
@@ -114,7 +110,6 @@ def test_miniseed(tmp_path):
     assert da.shape == (10, 3, 100)
     assert da.dims == ("station", "channel", "time")
     assert da.coords["station"].values.tolist() == [f"CH{i:03d}" for i in range(1, 11)]
-    assert da.coords["time"].isinterp()
     assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
     assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:00:00.990")
     assert da.coords["network"].values == "DX"
@@ -128,7 +123,6 @@ def test_miniseed(tmp_path):
     assert da.shape == (10, 3, 90)
     assert da.dims == ("station", "channel", "time")
     assert da.coords["station"].values.tolist() == [f"CH{i:03d}" for i in range(1, 11)]
-    assert da.coords["time"].isinterp()
     assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
     assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:01:00.390")
     assert da.coords["network"].values == "DX"
@@ -140,7 +134,6 @@ def test_miniseed(tmp_path):
     assert da.shape == (10, 3, 100)
     assert da.dims == ("station", "channel", "time")
     assert da.coords["station"].values.tolist() == [f"CH{i:03d}" for i in range(1, 11)]
-    assert da.coords["time"].isinterp()
     assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
     assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:00:00.990")
     assert da.coords["network"].values == "DX"
@@ -152,7 +145,6 @@ def test_miniseed(tmp_path):
     assert da.shape == (10, 3, 90)
     assert da.dims == ("station", "channel", "time")
     assert da.coords["station"].values.tolist() == [f"CH{i:03d}" for i in range(1, 11)]
-    assert da.coords["time"].isinterp()
     assert da.coords["time"][0].values == np.datetime64("1970-01-01T00:00:00")
     assert da.coords["time"][-1].values == np.datetime64("1970-01-01T00:01:00.390")
     assert da.coords["network"].values == "DX"

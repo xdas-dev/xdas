@@ -141,13 +141,13 @@ def concatenate(arrays, axis=0, out=None, dtype=None, n_workers=None):
     """
     arrays = [np.asarray(array, dtype) for array in arrays]
 
-    ndim = set(array.ndim for array in arrays)
+    ndim = {array.ndim for array in arrays}
     if len(ndim) == 1:
         (ndim,) = ndim
     else:
         raise ValueError("arrays must have the same number of dimensions.")
 
-    dtype = set(array.dtype for array in arrays)
+    dtype = {array.dtype for array in arrays}
     if len(dtype) == 1:
         (dtype,) = dtype
     else:
@@ -155,7 +155,7 @@ def concatenate(arrays, axis=0, out=None, dtype=None, n_workers=None):
 
     shapes = [list(array.shape) for array in arrays]
     section_sizes = [shape.pop(axis) for shape in shapes]
-    subshape = set([tuple(shape) for shape in shapes])
+    subshape = {tuple(shape) for shape in shapes}
     if len(subshape) == 1:
         (subshape,) = subshape
     else:

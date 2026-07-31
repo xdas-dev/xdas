@@ -71,8 +71,8 @@ def tapered_selection(da, start, end, window=None, size=None, dim="last"):
         raise ValueError("No valid start/end pairs found")
 
     # get selection indices
-    startindex = da[dim].get_indexer(start[selection], method="bfill")
-    endindex = da[dim].get_indexer(end[selection], method="ffill")
+    startindex = da[dim]._get_indexer(start[selection], method="bfill")
+    endindex = da[dim]._get_indexer(end[selection], method="ffill")
     stopindex = endindex + 1
 
     # determine output size

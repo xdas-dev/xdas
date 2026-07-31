@@ -68,9 +68,9 @@ def handled(reduce=False, drop_coords=False, **defaults):
                     coords = {
                         name: coord
                         for name, coord in da.coords.items()
-                        if not coord.dim == da.dims[axis]
+                        if coord.dim != da.dims[axis]
                     }
-                    dims = tuple(dim for dim in da.dims if not dim == da.dims[axis])
+                    dims = tuple(dim for dim in da.dims if dim != da.dims[axis])
             else:
                 coords = da.coords
                 dims = da.dims

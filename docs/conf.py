@@ -4,6 +4,8 @@
 # list see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
+from xdas import __version__
+
 # -- Project information -----------------------------------------------------
 
 project = "xdas"
@@ -11,7 +13,7 @@ copyright = "2024, Alister Trabattoni"
 author = "Alister Trabattoni"
 
 # The full version, including alpha/beta/rc tags
-release = "0.2.7"
+release = __version__
 
 
 # -- General configuration ---------------------------------------------------
@@ -86,13 +88,13 @@ intersphinx_mapping = {
 }
 
 # -- Generate dummy data -----------------------------------------------------
-import os  # noqa: E402
+import os
 
-import h5py  # noqa: E402
-import numpy as np  # noqa: E402
+import h5py
+import numpy as np
 
-import xdas as xd  # noqa: E402
-from xdas.synthetics import wavelet_wavefronts  # noqa: E402
+import xdas as xd
+from xdas.synthetics import wavelet_wavefronts
 
 dirpath = os.path.join(os.path.split(__file__)[0], "_data")
 if not os.path.exists(dirpath):

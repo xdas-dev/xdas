@@ -6,20 +6,93 @@ kernelspec:
 
 # Coordinates
 
+{py:class}`~xdas.DataArray` combines an N-dimensional array with a set of
+{py:class}`~xdas.coordinates.Coordinate` objects gathered in a
+{py:class}`~xdas.coordinates.Coordinates` dict-like container, accessible via
+`DataArray.coords`.  Each coordinate labels one axis (or attaches scalar
+metadata) and supports both integer-index access and label-based selection.
 
-{py:class}`~xdas.DataArray` is the base class in *xdas*. It is mainly composed of a N-dimensional array and a set of {py:class}`~xdas.Coordinate` objects that are gathered in a {py:class}`~xdas.Coordinates` dict-like object that can be accessed by the `DataArray.coords` attribute. Xdas comes with several flavors of {py:class}`~xdas.Coordinate` objects.
+*xdas* ships four concrete coordinate types:
 
 | Type | Description | `name` | `data` |
-|:---|:---|:---:|:---:|
-| {py:class}`~xdas.coordinates.ScalarCoordinate` | Used to label 0D dimensions | `scalar` | `{"value": any}` |
-| {py:class}`~xdas.coordinates.DefaultCoordinate` | Each value is equal to its index | `default` | `{"size": int}` |
-| {py:class}`~xdas.coordinates.DenseCoordinate` | Each index is mapped to a given value | `dense` | `array-like[any]` |
-| {py:class}`~xdas.coordinates.InterpCoordinate` | Values are interpolated linearly between tie points | `interpolated` | `{"tie_indices": array-like[int], "tie_values": array-like[any]}` |
-| {py:class}`~xdas.coordinates.SampledCoordinate` | Values are given as a multiple of a fixed sampling interval and several start values | `sampled` | `{"tie_values": array-like[any], "tie_indices": array-like[int], "sampling_interval": any}` |
+|:---|:---|:---:|:---|
+| {py:class}`~xdas.coordinates.ScalarCoordinate` | Scalar metadata, not tied to any axis | `scalar` | scalar-like |
+| {py:class}`~xdas.coordinates.DenseCoordinate` | One stored value per element | `dense` | `array-like` |
+| {py:class}`~xdas.coordinates.InterpCoordinate` | Piecewise-linear from tie points | `interpolated` | `{"tie_indices": array-like[int], "tie_values": array-like}` plus optional `"sampling_interval"` and `"tolerance"` scalars |
+| {py:class}`~xdas.coordinates.SampledCoordinate` | Uniform grid with optional gaps | `sampled` | `{"tie_values": array-like, "tie_lengths": array-like[int], "sampling_interval": scalar}` |
 
-In the current state of the documentation, most coordinate information can be found on the [Interpolated Coordinates](interpolated-coordinates) page.
+The three axis-mapping types (`DenseCoordinate`, `InterpCoordinate`,
+`SampledCoordinate`) share the {py:class}`~xdas.coordinates.AxisCoordinate`
+base, which defines the index/label selection contract. `ScalarCoordinate`
+carries a single value with no axis and implements only the thin
+{py:class}`~xdas.coordinates.Coordinate` interface. Use
+`isinstance(coord, AxisCoordinate)` to test whether a coordinate labels an axis.
 
-## Per type information
+## Creating coordinates
+
+{py:class}`~xdas.coordinates.Coordinate` acts as a factory: it inspects the
+shape and structure of `data` and returns the correct subclass automatically.
+
+```{code-cell}
+import numpy as np
+import xdas as xd
+
+# DenseCoordinate — one stored value per index
+xd.Coordinate([0.0, 500.0, 1000.0, 1500.0])
+```
+
+```{code-cell}
+# InterpCoordinate — piecewise-linear between tie points
+xd.Coordinate({"tie_indices": [0, 999], "tie_values": [0.0, 5000.0]})
+```
+
+```{code-cell}
+# SampledCoordinate — uniform sampling with a fixed interval
+xd.Coordinate(
+    {"tie_values": [0.0], "tie_lengths": [1000], "sampling_interval": 5.0}
+)
+```
+
+```{code-cell}
+# ScalarCoordinate — a single metadata value (not an axis)
+xd.Coordinate(42.0)
+```
+
+Subclasses can also be instantiated directly when you need the specific type
+explicitly:
+
+```{code-cell}
+from xdas.coordinates import SampledCoordinate
+
+SampledCoordinate(
+    {"tie_values": [0.0, 600.0], "tie_lengths": [100, 100], "sampling_interval": 5.0}
+)
+```
+
+## Coordinates in a DataArray
+
+Coordinates are attached to a {py:class}`~xdas.DataArray` through the `coords`
+argument.  A dimensional coordinate shares its name with the dimension it
+labels; a non-dimensional coordinate (or a `ScalarCoordinate`) can use a
+different name.
+
+```{code-cell}
+da = xd.DataArray(
+    data=np.zeros((1000, 500)),
+    coords={
+        "time": {
+            "tie_values": [np.datetime64("2024-01-01T00:00:00", "ms")],
+            "tie_lengths": [1000],
+            "sampling_interval": np.timedelta64(4, "ms"),
+        },
+        "distance": {"tie_indices": [0, 499], "tie_values": [0.0, 9980.0]},
+        "network": (None, "DAS-NET"),
+    },
+)
+da
+```
+
+## Per-type details
 
 ```{toctree}
 :maxdepth: 1
@@ -27,21 +100,3 @@ In the current state of the documentation, most coordinate information can be fo
 interpolated-coordinates
 sampled-coordinates
 ```
-
-<!-- ```{code-cell}
-import xdas as xd
-da = xd.DataArray([0, 1, -1, 0, -1, 2], coords={"time": [.0, .1, .2, .3, .4, .5]})
-da
-```
-
-In *xdas* a {py:class}`~xdas.Coordinate` is an object that maps indices to values. Inversely `~xdas.Coordinate` object allow to retreive the index of a given value allowing labeled base selection. 
-
-```{code-cell}
-# index-based selection updates the time coordinate object
-da.isel(time=slice(1,3))
-```
-
-```{code-cell}
-# label-based selection find the corresponding indices to keep
-da.sel(time=slice(0.1, 0.3))
-``` -->

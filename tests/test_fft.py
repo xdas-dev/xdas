@@ -6,14 +6,14 @@ import xdas.fft as xfft
 
 class TestRFFT:
     def test_with_non_dimensional(self):
-        da = xd.synthetics.wavelet_wavefronts()
+        da = xd.testing.dummy()
         da["latitude"] = ("distance", np.arange(da.sizes["distance"]))
         xfft.rfft(da)
 
 
 class TestInverseTransforms:
     def test_standard(self):
-        expected = xd.synthetics.wavelet_wavefronts()
+        expected = xd.testing.dummy()
         result = xfft.ifft(
             xfft.fft(expected, dim={"time": "frequency"}),
             dim={"frequency": "time"},
@@ -30,7 +30,7 @@ class TestInverseTransforms:
                 assert result[name].equals(expected[name])
 
     def test_real(self):
-        expected = xd.synthetics.wavelet_wavefronts()
+        expected = xd.testing.dummy()
         result = xfft.irfft(
             xfft.rfft(expected, dim={"time": "frequency"}),
             expected.sizes["time"],
@@ -47,7 +47,7 @@ class TestInverseTransforms:
                 assert result[name].equals(expected[name])
 
     def test_real_default_n(self):
-        expected = xd.synthetics.wavelet_wavefronts()
+        expected = xd.testing.dummy()
         expected = expected.isel(time=slice(0, expected.sizes["time"] // 2 * 2))
         result = xfft.irfft(
             xfft.rfft(expected, dim={"time": "frequency"}),
@@ -62,3 +62,23 @@ class TestInverseTransforms:
                 assert np.allclose(result["time"].values, ref)
             else:
                 assert result[name].equals(expected[name])
+
+
+class TestDefaultDim:
+    """The default `dim` maps the last dimension; equivalent to naming it."""
+
+    def test_fft(self):
+        da = xd.testing.dummy()
+        assert xfft.fft(da).equals(xfft.fft(da, dim={"distance": "spectrum"}))
+
+    def test_rfft(self):
+        da = xd.testing.dummy()
+        assert xfft.rfft(da).equals(xfft.rfft(da, dim={"distance": "spectrum"}))
+
+    def test_ifft(self):
+        da = xd.testing.dummy()
+        assert xfft.ifft(da).equals(xfft.ifft(da, dim={"distance": "signal"}))
+
+    def test_irfft(self):
+        da = xd.testing.dummy()
+        assert xfft.irfft(da).equals(xfft.irfft(da, dim={"distance": "signal"}))

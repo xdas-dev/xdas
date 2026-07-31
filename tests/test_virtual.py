@@ -3,7 +3,6 @@ import numpy as np
 import pytest
 
 import xdas as xd
-from xdas.synthetics import wavelet_wavefronts
 from xdas.virtual import (
     Selection,
     Selectors,
@@ -19,7 +18,7 @@ from xdas.virtual import (
 
 class TestFunctional:  # TODO: move elsewhere
     def test_all(self, tmp_path):
-        expected = wavelet_wavefronts()
+        expected = xd.testing.dummy()
         chunks = xd.split(expected, 3)
         for index, chunk in enumerate(chunks, start=1):
             chunk.to_netcdf(tmp_path / f"{index:03d}.nc")
@@ -115,7 +114,7 @@ class TestVirtualStack:
         assert stack.empty
         assert stack.shape == ()
         with pytest.raises(AttributeError, match="no dtype"):
-            stack.dtype
+            _ = stack.dtype
         assert stack.ndim == 0
         assert stack.size == 0
         assert stack.nbytes == 0
@@ -355,7 +354,7 @@ class TestSliceSelector:
         sel = SliceSelector(5)
         assert isinstance(sel[0:1], SliceSelector)
         assert sel[:]._range == range(5)
-        assert sel[0:1]._range == range(0, 1)
+        assert sel[0:1]._range == range(1)
         assert sel[1:0]._range == range(1, 0)
         assert sel._range == range(5)
         sel = sel[1:-1]
@@ -392,12 +391,16 @@ class TestSliceSelector:
 class TestVirtualArrayAbstract:
     def test_abstract_stubs(self):
         va = VirtualArray()
-        va.__getitem__(0)
-        va.__array__()
-        _ = va.shape
-        _ = va.dtype
-        va.to_dataset(None, None)
-        assert isinstance(repr(va), str)
+        with pytest.raises(NotImplementedError):
+            _ = va[0]
+        with pytest.raises(NotImplementedError):
+            va.__array__()
+        with pytest.raises(NotImplementedError):
+            _ = va.shape
+        with pytest.raises(NotImplementedError):
+            _ = va.dtype
+        with pytest.raises(NotImplementedError):
+            va.to_dataset(None, None)
 
 
 class TestVirtualStackExtra:
@@ -437,7 +440,7 @@ class TestVirtualStackExtra:
 
 class TestVirtualLayoutExtra:
     def test_array_with_dtype(self, tmp_path):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         da.to_netcdf(tmp_path / "c.nc")
         da2 = xd.open(tmp_path / "c.nc")
         layout = da2.data._to_layout()
@@ -445,7 +448,7 @@ class TestVirtualLayoutExtra:
         assert result.dtype == np.float32
 
     def test_setitem_with_virtual_source(self, tmp_path):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         da.to_netcdf(tmp_path / "d.nc")
         with h5py.File(tmp_path / "d.nc", "r") as f:
             src = VirtualSource(f["__values__"])

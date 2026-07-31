@@ -8,23 +8,13 @@ import xdas as xd
 
 @pytest.fixture
 def float_da():
-    return xd.DataArray(
-        data=np.arange(12.0).reshape(3, 4),
-        coords={
-            "x": {"tie_indices": [0, 2], "tie_values": [0.0, 2.0]},
-            "y": {"tie_indices": [0, 3], "tie_values": [0.0, 3.0]},
-        },
-    )
+    return xd.testing.dummy(dims=("x", "y"), shape=(3, 4), step=1.0, datetime=False)
 
 
 @pytest.fixture
 def int_da():
-    return xd.DataArray(
-        data=np.arange(12).reshape(3, 4),
-        coords={
-            "x": {"tie_indices": [0, 2], "tie_values": [0.0, 2.0]},
-            "y": {"tie_indices": [0, 3], "tie_values": [0.0, 3.0]},
-        },
+    return xd.testing.dummy(
+        dims=("x", "y"), shape=(3, 4), step=1.0, datetime=False, dtype=int
     )
 
 

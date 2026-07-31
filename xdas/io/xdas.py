@@ -14,9 +14,8 @@ import xarray as xr
 from dask.array import Array as DaskArray
 
 from ..coordinates import Coordinates
-from ..core.dataarray import DataArray
-from ..core.datacollection import DataCollection, DataMapping, DataSequence
-from ..dask.core import create_variable, loads
+from ..core import DataArray, DataCollection, DataMapping, DataSequence
+from ..dask import create_variable, loads
 from ..virtual import VirtualArray, VirtualSource
 from .core import Engine
 
@@ -87,7 +86,7 @@ def open_dataarray(fname, group=None):
                 raise ValueError("several possible data arrays detected")
 
         # read coordinates
-        coords = Coordinates.from_dataset(dataset, name)
+        coords = Coordinates._from_dataset(dataset, name)
 
     # read data
     if "__dask_array__" in dataset[name].attrs:
@@ -145,7 +144,7 @@ def save_dataarray(
 
     # prepare metadata
     for coord in da.coords.values():
-        dataset, variable_attrs = coord.to_dataset(dataset, variable_attrs)
+        dataset, variable_attrs = coord._to_dataset(dataset, variable_attrs)
 
     # create parent directories if needed
     if create_dirs:
@@ -197,7 +196,7 @@ def open_datacollection(fname, group=None):
     """Read a :class:`DataCollection` from *fname*, auto-detecting sequence vs. mapping."""
     dc = open_datamapping(fname, group)
     try:
-        keys = [int(key) for key in dc.keys()]
+        keys = [int(key) for key in dc]
     except ValueError:
         return dc
     if set(keys) == set(range(len(keys))):
@@ -225,7 +224,7 @@ def open_datamapping(fname, group=None):
 
     with h5py.File(fname, "r") as file:
         if group is None:
-            group = file[list(file.keys())[0]]
+            group = file[next(iter(file.keys()))]
         else:
             group = file[group]
         name = group.name.split("/")[-1]
@@ -245,7 +244,7 @@ def open_datamapping(fname, group=None):
             if _get_depth(subgroup) == 0:
                 dm[key] = DataArray.from_netcdf(fname, subgroup.name)
             else:
-                subgroup = subgroup[list(subgroup.keys())[0]]
+                subgroup = subgroup[next(iter(subgroup.keys()))]
                 dm[key] = DataCollection.from_netcdf(fname, subgroup.name)
     return dm
 
@@ -260,7 +259,7 @@ def save_datamapping(
         name = dm.name if dm.name is not None else "collection"
         location = "/".join([name, str(key)])
         if group is not None:
-            location = "/".join([group, location])
+            location = f"{group}/{location}"
         if create_dirs:
             dirname = os.path.dirname(fname)
             if dirname:

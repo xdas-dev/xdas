@@ -26,24 +26,24 @@ class VirtualArray:
         return f"{self.__class__.__name__}: {_to_human(self.nbytes)} ({self.dtype})"
 
     def __getitem__(self, key):
-        NotImplemented
+        raise NotImplementedError
 
-    def __array__(self, dtype=None):
-        NotImplemented
+    def __array__(self, dtype=None, copy=None):
+        raise NotImplementedError
 
     @property
     def shape(self):
         """Tuple of array dimensions (abstract — must be overridden)."""
-        NotImplemented
+        raise NotImplementedError
 
     @property
     def dtype(self):
         """NumPy dtype of the array elements (abstract — must be overridden)."""
-        NotImplemented
+        raise NotImplementedError
 
     def to_dataset(self, file_or_group, name):
         """Write this virtual array as an HDF5 dataset (abstract — must be overridden)."""
-        NotImplemented
+        raise NotImplementedError
 
     @property
     def ndim(self):
@@ -113,11 +113,11 @@ class VirtualStack(VirtualArray):
         Concatenation axis.  Defaults to ``0``.
     """
 
-    def __init__(self, sources=[], axis=0):
-        self._sources = list()
+    def __init__(self, sources=None, axis=0):
+        self._sources = []
         self._axis = axis
         self._shape = ()
-        self.extend(sources)
+        self.extend([] if sources is None else sources)
 
     def __getitem__(self, key):
         if not isinstance(key, tuple):
@@ -175,10 +175,10 @@ class VirtualStack(VirtualArray):
             sources = [source[tuple(indexers)] for source in self._sources]
         return VirtualStack(sources, self._axis)
 
-    def __array__(self, dtype=None):
+    def __array__(self, dtype=None, copy=None):
         if not self._sources:
             raise ValueError("no sources in stack")
-        return self._to_layout().__array__(dtype)
+        return self._to_layout().__array__(dtype, copy=copy)
 
     @property
     def sources(self):
@@ -331,7 +331,7 @@ class VirtualLayout(VirtualArray):
         self._layout = h5py.VirtualLayout(shape, dtype, maxshape, filename)
         self._sel = Selection(self._layout.shape)
 
-    def __array__(self, dtype=None):
+    def __array__(self, dtype=None, copy=None):
         with TemporaryDirectory() as tmpdirname:
             fname = os.path.join(tmpdirname, "vds.h5")
             with h5py.File(fname, "w") as file:
@@ -344,9 +344,9 @@ class VirtualLayout(VirtualArray):
         return out
 
     def __getitem__(self, key):
-        self = copy(self)
-        self._sel = self._sel.__getitem__(key)
-        return self
+        out = copy(self)
+        out._sel = out._sel.__getitem__(key)
+        return out
 
     def __setitem__(self, key, value):
         if not self._sel._whole:
@@ -461,11 +461,11 @@ class VirtualSource(VirtualArray):
         self._sel = Selection(self._vsource.shape)
 
     def __getitem__(self, key):
-        self = copy(self)
-        self._sel = self._sel.__getitem__(key)
-        return self
+        out = copy(self)
+        out._sel = out._sel.__getitem__(key)
+        return out
 
-    def __array__(self, dtype=None):
+    def __array__(self, dtype=None, copy=None):
         with h5py.File(self.vsource.path) as file:
             dataset = file[self.vsource.name]
             return np.asarray(dataset[self._sel.get_indexer()], dtype=dtype)

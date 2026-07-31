@@ -1,20 +1,26 @@
 """I/O engine for MiniSEED files via ObsPy (:class:`MiniSEEDEngine`)."""
 
+from typing import ClassVar
+
 import dask
 import numpy as np
 import obspy
 
-from ..coordinates.core import Coordinate, Coordinates, get_sampling_interval
-from ..core.dataarray import DataArray
-from ..core.routines import concat_coords
+from ..coordinates import (
+    AxisCoordinate,
+    Coordinate,
+    Coordinates,
+    get_sampling_interval,
+)
+from ..core import DataArray, concat_coords
 from .core import Engine
 
 
 class MiniSEEDEngine(Engine, name="miniseed"):
     """Engine for reading MiniSEED files via ObsPy as lazy dask-backed DataArrays."""
 
-    _supported_vtypes = ["dask"]
-    _supported_ctypes = {
+    _supported_vtypes: ClassVar[list] = ["dask"]
+    _supported_ctypes: ClassVar[dict] = {
         "time": ["interpolated", "sampled", "dense"],
     }
 
@@ -81,7 +87,9 @@ class MiniSEEDEngine(Engine, name="miniseed"):
             }
         )
 
-        shape = tuple(len(coord) for coord in coords.values() if not coord.isscalar())
+        shape = tuple(
+            len(coord) for coord in coords.values() if isinstance(coord, AxisCoordinate)
+        )
         return shape, dtype, coords, method
 
     def read_data(self, path, method, ignore_last_sample):
@@ -112,7 +120,7 @@ def to_stream(
     station="DAS{:05}",
     location="00",
     channel="{:1}N1",
-    dim={"last": "first"},
+    dim=None,
 ):
     """
     Convert a 2-D :class:`DataArray` to an :class:`obspy.Stream`.
@@ -131,6 +139,8 @@ def to_stream(
     -------
     obspy.Stream
     """
+    if dim is None:
+        dim = {"last": "first"}
     dimdist, dimtime = dim.copy().popitem()
     if not da.ndim == 2:
         raise ValueError("the data array must be 2D")
@@ -174,13 +184,11 @@ def from_stream(st, dims=("channel", "time")):
     """
     data = np.stack([tr.data for tr in st])
     channel = [tr.id for tr in st]
-    time = {
-        "tie_indices": [0, st[0].stats.npts - 1],
-        "tie_values": [
-            np.datetime64(st[0].stats.starttime.datetime),
-            np.datetime64(st[0].stats.endtime.datetime),
-        ],
-    }
+    # Regular by construction from the stream's own sample rate, at ns
+    # resolution so a `to_stream` round trip preserves the coordinate.
+    t0 = np.datetime64(st[0].stats.starttime.datetime)
+    dt = np.rint(1e6 * st[0].stats.delta).astype("m8[us]").astype("m8[ns]")
+    time = Coordinate["interpolated"].from_block(t0, st[0].stats.npts, dt, dim=dims[1])
     return DataArray(data, {dims[0]: channel, dims[1]: time})
 
 
@@ -195,7 +203,7 @@ def get_time_coord(tr, ignore_last_sample, ctype):
 def uniquifiy(seq):
     """Return the unique elements of *seq* in order; unwrap to scalar if only one."""
     seen = set()
-    seq = list(x for x in seq if x not in seen and not seen.add(x))
+    seq = [x for x in seq if x not in seen and not seen.add(x)]
     if len(seq) == 1:
         return seq[0]
     else:

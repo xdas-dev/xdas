@@ -21,7 +21,7 @@ import xarray as xr
 from loky import get_reusable_executor
 from tqdm import tqdm
 
-from ..coordinates.core import Coordinates, get_sampling_interval
+from ..coordinates import AxisCoordinate, Coordinates
 from ..parallel import get_workers_count
 from ..virtual import VirtualSource, VirtualStack
 from .dataarray import DataArray
@@ -143,7 +143,7 @@ def open(
     elif isinstance(paths, list):
         method = "multi-file"
     else:
-        raise Exception(
+        raise ValueError(
             f"`paths` must be either a string or a list, found {type(paths)}"
         )
     match method:
@@ -151,7 +151,7 @@ def open(
             if engine is None:
                 try:
                     return open_datacollection(paths)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 - fall back to dataarray
                     pass
             return open_dataarray(paths, engine=engine, **kwargs)
         case "multi-file":
@@ -165,7 +165,7 @@ def open(
                         parallel=parallel,
                         verbose=verbose,
                     )
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 - fall back to mfdataarray
                     pass
             return open_mfdataarray(
                 paths,
@@ -468,7 +468,7 @@ def collect(
 def defaulttree(depth):
     """Generate a default tree of lists with given depth."""
     if depth == 1:
-        return list()
+        return []
     else:
         return defaultdict(lambda: defaulttree(depth - 1))
 
@@ -555,7 +555,7 @@ def open_mfdataarray(
         for path in iterator:
             try:
                 objs.append(open_dataarray(path, engine=engine, **kwargs))
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001 - collected and warned below
                 failures.append((path, error))
                 warnings.warn(f"could not open {path}: {error}", RuntimeWarning)
     else:
@@ -575,7 +575,7 @@ def open_mfdataarray(
         for future in iterator:
             try:
                 obj = future.result()
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001 - collected and warned below
                 path = futures_to_paths[future]
                 failures.append((path, error))
                 warnings.warn(f"could not open {path}: {error}", RuntimeWarning)
@@ -738,7 +738,7 @@ def combine_by_field(
         dc.name = leaves[0].name
         return dc
     elif nodes and not leaves:
-        (name,) = set(dc.name for dc in nodes)
+        (name,) = {dc.name for dc in nodes}
         keys = sorted(set.union(*[set(dc.keys()) for dc in nodes]))
         return DataCollection(
             {
@@ -803,7 +803,11 @@ def combine_by_coords(
     if dim in objs[0].coords:
         objs = sorted(
             objs,
-            key=lambda da: da[dim].values if da[dim].isscalar() else da[dim][0].values,
+            key=lambda da: (
+                da[dim][0].values
+                if isinstance(da[dim], AxisCoordinate)
+                else da[dim].values
+            ),
         )
 
     # combine objs
@@ -857,19 +861,23 @@ class Bag:
         """Set *da* as the first element and record its shape, coords, sampling interval, and dtype."""
         self.objs = [da]
         self.dims = da.dims
-        self.subshape = tuple(
-            size for dim, size in da.sizes.items() if not dim == self.dim
-        )
+        self.subshape = tuple(size for dim, size in da.sizes.items() if dim != self.dim)
         self.subcoords = (
             da.coords.drop_dims(self.dim)
             if self.dim in self.dims
             else da.coords.drop_coords(self.dim)
         )
-        if self.dim in da.coords:
-            self.delta = get_sampling_interval(da, self.dim)
-        else:
-            self.delta = None
+        self.delta = self._get_delta(da)
         self.dtype = da.dtype
+
+    def _get_delta(self, da):
+        """Nominal sampling interval of *da* along *dim*, or ``None`` (irregular or absent)."""
+        if self.dim not in da.coords:
+            return None
+        coord = da.coords[self.dim]
+        if not isinstance(coord, AxisCoordinate):
+            return None
+        return coord.get_sampling_interval()
 
     def append(self, da):
         """Add *da* after running all compatibility checks; initialises on first call."""
@@ -890,7 +898,7 @@ class Bag:
 
     def check_shape(self, da):
         """Raise :exc:`CompatibilityError` if *da* has a different non-concat shape."""
-        subshape = tuple(size for dim, size in da.sizes.items() if not dim == self.dim)
+        subshape = tuple(size for dim, size in da.sizes.items() if dim != self.dim)
         if not self.subshape == subshape:
             raise CompatibilityError("shapes are not compatible")
 
@@ -914,12 +922,21 @@ class Bag:
         if self.delta is None:
             pass
         else:
-            delta = get_sampling_interval(da, self.dim)
-            if not np.isclose(delta, self.delta):
+            delta = self._get_delta(da)
+            if delta is None or not np.isclose(delta, self.delta):
                 raise CompatibilityError("sampling intervals are not compatible")
 
 
-def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
+def concat(
+    objs,
+    dim="first",
+    tolerance=None,
+    virtual=None,
+    verbose=None,
+    *,
+    reduce=True,
+    regularize=False,
+):
     """
     Concatenate data arrays along a given dimension.
 
@@ -932,12 +949,22 @@ def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
     tolerance : float or timedelta64, optional
         The tolerance to consider that the end of a file is continuous with beginning of
         the following, For time coordinates, numeric values are considered as seconds.
-        Zero by default.
+        By default each coordinate spends its own declared tolerance when it
+        carries one, else a zero-like default. Pass ``False`` to disable
+        simplification entirely.
     virtual : bool, optional
         Whether to create a virtual dataset. It requires that all concatenated
         data arrays are virtual. By default tries to create a virtual dataset if possible.
     verbose: bool
         Whether to display a progress bar.
+    reduce : bool, optional
+        Whether to drop redundant tie points from the concatenated coordinate.
+        Default True.
+    regularize : bool, optional
+        Whether to promote the concatenated coordinate to a regular one when its
+        segments admit a single shared rate within *tolerance*. Default False:
+        regular inputs already stay regular through concatenation, so promotion
+        only matters for irregular inputs and stays opt-in.
 
     Returns
     -------
@@ -976,6 +1003,8 @@ def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
             sort=True,
             return_order=True,
             tolerance=tolerance,
+            reduce=reduce,
+            regularize=regularize,
         )
         objs = [objs[idx] for idx in order]
         coords[dim] = coord
@@ -986,8 +1015,7 @@ def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
     data = []
     for da in iterator:
         if isinstance(da.data, VirtualStack):
-            for source in da.data.sources:
-                data.append(source)
+            data.extend(da.data.sources)
         else:
             data.append(da.data)
 
@@ -1002,7 +1030,15 @@ def concat(objs, dim="first", tolerance=None, virtual=None, verbose=None):
 concatenate = concat  # TODO: deprecate it
 
 
-def concat_coords(objs, *, sort=False, return_order=False, tolerance=False):
+def concat_coords(
+    objs,
+    *,
+    sort=False,
+    return_order=False,
+    tolerance=None,
+    reduce=True,
+    regularize=False,
+):
     """
     Concatenate coordinate objects.
 
@@ -1018,7 +1054,15 @@ def concat_coords(objs, *, sort=False, return_order=False, tolerance=False):
     tolerance : float or timedelta64, optional
         The tolerance to consider that the end of a coordinate object is continuous
         with beginning of the following, For time coordinates, numeric values are
-        considered as seconds. No simplification by default.
+        considered as seconds. By default the coordinate spends its own declared
+        tolerance when it carries one, else a zero-like default. Pass ``False``
+        to disable simplification entirely.
+    reduce : bool, optional
+        Whether to drop redundant tie points after concatenation. Default True.
+    regularize : bool, optional
+        Whether to promote the result to a regular coordinate when the merged
+        segments admit a single shared rate within *tolerance*. Default False:
+        regular inputs already stay regular through concatenation.
 
     Returns
     -------
@@ -1037,20 +1081,22 @@ def concat_coords(objs, *, sort=False, return_order=False, tolerance=False):
 
     # concat
     for obj in objs[1:]:
-        out = out.concat(obj)
+        out = out._concat(obj)
 
     # simplify
     if tolerance is not False:
-        try:
-            out = out.simplify(tolerance)
-        except NotImplementedError:
-            if (
-                tolerance is not None
-            ):  # TODO: Default to False and remove this condition here?
-                raise TypeError(
-                    "`tolerance` can only be used with coordinates "
-                    "that implements `simplify`"
-                )
+        if isinstance(out, AxisCoordinate):
+            # `_concat` is strict: same-rate inputs stay regular, mismatched
+            # rates drop to irregular. `simplify` then drops redundant tie
+            # points (chunk seams within tolerance fuse away) and, with
+            # `regularize=True`, recovers a single shared rate when the merged
+            # segments admit one within *tolerance*.
+            out = out.simplify(tolerance, reduce=reduce, regularize=regularize)
+        elif tolerance is not None:
+            raise TypeError(
+                "`tolerance` can only be used with coordinates "
+                "that implements `simplify`"
+            )
 
     if return_order:
         return out, order
@@ -1217,7 +1263,7 @@ def broadcast_coords(*objs):
             else:
                 sizes[dim] = size
         for name, coord in obj.coords.items():
-            if coord.isscalar():
+            if not isinstance(coord, AxisCoordinate):
                 continue
             if name in coords:
                 if not coord.equals(coords[name]):

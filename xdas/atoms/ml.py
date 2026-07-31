@@ -8,8 +8,7 @@ import importlib
 
 import numpy as np
 
-from ..core.dataarray import DataArray
-from ..core.routines import concat
+from ..core import DataArray, concat
 from .core import Atom, State
 
 
@@ -114,7 +113,7 @@ class MLPicker(Atom):
     def initialize(self, da, chunk_dim=None, **flags):
         """Allocate circular buffers sized to *da*'s batch and segment dimensions."""
         self.batch_size = State(
-            np.prod([size for dim, size in da.sizes.items() if not dim == self.dim])
+            np.prod([size for dim, size in da.sizes.items() if dim != self.dim])
         )
         self.circular_input = State(
             torch.zeros(
@@ -214,7 +213,7 @@ class MLPicker(Atom):
         coords = da.coords.copy()
         coords[self.dim] = coords[self.dim][idx : idx + self.step]
         coords["phase"] = self.phases
-        dims = tuple(dim for dim in da.dims if not dim == self.dim) + (
+        dims = tuple(dim for dim in da.dims if dim != self.dim) + (
             "phase",
             self.dim,
         )

@@ -9,7 +9,6 @@ import pytest
 
 import xdas as xd
 from xdas.coordinates import Coordinates, DenseCoordinate, InterpCoordinate
-from xdas.synthetics import wavelet_wavefronts
 
 
 def generate(dense=False):
@@ -56,13 +55,21 @@ class TestBase:
         da = xd.DataArray()
         assert np.array_equal(da.values, np.array(np.nan), equal_nan=True)
         assert da.coords == {}
-        assert da.dims == tuple()
+        assert da.dims == ()
         da = xd.DataArray([[]])
         assert da.dims == ("dim_0", "dim_1")
         assert da.ndim == 2
         da = xd.DataArray(1)
-        assert da.dims == tuple()
+        assert da.dims == ()
         assert da.ndim == 0
+
+    def test_array_copy_keyword(self):
+        data = np.arange(5.0)
+        da = xd.DataArray(data, {"x": np.arange(5)})
+        # copy=False / None may share memory with the backing array
+        assert np.shares_memory(np.array(da, copy=False), data)
+        # copy=True must return an independent array
+        assert not np.shares_memory(np.array(da, copy=True), data)
 
     def test_raises_on_data_and_coords_mismatch(self):
         with pytest.raises(ValueError, match="different number of dimensions"):
@@ -118,7 +125,7 @@ class TestSetters:
             da.dims = ("other_dim",)
 
     def test_data_setter(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         data = np.arange(np.prod(da.shape)).reshape(da.shape)
         da.data = data
         assert np.array_equal(da.data, data)
@@ -162,7 +169,7 @@ class TestSelection:
         assert da.sel(dim=slice(100.0, 300.0)).equals(da[0:3])
         assert da.sel(dim=slice(100.0, 300.0), endpoint=False).equals(da[0:2])
         # drop
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         result = da.sel(distance=0, method="nearest", drop=True)
         assert "distance" not in result.coords
 
@@ -217,7 +224,7 @@ class TestSelection:
             da.sel(time=0.1, method="nearest")
 
     def test_isel(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         result = da.isel(first=0)
         excepted = da.isel(time=0)
         assert result.equals(excepted)
@@ -225,7 +232,7 @@ class TestSelection:
         excepted = da.isel(distance=0)
         assert result.equals(excepted)
         # drop
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         result = da.sel(distance=0, drop=True)
         assert "distance" not in result.coords
 
@@ -306,7 +313,7 @@ class TestCoorinates:
 
 class TestManipulation:
     def test_transpose(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         result = da.transpose("distance", "time")
         assert result.dims == ("distance", "time")
         assert np.array_equal(result.values, da.values.T)
@@ -320,7 +327,7 @@ class TestManipulation:
             da.transpose("space", "frequency")
 
     def test_ufunc(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         result = np.add(da, 1)
         assert np.array_equal(result.data, da.data + 1)
         result = np.add(da, np.ones(da.shape[-1]))
@@ -331,7 +338,7 @@ class TestManipulation:
         assert np.array_equal(result.data, da.data + da.data[0])
 
     def test_arithmetics(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         result = da + 1
         assert np.array_equal(result.data, da.data + 1)
         result = da + np.array(1)
@@ -427,13 +434,9 @@ class TestIO:
         assert np.array_equal(result["dim"].values, da["dim"].values)
 
     def test_stream(self):
-        da = wavelet_wavefronts()
-        da["time"] = {
-            "tie_indices": da["time"].tie_indices,
-            "tie_values": da["time"].tie_values.astype("datetime64[us]"),
-        }
+        da = xd.testing.dummy()
         st = da.to_stream(dim={"distance": "time"})
-        assert st[0].id == "NET.DAS00001.00.BN1"
+        assert st[0].id == "NET.DAS00001.00.HN1"
         assert len(st) == da.sizes["distance"]
         assert st[0].stats.npts == da.sizes["time"]
         assert np.datetime64(st[0].stats.starttime.datetime) == da["time"][0].values
@@ -474,7 +477,7 @@ class TestIO:
         assert result.equals(da)
 
         da_path = tmp_path / "da.nc"
-        da = wavelet_wavefronts().assign_coords(lon=("distance", np.arange(401)))
+        da = xd.testing.dummy().assign_coords(lon=("distance", np.arange(10)))
         da.to_netcdf(da_path)
         tmp = xd.open_dataarray(da_path)
         vds_path = tmp_path / "vds.nc"
@@ -484,7 +487,7 @@ class TestIO:
 
     def test_io(self, tmp_path):
         # both coords interpolated
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         path = tmp_path / "interp.nc"
         da.to_netcdf(path)
         da_recovered = xd.DataArray.from_netcdf(path)
@@ -657,7 +660,7 @@ class TestDataArrayMissingBranches:
         assert "DaskArray" in r
 
     def test_repr_virtual(self, tmp_path):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         da.to_netcdf(tmp_path / "a.nc")
         da2 = xd.open(tmp_path / "a.nc")
         r = repr(da2)
@@ -766,12 +769,12 @@ class TestDataArrayMissingBranches:
         assert "x" in result.coords
 
     def test_isel_drop_non_scalar(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         result = da.isel(time=slice(0, 3), drop=True)
         assert "time" in result.coords
 
     def test_sel_drop_non_scalar(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         t0 = da["time"].tie_values[0]
         t1 = da["time"].tie_values[-1]
         result = da.sel(time=slice(t0, t1), drop=True)
@@ -803,43 +806,6 @@ class TestDataArrayMissingBranches:
         da["y"] = ("x", [10, 20, 30])
         with pytest.raises(ValueError, match="cannot expand along y"):
             da.expand_dims("y", 0)
-
-    def test_to_dict_virtual_raises(self, tmp_path):
-        da = wavelet_wavefronts()
-        da.to_netcdf(tmp_path / "b.nc")
-        da2 = xd.open(tmp_path / "b.nc")
-        with pytest.raises(NotImplementedError):
-            da2.to_dict()
-
-    def test_to_dict_numpy(self):
-        da = xd.DataArray(np.array([1.0, 2.0, 3.0]), {"x": [1, 2, 3]})
-        d = da.to_dict()
-        assert isinstance(d["data"], list)
-
-    def test_to_dict_dask(self):
-        data = dask.array.from_array(np.ones((3,)), chunks=3)
-        da = xd.DataArray(data, {"x": [1, 2, 3]})
-        d = da.to_dict()
-        assert isinstance(d["data"], dict)
-
-    def test_from_dict_list(self):
-        da = xd.DataArray(np.array([1.0, 2.0]), {"x": [1, 2]})
-        d = da.to_dict()
-        result = xd.DataArray.from_dict(d)
-        assert isinstance(result.data, np.ndarray)
-        assert np.allclose(result.values, [1.0, 2.0])
-
-    def test_from_dict_dict(self):
-        data = dask.array.from_array(np.ones((3,)), chunks=3)
-        da = xd.DataArray(data, {"x": [1, 2, 3]})
-        d = da.to_dict()
-        result = xd.DataArray.from_dict(d)
-        assert np.allclose(result.values, np.ones(3))
-
-    def test_from_dict_invalid(self):
-        d = {"data": 42, "coords": {}, "dims": (), "name": None, "attrs": {}}
-        with pytest.raises(ValueError, match="data must be a list or a dictionary"):
-            xd.DataArray.from_dict(d)
 
     def test_plot_1d(self):
         import matplotlib

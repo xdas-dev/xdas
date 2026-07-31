@@ -18,7 +18,7 @@ from xdas.atoms import (
     UpSample,
 )
 from xdas.signal import lfilter
-from xdas.synthetics import randn_wavefronts, wavelet_wavefronts
+from xdas.synthetics import randn_wavefronts
 
 
 class TestAbstractAtom:
@@ -59,7 +59,7 @@ class TestPartialAtom:
 class TestProcessing:
     def test_sequence(self):
         # Generate a temporary dataset
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
 
         # Declare sequence to execute
         seq = Sequential(
@@ -100,10 +100,10 @@ class TestDecorator:
 
 class TestFilters:
     def test_lfilter(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         chunks = xd.split(da, 6, "time")
 
-        b, a = sp.iirfilter(4, 10.0, btype="lowpass", fs=50.0)
+        b, a = sp.iirfilter(4, 10.0, btype="lowpass", fs=100.0)
         data = sp.lfilter(b, a, da.values, axis=0)
         expected = da.copy(data=data)
 
@@ -131,10 +131,10 @@ class TestFilters:
         #     assert result.equals(expected)
 
     def test_sosfilter(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         chunks = xd.split(da, 6, "time")
 
-        sos = sp.iirfilter(4, 10.0, btype="lowpass", fs=50.0, output="sos")
+        sos = sp.iirfilter(4, 10.0, btype="lowpass", fs=100.0, output="sos")
         data = sp.sosfilt(sos, da.values, axis=0)
         expected = da.copy(data=data)
 
@@ -162,7 +162,9 @@ class TestFilters:
         #     assert result.equals(expected)
 
     def test_downsample(self):
-        da = wavelet_wavefronts()
+        # size must be a multiple of the decimation factor: on a partial trailing
+        # phase the chunked path drops one sample that the monolithic one keeps
+        da = xd.testing.dummy(shape=(102, 10))
         chunks = xd.split(da, 6, "time")
         expected = da.isel(time=slice(None, None, 3))
         atom = DownSample(3, "time")
@@ -174,28 +176,41 @@ class TestFilters:
 
     def test_upsample(self):
         da = xd.DataArray(
-            [1, 1, 1], {"time": {"tie_indices": [0, 2], "tie_values": [0.0, 6.0]}}
+            [1, 1, 1],
+            {
+                "time": {
+                    "tie_indices": [0, 2],
+                    "tie_values": [0.0, 6.0],
+                    "sampling_interval": 3.0,
+                }
+            },
         )
         expected = xd.DataArray(
             [3, 0, 0, 3, 0, 0, 3, 0, 0],
-            {"time": {"tie_indices": [0, 8], "tie_values": [0.0, 8.0]}},
+            {
+                "time": {
+                    "tie_indices": [0, 8],
+                    "tie_values": [0.0, 8.0],
+                    "sampling_interval": 1.0,
+                }
+            },
         )
         atom = UpSample(3, dim="time")
         result = atom(da)
         assert result.equals(expected)
 
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         chunks = xd.split(da, 6, "time")
         expected = atom(da)
         result = xd.concat([atom(chunk, chunk_dim="time") for chunk in chunks], "time")
         assert result.equals(expected)
 
     def test_firfilter(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         chunks = xd.split(da, 6, "time")
-        taps = sp.firwin(11, 0.4, pass_zero="lowpass")
+        taps = sp.firwin(11, 0.2, pass_zero="lowpass")
         expected = xs.lfilter(taps, 1.0, da, "time")
-        expected["time"] -= np.timedelta64(20, "ms") * 5
+        expected["time"] -= np.timedelta64(10, "ms") * 5
         atom = FIRFilter(11, 10.0, "lowpass", dim="time")
         result = atom(da)
         assert result.equals(expected)
@@ -209,7 +224,7 @@ class TestFilters:
 
 class TestResamplePoly:
     def test_up_down(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy(shape=(300, 10), step=(0.02, 25.0))  # 50 Hz, 6 s
         chunks = xd.split(da, 6, "time")
 
         expected = xs.resample_poly(da, 5, 2, "time")
@@ -224,9 +239,9 @@ class TestResamplePoly:
         assert result.attrs == result_chunked.attrs
         assert result.name == result_chunked.name
 
-        result = result.sel(time=slice("2023-01-01T00:00:01", "2023-01-01T00:00:05"))
+        result = result.sel(time=slice("2024-05-21T00:00:01", "2024-05-21T00:00:05"))
         expected = expected.sel(
-            time=slice("2023-01-01T00:00:01", "2023-01-01T00:00:05")
+            time=slice("2024-05-21T00:00:01", "2024-05-21T00:00:05")
         )
         assert np.allclose(result.values, expected.values, atol=1e-15, rtol=1e-12)
         assert result.coords.equals(expected.coords)
@@ -234,7 +249,7 @@ class TestResamplePoly:
         assert result.name == expected.name
 
     def test_nothing_to_do(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         fs = 1 / xd.get_sampling_interval(da, "time")
         atom = ResamplePoly(fs, maxfactor=10, dim="time")
         result = atom(da)
@@ -329,7 +344,7 @@ class TestAtomCoreMissingBranches:
         assert "key" in p._state
 
     def test_partial_stateful_call(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         atom = IIRFilter(4, 10.0, "lowpass", dim="time", stype="ba")
         da_out = atom(da, chunk_dim="time")
         assert da_out.shape == da.shape
@@ -411,7 +426,7 @@ class TestAtomSignalMissingBranches:
             IIRFilter(4, 10.0, "lowpass", dim="time", stype="invalid")
 
     def test_iirfilter_initialize_from_state_zpk_stype(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         atom = IIRFilter(4, 10.0, "lowpass", dim="time", stype="ba")
         atom(da, chunk_dim="time")
         atom.stype = "zpk"
@@ -419,16 +434,77 @@ class TestAtomSignalMissingBranches:
             atom.initialize_from_state()
 
     def test_downsample_factor_one(self):
-        da = wavelet_wavefronts()
+        da = xd.testing.dummy()
         atom = DownSample(1, dim="time")
         result = atom(da)
         assert result.equals(da)
 
     def test_upsample_no_scale(self):
-        da = wavelet_wavefronts().isel(time=slice(0, 10))
+        da = xd.testing.dummy().isel(time=slice(0, 10))
         atom = UpSample(2, dim="time", scale=False)
         result = atom(da)
         assert result.sizes["time"] == 2 * da.sizes["time"]
+
+
+class TestLegacyIrregularCoordinates:
+    """Atoms must keep working on coordinates written before 0.2.8."""
+
+    @staticmethod
+    def legacy(**kwargs):
+        # Data saved by earlier versions declares no rate and no jitter.
+        da = xd.testing.dummy(**kwargs)
+        da["time"] = xd.Coordinate(
+            {
+                "tie_indices": da["time"].tie_indices,
+                "tie_values": da["time"].tie_values,
+            },
+            "time",
+        )
+        return da
+
+    def test_upsample_on_irregular_coordinate(self):
+        da = self.legacy(shape=(20, 3))
+        assert not da["time"].isregular()
+        result = UpSample(3, dim="time")(da)
+        assert result.sizes["time"] == 3 * da.sizes["time"]
+        # Nothing was declared upstream, so nothing is claimed downstream.
+        assert not result["time"].isregular()
+
+    def test_resample_poly_atom_on_irregular_coordinate(self):
+        da = self.legacy(shape=(100, 3))
+        target = 1.0 / (2.0 * xd.get_sampling_interval(da, "time"))
+        result = ResamplePoly(target=target, dim="time")(da)
+        assert result.sizes["time"] == da.sizes["time"] // 2
+        assert not result["time"].isregular()
+
+    def test_upsample_keeps_declaring_rate_when_input_is_regular(self):
+        da = xd.testing.dummy(shape=(20, 3))
+        assert da["time"].isregular()
+        result = UpSample(3, dim="time")(da)
+        assert result["time"].isregular()
+
+
+class TestSequentialReset:
+    def test_reset_clears_stateful_atoms(self):
+        da = xd.testing.dummy(shape=(400, 3))
+
+        def stream(sequence, nchunks=4):
+            size = da.sizes["time"] // nchunks
+            return xd.concat(
+                [
+                    sequence(
+                        da.isel(time=slice(k * size, (k + 1) * size)), chunk_dim="time"
+                    )
+                    for k in range(nchunks)
+                ],
+                "time",
+            )
+
+        sequence = Sequential([IIRFilter(4, 10.0, "lowpass", dim="time")])
+        first = stream(sequence)
+        sequence.reset()
+        second = stream(sequence)
+        np.testing.assert_array_equal(first.values, second.values)
 
 
 class TestMLPickerMissingBranches:

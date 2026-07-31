@@ -7,14 +7,14 @@ Includes :func:`fft`, :func:`ifft`, :func:`rfft`, :func:`irfft`,
 
 import numpy as np
 
-from .atoms.core import atomized
-from .coordinates.core import get_sampling_interval
-from .core.dataarray import DataArray
+from .atoms import atomized
+from .coordinates import get_sampling_interval
+from .core import DataArray
 from .parallel import parallelize
 
 
 @atomized
-def fft(da, n=None, dim={"last": "spectrum"}, norm=None, parallel=None):
+def fft(da, n=None, dim=None, norm=None, parallel=None):
     """
     Compute the discrete Fourier Transform along a given dimension.
 
@@ -52,21 +52,25 @@ def fft(da, n=None, dim={"last": "spectrum"}, norm=None, parallel=None):
     --------
     >>> import xdas as xd
     >>> import xdas.fft as xfft
-    >>> signal = xd.DataArray([0., 1., 0., -1.], coords={"time": [0, 1, 2, 3]})
+    >>> signal = xd.DataArray([0., 1., 0., -1.], coords={"time": [0., 1., 2., 3.]})
+    >>> signal["time"] = signal["time"].to_regular()
     >>> xfft.fft(signal, dim={"time": "frequency"})
     <xdas.DataArray (frequency: 4)>
     [0.+0.j 0.+2.j 0.+0.j 0.-2.j]
     Coordinates:
-    * frequency (frequency): [-0.5  ...  0.25]
+      * frequency (frequency): -0.500 to 0.250
 
     """
+    if dim is None:
+        dim = {"last": "spectrum"}
     ((olddim, newdim),) = dim.items()
     olddim = da.dims[da.get_axis_num(olddim)]
     if n is None:
         n = da.sizes[olddim]
     axis = da.get_axis_num(olddim)
     d = get_sampling_interval(da, olddim)
-    f = np.fft.fftshift(np.fft.fftfreq(n, d))
+    start = np.fft.fftshift(np.fft.fftfreq(n, d))[0]
+    f = type(da.coords[olddim]).from_block(start, n, 1 / (n * d), dim=newdim)
 
     def func(x):
         return np.fft.fftshift(np.fft.fft(x, n, axis, norm), axis)
@@ -84,7 +88,7 @@ def fft(da, n=None, dim={"last": "spectrum"}, norm=None, parallel=None):
 
 
 @atomized
-def rfft(da, n=None, dim={"last": "spectrum"}, norm=None, parallel=None):
+def rfft(da, n=None, dim=None, norm=None, parallel=None):
     """
     Compute the discrete Fourier Transform  for real inputs along a given dimension.
 
@@ -123,14 +127,17 @@ def rfft(da, n=None, dim={"last": "spectrum"}, norm=None, parallel=None):
     --------
     >>> import xdas as xd
     >>> import xdas.fft as xfft
-    >>> signal = xd.DataArray([0., 1., 0., -1.], coords={"time": [0, 1, 2, 3]})
+    >>> signal = xd.DataArray([0., 1., 0., -1.], coords={"time": [0., 1., 2., 3.]})
+    >>> signal["time"] = signal["time"].to_regular()
     >>> xfft.rfft(signal, dim={"time": "frequency"})
     <xdas.DataArray (frequency: 3)>
     [0.+0.j 0.-2.j 0.+0.j]
     Coordinates:
-    * frequency (frequency): [0.  ... 0.5]
+      * frequency (frequency): 0.000 to 0.500
 
     """
+    if dim is None:
+        dim = {"last": "spectrum"}
     ((olddim, newdim),) = dim.items()
     olddim = da.dims[da.get_axis_num(olddim)]
     if n is None:
@@ -139,7 +146,7 @@ def rfft(da, n=None, dim={"last": "spectrum"}, norm=None, parallel=None):
     d = get_sampling_interval(da, olddim)
     across = int(axis == 0)
     func = parallelize(across, across, parallel)(np.fft.rfft)
-    f = np.fft.rfftfreq(n, d)
+    f = type(da.coords[olddim]).from_block(0.0, n // 2 + 1, 1 / (n * d), dim=newdim)
     data = func(da.values, n, axis, norm)
     coords = {
         newdim if name == olddim else name: f if name == olddim else da.coords[name]
@@ -151,7 +158,7 @@ def rfft(da, n=None, dim={"last": "spectrum"}, norm=None, parallel=None):
 
 
 @atomized
-def ifft(da, n=None, dim={"last": "signal"}, norm=None, parallel=None):
+def ifft(da, n=None, dim=None, norm=None, parallel=None):
     """
     Compute the inverse of `fft`.
 
@@ -186,20 +193,24 @@ def ifft(da, n=None, dim={"last": "signal"}, norm=None, parallel=None):
     --------
     >>> import xdas as xd
     >>> import xdas.fft as xfft
-    >>> signal = xd.DataArray([0., 1., 0., -1.], coords={"time": [0, 1, 2, 3]})
+    >>> signal = xd.DataArray([0., 1., 0., -1.], coords={"time": [0., 1., 2., 3.]})
+    >>> signal["time"] = signal["time"].to_regular()
     >>> spectrum = xfft.fft(signal, dim={"time": "frequency"})
     >>> result = xfft.ifft(spectrum, dim={"frequency": "time"})
     >>> result["time"] = signal["time"]  # to match time coordinates
     >>> assert np.real(result).equals(signal)
 
     """
+    if dim is None:
+        dim = {"last": "signal"}
     ((olddim, newdim),) = dim.items()
     olddim = da.dims[da.get_axis_num(olddim)]
     if n is None:
         n = da.sizes[olddim]
     axis = da.get_axis_num(olddim)
     d = get_sampling_interval(da, olddim)
-    f = np.fft.ifftshift(np.fft.fftfreq(n, d))
+    start = np.fft.fftshift(np.fft.fftfreq(n, d))[0]
+    f = type(da.coords[olddim]).from_block(start, n, 1 / (n * d), dim=newdim)
 
     def func(x):
         return np.fft.ifft(np.fft.ifftshift(x, axis), n, axis, norm)
@@ -217,7 +228,7 @@ def ifft(da, n=None, dim={"last": "signal"}, norm=None, parallel=None):
 
 
 @atomized
-def irfft(da, n=None, dim={"last": "signal"}, norm=None, parallel=None):
+def irfft(da, n=None, dim=None, norm=None, parallel=None):
     """
     Compute the inverse of `rfft`.
 
@@ -257,7 +268,8 @@ def irfft(da, n=None, dim={"last": "signal"}, norm=None, parallel=None):
     --------
     >>> import xdas as xd
     >>> import xdas.fft as xfft
-    >>> signal = xd.DataArray([0., 1., 0., -1.], coords={"time": [0, 1, 2, 3]})
+    >>> signal = xd.DataArray([0., 1., 0., -1.], coords={"time": [0., 1., 2., 3.]})
+    >>> signal["time"] = signal["time"].to_regular()
     >>> spectrum = xfft.rfft(signal, dim={"time": "frequency"})
     >>> result = xfft.irfft(
     ...    spectrum,
@@ -268,6 +280,8 @@ def irfft(da, n=None, dim={"last": "signal"}, norm=None, parallel=None):
     >>> assert np.real(result).equals(signal)
 
     """
+    if dim is None:
+        dim = {"last": "signal"}
     ((olddim, newdim),) = dim.items()
     olddim = da.dims[da.get_axis_num(olddim)]
     if n is None:
@@ -276,7 +290,8 @@ def irfft(da, n=None, dim={"last": "signal"}, norm=None, parallel=None):
     d = get_sampling_interval(da, olddim)
     across = int(axis == 0)
     func = parallelize(across, across, parallel)(np.fft.irfft)
-    f = np.fft.fftshift(np.fft.fftfreq(n, d))
+    start = np.fft.fftshift(np.fft.fftfreq(n, d))[0]
+    f = type(da.coords[olddim]).from_block(start, n, 1 / (n * d), dim=newdim)
     data = func(da.values, n, axis, norm)
     coords = {
         newdim if name == olddim else name: f if name == olddim else da.coords[name]

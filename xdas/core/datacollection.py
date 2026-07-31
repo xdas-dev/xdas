@@ -271,13 +271,11 @@ class DataMapping(DataCollection, dict):
         """Return ``True`` if *other* is a :class:`DataMapping` with identical keys and values."""
         if not isinstance(other, self.__class__):
             return False
-        if not self.name == other.name:
+        if self.name != other.name:
             return False
-        if not list(self.keys()) == list(other.keys()):
+        if list(self.keys()) != list(other.keys()):
             return False
-        if not all(self[key].equals(other[key]) for key in self):
-            return False
-        return True
+        return all(self[key].equals(other[key]) for key in self)
 
     def isel(self, indexers=None, **indexers_kwargs):
         """
@@ -445,7 +443,7 @@ class DataSequence(DataCollection, list):
 
     def to_mapping(self):
         """Convert to an integer-keyed :class:`DataMapping`."""
-        return DataMapping({key: value for key, value in enumerate(self)}, self.name)
+        return DataMapping(dict(enumerate(self)), self.name)
 
     @classmethod
     def from_mapping(cls, data):
@@ -480,13 +478,11 @@ class DataSequence(DataCollection, list):
         """Return ``True`` if *other* is a :class:`DataSequence` with identical elements."""
         if not isinstance(other, self.__class__):
             return False
-        if not self.name == other.name:
+        if self.name != other.name:
             return False
-        if not len(self) == len(other):
+        if len(self) != len(other):
             return False
-        if not all(a.equals(b) for a, b in zip(self, other)):
-            return False
-        return True
+        return all(a.equals(b) for a, b in zip(self, other))
 
     def isel(self, indexers=None, **indexers_kwargs):
         """

@@ -10,9 +10,7 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
-from ..core.dataarray import DataArray
-from ..core.datacollection import DataCollection
-from ..core.routines import open_datacollection
+from ..core import DataArray, DataCollection, open_datacollection
 
 
 class State:
@@ -171,7 +169,7 @@ class Atom:
         """Reset all state entries to ``...`` (uninitialised sentinel)."""
         for key in self._state:
             setattr(self, key, State(...))
-        for _, filter in self._atoms.items():
+        for filter in self._atoms.values():
             filter.reset()
 
     def save_state(self, path):
@@ -310,12 +308,6 @@ class Sequential(Atom, list):
                 s += label + "\n"
                 s += "\n".join(f"    {e}" for e in repr(value).split("\n")[:-1]) + "\n"
         return s
-
-    def reset(self) -> None:
-        """Reset the state of all stateful atoms in the sequence."""
-        for atom in self:
-            if isinstance(atom, Partial):
-                atom.reset()
 
 
 class Partial(Atom):

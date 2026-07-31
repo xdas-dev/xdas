@@ -8,8 +8,8 @@ import numpy as np
 from scipy.fft import fft, fftfreq, fftshift, rfft, rfftfreq
 from scipy.signal import get_window
 
-from .coordinates.core import get_sampling_interval
-from .core.dataarray import DataArray
+from .coordinates import get_sampling_interval
+from .core import DataArray
 from .parallel import parallelize
 
 
@@ -20,7 +20,7 @@ def stft(
     noverlap=None,
     nfft=None,
     return_onesided=True,
-    dim={"last": "sprectrum"},
+    dim=None,
     scaling="spectrum",
     parallel=None,
 ):
@@ -79,9 +79,12 @@ def stft(
         noverlap = nperseg // 2
     if nfft is None:
         nfft = nperseg
+    if dim is None:
+        dim = {"last": "sprectrum"}
     win = get_window(window, nperseg)
     input_dim, output_dim = next(iter(dim.items()))
     axis = da.get_axis_num(input_dim)
+    input_dim = da.dims[axis]  # resolve "first"/"last" aliases
     dt = get_sampling_interval(da, input_dim)
     if scaling == "spectrum":
         scale = 1.0 / win.sum() ** 2
@@ -90,11 +93,12 @@ def stft(
     else:
         raise ValueError("Scaling must be 'spectrum' or 'psd'")
     scale = np.sqrt(scale)
+    coord_cls = type(da.coords[input_dim])
     if return_onesided:
         freqs = rfftfreq(nfft, dt)
     else:
         freqs = fftshift(fftfreq(nfft, dt))
-    freqs = {"tie_indices": [0, len(freqs) - 1], "tie_values": [freqs[0], freqs[-1]]}
+    freqs = coord_cls.from_block(freqs[0], len(freqs), 1.0 / (nfft * dt))
 
     def func(x):
         """Apply windowed FFT to produce the STFT output array."""
@@ -123,11 +127,7 @@ def stft(
     dt = get_sampling_interval(da, input_dim, cast=False)
     t0 = da.coords[input_dim].values[0]
     starttime = t0 + (nperseg / 2) * dt
-    endtime = starttime + (data.shape[axis] - 1) * (nperseg - noverlap) * dt
-    time = {
-        "tie_indices": [0, data.shape[axis] - 1],
-        "tie_values": [starttime, endtime],
-    }
+    time = coord_cls.from_block(starttime, data.shape[axis], (nperseg - noverlap) * dt)
 
     coords = {}
     for name in da.coords:

@@ -2,11 +2,13 @@
 
 import numpy as np
 import pandas as pd
+from typing_extensions import override
 
-from .core import Coordinate, parse
+from .core import AxisCoordinate, parse_data_dim, parse_scalar_delta
+from .interp import InterpCoordinate
 
 
-class DenseCoordinate(Coordinate, name="dense"):
+class DenseCoordinate(AxisCoordinate, ctype="dense"):
     """
     Coordinate backed by an explicit numpy array.
 
@@ -23,19 +25,35 @@ class DenseCoordinate(Coordinate, name="dense"):
         Cast *data* to this dtype on construction.
     """
 
+    @override
     def __init__(self, data=None, dim=None, dtype=None):
         # empty
         if data is None:
             data = []
 
         # parse data
-        data, dim = parse(data, dim)
-        if not self.isvalid(data):
+        data, dim = parse_data_dim(data, dim)
+        if not self._isvalid(data):
             raise TypeError("`data` must be array-like")
 
         # store data
         self.data = np.asarray(data, dtype=dtype)
         self.dim = dim
+
+    @classmethod
+    @override
+    def from_block(cls, start, size, step, dim=None, dtype=None):
+        data = start + step * np.arange(size)
+        return cls(data, dim=dim, dtype=dtype)
+
+    @override
+    def __len__(self):
+        return self.data.__len__()
+
+    @property
+    @override
+    def dtype(self):
+        return self.data.dtype
 
     @property
     def index(self):
@@ -43,46 +61,25 @@ class DenseCoordinate(Coordinate, name="dense"):
         return pd.Index(self.data)
 
     @staticmethod
-    def isvalid(data):
-        """Return ``True`` if *data* converts to a 1-D non-object numpy array."""
+    @override
+    def _isvalid(data):
         data = np.asarray(data)
         return (data.dtype != np.dtype(object)) and (data.ndim == 1)
 
-    def isdense(self):
-        """Return ``True`` (this is a :class:`DenseCoordinate`)."""
-        return True
-
-    def equals(self, other):
-        """Return ``True`` if *other* is a :class:`DenseCoordinate` with identical values and dtype."""
-        if isinstance(other, self.__class__):
-            return (
-                np.array_equal(self.data, other.data)
-                and self.dim == other.dim
-                and self.dtype == other.dtype
-            )
+    @override
+    def _is_monotonic_increasing(self):
+        if np.issubdtype(self.dtype, np.datetime64):
+            zero = np.timedelta64(0)
         else:
-            return False
+            zero = 0
+        return np.all(np.diff(self.values) > zero)
 
-    def get_indexer(self, value, method=None):
-        """
-        Return the integer index (or indices) for *value*.
+    @override
+    def _get_value(self, index):
+        return self.data[index]
 
-        Parameters
-        ----------
-        value : scalar or array-like
-            Label(s) to look up.
-        method : str, optional
-            Forwarded to :meth:`pandas.Index.get_indexer` (e.g. ``"ffill"``).
-
-        Returns
-        -------
-        int or numpy.ndarray
-
-        Raises
-        ------
-        KeyError
-            If any requested label is not found (indexer returns -1).
-        """
+    @override
+    def _get_indexer(self, value, method=None):
         if np.isscalar(value):
             out = self.index.get_indexer([value], method).item()
         else:
@@ -91,19 +88,12 @@ class DenseCoordinate(Coordinate, name="dense"):
             raise KeyError("index not found")
         return out
 
-    def slice_indexer(self, start=None, stop=None, step=None, endpoint=True):
-        """Return an integer :class:`slice` for label range [*start*, *stop*] via :class:`pandas.Index`."""
-        slc = self.index.slice_indexer(start, stop, step)
-        if (
-            (not endpoint)
-            and (stop is not None)
-            and (self[slc.stop - 1].values == stop)
-        ):
-            slc = slice(slc.start, slc.stop - 1, slc.step)
-        return slc
+    @override
+    def _slice(self, slc):
+        return self.__class__(self.data[slc], self.dim)
 
-    def concat(self, other):
-        """Concatenate *other* :class:`DenseCoordinate` values to this one."""
+    @override
+    def _concat(self, other):
         if not isinstance(other, self.__class__):
             raise TypeError(f"cannot concatenate {type(other)} to {self.__class__}")
         if not self.dim == other.dim:
@@ -116,29 +106,18 @@ class DenseCoordinate(Coordinate, name="dense"):
             raise ValueError("cannot concatenate coordinate with different dtype")
         return self.__class__(np.concatenate([self.data, other.data]), self.dim)
 
-    def get_div_points(self, tolerance=None):
-        """Return sorted split-point indices where consecutive differences exceed *tolerance*."""
-        deltas = np.diff(self.data)
-        if tolerance is not None:
-            div_points = np.nonzero(np.abs(deltas) >= tolerance)[0] + 1
-        else:
-            raise NotImplementedError(
-                "get_div_points without tolerance is not implemented for DenseCoordinate"
-            )
-        div_points = np.concatenate(([0], div_points, [len(self)]))
-        return div_points
-
-    def to_dict(self):
-        """Serialise to ``{"dim": ..., "data": ..., "dtype": ...}``."""
-        if np.issubdtype(self.dtype, np.datetime64):
-            data = self.data.astype(str).tolist()
-        else:
-            data = self.data.tolist()
-        return {"dim": self.dim, "data": data, "dtype": str(self.dtype)}
+    @override
+    def _to_dataset(self, dataset, attrs):
+        if self.name is None:
+            raise ValueError("cannot serialize a coordinate with no name")
+        dataset = dataset.assign_coords(
+            {self.name: (self.dim, self.values) if self.dim else self.values}
+        )
+        return dataset, attrs
 
     @classmethod
-    def from_dataset(cls, dataset, name):
-        """Extract all coordinates from an xarray *dataset* variable *name* as plain arrays."""
+    @override
+    def _collect_from_dataset(cls, dataset, name):
         return {
             name: (
                 (
@@ -155,8 +134,76 @@ class DenseCoordinate(Coordinate, name="dense"):
             for name, coord in dataset[name].coords.items()
         }
 
-    @classmethod
-    def from_block(cls, start, size, step, dim=None, dtype=None):
-        """Build a :class:`DenseCoordinate` from ``start + step * arange(size)``."""
-        data = start + step * np.arange(size)
-        return cls(data, dim=dim, dtype=dtype)
+    @override
+    def __repr__(self):
+        return np.array2string(self.data, threshold=0, edgeitems=1)
+
+    def __add__(self, other):
+        return self.__class__(self.data + other, self.dim)
+
+    def __sub__(self, other):
+        return self.__class__(self.data - other, self.dim)
+
+    @override
+    def get_sampling_interval(self, cast=True):
+        """
+        Return ``None``: a dense coordinate never carries a nominal spacing.
+
+        The raw values may happen to be evenly spaced, but regularity is an
+        explicit declaration; convert with :meth:`to_regular` to obtain a
+        regular :class:`InterpCoordinate`.
+        """
+        return
+
+    @override
+    def to_regular(self, sampling_interval=None, tolerance=None):
+        """Convert to a regular :class:`InterpCoordinate` (single continuous ramp).
+
+        The spacing defaults to the end-to-end slope, and every value must lie
+        within *tolerance* of the regular grid anchored at the first value;
+        otherwise a :exc:`ValueError` is raised. See
+        :meth:`AxisCoordinate.to_regular` for the parameter contract.
+        """
+        if len(self) < 2:
+            raise ValueError(
+                "cannot make a regular coordinate from fewer than two values"
+            )
+        tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
+        if sampling_interval is None:
+            sampling_interval = (self.data[-1] - self.data[0]) / (len(self) - 1)
+        else:
+            sampling_interval = parse_scalar_delta(sampling_interval, self.dtype)
+        grid = self.data[0] + sampling_interval * np.arange(len(self))
+        if not np.all(np.abs(self.data - grid) <= tolerance):
+            raise ValueError(
+                "values are not evenly spaced by `sampling_interval` within `tolerance`"
+            )
+        data = {
+            "tie_indices": [0, len(self) - 1],
+            "tie_values": [self.data[0], self.data[-1]],
+            "sampling_interval": sampling_interval,
+            "tolerance": tolerance,
+        }
+        return InterpCoordinate(data, self.dim)
+
+    @override
+    def _split_candidates(self):
+        steps = np.diff(self.data)
+        positions = np.arange(1, len(self))
+        if steps.size == 0:
+            return positions, steps
+        reference = np.median(steps)
+        deltas = np.empty(steps.shape, dtype=np.asarray(steps[0] - reference).dtype)
+        for i in range(steps.size):
+            deltas[i] = steps[i] - reference
+            if i + 1 < steps.size and abs(steps[i + 1] - steps[i]) < abs(
+                steps[i + 1] - reference
+            ):
+                reference = steps[i]
+        return positions, deltas
+
+    @override
+    def simplify(self, tolerance=None, *, reduce=True, regularize=False):
+        # a dense coordinate stores every value explicitly; there is nothing to
+        # drop and no spacing to promote, so both stages are no-ops.
+        return self.copy()

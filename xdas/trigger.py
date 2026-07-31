@@ -10,7 +10,8 @@ import pandas as pd
 from numba import njit
 
 from .atoms.core import Atom, State, atomized
-from .coordinates.core import Coordinate
+from .coordinates import Coordinate
+from .core import concat_coords
 
 
 class Trigger(Atom):
@@ -140,7 +141,7 @@ class Trigger(Atom):
         """
         data = np.asarray(cft.values, dtype=float)
         values, coords = self._call_numeric(data)
-        self.coord = _concat([self.coord, cft.coords[self.dim]])
+        self.coord = concat_coords([self.coord, cft.coords[self.dim]], tolerance=None)
 
         picks = {}
         for axis, dim in enumerate(cft.dims):
@@ -333,7 +334,9 @@ def find_picks(cft, thresh, dim="last", state_dict=None):  # TODO: state_dict =>
             buffer=state_dict["buffer"],
             offset=state_dict["offset"],
         )
-        state_dict["coord"] = _concat([state_dict["coord"], cft.coords[dim]])
+        state_dict["coord"] = concat_coords(
+            [state_dict["coord"], cft.coords[dim]], tolerance=None
+        )
     else:
         indices, values = _find_picks_numeric(data, thresh, axis)
         state_dict["coord"] = cft.coords[dim]
@@ -353,59 +356,6 @@ def find_picks(cft, thresh, dim="last", state_dict=None):  # TODO: state_dict =>
         return picks, state_dict
     else:
         return picks
-
-
-def _concat(list_of_coord):  # TODO: make it a public function/method
-    """
-    Concatenates a list of interpolated coordinates.
-
-    Parameters
-    ----------
-    list_of_coord : list
-        A list of InterpCoordinate objects to be concatenated.
-
-    Returns
-    -------
-    InterpCoordinate
-        The concatenated interpolated coordinate.
-
-    Examples
-    --------
-    >>> import xdas as xd
-
-    >>> coord1 = xd.Coordinate(
-    ...     {"tie_indices": [0, 2], "tie_values": [10, 30]},
-    ...      dim="dim",
-    ... )
-    >>> coord2 = xd.Coordinate(
-    ...     {"tie_indices": [0, 3], "tie_values": [40, 70]},
-    ...      dim="dim",
-    ... )
-
-    >>> concatenated = _concat([coord1, coord2])
-
-    >>> concatenated.tie_indices
-    array([0, 6])
-    >>> concatenated.tie_values
-    array([10, 70])
-    >>> concatenated.dim
-    'dim'
-
-    """
-    tie_indices = []
-    tie_values = []
-    idx = 0
-    dim = list_of_coord[0].dim
-    for coord in list_of_coord:
-        if not coord.isinterp():
-            raise ValueError("Only interpolated coordinates can be concatenated.")
-        if not coord.dim == dim:
-            raise ValueError("All coordinates must have the same dimension.")
-        tie_indices.extend(idx + coord.tie_indices)
-        tie_values.extend(coord.tie_values)
-        idx += len(coord)
-    coord = Coordinate({"tie_indices": tie_indices, "tie_values": tie_values}, dim)
-    return coord.simplify()
 
 
 def _find_picks_numeric(cft, thresh, axis=-1, buffer=None, offset=None):
