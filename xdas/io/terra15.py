@@ -13,7 +13,19 @@ from .core import Engine
 
 
 class Terra15Engine(Engine, name="terra15"):
-    """Engine for reading Terra15 HDF5 files."""
+    """
+    Engine for reading Terra15 HDF5 files.
+
+    Parameters
+    ----------
+    vtype : str, optional
+        The virtualization type to use. Default to "hdf5".
+    ctype : str or dict, optional
+        The coordinate type(s) to use. Default to "interpolated".
+    tz : str, optional
+        The timezone of the GPS timestamps stored in the file. Default to "UTC".
+
+    """
 
     _supported_vtypes: ClassVar[list] = ["hdf5", "tiles"]
     _supported_ctypes: ClassVar[dict] = {
@@ -21,8 +33,13 @@ class Terra15Engine(Engine, name="terra15"):
         "distance": ["interpolated", "sampled", "dense"],
     }
 
-    def open_dataarray(self, fname, tz="UTC"):
+    def __init__(self, vtype=None, ctype=None, tz="UTC"):
+        super().__init__(vtype, ctype)
+        self.tz = tz
+
+    def open_dataarray(self, fname):
         """Read a Terra15 HDF5 file *fname* and return a virtual :class:`DataArray`."""
+        tz = self.tz
         with h5py.File(fname, "r") as file:
             ti = (
                 pd.Timestamp(file["data_product"]["gps_time"][0], unit="s", tz=tz)

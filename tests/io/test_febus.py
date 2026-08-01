@@ -45,17 +45,13 @@ class TestFebusEngine:
         da = xd.open(str(path), engine="febus", overlaps=(1, 1), offset=0)
         assert isinstance(da, xd.DataArray)
 
-    def test_invalid_overlaps_raises(self, tmp_path):
-        path = tmp_path / "febus.h5"
-        make_febus_file(path)
+    def test_invalid_overlaps_raises(self):
         with pytest.raises(ValueError, match="overlaps must be"):
-            FebusEngine().open_dataarray(str(path), overlaps="bad")
+            FebusEngine(overlaps="bad")
 
-    def test_invalid_offset_raises(self, tmp_path):
-        path = tmp_path / "febus.h5"
-        make_febus_file(path)
+    def test_invalid_offset_raises(self):
         with pytest.raises(ValueError, match="offset must be an integer"):
-            FebusEngine().open_dataarray(str(path), overlaps=(1, 1), offset="bad")
+            FebusEngine(overlaps=(1, 1), offset="bad")
 
     def test_missing_block_rate_raises(self, tmp_path):
         path = tmp_path / "febus_no_blockrate.h5"
@@ -70,4 +66,4 @@ class TestFebusEngine:
             zone.attrs["Origin"] = np.array([0.0, 0.0])
             zone.create_dataset("Data", data=np.zeros((nchunks, nt, nx)))
         with pytest.raises(KeyError, match="Could not find the block size"):
-            FebusEngine().open_dataarray(str(path), overlaps=(0, 0), offset=0)
+            FebusEngine(overlaps=(0, 0), offset=0).open_dataarray(str(path))

@@ -17,28 +17,46 @@ from .core import Engine
 
 
 class MiniSEEDEngine(Engine, name="miniseed"):
-    """Engine for reading MiniSEED files via ObsPy as lazy tile-backed DataArrays."""
+    """
+    Engine for reading MiniSEED files via ObsPy as lazy tile-backed DataArrays.
+
+    Parameters
+    ----------
+    vtype : str, optional
+        The virtualization type to use. Default to "tiles".
+    ctype : str or dict, optional
+        The coordinate type to use for the time axis. Default to "interpolated".
+    ignore_last_sample : bool, optional
+        Whether to drop the last sample of each contiguous segment. Useful for
+        files whose last sample overlaps the first one of the next file.
+        Default to False.
+
+    """
 
     _supported_vtypes: ClassVar[list] = ["tiles"]
     _supported_ctypes: ClassVar[dict] = {
         "time": ["interpolated", "sampled", "dense"],
     }
 
-    def open_dataarray(self, fname, ignore_last_sample=False, ctype="interpolated"):
+    def __init__(self, vtype=None, ctype=None, ignore_last_sample=False):
+        super().__init__(vtype, ctype)
+        self.ignore_last_sample = bool(ignore_last_sample)
+
+    def open_dataarray(self, fname):
         """Return a lazy tile-backed :class:`DataArray` for the MiniSEED file *fname*."""
-        shape, dtype, coords, method = self.read_header(
-            fname, ignore_last_sample, ctype
-        )
+        shape, dtype, coords, method = self.read_header(fname)
         engine = {
             "name": "miniseed",
             "method": method,
-            "ignore_last_sample": bool(ignore_last_sample),
+            "ignore_last_sample": self.ignore_last_sample,
         }
         data = TileArray(str(fname), shape, engine, np.dtype(dtype))
         return DataArray(data, coords)
 
-    def read_header(self, path, ignore_last_sample, ctype):
+    def read_header(self, path):
         """Read metadata from *path* and return ``(shape, dtype, coords, method)``."""
+        ignore_last_sample = self.ignore_last_sample
+        ctype = self.ctype["time"]
         st = obspy.read(path, headonly=True)
 
         dtype = uniquifiy(tr.data.dtype for tr in st)

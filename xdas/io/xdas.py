@@ -28,21 +28,37 @@ TILES_GROUP = "__tiles__"
 
 
 class XdasEngine(Engine, name="xdas"):
-    """Engine for the native xdas HDF5/NetCDF4 format."""
+    """
+    Engine for the native xdas HDF5/NetCDF4 format.
+
+    Parameters
+    ----------
+    vtype : str, optional
+        The virtualization type to use. Default to "hdf5".
+    ctype : str or dict, optional
+        Ignored: the native format stores coordinates as they were written.
+    group : str, optional
+        The location of the data array within the file. Default to the root group.
+
+    """
 
     _supported_vtypes: ClassVar[list] = ["hdf5", "tiles"]
 
-    def open_dataarray(self, fname, **kwargs):
+    def __init__(self, vtype=None, ctype=None, group=None):
+        super().__init__(vtype, ctype)
+        self.group = group
+
+    def open_dataarray(self, fname):
         """Delegate to module-level :func:`open_dataarray`."""
-        return open_dataarray(fname, vtype=self.vtype, **kwargs)
+        return open_dataarray(fname, group=self.group, vtype=self.vtype)
 
     def save_dataarray(self, da, fname, **kwargs):
         """Delegate to module-level :func:`save_dataarray`."""
         return save_dataarray(da, fname, **kwargs)
 
-    def open_datacollection(self, fname, **kwargs):
+    def open_datacollection(self, fname):
         """Delegate to module-level :func:`open_datacollection`."""
-        return open_datacollection(fname, **kwargs)
+        return open_datacollection(fname, group=self.group)
 
     def save_datacollection(self, dc, fname, **kwargs):
         """Delegate to module-level :func:`save_datacollection`."""

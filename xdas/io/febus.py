@@ -14,7 +14,25 @@ from .core import Engine
 
 
 class FebusEngine(Engine, name="febus"):
-    """Engine for reading Febus HDF5 files."""
+    """
+    Engine for reading Febus HDF5 files.
+
+    Parameters
+    ----------
+    vtype : str, optional
+        The virtualization type to use. Default to "tiles".
+    ctype : str or dict, optional
+        The coordinate type(s) to use. Default to "interpolated".
+    overlaps : tuple of int, optional
+        A tuple specifying the overlap in number of sample to trim on both side of each
+        chunk of the data. If not provided, the engine will attempt to determine the
+        correct overlap at your own risk.
+    offset : int, optional
+        The location of the timestamp within each block given as the number of samples
+        from the beginning. If not provided, the engine will attempt to determine the
+        correct offset at you own risk.
+
+    """
 
     # tiles first: a Febus file holds a stack of blocks, and the hdf5
     # backing needs one mapping per block while a tile array needs one
@@ -25,7 +43,24 @@ class FebusEngine(Engine, name="febus"):
         "distance": ["interpolated", "sampled", "dense"],
     }
 
-    def open_dataarray(self, fname, overlaps=None, offset=None):
+    def __init__(self, vtype=None, ctype=None, overlaps=None, offset=None):
+        super().__init__(vtype, ctype)
+        match overlaps:
+            case None | (int(), int()):
+                pass
+            case _:
+                raise ValueError(
+                    "overlaps must be a integer or a tuple of two integers"
+                )
+        match offset:
+            case None | int():
+                pass
+            case _:
+                raise ValueError("offset must be an integer")
+        self.overlaps = overlaps
+        self.offset = offset
+
+    def open_dataarray(self, fname):
         """
         Open a Febus file into a xdas DataArray object.
 
@@ -35,21 +70,14 @@ class FebusEngine(Engine, name="febus"):
         timestamp that is located at a fixed offset from the beginning of the chunk.
 
         Because of poor documentation of the evolution of the Febus file format, it is
-        recommended to manually specify the overlap and offset parameters. If not provided,
-        the function will attempt to determine the correct values at your own risk.
+        recommended to manually specify the `overlaps` and `offset` engine parameters.
+        If not provided, the function will attempt to determine the correct values at
+        your own risk.
 
         Parameters
         ----------
         fname : str
             The filename of the Febus file to read.
-        overlaps : tuple of int, optional
-            A tuple specifying the overlap in number of sample to trim on both side of each
-            chunk of the data. If not provided, the function will attempt to determine the
-            correct overlap at your own risk.
-        offset : int, optional
-            The location of the timestamp within each block given as the number of samples
-            from the beginning. If not provided, the function will attempt to determine the
-            correct offset at you own risk.
 
         Returns
         -------
@@ -57,6 +85,8 @@ class FebusEngine(Engine, name="febus"):
             A data array containing the data from the Febus file.
 
         """
+        overlaps = self.overlaps
+        offset = self.offset
         with h5py.File(fname, "r") as file:
             (device_name,) = list(file.keys())
             source = file[device_name]["Source1"]
@@ -79,32 +109,20 @@ class FebusEngine(Engine, name="febus"):
             "_"
         )
 
-        match overlaps:
-            case None:
-                warnings.warn(
-                    "No overlap specified, Xdas will try its best to find the correct trimming"
-                )
-                noverlap = chunks.shape[1] - round((1 / blockrate) / delta[0])
-                before = noverlap // 2
-                after = noverlap - before
-                overlaps = (before, after)
-            case (int(), int()):
-                pass
-            case _:
-                raise ValueError(
-                    "overlaps must be a integer or a tuple of two integers"
-                )
+        if overlaps is None:
+            warnings.warn(
+                "No overlap specified, Xdas will try its best to find the correct trimming"
+            )
+            noverlap = chunks.shape[1] - round((1 / blockrate) / delta[0])
+            before = noverlap // 2
+            after = noverlap - before
+            overlaps = (before, after)
 
-        match offset:
-            case None:
-                warnings.warn(
-                    "No offset specified, Xdas will try its best to place the timestamps"
-                )
-                offset = chunks.shape[1] // 2
-            case int():
-                pass
-            case _:
-                raise ValueError("offset must be an integer")
+        if offset is None:
+            warnings.warn(
+                "No offset specified, Xdas will try its best to place the timestamps"
+            )
+            offset = chunks.shape[1] // 2
 
         times = times + (overlaps[0] - offset) * delta[0]
 

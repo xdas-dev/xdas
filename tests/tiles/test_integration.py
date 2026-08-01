@@ -119,7 +119,7 @@ class TestPersistence:
         da = wrap(manifest)
         path = str(tmp_path / "grouped.nc")
         da.to_netcdf(path, group="acquisition")
-        reopened = xd.open_dataarray(path, group="acquisition")
+        reopened = xd.open_dataarray(path, engine="xdas", group="acquisition")
         assert isinstance(reopened.data, TileArray)
         npt.assert_array_equal(reopened.values, reference)
 

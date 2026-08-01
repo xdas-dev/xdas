@@ -468,22 +468,42 @@ class TestOpenEdgeCases:
         with pytest.raises(Exception, match="paths"):
             xd.open(123)
 
-    def test_callable_engine(self, tmp_path):
+    def test_engine_instance(self, tmp_path):
+        from xdas.io import Engine
+
         da = xd.testing.dummy(shape=(10, 5))
         path = str(tmp_path / "test.nc")
         da.to_netcdf(path)
-
-        def my_engine(fname, **kwargs):
-            return xd.open_dataarray(fname)
-
-        result = xd.open_dataarray(path, engine=my_engine)
+        result = xd.open_dataarray(path, engine=Engine["xdas"]())
         assert result.equals(da)
+
+    def test_engine_instance_rejects_extra_config(self, tmp_path):
+        from xdas.io import Engine
+
+        da = xd.testing.dummy(shape=(10, 5))
+        path = str(tmp_path / "test.nc")
+        da.to_netcdf(path)
+        engine = Engine["xdas"]()
+        with pytest.raises(ValueError, match="configured engine instance"):
+            xd.open_dataarray(path, engine=engine, vtype="tiles")
+        with pytest.raises(ValueError, match="configured engine instance"):
+            xd.open_dataarray(path, engine=engine, group="somegroup")
+
+    def test_unknown_engine_kwarg_raises(self, tmp_path):
+        da = xd.testing.dummy(shape=(10, 5))
+        path = str(tmp_path / "test.nc")
+        da.to_netcdf(path)
+        with pytest.raises(TypeError, match="overlpas"):
+            xd.open_dataarray(path, engine="febus", overlpas=(1, 1))
+        # auto-detection accepts no format-specific parameters
+        with pytest.raises(TypeError, match="overlaps"):
+            xd.open_dataarray(path, overlaps=(1, 1))
 
     def test_invalid_engine_type_raises(self, tmp_path):
         da = xd.testing.dummy(shape=(10, 5))
         path = str(tmp_path / "test.nc")
         da.to_netcdf(path)
-        with pytest.raises(ValueError, match="engine"):
+        with pytest.raises(TypeError, match="engine must be"):
             xd.open_dataarray(path, engine=42)
 
 

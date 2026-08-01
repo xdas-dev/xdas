@@ -19,7 +19,20 @@ _RAWDATA = "/Acquisition/Raw[0]/RawData"
 
 
 class ProdML(Engine, name="prodml", aliases=["optasense", "sintela"]):
-    """Engine for reading ProdML / OptaSense / Sintela HDF5 files."""
+    """
+    Engine for reading ProdML / OptaSense / Sintela HDF5 files.
+
+    Parameters
+    ----------
+    vtype : str, optional
+        The virtualization type to use. Default to "hdf5".
+    ctype : str or dict, optional
+        The coordinate type(s) to use. Default to "interpolated".
+    swapped_dims : bool, optional
+        Whether the on-disk array is (distance, time) instead of the usual
+        (time, distance). Default to False.
+
+    """
 
     _supported_vtypes: ClassVar[list] = ["hdf5", "tiles"]
     _supported_ctypes: ClassVar[dict] = {
@@ -27,8 +40,13 @@ class ProdML(Engine, name="prodml", aliases=["optasense", "sintela"]):
         "distance": ["interpolated", "sampled", "dense"],
     }
 
-    def open_dataarray(self, fname, swapped_dims=False):
+    def __init__(self, vtype=None, ctype=None, swapped_dims=False):
+        super().__init__(vtype, ctype)
+        self.swapped_dims = bool(swapped_dims)
+
+    def open_dataarray(self, fname):
         """Read a ProdML HDF5 file *fname* and return a virtual :class:`DataArray`."""
+        swapped_dims = self.swapped_dims
         with h5py.File(fname, "r") as file:
             acquisition = file["Acquisition"]
             dx = acquisition.attrs["SpatialSamplingInterval"]

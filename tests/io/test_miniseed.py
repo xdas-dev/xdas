@@ -4,6 +4,7 @@ import obspy
 import pytest
 
 import xdas as xd
+from xdas.coordinates import Coordinate
 from xdas.io.miniseed import MiniSEEDEngine, get_band_code, to_stream
 from xdas.tiles import TileArray
 
@@ -80,6 +81,10 @@ def test_miniseed(tmp_path):
     assert da.coords["station"].values == "CH001"
     assert da.coords["location"].values == "00"
     assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
+
+    # the ctype engine parameter drives the time coordinate flavor
+    da = xd.open(paths[0], engine="miniseed", ctype="dense")
+    assert isinstance(da.coords["time"], Coordinate["dense"])
 
     # read one file with gaps
     make_network(tmp_path, gap=True, samples=100)
@@ -242,4 +247,4 @@ def test_miniseed_unsynchronized_traces(tmp_path):
     )
     st.write(str(path), format="MSEED")
     with pytest.raises(ValueError, match="synchronized"):
-        MiniSEEDEngine().read_header(str(path), False, "interpolated")
+        MiniSEEDEngine().read_header(str(path))

@@ -34,9 +34,11 @@ def open(
     tolerance=None,
     squeeze=None,
     engine=None,
+    vtype=None,
+    ctype=None,
     parallel=None,
     verbose=False,
-    **kwargs,
+    **engine_kwargs,
 ):
     """
     Open one or several files as a data array or collection.
@@ -75,10 +77,17 @@ def open(
         contains only one data array. When ``None`` (default), the behaviour depends
         on the dispatch path: ``True`` for multi-file data arrays, ``False``
         otherwise. Ignored when opening a single file.
-    engine : str or callable, optional
-        The file format engine to use, or a custom read callable. When ``None``
-        (default), the xdas NetCDF format is assumed. Providing an engine skips the
-        automatic DataCollection detection.
+    engine : str or Engine, optional
+        The file format engine to use, given by name or as a configured
+        :class:`~xdas.io.Engine` instance. When ``None`` (default), the format is
+        auto-detected. Providing an engine skips the automatic DataCollection
+        detection.
+    vtype : str, optional
+        The virtualization type to use. If None, the engine default is used.
+        Only valid when `engine` is given by name (or None).
+    ctype : str or dict, optional
+        The coordinate type(s) to use. If None, the engine defaults are used.
+        Only valid when `engine` is given by name (or None).
     parallel: bool or int, optional
         Whether to use multiprocessing to fetch file metadata. If False or 1,
         runs in single-process mode. If an integer, use that many processes.
@@ -87,9 +96,9 @@ def open(
     verbose : bool, optional
         Whether to display a progress bar while reading metadata. Ignored when
         opening a single file. Default is ``False``.
-    **kwargs
-        Additional keyword arguments forwarded to the underlying engine read
-        function. Only used when `engine` is not ``None``.
+    **engine_kwargs
+        Format-specific engine parameters forwarded to the engine constructor
+        (e.g. ``overlaps`` for "febus"). Only valid when `engine` is given by name.
 
     Returns
     -------
@@ -153,7 +162,9 @@ def open(
                     return open_datacollection(paths)
                 except Exception:  # noqa: BLE001, S110 - fall back to dataarray
                     pass
-            return open_dataarray(paths, engine=engine, **kwargs)
+            return open_dataarray(
+                paths, engine=engine, vtype=vtype, ctype=ctype, **engine_kwargs
+            )
         case "multi-file":
             if engine is None:
                 try:
@@ -173,9 +184,11 @@ def open(
                 tolerance,
                 squeeze=True if squeeze is None else squeeze,
                 engine=engine,
+                vtype=vtype,
+                ctype=ctype,
                 parallel=parallel,
                 verbose=verbose,
-                **kwargs,
+                **engine_kwargs,
             )
         case "tree-like":  # pragma: no branch
             return open_mfdatatree(
@@ -184,9 +197,11 @@ def open(
                 tolerance,
                 squeeze=False if squeeze is None else squeeze,
                 engine=engine,
+                vtype=vtype,
+                ctype=ctype,
                 parallel=parallel,
                 verbose=verbose,
-                **kwargs,
+                **engine_kwargs,
             )
 
 
@@ -278,9 +293,11 @@ def open_mfdatatree(
     tolerance=None,
     squeeze=False,
     engine=None,
+    vtype=None,
+    ctype=None,
     verbose=False,
     parallel=None,
-    **kwargs,
+    **engine_kwargs,
 ):
     """
     Open a directory tree structure as a data collection.
@@ -312,8 +329,15 @@ def open_mfdatatree(
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
-    engine: str or callable, optional
-        The type of file to open or a read function. Default to xdas netcdf format.
+    engine: str or Engine, optional
+        The file format engine to use, given by name or as a configured
+        :class:`~xdas.io.Engine` instance. Default to format auto-detection.
+    vtype : str, optional
+        The virtualization type to use. If None, the engine default is used.
+        Only valid when `engine` is given by name (or None).
+    ctype : str or dict, optional
+        The coordinate type(s) to use. If None, the engine defaults are used.
+        Only valid when `engine` is given by name (or None).
     parallel: bool or int, optional
         Whether to use multiprocessing to fetch file metadata. If False or 1,
         runs in single-process mode. If an integer, use that many processes.
@@ -321,8 +345,9 @@ def open_mfdatatree(
         global xdas configuration. Default to None.
     verbose: bool
         Whether to display a progress bar. Default to False.
-    **kwargs
-        Additional keyword arguments to be passed to the read function.
+    **engine_kwargs
+        Format-specific engine parameters forwarded to the engine constructor
+        (e.g. ``overlaps`` for "febus"). Only valid when `engine` is given by name.
 
     Returns
     -------
@@ -389,7 +414,17 @@ def open_mfdatatree(
         bag.append(fname)
 
     return collect(
-        tree, fields, dim, tolerance, squeeze, engine, parallel, verbose, **kwargs
+        tree,
+        fields,
+        dim,
+        tolerance,
+        squeeze,
+        engine,
+        vtype,
+        ctype,
+        parallel,
+        verbose,
+        **engine_kwargs,
     )
 
 
@@ -400,9 +435,11 @@ def collect(
     tolerance=None,
     squeeze=False,
     engine=None,
+    vtype=None,
+    ctype=None,
     parallel=None,
     verbose=False,
-    **kwargs,
+    **engine_kwargs,
 ):
     """
     Collect the data from a tree of paths using `fields` as level names.
@@ -422,8 +459,15 @@ def collect(
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
-    engine: str or callable, optional
-        The type of file to open or a read function. Default to xdas netcdf format.
+    engine: str or Engine, optional
+        The file format engine to use, given by name or as a configured
+        :class:`~xdas.io.Engine` instance. Default to format auto-detection.
+    vtype : str, optional
+        The virtualization type to use. If None, the engine default is used.
+        Only valid when `engine` is given by name (or None).
+    ctype : str or dict, optional
+        The coordinate type(s) to use. If None, the engine defaults are used.
+        Only valid when `engine` is given by name (or None).
     parallel: bool or int, optional
         Whether to use multiprocessing to fetch file metadata. If False or 1,
         runs in single-process mode. If an integer, use that many processes.
@@ -431,8 +475,9 @@ def collect(
         global xdas configuration. Default to None.
     verbose: bool
         Whether to display a progress bar. Default to False.
-    **kwargs
-        Additional keyword arguments to be passed to the read function.
+    **engine_kwargs
+        Format-specific engine parameters forwarded to the engine constructor
+        (e.g. ``overlaps`` for "febus"). Only valid when `engine` is given by name.
 
 
     Returns
@@ -446,7 +491,16 @@ def collect(
     for key, value in tree.items():
         if isinstance(value, list):
             dc = open_mfdataarray(
-                value, dim, tolerance, squeeze, engine, parallel, verbose, **kwargs
+                value,
+                dim,
+                tolerance,
+                squeeze,
+                engine,
+                vtype,
+                ctype,
+                parallel,
+                verbose,
+                **engine_kwargs,
             )
             dc.name = fields[0]
             collection[key] = dc
@@ -458,9 +512,11 @@ def collect(
                 tolerance,
                 squeeze,
                 engine,
+                vtype,
+                ctype,
                 parallel,
                 verbose,
-                **kwargs,
+                **engine_kwargs,
             )
     return collection
 
@@ -481,15 +537,29 @@ def defaulttree(depth):
 MAX_OPEN_FILES = {None: 100_000, "hdf5": 100_000, "tiles": 2_000_000}
 
 
-def _check_file_count(nfiles, engine, vtype):
-    """Refuse file sets too large for the vtype *engine* will end up using."""
+def _resolve_engine(engine, vtype, ctype, engine_kwargs):
+    """Turn the `engine` argument of the open functions into an Engine instance."""
     from ..io.core import Engine
 
-    try:
-        vtype = Engine[engine](vtype=vtype).vtype
-    except (KeyError, NotImplementedError, ValueError):
-        # a bad engine or vtype: opening the first file reports it
-        vtype = None
+    if isinstance(engine, Engine):
+        if vtype is not None or ctype is not None or engine_kwargs:
+            raise ValueError(
+                "`vtype`, `ctype` and engine keyword arguments cannot be combined "
+                "with an already configured engine instance; configure the instance "
+                "instead"
+            )
+        return engine
+    elif engine is None or isinstance(engine, str):
+        return Engine[engine](vtype=vtype, ctype=ctype, **engine_kwargs)
+    else:
+        raise TypeError(
+            "engine must be None, a registered engine name or an Engine instance, "
+            f"found {type(engine)}"
+        )
+
+
+def _check_file_count(nfiles, vtype):
+    """Refuse file sets too large for the vtype the engine will end up using."""
     limit = MAX_OPEN_FILES.get(vtype, MAX_OPEN_FILES[None])
     if nfiles > limit:
         raise NotImplementedError(
@@ -506,9 +576,11 @@ def open_mfdataarray(
     tolerance=None,
     squeeze=True,
     engine=None,
+    vtype=None,
+    ctype=None,
     parallel=None,
     verbose=False,
-    **kwargs,
+    **engine_kwargs,
 ):
     """
     Open a multiple file dataset.
@@ -531,8 +603,15 @@ def open_mfdataarray(
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
-    engine: str or callable, optional
-        The type of file to open or a read function. Default to xdas netcdf format.
+    engine: str or Engine, optional
+        The file format engine to use, given by name or as a configured
+        :class:`~xdas.io.Engine` instance. Default to format auto-detection.
+    vtype : str, optional
+        The virtualization type to use. If None, the engine default is used.
+        Only valid when `engine` is given by name (or None).
+    ctype : str or dict, optional
+        The coordinate type(s) to use. If None, the engine defaults are used.
+        Only valid when `engine` is given by name (or None).
     parallel: bool or int, optional
         Whether to use multiprocessing to fetch file metadata. If False or 1,
         runs in single-process mode. If an integer, use that many processes.
@@ -540,8 +619,9 @@ def open_mfdataarray(
         global xdas configuration. Default to None.
     verbose: bool
         Whether to display a progress bar. Default to False.
-    **kwargs
-        Additional keyword arguments to be passed to the read function.
+    **engine_kwargs
+        Format-specific engine parameters forwarded to the engine constructor
+        (e.g. ``overlaps`` for "febus"). Only valid when `engine` is given by name.
 
     Returns
     -------
@@ -573,25 +653,25 @@ def open_mfdataarray(
         )
     if len(paths) == 0:
         raise FileNotFoundError("no file to open")
-    _check_file_count(len(paths), engine, kwargs.get("vtype"))
+    engine = _resolve_engine(engine, vtype, ctype, engine_kwargs)
+    _check_file_count(len(paths), engine.vtype)
     max_workers = get_workers_count(parallel)
     objs = []
     failures = []
-    if (max_workers == 1) or (engine == "miniseed"):  # TODO: dirty miniseed fix
+    if (max_workers == 1) or (engine.name == "miniseed"):  # TODO: dirty miniseed fix
         iterator = (
             tqdm(paths, desc="Fetching metadata from files") if verbose else paths
         )
         for path in iterator:
             try:
-                objs.append(open_dataarray(path, engine=engine, **kwargs))
+                objs.append(open_dataarray(path, engine=engine))
             except Exception as error:  # noqa: BLE001 - collected and warned below
                 failures.append((path, error))
                 warnings.warn(f"could not open {path}: {error}", RuntimeWarning)
     else:
         executor = get_reusable_executor(max_workers)
         futures_to_paths = {
-            executor.submit(open_dataarray, path, engine=engine, **kwargs): path
-            for path in paths
+            executor.submit(open_dataarray, path, engine=engine): path for path in paths
         }
         if verbose:
             iterator = tqdm(
@@ -613,12 +693,14 @@ def open_mfdataarray(
     if len(objs) == 0:  # there must be failures
         path, error = failures[0]
         raise RuntimeError(
-            f"could not open any file with engine: {engine}; first failure was {path}: {error}"
+            f"could not open any file with engine: "
+            f"{engine.name or type(engine).__name__}; "
+            f"first failure was {path}: {error}"
         ) from error
     return combine_by_coords(objs, dim, tolerance, squeeze, None, verbose)
 
 
-def open_dataarray(fname, engine=None, vtype=None, ctype=None, **kwargs):
+def open_dataarray(fname, engine=None, vtype=None, ctype=None, **engine_kwargs):
     """
     Open a dataarray.
 
@@ -626,10 +708,18 @@ def open_dataarray(fname, engine=None, vtype=None, ctype=None, **kwargs):
     ----------
     fname : str
         The path of the dataarray.
-    engine: str or callable, optional
-        The type of file to open or a read function. Default to xdas netcdf format.
-    **kwargs
-        Additional keyword arguments to be passed to the read function.
+    engine: str or Engine, optional
+        The file format engine to use, given by name or as a configured
+        :class:`~xdas.io.Engine` instance. Default to format auto-detection.
+    vtype : str, optional
+        The virtualization type to use. If None, the engine default is used.
+        Only valid when `engine` is given by name (or None).
+    ctype : str or dict, optional
+        The coordinate type(s) to use. If None, the engine defaults are used.
+        Only valid when `engine` is given by name (or None).
+    **engine_kwargs
+        Format-specific engine parameters forwarded to the engine constructor
+        (e.g. ``overlaps`` for "febus"). Only valid when `engine` is given by name.
 
     Returns
     -------
@@ -638,12 +728,13 @@ def open_dataarray(fname, engine=None, vtype=None, ctype=None, **kwargs):
 
     Raises
     ------
+    TypeError
+        If `engine` is neither None, an engine name nor an Engine instance, or
+        if an engine keyword argument is unknown to the engine.
     ValueError
-        If the engine is not recognized.
-
-    Raises
-    ------
-    FileNotFound
+        If `vtype`, `ctype` or engine keyword arguments are combined with an
+        already configured engine instance.
+    FileNotFoundError
         If no file can be found.
     """
     # parse & checks
@@ -652,15 +743,8 @@ def open_dataarray(fname, engine=None, vtype=None, ctype=None, **kwargs):
         raise FileNotFoundError("no file to open")
 
     # dispatch & open
-    if engine is None or isinstance(engine, str):
-        from ..io.core import Engine
-
-        engine = Engine[engine](vtype=vtype, ctype=ctype)
-        return engine.open_dataarray(fname, **kwargs)
-    elif callable(engine):
-        return engine(fname, **kwargs)
-    else:
-        raise ValueError("engine not recognized")
+    engine = _resolve_engine(engine, vtype, ctype, engine_kwargs)
+    return engine.open_dataarray(fname)
 
 
 def open_datacollection(fname, group=None):

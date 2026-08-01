@@ -3,6 +3,11 @@
 ## 0.2.9 (unreleased)
 
 ### New Features
+- **Explicit engine configuration.** The open functions (`open`, `open_dataarray`, `open_mfdataarray`, `open_mfdatatree`) now declare `engine`, `vtype` and `ctype` explicitly, and `engine` accepts a configured `xdas.io.Engine` instance as well as a name. Format-specific parameters (`overlaps`/`offset` for febus, `ignore_last_sample` for miniseed, `swapped_dims` for prodml, `tz` for terra15, `group` for the native format) are engine constructor parameters, validated up front; passing them next to the engine name keeps working and now raises a `TypeError` on misspelled or unsupported keywords instead of silently ignoring them (@atrabattoni).
+
+### Breaking Changes
+- Passing a bare read function as `engine` is no longer supported: subclass `xdas.io.Engine` instead (see the data-formats documentation). Combining a configured engine instance with `vtype`, `ctype` or extra engine keywords raises a `ValueError` (@atrabattoni).
+- The miniseed `ctype` argument is now honored: it previously routed to an unused attribute and the reader always built interpolated time coordinates. The default is unchanged (@atrabattoni).
 - **Tile-backed virtual arrays.** The new `xdas.tiles` package (ported from the 0.3 line) exposes multi-file archives as one lazy `TileArray`: positive-step slicing, concatenation (including along a new dimension), and whole-array reductions all stay lazy, and reads touch only the tiles a selection overlaps. The Silixa TDMS and MiniSEED engines now emit tile-backed data arrays, replacing the serialized-dask-graph fallback; Silixa reads gained time-axis push-down (@atrabattoni).
 - Tile-backed data arrays round-trip through the native xdas netCDF format: the tile manifest is stored as a `__tiles__` sibling group (@atrabattoni).
 - **Optional `tiles` vtype for every HDF5 engine.** `open_dataarray`/`open_mfdataarray` with `vtype="tiles"` back the returned array with a lazy `TileArray` instead of an HDF5 virtual source, for the asn, febus, terra15, apsensing, prodml, and native xdas engines. Saved tile views are directly readable by the 0.3 line. Custom engines add tile support by implementing the `load_tile(path, selection, **params)` static half of `xdas.io.Engine` (@atrabattoni).
