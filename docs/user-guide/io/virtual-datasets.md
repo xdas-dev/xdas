@@ -18,7 +18,7 @@ To deal with large multi-file dataset, *Xdas* uses the concept of virtual datase
 
 *Xdas* uses several types of virtualization, selected with the `vtype` argument:
 
-- `hdf5`: for HDF5 based formats, it leverages the performance offered by the [virtual datasets](https://docs.h5py.org/en/stable/vds.html) native capabilities of netCDF4/HDF5 which comes with almost no overhead (C compiled).
+- `hdf5`: for HDF5 based formats, it leverages the [virtual datasets](https://docs.h5py.org/en/stable/vds.html) native capabilities of netCDF4/HDF5, which resolve the mapping in compiled C with no per-file Python overhead. The cost of that mapping does however grow with the number of linked files.
 - `tiles`: a manifest of file-backed tiles stored as a plain array, decoded by the engine itself. It works with any format and keeps the file mapping inspectable.
 - For other type of files, it can also leverage the flexibility of [Dask arrays](https://docs.Dask.org/en/stable/array.html).
 
@@ -102,12 +102,21 @@ For formats that HDF5 virtual datasets cannot serve, the choice is made for you.
 engine supports both, the trade-off is essentially *who resolves the mapping*: the HDF5 C
 library, or *Xdas* itself.
 
+That choice decides how each cost scales with the size of the archive. Writing and
+reopening an HDF5 virtual dataset both cost one operation per linked file, so both grow
+with the file count; a tile manifest is written and read back as an array, so neither
+does. Reading inverts the expectation one might have: resolving a region inside the C
+library involves no Python at all, but its cost grows with how many mappings the dataset
+*contains*, while a tile manifest is searched, so its cost grows only with how many tiles
+the read *touches*. Modest file counts therefore favour HDF5, and the advantage moves to
+tiles as the archive grows.
+
 ### HDF5 virtualization
 
 **Advantages**
 
 - Resolution happens inside the HDF5 C library, so reading involves no per-file Python
-  call. This is most visible on reads that touch many files at once.
+  call. On modest file counts this makes it the faster of the two to read.
 - Any HDF5-aware tool can read the result, not only *Xdas*.
 - Virtual datasets can point at other virtual datasets, so a growing archive can be
   linked in batches without relinking everything.
@@ -122,7 +131,13 @@ library, or *Xdas* itself.
 - Reopening a virtual dataset reads its whole mapping table, so opening cost also grows
   with the number of linked files. Deep archives therefore tend to require a pyramid of
   virtual datasets, which shifts that cost to read time and multiplies the number of
-  manifest files to keep track of.
+  manifest files to keep track of. The top of such a pyramid opens quickly precisely
+  because it defers the work: the first read of a region then has to open the level below
+  it, a toll that a short-lived process pays on every run.
+- Read latency grows with the number of mappings the dataset holds, not only with the
+  amount of data asked for, so the same request gets slower as the archive it lives in
+  gets bigger. Past a large enough file count this outweighs the advantage of resolving
+  in C, and reads become slower than the tile equivalent.
 - Once written, the mapping is opaque: HDF5 presents a virtual dataset as a regular
   dataset, so the list of linked files can no longer be inspected or edited.
 - Because a saved subset refers to its parent, extracts are not self-contained. Moving or
@@ -139,7 +154,9 @@ library, or *Xdas* itself.
   and light as the number of files grows. A single flat manifest remains workable at
   scales where an HDF5 one does not.
 - Opening loads only the tile geometry, so open time stays low even for very large
-  manifests.
+  manifests, and no cost is deferred to the first read.
+- Read latency depends on how much of the manifest a request touches, not on how large
+  the manifest is, so reads do not get slower as the archive grows.
 - The file list is data: it can be inspected, modified and saved again.
 - Concatenation fuses manifests without reading any values.
 - A saved subset names the data files it needs directly, so extracts are self-contained
@@ -150,8 +167,9 @@ library, or *Xdas* itself.
 
 **Limitations**
 
-- Decoding goes through Python, one call per tile touched. Reads spread over a great many
-  tiles therefore carry an overhead that the C library avoids.
+- Decoding goes through Python, one call per tile touched. A request spread over a great
+  many tiles therefore carries a per-tile overhead that the C library avoids, which is
+  what makes HDF5 the quicker reader while file counts stay modest.
 - For very small manifests the result can be larger than the HDF5 equivalent, since paths
   and geometry are written out explicitly instead of referring to a parent dataset.
 - The manifest is only meaningful to *Xdas*.
@@ -172,7 +190,9 @@ library, or *Xdas* itself.
 As a rule of thumb, prefer `hdf5` when the dataset is modest in file count or when other
 HDF5-based tooling has to read it, and `tiles` when the file count is large, when the
 mapping needs to remain inspectable, when extracts must stand on their own, or when
-decimated reads matter.
+decimated reads matter. The larger the archive, the stronger the case for `tiles`: it is
+the only one of the two whose write, open and read costs do not all grow with the number
+of files.
 ```
 
 ## Dask Virtualization

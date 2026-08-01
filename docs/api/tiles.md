@@ -51,6 +51,14 @@ manifests resolve on that registry (``Engine[name]``).
 .. autosummary::
    :toctree: ../_autosummary
 
-   xdas.io.Engine.load_tile
    extract_array
+```
+
+```{eval-rst}
+.. currentmodule:: xdas.io
+
+.. autosummary::
+   :toctree: ../_autosummary
+
+   Engine.load_tile
 ```
