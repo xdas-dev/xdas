@@ -144,8 +144,8 @@ def open_dataarray(fname, group=None, vtype=None):
         location = TILES_GROUP if group is None else f"{group}/{TILES_GROUP}"
         with xr.open_dataset(fname, group=location, engine="h5netcdf") as manifest:
             manifest = manifest.load()
-        # picking the known keys keeps specs with extra by-value params readable
-        data = TileArray(manifest, spec["dtype"], spec["engine"])
+        # the placeholder variable carries the dtype; the spec only the engine
+        data = TileArray(manifest, dataset[name].dtype, spec["engine"])
     elif "__dask_array__" in dataset[name].attrs:
         data = loads(dataset[name].attrs.pop("__dask_array__"))
     else:
@@ -157,8 +157,8 @@ def open_dataarray(fname, group=None, vtype=None):
                 data = TileArray.from_tiles(
                     str(fname),
                     variable.shape,
-                    {"name": "xdas", "dataset": variable.name},
                     variable.dtype,
+                    {"name": "xdas", "dataset": variable.name},
                 )
             else:
                 data = VirtualSource(variable)
@@ -241,9 +241,12 @@ def save_dataarray(
                     file, variable_name, da.dims, da.dtype
                 )
             elif isinstance(da.data, TileArray):
+                # the placeholder variable already records the dtype (as any
+                # typed store would, e.g. zarr array metadata): only the
+                # engine needs the by-value sidecar
                 variable = file.create_variable(variable_name, da.dims, da.dtype)
                 variable.attrs["__tile_array__"] = json.dumps(
-                    {"engine": da.data.engine, "dtype": str(da.data.dtype)}
+                    {"engine": da.data.engine}
                 )
             elif isinstance(da.data, DaskArray):
                 warnings.warn(

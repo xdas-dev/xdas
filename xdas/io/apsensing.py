@@ -32,8 +32,8 @@ class APSensingEngine(Engine, name="apsensing"):
                 data = TileArray.from_tiles(
                     str(fname),
                     file["DAS"].shape,
-                    {"name": "apsensing"},
                     file["DAS"].dtype,
+                    {"name": "apsensing"},
                 )
             else:
                 data = VirtualSource(file["DAS"])

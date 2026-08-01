@@ -40,7 +40,7 @@ class ASNEngine(Engine, name="asn"):
             dx = float(header["dx"][()])  # Note: dx before (internal) downsampling!
             if self.vtype == "tiles":
                 data = TileArray.from_tiles(
-                    str(fname), file["data"].shape, {"name": "asn"}, file["data"].dtype
+                    str(fname), file["data"].shape, file["data"].dtype, {"name": "asn"}
                 )
             else:
                 data = VirtualSource(file["data"])

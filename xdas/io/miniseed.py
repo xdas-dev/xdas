@@ -50,7 +50,7 @@ class MiniSEEDEngine(Engine, name="miniseed"):
             "method": method,
             "ignore_last_sample": self.ignore_last_sample,
         }
-        data = TileArray.from_tiles(str(fname), shape, engine, np.dtype(dtype))
+        data = TileArray.from_tiles(str(fname), shape, np.dtype(dtype), engine)
         return DataArray(data, coords)
 
     def read_header(self, path):

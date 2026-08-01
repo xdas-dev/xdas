@@ -24,7 +24,7 @@ class SilixaEngine(Engine, name="silixa"):
         """Return a lazy tile-backed :class:`DataArray` for the TDMS file *fname*."""
         shape, dtype, coords = self.read_header(fname)
         data = TileArray.from_tiles(
-            str(fname), shape, {"name": "silixa"}, np.dtype(dtype)
+            str(fname), shape, np.dtype(dtype), {"name": "silixa"}
         )
         return DataArray(data, coords)
 

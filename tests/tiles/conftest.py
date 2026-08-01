@@ -55,7 +55,7 @@ def stack(tmp_path):
         parts.append(data[1:-1])
         row += useful
     manifest = TileArray.from_tiles(
-        paths, (sizes, NX), ENGINE, "float64", attrs={"units": "strain"}
+        paths, (sizes, NX), "float64", ENGINE, attrs={"units": "strain"}
     )
     # per-tile source origins are view state: assigned through the manifest
     manifest = TileArray(
@@ -91,7 +91,7 @@ def windowed(tmp_path):
         parts.append(good)
         row += useful
     manifest = TileArray.from_tiles(
-        paths, (sizes, NX), {"name": "h5py", "dataset": "data"}, "float64"
+        paths, (sizes, NX), "float64", {"name": "h5py", "dataset": "data"}
     )
     manifest = TileArray(
         manifest.dataset.assign(starts_0=("tile_0", np.array(starts))),

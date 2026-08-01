@@ -21,8 +21,13 @@ dense rectilinear grid of file-backed *tiles*, described by a plain
 What arrays cannot carry — the ``dtype`` and the ``engine``
 specification — lives on the array itself, by value, and travels
 beside the dataset when the array is persisted (see
-:func:`xdas.io.xdas.save_dataarray`). Every dataset attribute is a
-user attribute.
+:func:`xdas.io.xdas.save_dataarray`). The dtype is not a decode
+target: engines decode into the element type of their sources, and
+the array records that type at scan time so laziness holds — a
+virtual array answers ``dtype`` without touching its sources — and
+verifies it against every decoded tile. Casting is an explicit
+extra step (:meth:`TileArray.astype`), outside the tiles machinery.
+Every dataset attribute is a user attribute.
 
 Geometry loads eagerly at construction (tiny); parameters stay folded —
 a constant occupies one element whatever the grid size — and broadcast
@@ -247,8 +252,10 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         parameter variables described in the module docstring. Every
         dataset attribute is a user attribute.
     dtype : str or numpy.dtype
-        Element type of the virtual array (little-endian or
-        single-byte).
+        Element type of the sources as the engine decodes them
+        (little-endian or single-byte), recorded so the lazy array can
+        report it without reading. Verified against every decoded
+        tile, never used to cast.
     engine : dict
         The engine specification: the key ``"name"`` selects a
         registered engine (``xdas.io.Engine[name]``); the remaining
@@ -314,7 +321,7 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
                 )
 
     @classmethod
-    def from_tiles(cls, paths, sizes, engine, dtype, *, attrs=None, **params):
+    def from_tiles(cls, paths, sizes, dtype, engine, *, attrs=None, **params):
         """Build a tile array from per-tile descriptions of fresh sources.
 
         The scan-time encoder: every tile is read from the origin of
@@ -337,13 +344,14 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             tile contributes along that axis. An int is uniform across
             the axis' tiles; an array gives the per-tile extents (its
             length is the number of tiles along the axis).
+        dtype : str or numpy.dtype
+            Element type of the sources as the engine decodes them
+            (little-endian or single-byte) — recorded, not a cast
+            target; the scanner reads it off the file it describes.
         engine : dict
             The engine specification: the key ``"name"`` selects a
             registered engine (``xdas.io.Engine[name]``); the remaining
             keys are passed to its ``load_tile`` as keyword parameters.
-        dtype : str or numpy.dtype
-            Element type of the virtual array (little-endian or
-            single-byte).
         attrs : dict, optional
             User attributes of the virtual array.
         **params : array-like
@@ -672,10 +680,11 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
                 kwargs[name] = value.item() if isinstance(value, np.generic) else value
             part = np.asarray(read(str(paths[index]), selection, **kwargs))
             widths = tuple(entry.stop - entry.start for entry in dest)
-            if part.shape != widths:
+            if part.shape != widths or part.dtype != self.dtype:
                 raise ValueError(
-                    f"engine {self.engine['name']!r} produced a part of shape "
-                    f"{part.shape} where the selection has shape {widths}"
+                    f"engine {self.engine['name']!r} produced a {part.dtype} "
+                    f"part of shape {part.shape} where the array records "
+                    f"{self.dtype} parts and the selection has shape {widths}"
                 )
             out[dest] = part
         return out

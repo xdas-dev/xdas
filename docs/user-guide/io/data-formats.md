@@ -159,8 +159,8 @@ class MyTileEngine(Engine, name="my_tile_engine"):
                 data = TileArray.from_tiles(
                     str(fname),
                     file["dataset"].shape,
-                    {"name": "my_tile_engine"},
                     file["dataset"].dtype,
+                    {"name": "my_tile_engine"},
                 )
             else:
                 data = VirtualSource(file["dataset"])

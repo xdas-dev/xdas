@@ -68,7 +68,7 @@ class ProdML(Engine, name="prodml", aliases=["optasense", "sintela"]):
                 # the manifest keeps the on-disk layout, whichever way the
                 # dims are labeled, so the spec needs no `transpose`
                 data = TileArray.from_tiles(
-                    str(fname), rawdata.shape, {"name": "prodml"}, rawdata.dtype
+                    str(fname), rawdata.shape, rawdata.dtype, {"name": "prodml"}
                 )
             else:
                 data = VirtualSource(rawdata)

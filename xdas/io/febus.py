@@ -156,7 +156,7 @@ class FebusEngine(Engine, name="febus"):
                 "overlaps": [int(overlaps[0]), int(overlaps[1])],
             }
             data = TileArray.from_tiles(
-                str(fname), (nblocks * nt, nx), engine, chunks.dtype
+                str(fname), (nblocks * nt, nx), chunks.dtype, engine
             )
             return DataArray(data, {"time": time, "distance": distance}, name=name)
 

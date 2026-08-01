@@ -132,7 +132,7 @@ def test_prodml_transpose_param(tmp_path):
     path = str(tmp_path / "prodml_swapped.h5")
     data = make_prodml_file(path, swapped=True)
     manifest = TileArray.from_tiles(
-        path, data.T.shape, {"name": "prodml", "transpose": True}, data.dtype
+        path, data.T.shape, data.dtype, {"name": "prodml", "transpose": True}
     )
     npt.assert_array_equal(np.asarray(manifest), data.T)
     npt.assert_array_equal(np.asarray(manifest[2:7:2, 1:4]), data.T[2:7:2, 1:4])
