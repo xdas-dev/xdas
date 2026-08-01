@@ -16,7 +16,10 @@ from .core import Engine
 class FebusEngine(Engine, name="febus"):
     """Engine for reading Febus HDF5 files."""
 
-    _supported_vtypes: ClassVar[list] = ["hdf5", "tiles"]
+    # tiles first: a Febus file holds a stack of blocks, and the hdf5
+    # backing needs one mapping per block while a tile array needs one
+    # per file, so the manifest stops growing with the block count
+    _supported_vtypes: ClassVar[list] = ["tiles", "hdf5"]
     _supported_ctypes: ClassVar[dict] = {
         "time": ["interpolated", "sampled", "dense"],
         "distance": ["interpolated", "sampled", "dense"],

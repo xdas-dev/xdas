@@ -211,3 +211,25 @@ def test_tiles_datacollection_roundtrip(tmp_path):
     assert sorted(result) == ["a", "b"]
     assert isinstance(result["a"][1].data, TileArray)
     npt.assert_array_equal(result["b"][0].values, das[0].values)
+
+
+def test_default_vtypes():
+    """The backing each engine picks when the caller does not say.
+
+    Pinned because it is what the I/O guide documents: formats that store
+    several blocks per file, or that HDF5 virtual datasets cannot serve at
+    all, default to tiles.
+    """
+    from xdas.io import Engine
+
+    expected = {
+        "apsensing": "hdf5",
+        "asn": "hdf5",
+        "febus": "tiles",
+        "miniseed": "tiles",
+        "prodml": "hdf5",
+        "silixa": "tiles",
+        "terra15": "hdf5",
+        "xdas": "hdf5",
+    }
+    assert {name: Engine[name]().vtype for name in expected} == expected

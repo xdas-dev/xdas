@@ -20,27 +20,34 @@ os.chdir("../../_data")
 
 ## Implemented file formats
 
-Here below the list of formats that are currently implemented. All HDF5 based formats support native virtualization. Other formats support Dask virtualization. Please refer to the [](virtual-datasets) section. Xdas should automatically detect the correct file format. You can still specify which one you want in the `engine` argument in {py:func}`xdas.open`.
+Here below the list of formats that are currently implemented. Every format supports tile virtualization; HDF5 based formats also support native HDF5 virtualization, and the tables give the backing each engine uses when you do not ask for one. Pass `vtype` to {py:func}`xdas.open` to choose the other, and see [](virtual-datasets) for how to pick. Xdas should automatically detect the correct file format. You can still specify which one you want in the `engine` argument.
 
 Xdas support the following DAS formats:
 
-| Constructor       | Instrument        | `engine` argument | Virtualization    |
-|:-----------------:|:-----------------:|:-----------------:|:-----------------:|
-| AP Sensing        | DAS N5*           | `"apsensing"`     | HDF5              |
-| ASN               | OptoDAS           | `"asn"`           | HDF5              |
-| FEBUS             | A1                | `"febus"`         | HDF5              |
-| OptaSense         | OLA, ODH*, ...    | `"optasense"`     | HDF5              |
-| Silixa            | iDAS              | `"silixa"`        | Dask              |
-| SINTELA           | ONYX              | `"sintela"`       | HDF5              |
-| Terra15           | Treble            | `"terra15"`       | HDF5              |
+| Constructor       | Instrument        | `engine` argument | Virtualization    | Default   |
+|:-----------------:|:-----------------:|:-----------------:|:-----------------:|:---------:|
+| AP Sensing        | DAS N5*           | `"apsensing"`     | HDF5, tiles       | `hdf5`    |
+| ASN               | OptoDAS           | `"asn"`           | HDF5, tiles       | `hdf5`    |
+| FEBUS             | A1                | `"febus"`         | HDF5, tiles       | `tiles`   |
+| OptaSense         | OLA, ODH*, ...    | `"optasense"`     | HDF5, tiles       | `hdf5`    |
+| Silixa            | iDAS              | `"silixa"`        | tiles             | `tiles`   |
+| SINTELA           | ONYX              | `"sintela"`       | HDF5, tiles       | `hdf5`    |
+| Terra15           | Treble            | `"terra15"`       | HDF5, tiles       | `hdf5`    |
 
 It also implements its own format and support ProdML and miniSEED:
 
-| Format            | `engine` argument | Virtualization    |   
-|:-----------------:|:-----------------:|:-----------------:|           
-| Xdas              | `None`            | HDF5              |
-| ProdML            | `"prodml"`        | HDF5              |
-| miniSEED          | `"miniseed"`      | Dask              |
+| Format            | `engine` argument | Virtualization    | Default   |
+|:-----------------:|:-----------------:|:-----------------:|:---------:|
+| Xdas              | `None`            | HDF5, tiles       | `hdf5`    |
+| ProdML            | `"prodml"`        | HDF5, tiles       | `hdf5`    |
+| miniSEED          | `"miniseed"`      | tiles             | `tiles`   |
+
+```{note}
+A Febus file stores a stack of overlapping blocks rather than one contiguous array. The
+HDF5 backing needs a separate mapping for every block, so the manifest of a Febus dataset
+grows with the number of blocks as well as the number of files; a tile array needs one
+tile per file whatever the block count. That is why `febus` defaults to `tiles`.
+```
 
 ```{warning}
 Due to poor documentation of the various version of the Febus format, it is recommended to manually provide the required trimming and the position of the timestamps within each block. For example to trim 100 samples on both side of each block and to set the timestamp location at the center of the block for a block of 2000 samples:
@@ -164,6 +171,10 @@ class MyTileEngine(Engine, name="my_tile_engine"):
 ```
 
 `load_tile` must depend only on its arguments — never on engine instance
-state — so that saved tile views decode identically everywhere. This is the
-backing used by default for the formats that HDF5 virtual datasets cannot
-serve (Silixa TDMS, MiniSEED), and optionally by every built-in HDF5 engine.
+state — so that saved tile views decode identically everywhere.
+
+This is the backing used by default for the formats HDF5 virtual datasets cannot
+serve (Silixa TDMS, MiniSEED) and for Febus, whose files hold many blocks each; it
+is available on request from every other built-in engine. The order of
+`_supported_vtypes` decides the default, so listing `"tiles"` first is all it
+takes for a new engine to prefer it.

@@ -5,10 +5,15 @@
 ### New Features
 - **Tile-backed virtual arrays.** The new `xdas.tiles` package (ported from the 0.3 line) exposes multi-file archives as one lazy `TileArray`: positive-step slicing, concatenation (including along a new dimension), and whole-array reductions all stay lazy, and reads touch only the tiles a selection overlaps. The Silixa TDMS and MiniSEED engines now emit tile-backed data arrays, replacing the serialized-dask-graph fallback; Silixa reads gained time-axis push-down (@atrabattoni).
 - Tile-backed data arrays round-trip through the native xdas netCDF format: the tile manifest is stored as a `__tiles__` sibling group (@atrabattoni).
-- **Optional `tiles` vtype for every HDF5 engine.** `open_dataarray`/`open_mfdataarray` with `vtype="tiles"` back the returned array with a lazy `TileArray` instead of an HDF5 virtual source, for the asn, febus, terra15, apsensing, prodml, and native xdas engines (the `hdf5` vtype stays the default). Tile views describe a Febus file as a single tile — the overlap trimming lives in the reader, not in one mapping entry per block — and saved tile views are directly readable by the 0.3 line. Custom engines add tile support by implementing the `load_tile(path, selection, **params)` static half of `xdas.io.Engine` (@atrabattoni).
+- **Optional `tiles` vtype for every HDF5 engine.** `open_dataarray`/`open_mfdataarray` with `vtype="tiles"` back the returned array with a lazy `TileArray` instead of an HDF5 virtual source, for the asn, febus, terra15, apsensing, prodml, and native xdas engines. Saved tile views are directly readable by the 0.3 line. Custom engines add tile support by implementing the `load_tile(path, selection, **params)` static half of `xdas.io.Engine` (@atrabattoni).
+- **Febus now defaults to `tiles`.** A tile view describes a Febus file as a single tile — the overlap trimming lives in the reader — whereas the HDF5 backing needs one mapping per block, so its manifest grew with the block count as well as the file count. Every other HDF5 engine still defaults to `hdf5` (@atrabattoni).
+- `open_mfdataarray` no longer refuses more than 100 000 paths regardless of backing: the ceiling is now taken from the engine's resolved vtype and is far higher for `tiles`, which does not build one HDF5 mapping per file. The error explains the remaining limit — the scan holds one data array per file in memory until they are combined (@atrabattoni).
 
 ### Deprecations
-- Writing dask-backed virtual arrays (`__dask_array__` attribute) is deprecated and emits a `FutureWarning`; existing files still open. The tile-backed engines replace this mechanism (@atrabattoni).
+- Writing dask-backed virtual arrays (`__dask_array__` attribute) is deprecated and emits a `FutureWarning`; existing files still open. No engine emits them any more: the tile-backed engines replace this mechanism (@atrabattoni).
+
+### Bug Fixes
+- Fix data collections holding more than one tile-backed data array being impossible to reopen. The tile manifest lives in a `__tiles__` sibling group, which the reader counted when deciding whether a group held a data array or a nested collection, so every tile-backed array looked one level too deep (@atrabattoni).
 
 ## 0.2.8
 

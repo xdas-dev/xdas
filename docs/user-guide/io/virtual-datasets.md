@@ -20,9 +20,10 @@ To deal with large multi-file dataset, *Xdas* uses the concept of virtual datase
 
 - `hdf5`: for HDF5 based formats, it leverages the [virtual datasets](https://docs.h5py.org/en/stable/vds.html) native capabilities of netCDF4/HDF5, which resolve the mapping in compiled C with no per-file Python overhead. The cost of that mapping does however grow with the number of linked files.
 - `tiles`: a manifest of file-backed tiles stored as a plain array, decoded by the engine itself. It works with any format and keeps the file mapping inspectable.
-- For other type of files, it can also leverage the flexibility of [Dask arrays](https://docs.Dask.org/en/stable/array.html).
 
-Which types an engine offers is declared by its `_supported_vtypes` attribute; the first one listed is the default. See [](#choosing-a-virtualization-backend) for how to pick.
+Which types an engine offers is declared by its `_supported_vtypes` attribute; the first one listed is the default. See [](#choosing-a-virtualization-backend) for how to pick, and [](data-formats.md) for what each engine supports and defaults to.
+
+A third backing, [Dask arrays](https://docs.Dask.org/en/stable/array.html), is deprecated and no longer used by any engine — see [](#dask-virtualization).
 
 ## HDF5 Virtualization
 
@@ -86,6 +87,7 @@ A virtual dataset can point to another virtual dataset. This can be beneficial f
 When loading large part of a virtual dataset, you might end up with nan values. This normally happens when linked files are missing. But due to a [known limitation](https://forum.hdfgroup.org/t/virtual-datasets-and-open-file-limit/6757) of the HDF5 C library it can be due to the opening of too many files. Try increasing the number of possible file to open with the `ulimit` command. Or load smaller chunk of data. 
 ```
 
+(tile-virtualization)=
 ## Tile Virtualization
 
 With the `tiles` vtype, the mapping is not delegated to HDF5. *Xdas* stores it as a
@@ -195,10 +197,20 @@ the only one of the two whose write, open and read costs do not all grow with th
 of files.
 ```
 
-## Dask Virtualization
+(dask-virtualization)=
+## Dask Virtualization (deprecated)
 
-Other type of formats will be loaded as Dask arrays. Those latter are a N-dimensional stack of chunks. At each chunk is associated a task to complete to get the values of that chunk. It results in a computation graph that Xdas is capable to serialize and store within its native NetCDF format. To be able to serialize the graph, it must only contain xdas or Dask functions. 
+```{deprecated} 0.2.9
+Dask virtualization is no longer used by any engine and writing it is deprecated. The
+formats that once relied on it — those HDF5 virtual datasets cannot serve — now use
+[tile virtualization](#tile-virtualization) instead. Existing files that store a Dask
+graph can still be read, so nothing on disk is lost, but new datasets should not be
+written this way.
+```
 
-From an user point of view the use of this type of virtualization is very similar to HDF5 one. 
-
-The main difference is that when opening a dataset with Dask virtualization, the entire graph of pointers to the files is loaded, can be modified and saved again. In the HDF5 case, opening a virtual dataset is handled the same way as if it is a regular file meaning that the underlying mapping of pointers is hidden and cannot be modified. Dask graph can be slow when they start to become very big (more than one million tasks).
+Formats that HDF5 could not virtualize used to be loaded as Dask arrays: an
+N-dimensional stack of chunks, each with a task attached that produces its values,
+serialized into the native *Xdas* netCDF format as a computation graph. Tiles replace it
+with a manifest that describes the same mapping as plain array data, which is both more
+compact and far quicker to build, and which does not go sluggish once the graph reaches
+millions of tasks.
