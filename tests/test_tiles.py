@@ -1,17 +1,126 @@
+"""The tile-backed virtual array and its integration in the DataArray and native format."""
+
 import math
 import os
 
+import dask.array as da_
 import h5py
 import numpy as np
 import numpy.testing as npt
 import pytest
 
+import xdas as xd
 from xdas.io import Engine
 from xdas.tiles import TileArray
 
 NX = 5
 
+DIMS = ("time", "distance")
+
 ENGINE = {"name": "h5py", "dataset": "data"}
+
+
+class H5pyEngine(Engine, name="h5py"):
+    """Read any HDF5 dataset — the engine of the synthetic test files.
+
+    The format engines each read their own layout; test files belong to
+    no format, so they are described by this generic load-only engine
+    (its opening half stays abstract). Extra leading selection axes
+    (virtually expanded arrays) pad the output rank, as the production
+    engines do.
+    """
+
+    @staticmethod
+    def load_tile(path, selection, *, dataset):
+        with h5py.File(path, "r") as file:
+            source = file[dataset]
+            extra = len(selection) - source.ndim
+            data = source[selection[extra:]]
+        return data.reshape((1,) * extra + data.shape)
+
+
+@pytest.fixture
+def stack(tmp_path):
+    """Three gzip-compressed HDF5 files with junk edge rows to trim.
+
+    Emulates overlap trimming: each file carries one junk row at its start
+    and end that the tile's start row (plus the row ``size``) cuts out.
+    Returns the manifest and the expected stacked values.
+    """
+    paths = []
+    sizes = []
+    parts = []
+    row = 0
+    for k, raw_nt in enumerate([12, 9, 14]):
+        path = str(tmp_path / f"src{k}.h5")
+        useful = raw_nt - 2
+        data = np.full((raw_nt, NX), -999.0)
+        data[1:-1] = (row + np.arange(useful))[:, None] + np.arange(NX) / 10
+        with h5py.File(path, "w") as file:
+            file.create_dataset("data", data=data, chunks=(4, NX), compression="gzip")
+        paths.append(path)
+        sizes.append(useful)
+        parts.append(data[1:-1])
+        row += useful
+    manifest = TileArray.from_tiles(
+        paths, (sizes, NX), "float64", ENGINE, attrs={"units": "strain"}
+    )
+    # per-tile source origins are view state: assigned through the manifest
+    manifest = TileArray(
+        manifest.dataset.assign(starts_0=("tile_0", np.array([1, 1, 1]))),
+        manifest.dtype,
+        manifest.engine,
+    )
+    return manifest, np.concatenate(parts)
+
+
+@pytest.fixture
+def windowed(tmp_path):
+    """Three files whose rows contribute blob-local windows via ``starts_0``.
+
+    Each file holds junk rows around the useful window; the manifest
+    exposes blob rows ``[start, start + size)``. The middle file has a
+    zero start (window at the top of the blob).
+    """
+    paths, sizes, starts, parts = [], [], [], []
+    row = 0
+    for k, raw_nt in enumerate([12, 9, 14]):
+        path = str(tmp_path / f"win{k}.h5")
+        useful = raw_nt - 4
+        first = 0 if k == 1 else 2
+        data = np.full((raw_nt, NX), -999.0)
+        good = (row + np.arange(useful))[:, None] + np.arange(NX) / 10
+        data[first : first + useful] = good
+        with h5py.File(path, "w") as file:
+            file.create_dataset("data", data=data)
+        paths.append(path)
+        sizes.append(useful)
+        starts.append(first)
+        parts.append(good)
+        row += useful
+    manifest = TileArray.from_tiles(
+        paths, (sizes, NX), "float64", {"name": "h5py", "dataset": "data"}
+    )
+    manifest = TileArray(
+        manifest.dataset.assign(starts_0=("tile_0", np.array(starts))),
+        manifest.dtype,
+        manifest.engine,
+    )
+    return manifest, np.concatenate(parts)
+
+
+@pytest.fixture
+def engine_calls(monkeypatch):
+    """Record the path of every h5py engine read, delegating to the real one."""
+    calls = []
+    original = Engine["h5py"].load_tile
+
+    def counting(path, selection, **params):
+        calls.append(path)
+        return original(path, selection, **params)
+
+    monkeypatch.setattr(Engine["h5py"], "load_tile", counting)
+    return calls
 
 
 def _tile_file(path, data, **kwargs):
@@ -820,7 +929,7 @@ class TestNumpyProtocols:
         manifest, reference = stack
         mask = reference[:, 0] > 10
         npt.assert_array_equal(manifest[mask], reference[mask])
-        from xdas.tiles.tilearray import _bounding_key
+        from xdas.tiles import _bounding_key
 
         with pytest.raises(NotImplementedError, match="boolean mask"):
             _bounding_key(
@@ -855,7 +964,7 @@ class TestNumpyProtocols:
         assert casted.dtype == np.float32
         out = np.concatenate([manifest, manifest], 0, None)
         npt.assert_array_equal(out, np.concatenate([reference, reference]))
-        from xdas.tiles.tilearray import _concatenate_virtual
+        from xdas.tiles import _concatenate_virtual
 
         assert _concatenate_virtual((), {}) is NotImplemented
         assert _concatenate_virtual((5,), {}) is NotImplemented
@@ -926,3 +1035,126 @@ class TestReadScheduling:
         restored = pickle.loads(pickle.dumps(manifest))
         assert isinstance(restored, TileArray)
         npt.assert_array_equal(np.asarray(restored), reference)
+
+
+def wrap(manifest):
+    """Wrap *manifest* in a DataArray with regular time/distance coordinates."""
+    nt, nx = manifest.shape
+    # ns resolution: the netCDF round trip casts datetimes to M8[ns]
+    time = xd.Coordinate["interpolated"].from_block(
+        np.datetime64("2020-01-01T00:00:00", "ns"),
+        nt,
+        np.timedelta64(10_000_000, "ns"),
+        dim="time",
+    )
+    distance = xd.Coordinate["interpolated"].from_block(0.0, nx, 4.0, dim="distance")
+    return xd.DataArray(manifest, {"time": time, "distance": distance})
+
+
+class TestDataArray:
+    def test_data(self, stack):
+        manifest, _ = stack
+        da = wrap(manifest)
+        assert da.data is manifest
+        assert "TileArray" in repr(da)
+
+    def test_isel_stays_virtual(self, stack, engine_calls):
+        manifest, reference = stack
+        da = wrap(manifest)
+        view = da.isel(time=slice(9, 13), distance=slice(1, 4))
+        assert isinstance(view.data, TileArray)
+        assert engine_calls == []
+        npt.assert_array_equal(view.values, reference[9:13, 1:4])
+
+    def test_sel_stays_virtual(self, stack, engine_calls):
+        manifest, reference = stack
+        da = wrap(manifest)
+        t0 = da["time"][2].values
+        t1 = da["time"][20].values
+        view = da.sel(time=slice(t0, t1))
+        assert isinstance(view.data, TileArray)
+        assert engine_calls == []
+        npt.assert_array_equal(view.values, reference[2:21])
+
+    def test_load_materializes(self, stack):
+        manifest, reference = stack
+        loaded = wrap(manifest).load()
+        assert isinstance(loaded.data, np.ndarray)
+        npt.assert_array_equal(loaded.values, reference)
+
+    def test_concat_along_existing_dim_stays_virtual(self, stack, engine_calls):
+        manifest, reference = stack
+        da = wrap(manifest)
+        head = da.isel(time=slice(0, 10))
+        tail = da.isel(time=slice(10, None))
+        out = xd.concat([head, tail], "time")
+        assert isinstance(out.data, TileArray)
+        assert engine_calls == []
+        npt.assert_array_equal(out.values, reference)
+
+    def test_concat_along_new_dim_stays_virtual(self, stack, engine_calls):
+        manifest, reference = stack
+        objs = [wrap(manifest), wrap(manifest)]
+        out = xd.concat(objs, "station")
+        assert out.dims == ("station", "time", "distance")
+        assert isinstance(out.data, TileArray)
+        assert engine_calls == []
+        npt.assert_array_equal(out.values, np.stack([reference, reference]))
+
+    def test_mean_streams(self, stack, engine_calls):
+        manifest, reference = stack
+        da = wrap(manifest)
+        npt.assert_allclose(da.mean("time").values, reference.mean(0))
+        assert len(engine_calls) > 0
+        assert manifest._cache is None
+
+
+class TestPersistence:
+    def test_round_trip(self, stack, tmp_path):
+        manifest, reference = stack
+        da = wrap(manifest)
+        path = str(tmp_path / "view.nc")
+        da.to_netcdf(path)
+        reopened = xd.open_dataarray(path)
+        assert isinstance(reopened.data, TileArray)
+        assert reopened.data.equals(manifest)
+        assert reopened.coords["time"].equals(da.coords["time"])
+        npt.assert_array_equal(reopened.values, reference)
+
+    def test_sliced_view_round_trip(self, stack, tmp_path):
+        manifest, reference = stack
+        view = wrap(manifest).isel(time=slice(9, 13))
+        path = str(tmp_path / "sliced.nc")
+        view.to_netcdf(path)
+        reopened = xd.open_dataarray(path)
+        assert isinstance(reopened.data, TileArray)
+        npt.assert_array_equal(reopened.values, reference[9:13])
+
+    def test_grouped_round_trip(self, stack, tmp_path):
+        manifest, reference = stack
+        da = wrap(manifest)
+        path = str(tmp_path / "grouped.nc")
+        da.to_netcdf(path, group="acquisition")
+        reopened = xd.open_dataarray(path, engine="xdas", group="acquisition")
+        assert isinstance(reopened.data, TileArray)
+        npt.assert_array_equal(reopened.values, reference)
+
+    def test_eager_save_writes_values(self, stack, tmp_path):
+        manifest, reference = stack
+        da = wrap(manifest)
+        path = str(tmp_path / "eager.nc")
+        da.to_netcdf(path, virtual=False)
+        reopened = xd.open_dataarray(path)
+        assert not isinstance(reopened.data, TileArray)
+        npt.assert_array_equal(reopened.values, reference)
+
+    def test_dask_write_deprecated(self, tmp_path):
+        import dask
+
+        data = da_.from_delayed(dask.delayed(np.zeros)((4, NX)), (4, NX), np.float64)
+        da = xd.DataArray(data, dims=DIMS)
+        path = str(tmp_path / "dask.nc")
+        with pytest.warns(FutureWarning, match="dask-backed"):
+            da.to_netcdf(path, virtual=True)
+        reopened = xd.open_dataarray(path)
+        npt.assert_array_equal(reopened.values, np.zeros((4, NX)))
