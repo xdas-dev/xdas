@@ -438,7 +438,7 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         xarray.Dataset
             The manifest dataset.
         """
-        return xr.Dataset(self.dataset.data_vars, attrs=self.attrs)
+        return self.dataset.copy()
 
     def _geometry(self, kind, default):
         """Load the eager 1-D ``{kind}_k`` arrays (*default* where absent)."""
