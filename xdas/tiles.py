@@ -16,7 +16,11 @@ dense rectilinear grid of file-backed *tiles*, described by a plain
   required) plus any format-private per-tile values forwarded to the
   engine as keyword arguments. A parameter carries only the tile
   dimensions along which it actually varies — a constant folds to a 0-d
-  variable — and broadcasts over the grid at read time.
+  variable — and broadcasts over the grid at read time;
+- an optional 0-d ``root`` variable: the common directory of the
+  sources, split off so the per-tile ``paths`` stay root-relative —
+  one shared constant instead of a per-tile repeat. Absent (or empty),
+  the paths are used as stored.
 
 What arrays cannot carry — the ``dtype`` and the ``engine``
 specification — lives on the array itself, by value, and travels
@@ -122,6 +126,33 @@ def _fold_param(values, counts, dims):
     return tuple(dims[axis] for axis in keep), np.asarray(
         values[index], dtype=values.dtype
     )
+
+
+def _split_root(paths):
+    """Split absolute *paths* into their common directory and relative rest.
+
+    The root is the deepest directory containing every path (dirnames
+    only, so at least a basename always remains in the relative part).
+    Falls back to ``("", paths)`` when no common directory exists
+    (paths spread over several drives).
+    """
+    try:
+        root = os.path.commonpath([os.path.dirname(path) for path in paths.flat])
+    except ValueError:
+        return "", paths
+    # commonpath ends on a component boundary: a plain strip is exact
+    strip = np.frompyfunc(lambda path: path[len(root) :].lstrip(os.sep), 1, 1)
+    return root, strip(paths)
+
+
+def _common_root(roots):
+    """Return the deepest directory containing every *root* ("" when none does)."""
+    if any(not root for root in roots):
+        return ""
+    try:
+        return os.path.commonpath(roots)
+    except ValueError:
+        return ""
 
 
 def _normalize_key(key, ndim):
@@ -327,6 +358,12 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         self.shape = tuple(int(edges[-1]) for edges in self._edges)
         if "paths" not in dataset:
             raise ValueError("a tile array needs a `paths` variable")
+        if "root" in dataset:
+            if tuple(dataset["root"].dims) != ():
+                raise ValueError("`root` must be a 0-d variable")
+            self.root = str(dataset["root"].values[()])
+        else:
+            self.root = ""
         geometry = {
             f"{kind}_{k}" for kind in ("sizes", "starts", "steps") for k in range(ndim)
         }
@@ -334,7 +371,7 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             sorted(
                 name
                 for name in map(str, dataset.data_vars)
-                if name not in geometry and name != "paths"
+                if name not in geometry and name not in ("paths", "root")
             )
         )
         for name in ("paths", *self._params):
@@ -362,7 +399,10 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             length-1 axes up to the rank. A path may appear in several
             tiles. Relative paths are made absolute at construction —
             the working directory cannot be trusted later, as reads are
-            lazy and stored views outlive the session.
+            lazy and stored views outlive the session. The common
+            directory of the absolute paths is then split off into the
+            0-d ``root`` variable, the stored per-tile paths staying
+            root-relative.
         sizes : sequence of int or 1-D array-like
             One entry per axis (this defines the rank): the samples each
             tile contributes along that axis. An int is uniform across
@@ -400,6 +440,9 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         # reads are lazy and stored views outlive the session: anchor the
         # paths now, while the scan's working directory still applies
         paths = np.frompyfunc(os.path.abspath, 1, 1)(paths)
+        # the common directory is one shared constant, not a per-tile
+        # repeat: split it off, the stored paths stay root-relative
+        root, paths = _split_root(paths)
         data = {}
         counts = []
         for k, entry in enumerate(sizes):
@@ -414,9 +457,13 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
                 f"`paths` shape {paths.shape} does not match the grid {counts}"
             )
         data["paths"] = _fold_param(paths, counts, dims)
-        reserved = set(data) | {
-            f"{kind}_{k}" for kind in ("starts", "steps") for k in range(ndim)
-        }
+        if root:
+            data["root"] = ((), np.asarray(root, dtype=object))
+        reserved = (
+            set(data)
+            | {"root"}
+            | {f"{kind}_{k}" for kind in ("starts", "steps") for k in range(ndim)}
+        )
         for name, values in params.items():
             if name in reserved:
                 raise ValueError(f"parameter name {name!r} is reserved")
@@ -431,7 +478,8 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         user attributes. What the dataset cannot hold, the by-value
         ``dtype`` and ``engine``, the caller reads off the properties
         and stores beside it. Source paths are stored exactly as the
-        array holds them, absolute.
+        array holds them: relative to the 0-d ``root`` variable
+        carrying their common directory.
 
         Returns
         -------
@@ -572,7 +620,10 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         subviews of the same sources concatenate, and repeated sources
         are legitimate. The geometry is chained; parameters stay folded
         when every input agrees and are broadcast out and concatenated
-        otherwise (the tile tables load, the data does not).
+        otherwise (the tile tables load, the data does not). Arrays
+        rooted in different directories fuse under the deepest
+        directory containing every root, their per-tile paths rebased
+        (absolute when no common directory exists).
 
         Parameters
         ----------
@@ -624,8 +675,14 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
                 if default is not None and bool((values == default).all()):
                     continue
                 data[f"{kind}_{k}"] = (dims[k], values)
+        root = _common_root([array.root for array in arrays])
+        if root:
+            data["root"] = ((), np.asarray(root, dtype=object))
         for name in ("paths", *first._params):
-            variables = [array.dataset[name].variable for array in arrays]
+            if name == "paths":
+                variables = [array._rebased_paths(root) for array in arrays]
+            else:
+                variables = [array.dataset[name].variable for array in arrays]
             vdims = variables[0].dims
             if dims[axis] not in vdims and all(v.dims == vdims for v in variables):
                 values = variables[0].values
@@ -646,6 +703,30 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             data[name] = xr.Variable(union, values)
         dataset = xr.Dataset(data, attrs=first.attrs)
         return cls(dataset, first.dtype, first.engine)
+
+    def _full_paths(self):
+        """Return the full source path of every tile, root joined, over the grid."""
+        paths = self._grid_values("paths")
+        if not self.root:
+            return paths
+        return np.frompyfunc(lambda path: os.path.join(self.root, path), 1, 1)(paths)
+
+    def _rebased_paths(self, root):
+        """Return the ``paths`` variable of this array, rebased on directory *root*.
+
+        Folded dimensions are preserved: the rebase rewrites the stored
+        values under the new root, it never broadcasts.
+        """
+        variable = self.dataset["paths"].variable
+        if root == self.root:
+            return variable
+
+        def rebase(path):
+            full = os.path.join(self.root, path)
+            return os.path.relpath(full, root) if root else full
+
+        values = np.frompyfunc(rebase, 1, 1)(np.asarray(variable.values, dtype=object))
+        return xr.Variable(variable.dims, values)
 
     def _grid_values(self, name):
         """Load parameter *name* and broadcast it over the full tile grid."""
@@ -704,7 +785,8 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             for name, values in params.items():
                 value = values[index]
                 kwargs[name] = value.item() if isinstance(value, np.generic) else value
-            part = np.asarray(read(str(paths[index]), selection, **kwargs))
+            path = os.path.join(self.root, str(paths[index]))
+            part = np.asarray(read(path, selection, **kwargs))
             widths = tuple(entry.stop - entry.start for entry in dest)
             if part.shape != widths or part.dtype != self.dtype:
                 raise ValueError(
@@ -720,7 +802,8 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
 
         Compares the engine, dtype, geometry, parameters and user
         attributes; ``==`` stays elementwise, as on any numpy-like
-        array.
+        array. Paths compare joined: two arrays naming the same source
+        files are equal however each splits its ``root``.
         """
         if not isinstance(other, TileArray):
             return False
@@ -739,11 +822,15 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
                 and np.array_equal(self._steps[k], other._steps[k])
             ):
                 return False
-        for name in ("paths", *self._params):
+        for name in self._params:
             mine, theirs = self._grid_values(name), other._grid_values(name)
             if not np.array_equal(mine, theirs):
                 return False
-        return True
+        if self.root == other.root:
+            mine, theirs = self._grid_values("paths"), other._grid_values("paths")
+        else:
+            mine, theirs = self._full_paths(), other._full_paths()
+        return bool(np.array_equal(mine, theirs))
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         """Materialize tile-backed inputs and apply the ufunc."""

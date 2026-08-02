@@ -8,6 +8,7 @@ import h5py
 import numpy as np
 import numpy.testing as npt
 import pytest
+import xarray as xr
 
 import xdas as xd
 from xdas.io import Engine
@@ -208,20 +209,24 @@ class TestManifest:
         npt.assert_array_equal(np.asarray(manifest[9:13]), reference[9:13])
         npt.assert_array_equal(np.asarray(manifest[3:5]), reference[3:5])
 
-    def test_dataset_model(self, stack):
+    def test_dataset_model(self, stack, tmp_path):
         manifest, _ = stack
         dataset = manifest.dataset
         assert tuple(dataset["sizes_0"].dims) == ("tile_0",)
         assert tuple(dataset["sizes_1"].dims) == ("tile_1",)
         # per-file paths vary along tile_0 only: the trailing axis folds
         assert tuple(dataset["paths"].dims) == ("tile_0",)
+        # the common directory splits off: 0-d root, root-relative paths
+        assert dataset["root"].ndim == 0
+        assert str(dataset["root"].values[()]) == str(tmp_path)
+        assert dataset["paths"].values.tolist() == ["src0.h5", "src1.h5", "src2.h5"]
         npt.assert_array_equal(dataset["starts_0"].values, [1, 1, 1])
         # all-default geometry columns are not stored
         assert "starts_1" not in dataset and "steps_0" not in dataset
 
     def test_param_folding(self, stack):
         manifest, _ = stack
-        path = str(manifest.dataset["paths"].values[0])
+        path = manifest._full_paths().item(0)
         uniform = TileArray.from_tiles(
             path, ([10, 10, 10], NX), "float64", ENGINE, record=0, nbytes=80
         )
@@ -250,6 +255,12 @@ class TestManifest:
             TileArray.from_tiles("a", (5, NX), "f8", ENGINE, sizes_0=[5])
         with pytest.raises(ValueError, match="reserved"):
             TileArray.from_tiles("a", (5, NX), "f8", ENGINE, starts_0=[0])
+        with pytest.raises(ValueError, match="reserved"):
+            TileArray.from_tiles("a", (5, NX), "f8", ENGINE, root=["r"])
+        bad_root = manifest.dataset.copy()
+        bad_root["root"] = (("tile_0",), np.array(["a", "b", "c"], dtype=object))
+        with pytest.raises(ValueError, match="0-d"):
+            TileArray(bad_root, manifest.dtype, manifest.engine)
         dataset = manifest.dataset.copy()
         with pytest.raises(ValueError, match="`sizes_0`"):
             TileArray(
@@ -326,7 +337,8 @@ class TestManifest:
         _tile_file(tmp_path / "rel.h5", data)
         monkeypatch.chdir(tmp_path)
         manifest = TileArray.from_tiles("rel.h5", (4, NX), "f8", ENGINE)
-        assert os.path.isabs(manifest._grid_values("paths").item(0))
+        assert manifest.root == str(tmp_path)
+        assert os.path.isabs(manifest._full_paths().item(0))
         monkeypatch.chdir(tmp_path.parent)
         npt.assert_array_equal(np.asarray(manifest), data)
 
@@ -336,7 +348,7 @@ class TestManifest:
 
 
 class TestSourcePaths:
-    """Paths are stored verbatim: an array holds exactly what it was given."""
+    """Paths are stored split: a common 0-d root and root-relative values."""
 
     def make(self, path):
         # the file's first row is skipped: sliced away, as views are made
@@ -349,9 +361,17 @@ class TestSourcePaths:
     def round_trip(self, manifest):
         return TileArray(manifest.to_dataset(), manifest.dtype, manifest.engine)
 
+    def test_root_splits_off(self, tmp_path):
+        manifest = self.make(tmp_path / "sources" / "f.h5")
+        assert manifest.root == str(tmp_path / "sources")
+        assert self.stored(manifest) == ["f.h5"]
+
     def test_paths_round_trip(self, tmp_path):
         path = tmp_path / "sources" / "f.h5"
-        assert self.stored(self.round_trip(self.make(path))) == [str(path)]
+        restored = self.round_trip(self.make(path))
+        assert restored.root == str(tmp_path / "sources")
+        assert self.stored(restored) == ["f.h5"]
+        assert restored._full_paths().item(0) == str(path)
 
     def test_stored_paths_read(self, tmp_path):
         # the tile's start row skips the first row of the file
@@ -360,6 +380,41 @@ class TestSourcePaths:
         _tile_file(tmp_path / "sources" / "f.h5", data)
         restored = self.round_trip(self.make(tmp_path / "sources" / "f.h5"))
         npt.assert_array_equal(np.asarray(restored), data[1:])
+
+    def test_rootless_manifest_reads(self, tmp_path):
+        """Manifests without a `root` (the pre-split stored form) still work."""
+        data = np.arange(5 * NX, dtype="<f4").reshape(5, NX)
+        _tile_file(tmp_path / "f.h5", data)
+        manifest = self.make(tmp_path / "f.h5")
+        dataset = manifest.to_dataset().drop_vars("root")
+        dataset["paths"] = xr.Variable(
+            (), np.asarray(str(tmp_path / "f.h5"), dtype=object)
+        )
+        legacy = TileArray(dataset, manifest.dtype, manifest.engine)
+        assert legacy.root == ""
+        npt.assert_array_equal(np.asarray(legacy), data[1:])
+        # same files, however split between root and relative paths
+        assert legacy.equals(manifest) and manifest.equals(legacy)
+
+    def test_no_common_directory_keeps_paths_whole(self):
+        from xdas.tiles import _common_root, _split_root
+
+        mixed = np.array(["rel/f.h5", "/abs/g.h5"], dtype=object)
+        root, kept = _split_root(mixed)
+        assert root == "" and kept is mixed
+        assert _common_root(["/a/b", ""]) == ""
+        assert _common_root(["/a/b", "relative"]) == ""
+
+    def test_no_common_directory_falls_back_rootless(self, tmp_path, monkeypatch):
+        """Paths sharing no directory (several drives) store whole, rootless."""
+        import xdas.tiles
+
+        data = np.arange(4.0 * NX).reshape(4, NX)
+        _tile_file(tmp_path / "d.h5", data)
+        monkeypatch.setattr(xdas.tiles, "_split_root", lambda paths: ("", paths))
+        manifest = TileArray.from_tiles(str(tmp_path / "d.h5"), (4, NX), "f8", ENGINE)
+        assert manifest.root == "" and "root" not in manifest.dataset
+        npt.assert_array_equal(np.asarray(manifest), data)
 
 
 class TestStarts:
@@ -371,7 +426,7 @@ class TestStarts:
 
     def test_two_windows_of_one_blob(self, windowed):
         manifest, reference = windowed
-        path = str(manifest.dataset["paths"].values[0])
+        path = manifest._full_paths().item(0)
         split = _with_starts(
             TileArray.from_tiles(path, ([4, 4], NX), manifest.dtype, manifest.engine),
             [2, 6],
@@ -381,7 +436,7 @@ class TestStarts:
     def test_repeated_window_reads_twice(self, windowed):
         """The same source sub-box placed at two virtual positions is legal."""
         manifest, reference = windowed
-        path = str(manifest.dataset["paths"].values[0])
+        path = manifest._full_paths().item(0)
         repeated = _with_starts(
             TileArray.from_tiles(path, ([4, 4], NX), manifest.dtype, manifest.engine),
             [2, 2],
@@ -573,6 +628,55 @@ class TestConcat:
         assert tuple(fused.dataset["paths"].dims) == ("tile_0",)
         npt.assert_array_equal(np.asarray(fused), np.concatenate(parts))
 
+    def test_concat_rebases_differing_roots(self, tmp_path):
+        """Arrays rooted apart fuse under the deepest shared directory."""
+        engine = {"name": "h5py", "dataset": "data"}
+        parts, manifests = [], []
+        for k, sub in enumerate(["a", "b"]):
+            (tmp_path / sub).mkdir()
+            path = str(tmp_path / sub / f"p{k}.h5")
+            data = 100.0 * k + np.arange(5.0 * NX).reshape(5, NX)
+            _tile_file(path, data)
+            parts.append(data)
+            manifests.append(TileArray.from_tiles(path, (5, NX), "float64", engine))
+        fused = TileArray.concat(manifests)
+        assert fused.root == str(tmp_path)
+        assert fused.dataset["paths"].values.tolist() == [
+            os.path.join("a", "p0.h5"),
+            os.path.join("b", "p1.h5"),
+        ]
+        npt.assert_array_equal(np.asarray(fused), np.concatenate(parts))
+
+    def test_concat_without_common_root_stores_absolute(self, tmp_path):
+        """A rootless (legacy) input drags the fusion to absolute paths."""
+        engine = {"name": "h5py", "dataset": "data"}
+        parts, manifests = [], []
+        for k in range(2):
+            path = str(tmp_path / f"r{k}.h5")
+            data = 100.0 * k + np.arange(5.0 * NX).reshape(5, NX)
+            _tile_file(path, data)
+            parts.append(data)
+            manifests.append(TileArray.from_tiles(path, (5, NX), "float64", engine))
+        dataset = manifests[1].to_dataset().drop_vars("root")
+        dataset["paths"] = xr.Variable(
+            (), np.asarray(str(tmp_path / "r1.h5"), dtype=object)
+        )
+        legacy = TileArray(dataset, "float64", engine)
+        fused = TileArray.concat([manifests[0], legacy])
+        assert fused.root == ""
+        assert all(os.path.isabs(path) for path in fused.dataset["paths"].values)
+        npt.assert_array_equal(np.asarray(fused), np.concatenate(parts))
+
+    def test_concat_chains_per_tile_params(self, stack):
+        manifest, _ = stack
+        arr = TileArray(
+            manifest.dataset.assign(record=(("tile_0",), np.arange(3))),
+            manifest.dtype,
+            manifest.engine,
+        )
+        fused = TileArray.concat([arr, arr])
+        npt.assert_array_equal(fused.dataset["record"].values, [0, 1, 2, 0, 1, 2])
+
     def test_mixed_starts_concat(self, tmp_path, windowed):
         """A windowed and an untrimmed manifest fuse: starts promote to 0."""
         trimmed, windowed_reference = windowed
@@ -707,8 +811,25 @@ class TestEdgeCases:
         assert not manifest.equals(shifted)  # same shape, differing geometry
         renamed = manifest.dataset.copy()
         renamed["paths"] = renamed["paths"].copy()
-        renamed["paths"].values[0] = "/elsewhere.h5"
+        renamed["paths"].values[0] = "elsewhere.h5"
         assert not manifest.equals(TileArray(renamed, manifest.dtype, manifest.engine))
+        moved = manifest.dataset.copy()
+        moved["root"] = ((), np.asarray("/elsewhere", dtype=object))
+        assert not manifest.equals(TileArray(moved, manifest.dtype, manifest.engine))
+        withrec = TileArray(
+            manifest.dataset.assign(record=(("tile_0",), np.arange(3))),
+            manifest.dtype,
+            manifest.engine,
+        )
+        assert withrec.equals(
+            TileArray(withrec.dataset.copy(), withrec.dtype, withrec.engine)
+        )
+        rerecorded = TileArray(
+            manifest.dataset.assign(record=(("tile_0",), np.arange(1, 4))),
+            manifest.dtype,
+            manifest.engine,
+        )
+        assert not withrec.equals(rerecorded)  # same param, differing values
 
     def test_index_errors(self, stack):
         manifest, reference = stack
@@ -1118,6 +1239,7 @@ class TestPersistence:
         reopened = xd.open_dataarray(path)
         assert isinstance(reopened.data, TileArray)
         assert reopened.data.equals(manifest)
+        assert reopened.data.root == manifest.root
         assert reopened.coords["time"].equals(da.coords["time"])
         npt.assert_array_equal(reopened.values, reference)
 
