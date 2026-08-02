@@ -137,11 +137,18 @@ def _split_root(paths):
     (paths spread over several drives).
     """
     try:
-        root = os.path.commonpath([os.path.dirname(path) for path in paths.flat])
+        extremes = [min(paths.flat), max(paths.flat)]
     except ValueError:
         return "", paths
-    # commonpath ends on a component boundary: a plain strip is exact
-    strip = np.frompyfunc(lambda path: path[len(root) :].lstrip(os.sep), 1, 1)
+    # the paths are normalized, so they sort by component: the shared
+    # prefix of the lexicographic extremes -- hence of every path -- cut
+    # at its last separator is the common directory of them all, found
+    # without one python-level call per path
+    cut = os.path.commonprefix(extremes).rfind(os.sep)
+    if cut < 0:
+        return "", paths
+    root = extremes[0][:cut] if cut else os.sep
+    strip = np.frompyfunc(lambda path: path[cut + 1 :], 1, 1)
     return root, strip(paths)
 
 
