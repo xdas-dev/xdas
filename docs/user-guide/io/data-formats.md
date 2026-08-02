@@ -156,7 +156,7 @@ class MyTileEngine(Engine, name="my_tile_engine"):
             x0 = file["dataset"].attrs["x0"][()]
             dx = file["dataset"].attrs["dx"][()]
             if self.vtype == "tiles":
-                data = TileArray(
+                data = TileArray.from_tiles(
                     str(fname),
                     file["dataset"].shape,
                     {"name": "my_tile_engine"},

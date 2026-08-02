@@ -20,6 +20,21 @@ def _tile_file(path, data, **kwargs):
         file.create_dataset("data", data=data, **kwargs)
 
 
+def _with_starts(manifest, *starts):
+    """Rebuild *manifest* with per-axis tile origins inside their sources.
+
+    ``starts_k`` is view state the :meth:`TileArray.from_tiles` encoder
+    does not take: windowed manifests assign it through the dataset and
+    the canonical constructor.
+    """
+    assign = {
+        f"starts_{k}": (f"tile_{k}", np.asarray(entry, dtype=np.int64))
+        for k, entry in enumerate(starts)
+        if entry is not None
+    }
+    return TileArray(manifest.dataset.assign(assign), manifest.dtype, manifest.engine)
+
+
 def _random_key(rng, shape, max_step=1):
     """A random non-empty positive-step slice per axis."""
     key = []
@@ -65,14 +80,10 @@ def _random_grid(tmp_path, rng, ndim):
         path = str(tmp_path / f"grid{number}.h5")
         _tile_file(path, data)
         paths[index] = path
-    manifest = TileArray(
-        paths,
-        sizes,
-        {"name": "h5py", "dataset": "data"},
-        "float64",
-        starts=margins,
+    manifest = TileArray.from_tiles(
+        paths, sizes, {"name": "h5py", "dataset": "data"}, "float64"
     )
-    return manifest, reference
+    return _with_starts(manifest, *margins), reference
 
 
 class TestManifest:
@@ -102,54 +113,61 @@ class TestManifest:
     def test_param_folding(self, stack):
         manifest, _ = stack
         path = str(manifest.dataset["paths"].values[0])
-        uniform = TileArray(
+        uniform = TileArray.from_tiles(
             path, ([10, 10, 10], NX), ENGINE, "float64", record=0, nbytes=80
         )
         # one path everywhere: 0-d; uniform per-tile params: 0-d
         assert uniform.dataset["paths"].ndim == 0
         assert uniform.dataset["record"].ndim == 0
         assert uniform.shape == (30, NX)
-        varying = TileArray(path, ([10, 10], NX), ENGINE, "float64", record=[[0], [80]])
+        varying = TileArray.from_tiles(
+            path, ([10, 10], NX), ENGINE, "float64", record=[[0], [80]]
+        )
         assert tuple(varying.dataset["record"].dims) == ("tile_0",)
 
     def test_validation(self, stack):
         manifest, _ = stack
         with pytest.raises(ValueError, match="at least one axis"):
-            TileArray("a", (), ENGINE, "f8")
+            TileArray.from_tiles("a", (), ENGINE, "f8")
         with pytest.raises(ValueError, match="little-endian"):
-            TileArray("a", (5, NX), ENGINE, ">f8")
+            TileArray.from_tiles("a", (5, NX), ENGINE, ">f8")
         with pytest.raises(ValueError, match="strictly positive"):
-            TileArray("a", (0, NX), ENGINE, "f8")
+            TileArray.from_tiles("a", (0, NX), ENGINE, "f8")
         with pytest.raises(ValueError, match="does not match the grid"):
-            TileArray(np.array(["a", "b"], dtype=object), ([1, 2, 3], NX), ENGINE, "f8")
-        with pytest.raises(ValueError, match="does not match the grid"):
-            TileArray("a", ([5, 5], NX), ENGINE, "f8", starts=([1, 2, 3], None))
+            TileArray.from_tiles(
+                np.array(["a", "b"], dtype=object), ([1, 2, 3], NX), ENGINE, "f8"
+            )
         with pytest.raises(ValueError, match="reserved"):
-            TileArray("a", (5, NX), ENGINE, "f8", sizes_0=[5])
+            TileArray.from_tiles("a", (5, NX), ENGINE, "f8", sizes_0=[5])
+        with pytest.raises(ValueError, match="reserved"):
+            TileArray.from_tiles("a", (5, NX), ENGINE, "f8", starts_0=[0])
         dataset = manifest.dataset.copy()
-        kwargs = {"dtype": manifest.dtype, "params": {"engine": manifest.engine}}
         with pytest.raises(ValueError, match="`sizes_0`"):
-            TileArray.from_dataset(dataset.drop_vars(["sizes_0", "sizes_1"]), **kwargs)
+            TileArray(
+                dataset.drop_vars(["sizes_0", "sizes_1"]),
+                manifest.dtype,
+                manifest.engine,
+            )
         with pytest.raises(ValueError, match="`paths`"):
-            TileArray.from_dataset(dataset.drop_vars("paths"), **kwargs)
+            TileArray(dataset.drop_vars("paths"), manifest.dtype, manifest.engine)
 
     def test_extra_variables_are_params(self, stack):
         """Any non-geometry manifest variable is a per-tile engine parameter."""
         manifest, _ = stack
-        arr = TileArray.from_dataset(
+        arr = TileArray(
             manifest.dataset.assign(record=(("tile_0",), np.arange(3))),
-            dtype=manifest.dtype,
-            params={"engine": manifest.engine},
+            manifest.dtype,
+            manifest.engine,
         )
         assert arr._params == ("record",)
 
     def test_engine_validation(self):
         with pytest.raises(KeyError, match="no engine registered"):
-            TileArray("a", (5, NX), {"name": "bogus"}, "f8")
+            TileArray.from_tiles("a", (5, NX), {"name": "bogus"}, "f8")
         with pytest.raises(ValueError, match="`name` key"):
-            TileArray("a", (5, NX), {"dataset": "data"}, "f8")
+            TileArray.from_tiles("a", (5, NX), {"dataset": "data"}, "f8")
         with pytest.raises(ValueError, match="`name` key"):
-            TileArray("a", (5, NX), None, "f8")
+            TileArray.from_tiles("a", (5, NX), None, "f8")
 
     def test_engine_registration(self):
         class DummyEngine(Engine, name="dummy"):
@@ -169,7 +187,7 @@ class TestManifest:
             pass
 
         try:
-            arr = TileArray("a", (5, NX), {"name": "notiles"}, "f8")
+            arr = TileArray.from_tiles("a", (5, NX), {"name": "notiles"}, "f8")
             with pytest.raises(NotImplementedError):
                 np.asarray(arr)
         finally:
@@ -187,7 +205,7 @@ class TestManifest:
         data = np.arange(4.0 * NX).reshape(4, NX)
         _tile_file(tmp_path / "rel.h5", data)
         monkeypatch.chdir(tmp_path)
-        manifest = TileArray("rel.h5", (4, NX), ENGINE, "f8")
+        manifest = TileArray.from_tiles("rel.h5", (4, NX), ENGINE, "f8")
         assert os.path.isabs(manifest._grid_values("paths").item(0))
         monkeypatch.chdir(tmp_path.parent)
         npt.assert_array_equal(np.asarray(manifest), data)
@@ -201,16 +219,15 @@ class TestSourcePaths:
     """Paths are stored verbatim: an array holds exactly what it was given."""
 
     def make(self, path):
-        return TileArray([str(path)], ([4], NX), ENGINE, "<f4", starts=([1], None))
+        # the file's first row is skipped: sliced away, as views are made
+        return TileArray.from_tiles([str(path)], ([5], NX), ENGINE, "<f4")[1:5]
 
     def stored(self, manifest):
         # a single tile folds its path to a 0-d variable
-        dataset, _ = manifest.to_dataset()
-        return dataset["paths"].values.ravel().tolist()
+        return manifest.to_dataset()["paths"].values.ravel().tolist()
 
     def round_trip(self, manifest):
-        dataset, params = manifest.to_dataset()
-        return TileArray.from_dataset(dataset, dtype=manifest.dtype, params=params)
+        return TileArray(manifest.to_dataset(), manifest.dtype, manifest.engine)
 
     def test_paths_round_trip(self, tmp_path):
         path = tmp_path / "sources" / "f.h5"
@@ -235,12 +252,9 @@ class TestStarts:
     def test_two_windows_of_one_blob(self, windowed):
         manifest, reference = windowed
         path = str(manifest.dataset["paths"].values[0])
-        split = TileArray(
-            path,
-            ([4, 4], NX),
-            manifest.engine,
-            manifest.dtype,
-            starts=([2, 6], None),
+        split = _with_starts(
+            TileArray.from_tiles(path, ([4, 4], NX), manifest.engine, manifest.dtype),
+            [2, 6],
         )
         npt.assert_array_equal(np.asarray(split), reference[:8])
 
@@ -248,8 +262,9 @@ class TestStarts:
         """The same source sub-box placed at two virtual positions is legal."""
         manifest, reference = windowed
         path = str(manifest.dataset["paths"].values[0])
-        repeated = TileArray(
-            path, ([4, 4], NX), manifest.engine, manifest.dtype, starts=(2, None)
+        repeated = _with_starts(
+            TileArray.from_tiles(path, ([4, 4], NX), manifest.engine, manifest.dtype),
+            [2, 2],
         )
         npt.assert_array_equal(
             np.asarray(repeated), np.concatenate([reference[:4], reference[:4]])
@@ -276,7 +291,7 @@ def grid(tmp_path):
             _tile_file(path, data)
             paths[i, j] = path
             blocks[i, j] = data
-    manifest = TileArray(
+    manifest = TileArray.from_tiles(
         paths, (heights, widths), {"name": "h5py", "dataset": "data"}, "float64"
     )
     reference = np.block([[blocks[0, 0], blocks[0, 1]], [blocks[1, 0], blocks[1, 1]]])
@@ -306,7 +321,7 @@ class TestGrid:
             _tile_file(path, data)
             paths.append(path)
             parts.append(data)
-        manifest = TileArray(
+        manifest = TileArray.from_tiles(
             paths, (6, 4, 3), {"name": "h5py", "dataset": "data"}, "float64"
         )
         assert manifest.shape == (12, 4, 3)
@@ -320,7 +335,7 @@ class TestGrid:
             _tile_file(path, data)
             paths.append(path)
             parts.append(data)
-        manifest = TileArray(
+        manifest = TileArray.from_tiles(
             paths, ([7, 7],), {"name": "h5py", "dataset": "data"}, "float64"
         )
         assert manifest.shape == (14,)
@@ -342,12 +357,14 @@ class TestStreaming:
     def test_reductions_reproduce_values_over_any_tiling(self, rows, sizes):
         path, data = rows
         starts = np.cumsum([0, *sizes[:-1]])
-        manifest = TileArray(
-            [path] * len(sizes),
-            (sizes, NX),
-            {"name": "h5py", "dataset": "data"},
-            "float64",
-            starts=(starts, None),
+        manifest = _with_starts(
+            TileArray.from_tiles(
+                [path] * len(sizes),
+                (sizes, NX),
+                {"name": "h5py", "dataset": "data"},
+                "float64",
+            ),
+            starts,
         )
         npt.assert_array_equal(np.asarray(manifest), data)
         npt.assert_allclose(np.mean(manifest, axis=0), data.mean(0))
@@ -388,7 +405,7 @@ class TestConcat:
 
     def test_concat_requires_compatibility(self, stack):
         manifest, _ = stack
-        other = TileArray(
+        other = TileArray.from_tiles(
             list(manifest.dataset["paths"].values),
             ([10, 7, 12], NX),
             {"name": "h5py", "dataset": "other"},
@@ -415,8 +432,9 @@ class TestConcat:
         path = str(tmp_path / "shared.h5")
         _tile_file(path, np.arange(20.0 * NX).reshape(20, NX))
         engine = {"name": "h5py", "dataset": "data"}
-        a = TileArray(path, ([5, 5], NX), engine, "float64", starts=([0, 5], None))
-        b = TileArray(path, ([5, 5], NX), engine, "float64", starts=([10, 15], None))
+        base = TileArray.from_tiles(path, ([5, 5], NX), engine, "float64")
+        a = _with_starts(base, [0, 5])
+        b = _with_starts(base, [10, 15])
         fused = TileArray.concat([a, b])
         assert fused.dataset["paths"].ndim == 0  # equal 0-d paths stay folded
         npt.assert_array_equal(np.asarray(fused), np.arange(20.0 * NX).reshape(20, NX))
@@ -430,7 +448,7 @@ class TestConcat:
             data = 100.0 * k + np.arange(5.0 * NX).reshape(5, NX)
             _tile_file(path, data)
             parts.append(data)
-            manifests.append(TileArray(path, (5, NX), engine, "float64"))
+            manifests.append(TileArray.from_tiles(path, (5, NX), engine, "float64"))
         fused = TileArray.concat(manifests)
         assert tuple(fused.dataset["paths"].dims) == ("tile_0",)
         npt.assert_array_equal(np.asarray(fused), np.concatenate(parts))
@@ -445,7 +463,7 @@ class TestConcat:
             _tile_file(path, data)
             paths.append(path)
             parts.append(data)
-        plain = TileArray(paths, (5, NX), trimmed.engine, trimmed.dtype)
+        plain = TileArray.from_tiles(paths, (5, NX), trimmed.engine, trimmed.dtype)
         fused = TileArray.concat([trimmed, plain], dim=0)
         npt.assert_array_equal(fused.dataset["starts_0"].values, [2, 0, 2, 0, 0])
         npt.assert_array_equal(
@@ -462,7 +480,7 @@ class TestEngineContract:
         data = rng.standard_normal((nt, nx))
         path = str(tmp_path / "contract.h5")
         _tile_file(path, data)
-        manifest = TileArray(path, (10, nx), ENGINE, "float64", starts=(2, None))
+        manifest = TileArray.from_tiles(path, (nt, nx), ENGINE, "float64")[2:12]
         return manifest[::2, 1:6:2], data[2:12:2, 1:6:2]
 
     @pytest.mark.parametrize("seed", range(3))
@@ -491,11 +509,11 @@ class TestEngineContract:
                 return np.zeros(widths)
 
         try:
-            arr = TileArray.from_dataset(
+            arr = TileArray(
                 manifest.dataset.assign(record=(("tile_0",), np.arange(3))),
-                dtype=manifest.dtype,
+                manifest.dtype,
                 # a per-tile variable shadows a same-named spec constant
-                params={"engine": {"name": "probe", "record": -1, "flavor": "spec"}},
+                {"name": "probe", "record": -1, "flavor": "spec"},
             )
             np.asarray(arr)
             assert [entry[1] for entry in seen] == [0, 1, 2]
@@ -512,10 +530,8 @@ class TestEngineContract:
                 return np.zeros((1, 1))
 
         try:
-            bad = TileArray.from_dataset(
-                manifest.dataset.copy(),
-                dtype=manifest.dtype,
-                params={"engine": {"name": "badshape"}},
+            bad = TileArray(
+                manifest.dataset.copy(), manifest.dtype, {"name": "badshape"}
             )
             with pytest.raises(ValueError, match="shape"):
                 np.asarray(bad[0:5])
@@ -537,26 +553,20 @@ class TestEdgeCases:
         manifest, _ = stack
         assert not manifest.equals("not a tile array")
         assert not manifest.equals(windowed[0])  # differing geometry
-        other = TileArray.from_dataset(
+        other = TileArray(
             manifest.dataset.assign(record=(("tile_0",), np.arange(3))),
-            dtype=manifest.dtype,
-            params={"engine": manifest.engine},
+            manifest.dtype,
+            manifest.engine,
         )
         assert not manifest.equals(other)  # differing param sets
-        shifted = TileArray.from_dataset(
-            manifest.dataset.drop_vars("starts_0"),
-            dtype=manifest.dtype,
-            params={"engine": manifest.engine},
+        shifted = TileArray(
+            manifest.dataset.drop_vars("starts_0"), manifest.dtype, manifest.engine
         )
         assert not manifest.equals(shifted)  # same shape, differing geometry
         renamed = manifest.dataset.copy()
         renamed["paths"] = renamed["paths"].copy()
         renamed["paths"].values[0] = "/elsewhere.h5"
-        assert not manifest.equals(
-            TileArray.from_dataset(
-                renamed, dtype=manifest.dtype, params={"engine": manifest.engine}
-            )
-        )
+        assert not manifest.equals(TileArray(renamed, manifest.dtype, manifest.engine))
 
     def test_index_errors(self, stack):
         manifest, reference = stack
@@ -578,16 +588,17 @@ class TestEdgeCases:
     def test_bad_shapes(self, stack):
         manifest, _ = stack
         with pytest.raises(ValueError, match="more axes"):
-            TileArray(np.full((2, 2), "a", dtype=object), ([4, 4],), ENGINE, "f8")
-        kwargs = {"dtype": manifest.dtype, "params": {"engine": manifest.engine}}
+            TileArray.from_tiles(
+                np.full((2, 2), "a", dtype=object), ([4, 4],), ENGINE, "f8"
+            )
         transposed = manifest.dataset.copy()
         transposed["record"] = (("tile_1", "tile_0"), np.zeros((1, 3)))
         with pytest.raises(ValueError, match="ordered subset"):
-            TileArray.from_dataset(transposed, **kwargs)
+            TileArray(transposed, manifest.dtype, manifest.engine)
         bad_geometry = manifest.dataset.copy()
         bad_geometry["sizes_1"] = (("tile_0",), np.full(3, NX))
         with pytest.raises(ValueError, match="must have dimensions"):
-            TileArray.from_dataset(bad_geometry, **kwargs)
+            TileArray(bad_geometry, manifest.dtype, manifest.engine)
 
     def test_ufunc_out_not_supported(self, stack):
         manifest, _ = stack
@@ -737,9 +748,7 @@ class TestGetitem:
 
     def test_empty_selection_allocates_nothing(self):
         """An empty result must not size itself on the full array."""
-        huge = TileArray(
-            ["/nowhere.bin"], ([10**7], [10**6]), ENGINE, "<f8", starts=[0, 0]
-        )
+        huge = TileArray.from_tiles(["/nowhere.bin"], ([10**7], [10**6]), ENGINE, "<f8")
         assert huge[0:0].shape == (0, 10**6)
 
     @pytest.mark.parametrize("ndim", [1, 2, 3])

@@ -34,7 +34,7 @@ Methods
 .. autosummary::
    :toctree: ../_autosummary
 
-   TileArray.from_dataset
+   TileArray.from_tiles
    TileArray.to_dataset
    TileArray.concat
    TileArray.expand_dims

@@ -57,7 +57,7 @@ class Terra15Engine(Engine, name="terra15"):
             dx = file.attrs["dx"]
             source = file["data_product"]["data"]
             if self.vtype == "tiles":
-                data = TileArray(
+                data = TileArray.from_tiles(
                     str(fname), source.shape, {"name": "terra15"}, source.dtype
                 )
             else:

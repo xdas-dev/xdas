@@ -29,7 +29,7 @@ class APSensingEngine(Engine, name="apsensing"):
             dx = file["ProcessingServer"]["SpatialSampling"][()].item()
             x0 = file["DAQ"]["PositionStart"][()].item()
             if self.vtype == "tiles":
-                data = TileArray(
+                data = TileArray.from_tiles(
                     str(fname),
                     file["DAS"].shape,
                     {"name": "apsensing"},

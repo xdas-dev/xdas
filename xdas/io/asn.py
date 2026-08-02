@@ -39,7 +39,7 @@ class ASNEngine(Engine, name="asn"):
             dt = np.timedelta64(round(1e9 * header["dt"][()]), "ns")
             dx = float(header["dx"][()])  # Note: dx before (internal) downsampling!
             if self.vtype == "tiles":
-                data = TileArray(
+                data = TileArray.from_tiles(
                     str(fname), file["data"].shape, {"name": "asn"}, file["data"].dtype
                 )
             else:

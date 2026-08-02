@@ -54,13 +54,14 @@ def stack(tmp_path):
         sizes.append(useful)
         parts.append(data[1:-1])
         row += useful
+    manifest = TileArray.from_tiles(
+        paths, (sizes, NX), ENGINE, "float64", attrs={"units": "strain"}
+    )
+    # per-tile source origins are view state: assigned through the manifest
     manifest = TileArray(
-        paths,
-        (sizes, NX),
-        ENGINE,
-        "float64",
-        starts=([1, 1, 1], None),
-        attrs={"units": "strain"},
+        manifest.dataset.assign(starts_0=("tile_0", np.array([1, 1, 1]))),
+        manifest.dtype,
+        manifest.engine,
     )
     return manifest, np.concatenate(parts)
 
@@ -89,12 +90,13 @@ def windowed(tmp_path):
         starts.append(first)
         parts.append(good)
         row += useful
+    manifest = TileArray.from_tiles(
+        paths, (sizes, NX), {"name": "h5py", "dataset": "data"}, "float64"
+    )
     manifest = TileArray(
-        paths,
-        (sizes, NX),
-        {"name": "h5py", "dataset": "data"},
-        "float64",
-        starts=(starts, None),
+        manifest.dataset.assign(starts_0=("tile_0", np.array(starts))),
+        manifest.dtype,
+        manifest.engine,
     )
     return manifest, np.concatenate(parts)
 

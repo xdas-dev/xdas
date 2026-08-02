@@ -144,9 +144,8 @@ def open_dataarray(fname, group=None, vtype=None):
         location = TILES_GROUP if group is None else f"{group}/{TILES_GROUP}"
         with xr.open_dataset(fname, group=location, engine="h5netcdf") as manifest:
             manifest = manifest.load()
-        data = TileArray.from_dataset(
-            manifest, dtype=spec["dtype"], params={"engine": spec["engine"]}
-        )
+        # picking the known keys keeps specs with extra by-value params readable
+        data = TileArray(manifest, spec["dtype"], spec["engine"])
     elif "__dask_array__" in dataset[name].attrs:
         data = loads(dataset[name].attrs.pop("__dask_array__"))
     else:
@@ -155,7 +154,7 @@ def open_dataarray(fname, group=None, vtype=None):
                 file = file[group]
             variable = file["__values__" if name is None else name]
             if vtype == "tiles":
-                data = TileArray(
+                data = TileArray.from_tiles(
                     str(fname),
                     variable.shape,
                     {"name": "xdas", "dataset": variable.name},
@@ -269,7 +268,7 @@ def save_dataarray(
 
     # write the tile manifest as a sibling group
     if virtual and isinstance(da.data, TileArray):
-        manifest, _ = da.data.to_dataset()
+        manifest = da.data.to_dataset()
         for name in list(manifest.variables):
             manifest[name].encoding.clear()
             if manifest[name].dtype == object:

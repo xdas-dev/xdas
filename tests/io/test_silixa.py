@@ -41,7 +41,7 @@ class FakeTdms:
 def test_tile_load(monkeypatch):
     monkeypatch.setattr(silixa, "TdmsReader", FakeTdms)
     expected = FakeTdms.data
-    manifest = TileArray("fake.tdms", (20, 4), {"name": "silixa"}, "float64")
+    manifest = TileArray.from_tiles("fake.tdms", (20, 4), {"name": "silixa"}, "float64")
     npt.assert_array_equal(np.asarray(manifest), expected)
     npt.assert_array_equal(np.asarray(manifest[3:15:2, 1:3]), expected[3:15:2, 1:3])
     expanded = np.expand_dims(manifest, 0)

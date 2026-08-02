@@ -24,9 +24,10 @@ beside the dataset when the array is persisted (see
 :func:`xdas.io.xdas.save_dataarray`). Every dataset attribute is a
 user attribute.
 
-Geometry loads eagerly at construction (tiny); parameters stay lazy and
-load only when tiles are read. Positive-step slicing folds into the
-geometry and returns a new :class:`TileArray` (as lazy and
+Geometry loads eagerly at construction (tiny); parameters stay folded —
+a constant occupies one element whatever the grid size — and broadcast
+over the grid only as tiles are read. Positive-step slicing folds into
+the geometry and returns a new :class:`TileArray` (as lazy and
 self-described as its input); any other indexing reads the bounding box
 of the selection and resolves the rest in memory. ``np.asarray``
 materializes: tiles are read one by one by the registered *engine*
@@ -64,14 +65,6 @@ import xarray as xr
 
 TILE_PREFIX = "tile_"
 """Prefix of the tile-grid dimensions of a manifest dataset."""
-
-_MANIFEST_CHUNK = 65536
-"""Tiles per stored chunk along the manifest's growing axis.
-
-Tiles are appended on axis 0, so that axis is chunked at a fixed count
-rather than at its current length — an append rewrites one tail chunk.
-The remaining axes are bounded by the tiling and stay single-chunk.
-"""
 
 
 class _Unfoldable(Exception):
@@ -243,154 +236,26 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
     Those are labeled-array identity, supplied when a
     :class:`xdas.DataArray` is emitted around it.
 
+    The constructor wraps a manifest dataset directly — hand-built, or
+    reopened from a native xdas file; :meth:`from_tiles` builds the
+    manifest from per-tile descriptions at scan time.
+
     Parameters
     ----------
-    paths : str or array-like
-        Source file of each tile. A scalar describes a
-        one-tile-per-axis grid; an array is padded with trailing
-        length-1 axes up to the rank. A path may appear in several
-        tiles. Relative paths are made absolute at construction — the
-        working directory cannot be trusted later, as reads are lazy
-        and stored views outlive the session.
-    sizes : sequence of int or 1-D array-like
-        One entry per axis (this defines the rank): the samples each
-        tile contributes along that axis. An int is uniform across the
-        axis' tiles; an array gives the per-tile extents (its length is
-        the number of tiles along the axis).
+    dataset : xarray.Dataset
+        The manifest dataset: the 1-D geometry and the N-D per-tile
+        parameter variables described in the module docstring. Every
+        dataset attribute is a user attribute.
+    dtype : str or numpy.dtype
+        Element type of the virtual array (little-endian or
+        single-byte).
     engine : dict
         The engine specification: the key ``"name"`` selects a
         registered engine (``xdas.io.Engine[name]``); the remaining
         keys are passed to its ``load_tile`` as keyword parameters.
-    dtype : str or numpy.dtype
-        Element type of the virtual array (little-endian or
-        single-byte).
-    starts : sequence of (None, int, or 1-D array-like), optional
-        Per-axis origin of each tile inside its decoded source.
-        Default ``None`` (0 everywhere).
-    attrs : dict, optional
-        User attributes of the virtual array.
-    **params : array-like
-        Per-tile engine parameters, broadcast over the grid: each read
-        passes the tile's value to the engine as a keyword argument
-        (shadowing a same-named specification constant).
     """
 
-    def __init__(
-        self,
-        paths,
-        sizes,
-        engine,
-        dtype,
-        *,
-        starts=None,
-        attrs=None,
-        **params,
-    ):
-        ndim = len(sizes)
-        if ndim == 0:
-            raise ValueError("a tile array needs at least one axis")
-        dims = tuple(f"{TILE_PREFIX}{k}" for k in range(ndim))
-        paths = np.asarray(paths, dtype=object)
-        if paths.ndim > ndim:
-            raise ValueError("`paths` has more axes than `sizes` entries")
-        paths = paths.reshape(paths.shape + (1,) * (ndim - paths.ndim))
-        # reads are lazy and stored views outlive the session: anchor the
-        # paths now, while the scan's working directory still applies
-        paths = np.frompyfunc(os.path.abspath, 1, 1)(paths)
-        data = {}
-        counts = []
-        for k, entry in enumerate(sizes):
-            values = np.atleast_1d(np.asarray(entry, dtype=np.int64))
-            if values.size == 1 and paths.shape[k] > 1:
-                values = np.full(paths.shape[k], values[0], dtype=np.int64)
-            counts.append(len(values))
-            data[f"sizes_{k}"] = (dims[k], values)
-        counts = tuple(counts)
-        if any(have not in (1, count) for have, count in zip(paths.shape, counts)):
-            raise ValueError(
-                f"`paths` shape {paths.shape} does not match the grid {counts}"
-            )
-        for k, entry in enumerate(starts or ()):
-            if entry is None:
-                continue
-            values = np.atleast_1d(np.asarray(entry, dtype=np.int64))
-            if values.size == 1 and counts[k] > 1:
-                values = np.full(counts[k], values[0], dtype=np.int64)
-            if len(values) != counts[k]:
-                raise ValueError(f"`starts[{k}]` does not match the grid")
-            if values.any():
-                data[f"starts_{k}"] = (dims[k], values)
-        data["paths"] = _fold_param(paths, counts, dims)
-        reserved = set(data) | {f"steps_{k}" for k in range(ndim)}
-        for name, values in params.items():
-            if name in reserved:
-                raise ValueError(f"parameter name {name!r} is reserved")
-            data[name] = _fold_param(np.asarray(values), counts, dims)
-        dataset = xr.Dataset(data, attrs=dict(attrs or {}))
-        self._setup(dataset, dtype, engine)
-
-    @classmethod
-    def from_dataset(cls, dataset, *, name=None, dims=None, dtype, params=None):
-        """Wrap an existing manifest *dataset* (see the module docstring).
-
-        The dataset — as stored inside a native xdas file — must hold
-        the geometry and per-tile variables; what the description
-        arrays cannot carry comes by value, in *params*.
-
-        Parameters
-        ----------
-        dataset : xarray.Dataset
-            The manifest dataset to wrap.
-        name, dims : optional
-            Accepted for interface uniformity and ignored: the tiled box
-            is anonymous, its name and axis labels are xarray-level
-            identity.
-        dtype : str or numpy.dtype
-            Element type of the virtual array.
-        params : dict
-            The by-value description, as :meth:`to_dataset` returned it:
-            ``engine``, the engine specification (``"name"`` plus its
-            own parameters). Any other key is ignored, so a view stored
-            with by-value parameters this class no longer takes still
-            opens.
-
-        Returns
-        -------
-        TileArray
-        """
-        params = dict(params or {})
-        self = cls.__new__(cls)
-        self._setup(dataset, dtype, params["engine"])
-        return self
-
-    def to_dataset(self):
-        """Encode this tile array as its manifest dataset plus its params.
-
-        The stored form — a copy of the wrapped dataset carrying the
-        user attributes, and the by-value constructor kwarg the arrays
-        cannot: the ``engine``. Source paths are stored exactly as the
-        array holds them, absolute. Each variable pins its chunking
-        (see :data:`_MANIFEST_CHUNK`).
-
-        Returns
-        -------
-        dataset : xarray.Dataset
-            The manifest dataset.
-        params : dict
-            The by-value keyword arguments of :meth:`from_dataset`, the
-            ones no manifest variable can carry. They travel beside the
-            dataset, not in it.
-        """
-        dataset = xr.Dataset(self.dataset.data_vars, attrs=self.attrs)
-        row = f"{TILE_PREFIX}0"
-        for variable in dataset.values():
-            variable.encoding["chunks"] = tuple(
-                _MANIFEST_CHUNK if dim == row else int(dataset.sizes[dim])
-                for dim in variable.dims
-            )
-        return dataset, {"engine": self.engine}
-
-    def _setup(self, dataset, dtype, engine):
+    def __init__(self, dataset, dtype, engine):
         self.dataset = dataset
         self._cache = None
         # the json round trip deep-copies and normalizes (tuples become
@@ -447,6 +312,99 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
                 raise ValueError(
                     f"`{name}` dimensions must be an ordered subset of {dims}"
                 )
+
+    @classmethod
+    def from_tiles(cls, paths, sizes, engine, dtype, *, attrs=None, **params):
+        """Build a tile array from per-tile descriptions of fresh sources.
+
+        The scan-time encoder: every tile is read from the origin of
+        its decoded source, without decimation. Trimmed (``starts_k``)
+        and decimated (``steps_k``) geometry is view state — it arises
+        by slicing, or comes from a stored manifest through the class
+        constructor.
+
+        Parameters
+        ----------
+        paths : str or array-like
+            Source file of each tile. A scalar describes a
+            one-tile-per-axis grid; an array is padded with trailing
+            length-1 axes up to the rank. A path may appear in several
+            tiles. Relative paths are made absolute at construction —
+            the working directory cannot be trusted later, as reads are
+            lazy and stored views outlive the session.
+        sizes : sequence of int or 1-D array-like
+            One entry per axis (this defines the rank): the samples each
+            tile contributes along that axis. An int is uniform across
+            the axis' tiles; an array gives the per-tile extents (its
+            length is the number of tiles along the axis).
+        engine : dict
+            The engine specification: the key ``"name"`` selects a
+            registered engine (``xdas.io.Engine[name]``); the remaining
+            keys are passed to its ``load_tile`` as keyword parameters.
+        dtype : str or numpy.dtype
+            Element type of the virtual array (little-endian or
+            single-byte).
+        attrs : dict, optional
+            User attributes of the virtual array.
+        **params : array-like
+            Per-tile engine parameters, broadcast over the grid: each
+            read passes the tile's value to the engine as a keyword
+            argument (shadowing a same-named specification constant).
+
+        Returns
+        -------
+        TileArray
+        """
+        ndim = len(sizes)
+        if ndim == 0:
+            raise ValueError("a tile array needs at least one axis")
+        dims = tuple(f"{TILE_PREFIX}{k}" for k in range(ndim))
+        paths = np.asarray(paths, dtype=object)
+        if paths.ndim > ndim:
+            raise ValueError("`paths` has more axes than `sizes` entries")
+        paths = paths.reshape(paths.shape + (1,) * (ndim - paths.ndim))
+        # reads are lazy and stored views outlive the session: anchor the
+        # paths now, while the scan's working directory still applies
+        paths = np.frompyfunc(os.path.abspath, 1, 1)(paths)
+        data = {}
+        counts = []
+        for k, entry in enumerate(sizes):
+            values = np.atleast_1d(np.asarray(entry, dtype=np.int64))
+            if values.size == 1 and paths.shape[k] > 1:
+                values = np.full(paths.shape[k], values[0], dtype=np.int64)
+            counts.append(len(values))
+            data[f"sizes_{k}"] = (dims[k], values)
+        counts = tuple(counts)
+        if any(have not in (1, count) for have, count in zip(paths.shape, counts)):
+            raise ValueError(
+                f"`paths` shape {paths.shape} does not match the grid {counts}"
+            )
+        data["paths"] = _fold_param(paths, counts, dims)
+        reserved = set(data) | {
+            f"{kind}_{k}" for kind in ("starts", "steps") for k in range(ndim)
+        }
+        for name, values in params.items():
+            if name in reserved:
+                raise ValueError(f"parameter name {name!r} is reserved")
+            data[name] = _fold_param(np.asarray(values), counts, dims)
+        dataset = xr.Dataset(data, attrs=dict(attrs or {}))
+        return cls(dataset, dtype, engine)
+
+    def to_dataset(self):
+        """Encode this tile array as its manifest dataset.
+
+        The stored form — a copy of the wrapped dataset carrying the
+        user attributes. What the dataset cannot hold, the by-value
+        ``dtype`` and ``engine``, the caller reads off the properties
+        and stores beside it. Source paths are stored exactly as the
+        array holds them, absolute.
+
+        Returns
+        -------
+        xarray.Dataset
+            The manifest dataset.
+        """
+        return xr.Dataset(self.dataset.data_vars, attrs=self.attrs)
 
     def _geometry(self, kind, default):
         """Load the eager 1-D ``{kind}_k`` arrays (*default* where absent)."""
@@ -569,9 +527,7 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         assign = {name: entry for name, entry in assign.items() if name not in drop}
         dataset = self.dataset.isel(indexers).assign(assign)
         dataset = dataset.drop_vars([name for name in drop if name in dataset])
-        return type(self).from_dataset(
-            dataset, dtype=self.dtype, params={"engine": self.engine}
-        )
+        return type(self)(dataset, self.dtype, self.engine)
 
     @classmethod
     def concat(cls, arrays, dim=0):
@@ -655,9 +611,7 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             values = np.concatenate([part.values for part in parts], axis=axis_pos)
             data[name] = xr.Variable(union, values)
         dataset = xr.Dataset(data, attrs=first.attrs)
-        return cls.from_dataset(
-            dataset, dtype=first.dtype, params={"engine": first.engine}
-        )
+        return cls(dataset, first.dtype, first.engine)
 
     def _grid_values(self, name):
         """Load parameter *name* and broadcast it over the full tile grid."""
@@ -898,9 +852,7 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
                     rename[f"{kind}_{k}"] = f"{kind}_{k + 1}"
         dataset = self.dataset.rename(rename)
         dataset = dataset.assign(sizes_0=(f"{TILE_PREFIX}0", np.ones(1, np.int64)))
-        return type(self).from_dataset(
-            dataset, dtype=self.dtype, params={"engine": self.engine}
-        )
+        return type(self)(dataset, self.dtype, self.engine)
 
     def _expand_virtual(self, args, kwargs):
         """Dispatch ``numpy.expand_dims``, delegating to :meth:`expand_dims`."""
@@ -924,9 +876,7 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
 
     def __deepcopy__(self, memo):
         """Copy without the read cache; the dataset is immutable."""
-        return type(self).from_dataset(
-            self.dataset, dtype=self.dtype, params={"engine": self.engine}
-        )
+        return type(self)(self.dataset, self.dtype, self.engine)
 
     def __repr__(self):
         return (
