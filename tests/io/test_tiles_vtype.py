@@ -178,6 +178,59 @@ def test_xdas_engine_tiles_vtype(tmp_path):
     assert result.equals(da)
 
 
+def test_manifest_strings_stored_as_char_arrays(tmp_path):
+    """Manifest strings land on disk as fixed-width char arrays, not vlen."""
+    da = xd.testing.dummy(shape=(10, 5), step=(1.0, 10.0), dtype=np.float32)
+    path = str(tmp_path / "da.nc")
+    da.to_netcdf(path)
+    tiled = xd.open_dataarray(path, engine="xdas", vtype="tiles")
+    out = str(tmp_path / "view.nc")
+    tiled.to_netcdf(out)
+    with h5py.File(out, "r") as file:
+        assert file["__tiles__/paths"].dtype == np.dtype("S1")
+    reopened = xd.open_dataarray(out)
+    assert isinstance(reopened.data, TileArray)
+    npt.assert_array_equal(reopened.values, da.values)
+
+
+def test_reopened_tile_file_stays_writable(tmp_path):
+    """Opening loads the manifest and closes the file: it accepts appends."""
+    import h5netcdf
+
+    da = xd.testing.dummy(shape=(10, 5), step=(1.0, 10.0), dtype=np.float32)
+    path = str(tmp_path / "da.nc")
+    da.to_netcdf(path)
+    tiled = xd.open_dataarray(path, engine="xdas", vtype="tiles")
+    out = str(tmp_path / "view.nc")
+    tiled.to_netcdf(out)
+    reopened = xd.open_dataarray(out)
+    with h5netcdf.File(out, "a") as file:
+        file.attrs["appended"] = 1
+    npt.assert_array_equal(reopened.values, da.values)
+
+
+def test_legacy_vlen_manifest_reopens(tmp_path):
+    """Manifests stored with variable-length strings (pre char-array) reopen."""
+    da = xd.testing.dummy(shape=(10, 5), step=(1.0, 10.0), dtype=np.float32)
+    path = str(tmp_path / "da.nc")
+    da.to_netcdf(path)
+    tiled = xd.open_dataarray(path, engine="xdas", vtype="tiles")
+    out = str(tmp_path / "legacy.nc")
+    tiled.to_netcdf(out)
+    # rewrite the manifest group the way the old writer did: vlen strings
+    manifest = tiled.data.to_dataset()
+    for name in list(manifest.variables):
+        manifest[name].encoding.clear()
+        if manifest[name].dtype == object:
+            manifest[name] = manifest[name].astype(str)
+    with h5py.File(out, "a") as file:
+        del file["__tiles__"]
+    manifest.to_netcdf(out, mode="a", group="__tiles__", engine="h5netcdf")
+    reopened = xd.open_dataarray(out)
+    assert isinstance(reopened.data, TileArray)
+    npt.assert_array_equal(reopened.values, da.values)
+
+
 def test_tiles_datacollection_roundtrip(tmp_path):
     """Collections of tile-backed arrays reopen as collections, not as errors.
 

@@ -274,8 +274,11 @@ def save_dataarray(
         manifest = da.data.to_dataset()
         for name in list(manifest.variables):
             manifest[name].encoding.clear()
-            if manifest[name].dtype == object:
-                manifest[name] = manifest[name].astype(str)
+            if manifest[name].dtype.kind in "OU":
+                # fixed-width char arrays: variable-length strings pay
+                # heap overhead on disk and decode slowly at open
+                manifest[name] = manifest[name].astype(object)
+                manifest[name].encoding["dtype"] = "S1"
         location = TILES_GROUP if group is None else f"{group}/{TILES_GROUP}"
         manifest.to_netcdf(fname, mode="a", group=location, engine="h5netcdf")
 
