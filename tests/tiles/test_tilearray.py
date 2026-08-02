@@ -199,10 +199,17 @@ class TestManifest:
 
     def test_repr(self, stack):
         manifest, _ = stack
-        assert "3 tiles" in repr(manifest)
-        assert "'h5py'" in repr(manifest)
-        assert manifest._repr_inline_(40) == "TileArray (3 tiles)"
+        assert repr(manifest) == "TileArray[h5py] 1kB (float64) 3 tiles"
+        assert manifest._repr_inline_(40) == "TileArray[h5py] (3 tiles)"
         assert manifest._repr_inline_(10) == "TileArray"
+
+    def test_repr_of_a_single_tile(self, tmp_path):
+        """One tile reads as one tile, and the volume scales with the array."""
+        path = str(tmp_path / "one.h5")
+        _tile_file(path, np.zeros((250, NX)))
+        arr = TileArray.from_tiles(path, (250, NX), "float64", ENGINE)
+        assert repr(arr) == "TileArray[h5py] 10kB (float64) 1 tile"
+        assert arr._repr_inline_(40) == "TileArray[h5py] (1 tile)"
 
     def test_relative_paths_are_anchored(self, tmp_path, monkeypatch):
         """Relative paths absolutize at construction and survive a chdir."""

@@ -71,6 +71,9 @@ import xarray as xr
 TILE_PREFIX = "tile_"
 """Prefix of the tile-grid dimensions of a manifest dataset."""
 
+_UNITS = ("B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
+"""Decimal byte units, as xarray spells them in its ``Size:`` header."""
+
 
 class _Unfoldable(Exception):
     """A key that no tile grid can express (private to :meth:`TileArray._fold`).
@@ -213,6 +216,20 @@ def _materialize(value):
             np.asarray(item) if isinstance(item, TileArray) else item for item in value
         )
     return value
+
+
+def _to_si(nbytes):
+    """Render a byte count the way xarray renders its ``Size:`` header.
+
+    Decimal units, no decimals: the repr sits right under that header,
+    so a base-1024 count would read as a different number.
+    """
+    dividend = float(nbytes)
+    index = 0
+    while dividend >= 1000.0 and index < len(_UNITS) - 1:
+        dividend /= 1000.0
+        index += 1
+    return f"{dividend:.0f}{_UNITS[index]}"
 
 
 def _row_ranges(edges, shape):
@@ -897,14 +914,28 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         return type(self)(self.dataset, self.dtype, self.engine)
 
     def __repr__(self):
+        """Summarize the array on one line, as the data of a data array.
+
+        The shape is left out: the labeled array prints it one line
+        above. What remains is what only the tiling knows — the volume
+        it stands for, and how many tiles it took.
+        """
         return (
-            f"<TileArray {self.shape} {self.dtype}: "
-            f"{self.ntiles} tiles, engine {self.engine['name']!r}>"
+            f"TileArray[{self.engine['name']}] "
+            f"{_to_si(self.size * self.dtype.itemsize)} ({self.dtype}) "
+            f"{self.ntiles} {'tile' if self.ntiles == 1 else 'tiles'}"
         )
 
     def _repr_inline_(self, max_width):
-        """Return the one-line summary used by xarray inline reprs."""
-        summary = f"TileArray ({self.ntiles} tiles)"
+        """Return the one-line summary used by xarray inline reprs.
+
+        Shorter than :meth:`__repr__`: an inline row already prints the
+        dtype and the size, so only the tiling is left to report.
+        """
+        summary = (
+            f"TileArray[{self.engine['name']}] "
+            f"({self.ntiles} {'tile' if self.ntiles == 1 else 'tiles'})"
+        )
         return summary if len(summary) <= max_width else "TileArray"
 
 
