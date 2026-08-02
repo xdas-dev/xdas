@@ -48,13 +48,6 @@ Tiles are decoded by the ``load_tile`` half of the
 manifests resolve on that registry (``Engine[name]``).
 
 ```{eval-rst}
-.. autosummary::
-   :toctree: ../_autosummary
-
-   extract_array
-```
-
-```{eval-rst}
 .. currentmodule:: xdas.io
 
 .. autosummary::

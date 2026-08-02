@@ -970,46 +970,6 @@ def _concatenate_virtual(args, kwargs):
         return NotImplemented
 
 
-def extract_array(da):
-    """Return the :class:`TileArray` backing *da*.
-
-    Slicing folds into the tile grid at indexing time, so the array of
-    a sliced view describes exactly that view — only the overlapping
-    sources remain. ``extract_array(xr.DataArray(arr, dims=dims))``
-    returns ``arr`` itself.
-
-    Parameters
-    ----------
-    da : DataArray
-        A tile-backed array, as built by wrapping a :class:`TileArray`
-        or as returned by the :mod:`xdas.io` openers, possibly sliced
-        with positive-step slices.
-
-    Returns
-    -------
-    TileArray
-
-    Raises
-    ------
-    TypeError
-        If *da* holds an in-memory numpy array — because it was
-        loaded, built eagerly, or indexed in a way no tile grid can
-        represent (integer, reversed or fancy indexing) — or is
-        otherwise not backed by a :class:`TileArray`.
-    """
-    data = getattr(da, "data", da)
-    if isinstance(data, TileArray):
-        return data
-    if isinstance(data, np.ndarray):
-        raise TypeError(
-            "`da` holds an in-memory numpy array and is no longer backed by "
-            "a TileArray (it was loaded, built eagerly, or indexed in a way "
-            "no tile grid can represent)"
-        )
-    raise TypeError("`da` is not backed by a TileArray")
-
-
 __all__ = [
     "TileArray",
-    "extract_array",
 ]

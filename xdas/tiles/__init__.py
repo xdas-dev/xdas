@@ -9,9 +9,8 @@ the serialized-dask-graph fallback used by the formats that HDF5
 virtual datasets cannot serve (Silixa TDMS, MiniSEED).
 """
 
-from .tilearray import TileArray, extract_array
+from .tilearray import TileArray
 
 __all__ = [
     "TileArray",
-    "extract_array",
 ]

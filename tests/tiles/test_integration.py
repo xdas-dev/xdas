@@ -6,7 +6,7 @@ import numpy.testing as npt
 import pytest
 
 import xdas as xd
-from xdas.tiles import TileArray, extract_array
+from xdas.tiles import TileArray
 
 NX = 5
 
@@ -28,19 +28,11 @@ def wrap(manifest):
 
 
 class TestDataArray:
-    def test_data_and_extract(self, stack):
+    def test_data(self, stack):
         manifest, _ = stack
         da = wrap(manifest)
         assert da.data is manifest
-        assert extract_array(da) is manifest
         assert "TileArray" in repr(da)
-
-    def test_extract_rejections(self, stack):
-        manifest, _ = stack
-        with pytest.raises(TypeError, match="in-memory numpy array"):
-            extract_array(wrap(manifest).load())
-        with pytest.raises(TypeError, match="not backed by"):
-            extract_array("something else")
 
     def test_isel_stays_virtual(self, stack, engine_calls):
         manifest, reference = stack
