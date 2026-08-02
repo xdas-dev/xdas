@@ -256,15 +256,22 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         (little-endian or single-byte), recorded so the lazy array can
         report it without reading. Verified against every decoded
         tile, never used to cast.
-    engine : dict
-        The engine specification: the key ``"name"`` selects a
-        registered engine (``xdas.io.Engine[name]``); the remaining
-        keys are passed to its ``load_tile`` as keyword parameters.
+    engine : str or dict
+        The engine specification, stored by value with the array: the
+        key ``"name"`` selects a registered engine
+        (``xdas.io.Engine[name]``); the remaining keys are passed to
+        its ``load_tile`` as keyword parameters. A plain string is
+        shorthand for ``{"name": engine}``. Never an
+        :class:`~xdas.io.Engine` instance: the specification must
+        reproduce the decode with no instance alive, so open-time
+        settings (``vtype``, ``ctype``) do not belong in it.
     """
 
     def __init__(self, dataset, dtype, engine):
         self.dataset = dataset
         self._cache = None
+        if isinstance(engine, str):
+            engine = {"name": engine}
         # the json round trip deep-copies and normalizes (tuples become
         # lists), so equality survives a store round trip
         engine = json.loads(json.dumps(engine))
@@ -348,10 +355,12 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             Element type of the sources as the engine decodes them
             (little-endian or single-byte) — recorded, not a cast
             target; the scanner reads it off the file it describes.
-        engine : dict
-            The engine specification: the key ``"name"`` selects a
-            registered engine (``xdas.io.Engine[name]``); the remaining
-            keys are passed to its ``load_tile`` as keyword parameters.
+        engine : str or dict
+            The engine specification, stored by value with the array:
+            the key ``"name"`` selects a registered engine
+            (``xdas.io.Engine[name]``); the remaining keys are passed
+            to its ``load_tile`` as keyword parameters. A plain string
+            is shorthand for ``{"name": engine}``.
         attrs : dict, optional
             User attributes of the virtual array.
         **params : array-like

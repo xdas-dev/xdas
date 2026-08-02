@@ -160,7 +160,7 @@ class MyTileEngine(Engine, name="my_tile_engine"):
                     str(fname),
                     file["dataset"].shape,
                     file["dataset"].dtype,
-                    {"name": "my_tile_engine"},
+                    "my_tile_engine",
                 )
             else:
                 data = VirtualSource(file["dataset"])

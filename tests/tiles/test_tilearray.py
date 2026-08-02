@@ -169,6 +169,10 @@ class TestManifest:
         with pytest.raises(ValueError, match="`name` key"):
             TileArray.from_tiles("a", (5, NX), "f8", None)
 
+    def test_engine_string_shorthand(self):
+        arr = TileArray.from_tiles("a", (5, NX), "f8", "h5py")
+        assert arr.engine == {"name": "h5py"}
+
     def test_engine_registration(self):
         class DummyEngine(Engine, name="dummy"):
             @staticmethod

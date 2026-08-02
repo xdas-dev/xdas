@@ -33,7 +33,7 @@ class APSensingEngine(Engine, name="apsensing"):
                     str(fname),
                     file["DAS"].shape,
                     file["DAS"].dtype,
-                    {"name": "apsensing"},
+                    "apsensing",
                 )
             else:
                 data = VirtualSource(file["DAS"])
