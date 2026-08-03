@@ -382,9 +382,10 @@ def _get_depth(group):
     if not isinstance(group, h5py.Group):
         raise ValueError("not a group")
     depths = [0]
-    group.visit(
-        lambda name: (
-            None if TILES_GROUP in name.split("/") else depths.append(name.count("/"))
-        )
-    )
+
+    def visit(name):
+        if TILES_GROUP not in name.split("/"):
+            depths.append(name.count("/"))
+
+    group.visit(visit)
     return max(depths)

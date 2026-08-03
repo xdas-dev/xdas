@@ -558,18 +558,6 @@ def _resolve_engine(engine, vtype, ctype, engine_kwargs):
         )
 
 
-def _check_file_count(nfiles, vtype):
-    """Refuse file sets too large for the vtype the engine will end up using."""
-    limit = MAX_OPEN_FILES.get(vtype, MAX_OPEN_FILES[None])
-    if nfiles > limit:
-        raise NotImplementedError(
-            f"cannot open {nfiles} files at once: the limit is {limit} for "
-            f"vtype {vtype!r} because the scan holds one data array per file in "
-            "memory until they are combined. Open the files in batches and pass "
-            "the results to `combine_by_coords`."
-        )
-
-
 def open_mfdataarray(
     paths,
     dim="first",
@@ -654,7 +642,14 @@ def open_mfdataarray(
     if len(paths) == 0:
         raise FileNotFoundError("no file to open")
     engine = _resolve_engine(engine, vtype, ctype, engine_kwargs)
-    _check_file_count(len(paths), engine.vtype)
+    limit = MAX_OPEN_FILES.get(engine.vtype, MAX_OPEN_FILES[None])
+    if len(paths) > limit:
+        raise NotImplementedError(
+            f"cannot open {len(paths)} files at once: the limit is {limit} for "
+            f"vtype {engine.vtype!r} because the scan holds one data array per "
+            "file in memory until they are combined. Open the files in batches "
+            "and pass the results to `combine_by_coords`."
+        )
     max_workers = get_workers_count(parallel)
     objs = []
     failures = []
