@@ -310,16 +310,6 @@ def _to_si(nbytes):
     return f"{dividend:.0f}{_UNITS[index]}"
 
 
-def _row_ranges(edges, shape):
-    """Return the streaming blocks: one tile row along axis 0, whole elsewhere.
-
-    The tiling is the only blocking a tile array has, and a whole row
-    bounds the memory a streaming pass holds at once.
-    """
-    rows = [slice(int(lo), int(hi)) for lo, hi in itertools.pairwise(edges)]
-    return [rows] + [[slice(0, extent)] for extent in shape[1:]]
-
-
 class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
     """A dense rectilinear grid of file-backed tiles as one virtual array.
 
@@ -516,11 +506,9 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         data["paths"] = _fold_param(paths, counts, dims)
         if root:
             data["root"] = ((), np.asarray(root))
-        reserved = (
-            set(data)
-            | {"root"}
-            | {f"{kind}_{k}" for kind in ("starts", "steps") for k in range(ndim)}
-        )
+        reserved = {"paths", "root"} | {
+            f"{kind}_{k}" for kind in ("sizes", "starts", "steps") for k in range(ndim)
+        }
         for name, values in params.items():
             if name in reserved:
                 raise ValueError(f"parameter name {name!r} is reserved")
@@ -751,10 +739,10 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
                 for d in dims
                 if d == dims[axis] or any(d in v.dims for v in variables)
             )
-            parts = [
-                _expand(variable, union, array)
-                for variable, array in zip(variables, arrays)
-            ]
+            parts = []
+            for variable, array in zip(variables, arrays):
+                counts = dict(zip(dims, (len(sizes) for sizes in array._sizes)))
+                parts.append(variable.set_dims({dim: counts[dim] for dim in union}))
             axis_pos = union.index(dims[axis])
             values = np.concatenate([part.values for part in parts], axis=axis_pos)
             data[name] = xr.Variable(union, values)
@@ -790,14 +778,8 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
 
     def _grid_values(self, name):
         """Load parameter *name* and broadcast it over the full tile grid."""
-        variable = self.dataset[name].variable
-        values = np.asarray(variable.values)
-        counts = tuple(len(sizes) for sizes in self._sizes)
-        shape = tuple(
-            count if dim in variable.dims else 1
-            for dim, count in zip(self.dims, counts)
-        )
-        return np.broadcast_to(values.reshape(shape), counts)
+        counts = dict(zip(self.dims, (len(sizes) for sizes in self._sizes)))
+        return self.dataset[name].variable.set_dims(counts).values
 
     @functools.cached_property
     def _engine_impl(self):
@@ -971,7 +953,11 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         acc = None
         filled = np.zeros(out_shape, dtype=bool)
         counts = np.zeros(out_shape) if counting else None
-        for box in itertools.product(*_row_ranges(self._edges[0], self.shape)):
+        # stream one tile row at a time: the tiling is the only blocking
+        # the array has, and a whole row bounds the memory held at once
+        rest = tuple(slice(0, extent) for extent in self.shape[1:])
+        for lo, hi in itertools.pairwise(self._edges[0]):
+            box = (slice(int(lo), int(hi)), *rest)
             block = np.asarray(self[box])
             partial = np.asarray(block_reduce(block, axis=axes, keepdims=True))
             partial = partial.reshape(tuple(block.shape[a] for a in kept))
@@ -1085,17 +1071,6 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             f"({self.ntiles} {'tile' if self.ntiles == 1 else 'tiles'})"
         )
         return summary if len(summary) <= max_width else "TileArray"
-
-
-def _expand(variable, union, array):
-    """Broadcast *variable* over the *union* tile dims of *array*."""
-    if variable.dims == union:
-        return variable
-    counts = {dim: len(sizes) for dim, sizes in zip(array.dims, array._sizes)}
-    values = np.asarray(variable.values)
-    shape = tuple(counts[dim] if dim in variable.dims else 1 for dim in union)
-    full = tuple(counts[dim] for dim in union)
-    return xr.Variable(union, np.broadcast_to(values.reshape(shape), full))
 
 
 def _concatenate_virtual(args, kwargs):
