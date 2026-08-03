@@ -60,8 +60,15 @@ stream one tile row at a time.
 
 :meth:`TileArray.concat` fuses arrays along any axis by concatenating
 the geometry and the per-tile parameters (O(tiles), the data is never
-read). Tile arrays persist inside the native xdas netCDF format: the
-wrapped dataset *is* the stored form.
+read). On top of slicing and concatenation, the numpy manipulation
+routines whose effect is a rewrite of the tile geometry dispatch
+lazily too (see ``_LAZY_ROUTINES``): the ``split``, ``stack`` and
+``atleast`` families, ``roll``, ``tile``, ``delete``, and
+``append``/``insert`` between tile arrays. Each falls back to a
+materializing read for the cases the grid cannot express (axis
+fusion, element repetition, eager operands). Tile arrays persist
+inside the native xdas netCDF format: the wrapped dataset *is* the
+stored form.
 
 Ported from the 0.3 line (``xdas/virtual/tilearray.py``); the lazy
 :meth:`TileArray.expand_dims` is a 0.2 extension supporting the legacy
@@ -75,6 +82,7 @@ import inspect
 import itertools
 import json
 import math
+import operator
 import os
 import sys
 
@@ -888,24 +896,24 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
     def __array_function__(self, func, types, args, kwargs):
         """Dispatch numpy functions, keeping select operations lazy.
 
-        ``numpy.concatenate`` of compatible tile-backed arrays fuses
-        the tilings and stays virtual; the streaming reductions
-        (``sum``, ``mean``, ``min``, ``max``, their nan variants,
-        ``any`` and ``all``) accumulate one tile row at a time with
-        bounded memory. Everything else materializes and delegates to
-        numpy.
+        The manipulation routines in ``_LAZY_ROUTINES`` (the
+        ``concatenate``/``stack``/``split``/``atleast`` families,
+        ``expand_dims``, ``roll``, ``tile``, ``delete``, ``append``
+        and ``insert``) rewrite the tile geometry and stay virtual
+        whenever their effect is expressible on the grid; the
+        streaming reductions (``sum``, ``mean``, ``min``, ``max``,
+        their nan variants, ``any`` and ``all``) accumulate one tile
+        row at a time with bounded memory. Everything else — including
+        any case the lazy rewrites cannot express — materializes and
+        delegates to numpy.
         """
         if func is np.result_type:
             args = tuple(
                 value.dtype if isinstance(value, TileArray) else value for value in args
             )
             return np.result_type(*args)
-        if func is np.concatenate:
-            result = _concatenate_virtual(args, kwargs)
-            if result is not NotImplemented:
-                return result
-        if func is np.expand_dims:
-            result = self._expand_virtual(args, kwargs)
+        if func in _LAZY_ROUTINES:
+            result = _LAZY_ROUTINES[func](self, func, args, kwargs)
             if result is not NotImplemented:
                 return result
         if func in _STREAMING_REDUCTIONS:
@@ -1023,18 +1031,6 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         dataset = dataset.assign(sizes_0=(f"{TILE_PREFIX}0", np.ones(1, np.int64)))
         return type(self)(dataset, self.dtype, self.engine)
 
-    def _expand_virtual(self, args, kwargs):
-        """Dispatch ``numpy.expand_dims``, delegating to :meth:`expand_dims`."""
-        kwargs = dict(kwargs)
-        axis = kwargs.pop("axis", args[1] if len(args) > 1 else None)
-        if kwargs or len(args) > 2 or args[0] is not self:
-            return NotImplemented
-        if not isinstance(axis, (int, np.integer)):
-            return NotImplemented
-        if int(axis) not in (0, -self.ndim - 1):
-            return NotImplemented
-        return self.expand_dims(0)
-
     def transpose(self, order):
         """Materialize and transpose to the given axis *order*."""
         return np.transpose(np.asarray(self), order)
@@ -1073,7 +1069,47 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         return summary if len(summary) <= max_width else "TileArray"
 
 
-def _concatenate_virtual(args, kwargs):
+def _bind(func, args, kwargs):
+    """Bind a dispatched call against *func*'s own signature.
+
+    Returns the complete arguments dict (defaults applied), or None
+    when the call does not fit — the caller then falls back.
+    """
+    try:
+        bound = inspect.signature(func).bind(*args, **kwargs)
+    except TypeError:
+        return None
+    bound.apply_defaults()
+    return dict(bound.arguments)
+
+
+def _axis_slice(array, axis, start, stop):
+    """Return the lazy slice ``[start:stop]`` of *array* along *axis*."""
+    key = [slice(None)] * array.ndim
+    key[axis] = slice(start, stop)
+    return array[tuple(key)]
+
+
+def _normalize_axis(axis, ndim):
+    """Return *axis* as a valid non-negative int, or None when it is not one."""
+    try:
+        axis = operator.index(axis)
+    except TypeError:
+        return None
+    if axis < 0:
+        axis += ndim
+    return axis if 0 <= axis < ndim else None
+
+
+def _try_concat(arrays, axis):
+    """Concatenate tile *arrays*, falling back on incompatibility."""
+    try:
+        return TileArray.concat(arrays, dim=axis)
+    except (ValueError, IndexError):
+        return NotImplemented
+
+
+def _concatenate_virtual(array, func, args, kwargs):
     """Fuse tile arrays for ``numpy.concatenate`` when possible."""
     if not args:
         return NotImplemented
@@ -1085,12 +1121,335 @@ def _concatenate_virtual(args, kwargs):
         arrays = list(arrays)
     except TypeError:
         return NotImplemented
-    if axis is None or not all(isinstance(array, TileArray) for array in arrays):
+    if axis is None or not all(isinstance(entry, TileArray) for entry in arrays):
+        return NotImplemented
+    return _try_concat(arrays, axis)
+
+
+def _expand_dims_virtual(array, func, args, kwargs):
+    """Dispatch ``numpy.expand_dims``, delegating to :meth:`TileArray.expand_dims`."""
+    kwargs = dict(kwargs)
+    axis = kwargs.pop("axis", args[1] if len(args) > 1 else None)
+    if kwargs or len(args) > 2 or args[0] is not array:
+        return NotImplemented
+    if not isinstance(axis, (int, np.integer)):
+        return NotImplemented
+    if int(axis) not in (0, -array.ndim - 1):
+        return NotImplemented
+    return array.expand_dims(0)
+
+
+def _split_virtual(array, func, args, kwargs):
+    """Split into lazy sub-arrays for the ``numpy.split`` family.
+
+    Every piece is a positive-step slice along one axis, so each comes
+    out a lazy :class:`TileArray` (empty pieces, which no tile grid can
+    hold, come out as plain empty arrays, as do pieces of unsorted
+    index sections — numpy parity).
+    """
+    arguments = _bind(func, args, kwargs)
+    if arguments is None or arguments["ary"] is not array:
+        return NotImplemented
+    sections = arguments["indices_or_sections"]
+    if func is np.vsplit:
+        if array.ndim < 2:
+            raise ValueError("vsplit only works on arrays of 2 or more dimensions")
+        axis = 0
+    elif func is np.hsplit:
+        axis = 1 if array.ndim > 1 else 0
+    elif func is np.dsplit:
+        if array.ndim < 3:
+            raise ValueError("dsplit only works on arrays of 3 or more dimensions")
+        axis = 2
+    else:
+        axis = arguments["axis"]
+    axis = _normalize_axis(axis, array.ndim)
+    if axis is None:
+        return NotImplemented
+    extent = array.shape[axis]
+    if isinstance(sections, (int, np.integer)):
+        count = int(sections)
+        if count <= 0:
+            raise ValueError("number sections must be larger than 0.")
+        if func is np.split and extent % count:
+            raise ValueError("array split does not result in an equal division")
+        each, extras = divmod(extent, count)
+        sizes = [each + 1] * extras + [each] * (count - extras)
+        points = list(itertools.accumulate([0, *sizes]))
+    else:
+        try:
+            points = [0, *(operator.index(index) for index in sections), extent]
+        except TypeError:
+            return NotImplemented
+    return [
+        _axis_slice(array, axis, start, stop)
+        for start, stop in itertools.pairwise(points)
+    ]
+
+
+def _roll_virtual(array, func, args, kwargs):
+    """Roll lazily: a circular shift is two slices concatenated."""
+    arguments = _bind(func, args, kwargs)
+    if arguments is None or arguments["a"] is not array or arguments["axis"] is None:
+        return NotImplemented
+    shifts, axes = arguments["shift"], arguments["axis"]
+    shifts = shifts if isinstance(shifts, tuple) else (shifts,)
+    axes = axes if isinstance(axes, tuple) else (axes,)
+    if len(shifts) == 1:
+        shifts = shifts * len(axes)
+    if len(axes) == 1:
+        axes = axes * len(shifts)
+    if len(shifts) != len(axes):
+        return NotImplemented
+    result = array[(slice(None),) * array.ndim]
+    for shift, axis in zip(shifts, axes):
+        axis = _normalize_axis(axis, array.ndim)
+        try:
+            shift = operator.index(shift)
+        except TypeError:
+            axis = None
+        if axis is None:
+            return NotImplemented
+        extent = result.shape[axis]
+        shift = shift % extent if extent else 0
+        if shift == 0:
+            continue
+        result = TileArray.concat(
+            [
+                _axis_slice(result, axis, extent - shift, extent),
+                _axis_slice(result, axis, 0, extent - shift),
+            ],
+            dim=axis,
+        )
+    return result
+
+
+def _tile_virtual(array, func, args, kwargs):
+    """Tile lazily: whole-array repetitions are self-concatenations."""
+    arguments = _bind(func, args, kwargs)
+    if arguments is None or arguments["A"] is not array:
+        return NotImplemented
+    reps = arguments["reps"]
+    if not isinstance(reps, (tuple, list)):
+        reps = (reps,)
+    try:
+        reps = tuple(operator.index(rep) for rep in reps)
+    except TypeError:
+        return NotImplemented
+    if any(rep < 0 for rep in reps):
+        return NotImplemented
+    result = array[(slice(None),) * array.ndim]
+    while result.ndim < len(reps):
+        result = result.expand_dims(0)
+    reps = (1,) * (result.ndim - len(reps)) + reps
+    if 0 in reps:
+        shape = tuple(extent * rep for extent, rep in zip(result.shape, reps))
+        return np.empty(shape, array.dtype)
+    for axis, rep in enumerate(reps):
+        if rep > 1:
+            result = TileArray.concat([result] * rep, dim=axis)
+    return result
+
+
+def _delete_virtual(array, func, args, kwargs):
+    """Delete lazily when the removed run is contiguous: concat what remains."""
+    arguments = _bind(func, args, kwargs)
+    if arguments is None or arguments["arr"] is not array or arguments["axis"] is None:
+        return NotImplemented
+    axis = _normalize_axis(arguments["axis"], array.ndim)
+    if axis is None:
+        return NotImplemented
+    obj = arguments["obj"]
+    extent = array.shape[axis]
+    if isinstance(obj, slice):
+        removed = range(*obj.indices(extent))
+        if len(removed) == 0:
+            return array[(slice(None),) * array.ndim]
+        if abs(removed.step) != 1:
+            return NotImplemented
+        lo, hi = min(removed[0], removed[-1]), max(removed[0], removed[-1]) + 1
+    else:
+        try:
+            index = operator.index(obj)
+        except TypeError:
+            return NotImplemented
+        if index < 0:
+            index += extent
+        if not 0 <= index < extent:
+            raise IndexError(
+                f"index {obj} is out of bounds for axis {axis} with size {extent}"
+            )
+        lo, hi = index, index + 1
+    pieces = [
+        _axis_slice(array, axis, start, stop)
+        for start, stop in ((0, lo), (hi, extent))
+        if stop > start
+    ]
+    if not pieces:
+        shape = tuple(
+            0 if k == axis else extent for k, extent in enumerate(array.shape)
+        )
+        return np.empty(shape, array.dtype)
+    if len(pieces) == 1:
+        return pieces[0]
+    return _try_concat(pieces, axis)
+
+
+def _append_virtual(array, func, args, kwargs):
+    """Append lazily when both operands are tile arrays (a concatenation)."""
+    arguments = _bind(func, args, kwargs)
+    if arguments is None:
+        return NotImplemented
+    arr, values, axis = arguments["arr"], arguments["values"], arguments["axis"]
+    if not (isinstance(arr, TileArray) and isinstance(values, TileArray)):
+        return NotImplemented
+    if axis is None:
+        if arr.ndim != 1 or values.ndim != 1:
+            return NotImplemented
+        axis = 0
+    axis = _normalize_axis(axis, arr.ndim)
+    if axis is None:
+        return NotImplemented
+    return _try_concat([arr, values], axis)
+
+
+def _insert_virtual(array, func, args, kwargs):
+    """Insert lazily when the values are a compatible tile array."""
+    arguments = _bind(func, args, kwargs)
+    if arguments is None or arguments["axis"] is None:
+        return NotImplemented
+    arr, values = arguments["arr"], arguments["values"]
+    if not (isinstance(arr, TileArray) and isinstance(values, TileArray)):
+        return NotImplemented
+    if arr.ndim != values.ndim:
+        return NotImplemented
+    axis = _normalize_axis(arguments["axis"], arr.ndim)
+    if axis is None:
         return NotImplemented
     try:
-        return TileArray.concat(arrays, dim=axis)
-    except (ValueError, IndexError):
+        index = operator.index(arguments["obj"])
+    except TypeError:
         return NotImplemented
+    extent = arr.shape[axis]
+    if index < 0:
+        index += extent
+    if not 0 <= index <= extent:
+        raise IndexError(
+            f"index {arguments['obj']} is out of bounds for axis {axis} "
+            f"with size {extent}"
+        )
+    # a tile array is never empty (every tile spans at least one sample),
+    # so there is always the values piece plus at least one arr piece
+    pieces = [values]
+    if index > 0:
+        pieces.insert(0, _axis_slice(arr, axis, 0, index))
+    if index < extent:
+        pieces.append(_axis_slice(arr, axis, index, extent))
+    return _try_concat(pieces, axis)
+
+
+def _stack_virtual(array, func, args, kwargs):
+    """Stack lazily along a new leading axis (expand then concatenate)."""
+    arguments = _bind(func, args, kwargs)
+    if arguments is None:
+        return NotImplemented
+    if arguments.get("out") is not None or arguments.get("dtype") is not None:
+        return NotImplemented
+    try:
+        arrays = list(arguments["arrays"])
+    except TypeError:
+        return NotImplemented
+    if not arrays or not all(isinstance(entry, TileArray) for entry in arrays):
+        return NotImplemented
+    try:
+        axis = operator.index(arguments["axis"])
+    except TypeError:
+        return NotImplemented
+    if axis not in (0, -arrays[0].ndim - 1):
+        return NotImplemented
+    return _try_concat([entry.expand_dims(0) for entry in arrays], 0)
+
+
+def _stack_like_virtual(array, func, args, kwargs):
+    """Dispatch the ``*stack`` wrappers where leading-only expansion suffices.
+
+    ``dstack`` and ``column_stack`` promote low-rank inputs by
+    *appending* a unit axis, which the tile grid cannot express yet:
+    those cases fall back to materializing.
+    """
+    arguments = _bind(func, args, kwargs)
+    if arguments is None or arguments.get("dtype") is not None:
+        return NotImplemented
+    try:
+        arrays = list(arguments["tup"])
+    except (KeyError, TypeError):
+        return NotImplemented
+    if not arrays or not all(isinstance(entry, TileArray) for entry in arrays):
+        return NotImplemented
+    ndims = {entry.ndim for entry in arrays}
+    if func is np.vstack:
+        arrays = [
+            entry.expand_dims(0) if entry.ndim == 1 else entry for entry in arrays
+        ]
+        axis = 0
+    elif func is np.hstack:
+        if ndims == {1}:
+            axis = 0
+        elif 1 in ndims:
+            return NotImplemented
+        else:
+            axis = 1
+    elif func is np.dstack:
+        if min(ndims) < 3:
+            return NotImplemented
+        axis = 2
+    else:  # column_stack
+        if min(ndims) < 2:
+            return NotImplemented
+        axis = 1
+    return _try_concat(arrays, axis)
+
+
+def _atleast_virtual(array, func, args, kwargs):
+    """``atleast_1d``/``2d``/``3d`` on a single tile array, virtually.
+
+    ``atleast_3d`` on a 1-D or 2-D array would append a trailing unit
+    axis, which the grid cannot express yet: it falls back.
+    """
+    if kwargs or len(args) != 1 or args[0] is not array:
+        return NotImplemented
+    if func is np.atleast_3d and array.ndim < 3:
+        return NotImplemented
+    if func is np.atleast_2d and array.ndim == 1:
+        return array.expand_dims(0)
+    return array
+
+
+# numpy manipulation routines that stay lazy: each handler rewrites the
+# tile geometry when the call is expressible on the grid, and returns
+# NotImplemented otherwise (the dispatcher then materializes)
+_LAZY_ROUTINES = {
+    np.concatenate: _concatenate_virtual,
+    np.expand_dims: _expand_dims_virtual,
+    np.split: _split_virtual,
+    np.array_split: _split_virtual,
+    np.vsplit: _split_virtual,
+    np.hsplit: _split_virtual,
+    np.dsplit: _split_virtual,
+    np.roll: _roll_virtual,
+    np.tile: _tile_virtual,
+    np.delete: _delete_virtual,
+    np.append: _append_virtual,
+    np.insert: _insert_virtual,
+    np.stack: _stack_virtual,
+    np.vstack: _stack_like_virtual,
+    np.hstack: _stack_like_virtual,
+    np.dstack: _stack_like_virtual,
+    np.column_stack: _stack_like_virtual,
+    np.atleast_1d: _atleast_virtual,
+    np.atleast_2d: _atleast_virtual,
+    np.atleast_3d: _atleast_virtual,
+}
 
 
 __all__ = [

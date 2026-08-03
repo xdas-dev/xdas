@@ -971,9 +971,18 @@ class TestExpandDims:
         npt.assert_array_equal(np.asarray(expanded), reference[np.newaxis])
 
     def test_dispatch_guards(self, stack):
+        from xdas.tiles import _expand_dims_virtual
+
         manifest, _ = stack
-        assert manifest._expand_virtual((np.zeros(3), 0), {}) is NotImplemented
-        assert manifest._expand_virtual((manifest, 0), {"extra": 1}) is NotImplemented
+        expand = np.expand_dims
+        assert (
+            _expand_dims_virtual(manifest, expand, (np.zeros(3), 0), {})
+            is NotImplemented
+        )
+        assert (
+            _expand_dims_virtual(manifest, expand, (manifest, 0), {"extra": 1})
+            is NotImplemented
+        )
 
 
 class TestGetitem:
@@ -1049,6 +1058,331 @@ class TestGetitem:
             npt.assert_array_equal(np.asarray(sliced[key2]), reference[key][key2])
 
 
+class TestManipulationRoutines:
+    """Numpy manipulation routines that rewrite the tile geometry lazily."""
+
+    @pytest.fixture
+    def line(self, tmp_path):
+        """A 1-D two-tile manifest and its values."""
+        paths, parts = [], []
+        for k in range(2):
+            path = str(tmp_path / f"line{k}.h5")
+            data = 10.0 * k + np.arange(7.0)
+            _tile_file(path, data)
+            paths.append(path)
+            parts.append(data)
+        manifest = TileArray.from_tiles(
+            paths, ([7, 7],), "float64", {"name": "h5py", "dataset": "data"}
+        )
+        return manifest, np.concatenate(parts)
+
+    def test_split_stays_lazy(self, stack, engine_calls):
+        manifest, reference = stack
+        pieces = np.split(manifest, [10, 17])
+        assert all(isinstance(piece, TileArray) for piece in pieces)
+        assert engine_calls == []
+        for piece, expected in zip(pieces, np.split(reference, [10, 17])):
+            npt.assert_array_equal(np.asarray(piece), expected)
+
+    def test_split_sections(self, stack):
+        manifest, reference = stack
+        with pytest.raises(ValueError, match="equal division"):
+            np.split(manifest, 2)
+        pieces = np.array_split(manifest, 4, axis=1)
+        assert all(isinstance(piece, TileArray) for piece in pieces)
+        for piece, expected in zip(pieces, np.array_split(reference, 4, axis=1)):
+            npt.assert_array_equal(np.asarray(piece), expected)
+
+    def test_split_variants(self, stack, line):
+        manifest, reference = stack
+        for got, expected in zip(np.vsplit(manifest, [12]), np.vsplit(reference, [12])):
+            npt.assert_array_equal(np.asarray(got), expected)
+        for got, expected in zip(np.hsplit(manifest, [2]), np.hsplit(reference, [2])):
+            npt.assert_array_equal(np.asarray(got), expected)
+        with pytest.raises(ValueError, match="3 or more"):
+            np.dsplit(manifest, 1)
+        line_manifest, line_reference = line
+        with pytest.raises(ValueError, match="2 or more"):
+            np.vsplit(line_manifest, 2)
+        pieces = np.hsplit(line_manifest, 2)  # 1-D hsplit works on axis 0
+        assert all(isinstance(piece, TileArray) for piece in pieces)
+        for piece, expected in zip(pieces, np.hsplit(line_reference, 2)):
+            npt.assert_array_equal(np.asarray(piece), expected)
+
+    def test_split_empty_pieces_are_plain(self, stack):
+        manifest, reference = stack
+        pieces = np.split(manifest, [17, 12])  # unsorted: middle piece empty
+        assert isinstance(pieces[1], np.ndarray)
+        for piece, expected in zip(pieces, np.split(reference, [17, 12])):
+            npt.assert_array_equal(np.asarray(piece), expected)
+
+    def test_roll_stays_lazy(self, stack, engine_calls):
+        manifest, reference = stack
+        rolled = np.roll(manifest, 12, axis=0)
+        assert isinstance(rolled, TileArray)
+        assert engine_calls == []
+        npt.assert_array_equal(np.asarray(rolled), np.roll(reference, 12, axis=0))
+
+    def test_roll_variants(self, stack):
+        manifest, reference = stack
+        for shift, axis in [(-4, 0), (100, 0), ((3, 2), (0, 1)), (2, (0, 1)), (0, 1)]:
+            rolled = np.roll(manifest, shift, axis=axis)
+            assert isinstance(rolled, TileArray)
+            npt.assert_array_equal(
+                np.asarray(rolled), np.roll(reference, shift, axis=axis)
+            )
+
+    def test_roll_flat_materializes(self, line):
+        manifest, reference = line
+        rolled = np.roll(manifest, 3)  # axis=None rolls the flattened array
+        assert isinstance(rolled, np.ndarray)
+        npt.assert_array_equal(rolled, np.roll(reference, 3))
+
+    def test_tile_stays_lazy(self, stack, engine_calls):
+        manifest, reference = stack
+        tiled = np.tile(manifest, (2, 3))
+        assert isinstance(tiled, TileArray)
+        assert engine_calls == []
+        npt.assert_array_equal(np.asarray(tiled), np.tile(reference, (2, 3)))
+
+    def test_tile_promotes_rank(self, stack, line):
+        manifest, reference = stack
+        tiled = np.tile(manifest, (2, 1, 1))
+        assert isinstance(tiled, TileArray)
+        npt.assert_array_equal(np.asarray(tiled), np.tile(reference, (2, 1, 1)))
+        line_manifest, line_reference = line
+        tiled = np.tile(line_manifest, 3)
+        assert isinstance(tiled, TileArray)
+        npt.assert_array_equal(np.asarray(tiled), np.tile(line_reference, 3))
+
+    def test_tile_zero_rep_reads_nothing(self, stack, engine_calls):
+        manifest, reference = stack
+        tiled = np.tile(manifest, (0, 2))
+        assert isinstance(tiled, np.ndarray)
+        assert engine_calls == []
+        npt.assert_array_equal(tiled, np.tile(reference, (0, 2)))
+
+    def test_delete_lazy_cases(self, stack):
+        manifest, reference = stack
+        for obj in [4, -1, slice(5, 20), slice(3, 3), slice(20, 5, -1)]:
+            deleted = np.delete(manifest, obj, axis=0)
+            assert isinstance(deleted, TileArray)
+            npt.assert_array_equal(
+                np.asarray(deleted), np.delete(reference, obj, axis=0)
+            )
+
+    def test_delete_everything(self, stack):
+        manifest, _ = stack
+        deleted = np.delete(manifest, slice(None), axis=1)
+        assert isinstance(deleted, np.ndarray)
+        assert deleted.shape == (29, 0)
+
+    def test_delete_fallbacks_and_errors(self, stack):
+        manifest, reference = stack
+        strided = np.delete(manifest, slice(None, None, 2), axis=0)
+        assert isinstance(strided, np.ndarray)
+        npt.assert_array_equal(
+            strided, np.delete(reference, slice(None, None, 2), axis=0)
+        )
+        listed = np.delete(manifest, [1, 4], axis=0)
+        npt.assert_array_equal(listed, np.delete(reference, [1, 4], axis=0))
+        assert isinstance(np.delete(manifest, 3), np.ndarray)  # axis=None flattens
+        with pytest.raises(IndexError, match="out of bounds"):
+            np.delete(manifest, 40, axis=0)
+
+    def test_append_insert_stay_lazy(self, stack):
+        manifest, reference = stack
+        appended = np.append(manifest, manifest[0:4], axis=0)
+        assert isinstance(appended, TileArray)
+        npt.assert_array_equal(
+            np.asarray(appended), np.append(reference, reference[0:4], axis=0)
+        )
+        for pos in [0, 17, 29, -29]:
+            inserted = np.insert(manifest, pos, manifest[3:5], axis=0)
+            assert isinstance(inserted, TileArray)
+            npt.assert_array_equal(
+                np.asarray(inserted), np.insert(reference, pos, reference[3:5], axis=0)
+            )
+
+    def test_append_insert_fallbacks(self, stack, line):
+        manifest, reference = stack
+        eager = np.append(manifest, np.ones((1, NX)), axis=0)
+        assert isinstance(eager, np.ndarray)
+        npt.assert_array_equal(eager, np.append(reference, np.ones((1, NX)), axis=0))
+        flat = np.append(manifest, manifest)  # axis=None flattens 2-D inputs
+        assert isinstance(flat, np.ndarray)
+        npt.assert_array_equal(flat, np.append(reference, reference))
+        line_manifest, line_reference = line
+        joined = np.append(line_manifest, line_manifest)  # 1-D stays lazy
+        assert isinstance(joined, TileArray)
+        npt.assert_array_equal(
+            np.asarray(joined), np.append(line_reference, line_reference)
+        )
+        scalar = np.insert(manifest, 3, 0.0, axis=0)  # eager values broadcast
+        assert isinstance(scalar, np.ndarray)
+        npt.assert_array_equal(scalar, np.insert(reference, 3, 0.0, axis=0))
+        with pytest.raises(IndexError, match="out of bounds"):
+            np.insert(manifest, 100, manifest[0:1], axis=0)
+
+    def test_stack(self, stack, engine_calls):
+        manifest, reference = stack
+        stacked = np.stack([manifest, manifest])
+        assert isinstance(stacked, TileArray)
+        assert engine_calls == []
+        npt.assert_array_equal(np.asarray(stacked), np.stack([reference, reference]))
+        negative = np.stack([manifest, manifest], axis=-3)
+        assert isinstance(negative, TileArray)
+        npt.assert_array_equal(
+            np.asarray(negative), np.stack([reference, reference], axis=-3)
+        )
+        middle = np.stack([manifest, manifest], axis=1)  # non-leading: fallback
+        assert isinstance(middle, np.ndarray)
+        npt.assert_array_equal(middle, np.stack([reference, reference], axis=1))
+
+    def test_stack_wrappers(self, stack):
+        manifest, reference = stack
+        piled = np.vstack([manifest, manifest])
+        assert isinstance(piled, TileArray)
+        npt.assert_array_equal(np.asarray(piled), np.vstack([reference, reference]))
+        wide = np.hstack([manifest, manifest])
+        assert isinstance(wide, TileArray)
+        npt.assert_array_equal(np.asarray(wide), np.hstack([reference, reference]))
+        cols = np.column_stack([manifest, manifest])
+        assert isinstance(cols, TileArray)
+        npt.assert_array_equal(
+            np.asarray(cols), np.column_stack([reference, reference])
+        )
+        deep = np.dstack([manifest, manifest])  # 2-D needs a trailing axis
+        assert isinstance(deep, np.ndarray)
+        npt.assert_array_equal(deep, np.dstack([reference, reference]))
+
+    def test_stack_wrappers_1d(self, line):
+        manifest, reference = line
+        rows = np.vstack([manifest, manifest])
+        assert isinstance(rows, TileArray)
+        npt.assert_array_equal(np.asarray(rows), np.vstack([reference, reference]))
+        flat = np.hstack([manifest, manifest])
+        assert isinstance(flat, TileArray)
+        npt.assert_array_equal(np.asarray(flat), np.hstack([reference, reference]))
+        cols = np.column_stack([manifest, manifest])  # trailing axis: fallback
+        assert isinstance(cols, np.ndarray)
+        npt.assert_array_equal(cols, np.column_stack([reference, reference]))
+
+    def test_atleast(self, stack, line):
+        manifest, reference = stack
+        assert np.atleast_1d(manifest) is manifest
+        assert np.atleast_2d(manifest) is manifest
+        line_manifest, line_reference = line
+        promoted = np.atleast_2d(line_manifest)
+        assert isinstance(promoted, TileArray)
+        npt.assert_array_equal(np.asarray(promoted), np.atleast_2d(line_reference))
+        deep = np.atleast_3d(manifest)  # trailing axis: fallback
+        assert isinstance(deep, np.ndarray)
+        npt.assert_array_equal(deep, np.atleast_3d(reference))
+
+    def test_mixed_operands_materialize(self, stack):
+        manifest, reference = stack
+        result = np.vstack([manifest, np.ones((1, NX))])
+        assert isinstance(result, np.ndarray)
+        npt.assert_array_equal(result, np.vstack([reference, np.ones((1, NX))]))
+
+    def test_3d_variants_stay_lazy(self, stack):
+        manifest, reference = stack
+        deep = manifest.expand_dims(0)
+        reference = reference[np.newaxis]
+        pieces = np.dsplit(deep, [2])
+        assert all(isinstance(piece, TileArray) for piece in pieces)
+        for piece, expected in zip(pieces, np.dsplit(reference, [2])):
+            npt.assert_array_equal(np.asarray(piece), expected)
+        stacked = np.dstack([deep, deep])
+        assert isinstance(stacked, TileArray)
+        npt.assert_array_equal(np.asarray(stacked), np.dstack([reference, reference]))
+        columns = np.array_split(deep, 2, axis=-1)
+        assert all(isinstance(piece, TileArray) for piece in columns)
+        for piece, expected in zip(columns, np.array_split(reference, 2, axis=-1)):
+            npt.assert_array_equal(np.asarray(piece), expected)
+
+    def test_numpy_only_variants_materialize(self, stack):
+        """Calls the grid cannot express take the numpy path with equal values."""
+        manifest, reference = stack
+        rolled = np.roll(manifest, 1.5, axis=0)  # non-integer shift
+        assert isinstance(rolled, np.ndarray)
+        npt.assert_array_equal(rolled, np.roll(reference, 1.5, axis=0))
+        multi = np.insert(manifest, [1, 2], manifest[0:2], axis=0)
+        assert isinstance(multi, np.ndarray)
+        npt.assert_array_equal(
+            multi, np.insert(reference, [1, 2], reference[0:2], axis=0)
+        )
+        flat = np.insert(manifest, 3, 7.0)  # axis=None flattens
+        assert isinstance(flat, np.ndarray)
+        npt.assert_array_equal(flat, np.insert(reference, 3, 7.0))
+        casted = np.stack([manifest, manifest], dtype="float32")
+        assert isinstance(casted, np.ndarray) and casted.dtype == np.float32
+        mixed = np.stack([manifest, np.asarray(reference)])
+        assert isinstance(mixed, np.ndarray)
+        piled = np.vstack([manifest, manifest], dtype="float32")
+        assert isinstance(piled, np.ndarray) and piled.dtype == np.float32
+        first, _ = np.atleast_2d(manifest, manifest)
+        assert isinstance(first, np.ndarray)
+        npt.assert_array_equal(first, reference)
+
+    def test_error_parity(self, stack, line):
+        """Inexpressible or invalid calls raise the numpy errors."""
+        manifest, _ = stack
+        line_manifest, _ = line
+        with pytest.raises(ValueError, match="larger than 0"):
+            np.split(manifest, 0)
+        with pytest.raises(TypeError):
+            np.split(manifest, [2.5])
+        with pytest.raises(TypeError):
+            np.split(manifest, 2, axis="bad")
+        with pytest.raises(ValueError):
+            np.roll(manifest, (1, 2, 3), axis=(0, 1))
+        with pytest.raises(np.exceptions.AxisError):
+            np.roll(manifest, 1, axis=5)
+        with pytest.raises(TypeError):
+            np.tile(manifest, 1.5)
+        with pytest.raises(ValueError):
+            np.tile(manifest, -1)
+        with pytest.raises(np.exceptions.AxisError):
+            np.delete(manifest, 1, axis=5)
+        with pytest.raises(np.exceptions.AxisError):
+            np.append(manifest, manifest, axis=5)
+        with pytest.raises(np.exceptions.AxisError):
+            np.insert(manifest, 1, manifest[0:1], axis=5)
+        with pytest.raises(TypeError):
+            np.stack([manifest, manifest], axis=None)
+        with pytest.raises(ValueError, match="same number of dimensions"):
+            np.hstack([line_manifest, manifest])
+
+    def test_lazy_rewrite_guards(self, stack):
+        """Handlers step aside for calls that are not theirs to rewrite."""
+        from xdas import tiles
+
+        manifest, _ = stack
+        other = np.zeros(3)
+        assert (
+            tiles._split_virtual(manifest, np.split, (other, 2), {}) is NotImplemented
+        )
+        assert tiles._roll_virtual(manifest, np.roll, (manifest,), {}) is NotImplemented
+        assert tiles._tile_virtual(manifest, np.tile, (other, 2), {}) is NotImplemented
+        assert (
+            tiles._append_virtual(manifest, np.append, (manifest,), {})
+            is NotImplemented
+        )
+        assert (
+            tiles._insert_virtual(
+                manifest, np.insert, (manifest, 1, manifest.expand_dims(0)), {"axis": 0}
+            )
+            is NotImplemented
+        )
+        assert tiles._stack_virtual(manifest, np.stack, (5,), {}) is NotImplemented
+        assert tiles._stack_virtual(manifest, np.stack, (), {}) is NotImplemented
+        assert (
+            tiles._stack_like_virtual(manifest, np.vstack, (5,), {}) is NotImplemented
+        )
+
+
 class TestNumpyProtocols:
     """Direct duck-array protocol behavior, without a wrapping DataArray."""
 
@@ -1108,8 +1442,9 @@ class TestNumpyProtocols:
         npt.assert_array_equal(out, np.concatenate([reference, reference]))
         from xdas.tiles import _concatenate_virtual
 
-        assert _concatenate_virtual((), {}) is NotImplemented
-        assert _concatenate_virtual((5,), {}) is NotImplemented
+        concat = np.concatenate
+        assert _concatenate_virtual(manifest, concat, (), {}) is NotImplemented
+        assert _concatenate_virtual(manifest, concat, (5,), {}) is NotImplemented
 
     def test_incompatible_concat_materializes(self, stack):
         manifest, reference = stack
