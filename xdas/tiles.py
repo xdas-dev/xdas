@@ -22,6 +22,14 @@ dense rectilinear grid of file-backed *tiles*, described by a plain
   one shared constant instead of a per-tile repeat. Absent (or empty),
   the paths are used as stored.
 
+String variables (``paths``, ``root`` and any string parameter) are
+held as fixed-width bytes (numpy ``S`` kind, filesystem encoding): one
+contiguous block instead of a heap of str objects, comparisons that
+vectorize, and a stored form that lands on disk as netCDF char arrays
+with no encoding step. The constructor recodes str-valued variables
+(hand-built manifests, legacy stored forms) on entry; values decode
+back to str only when handed to the engine.
+
 What arrays cannot carry — the ``dtype`` and the ``engine``
 specification — lives on the array itself, by value, and travels
 beside the dataset when the array is persisted (see
@@ -121,33 +129,44 @@ def _fold_param(values, counts, dims):
         and not bool((values == values.take([0], axis=axis)).all())
     ]
     index = tuple(slice(None) if axis in keep else 0 for axis in range(values.ndim))
-    # re-wrap: plain indexing of a fully-reduced object array yields the
-    # bare element, which numpy would re-box as a fixed-width string
+    # re-wrap: plain indexing of a fully-reduced array yields the bare
+    # element; np.asarray with the input dtype keeps width and kind
     return tuple(dims[axis] for axis in keep), np.asarray(
         values[index], dtype=values.dtype
     )
 
 
+def _as_bytes(values):
+    """Recode string *values* to a fixed-width bytes (``S``) array.
+
+    Filesystem encoding, element by element; the re-wrap keeps 0-d
+    inputs 0-d (``frompyfunc`` unboxes them to a bare element).
+    """
+    encoded = np.frompyfunc(os.fsencode, 1, 1)(np.asarray(values, dtype=object))
+    return np.asarray(encoded, dtype=object).astype("S")
+
+
 def _split_root(paths):
-    """Split absolute *paths* into their common directory and relative rest.
+    """Split absolute byte *paths* into their common directory and relative rest.
 
     The root is the deepest directory containing every path (dirnames
     only, so at least a basename always remains in the relative part).
-    Falls back to ``("", paths)`` when no common directory exists
+    Falls back to ``(b"", paths)`` when no common directory exists
     (paths spread over several drives).
     """
+    sep = os.fsencode(os.sep)
     try:
         extremes = [min(paths.flat), max(paths.flat)]
     except ValueError:
-        return "", paths
+        return b"", paths
     # the paths are normalized, so they sort by component: the shared
     # prefix of the lexicographic extremes -- hence of every path -- cut
     # at its last separator is the common directory of them all, found
     # without one python-level call per path
-    cut = os.path.commonprefix(extremes).rfind(os.sep)
+    cut = os.path.commonprefix(extremes).rfind(sep)
     if cut < 0:
-        return "", paths
-    root = extremes[0][:cut] if cut else os.sep
+        return b"", paths
+    root = extremes[0][:cut] if cut else sep
     strip = np.frompyfunc(lambda path: path[cut + 1 :], 1, 1)
     return root, strip(paths)
 
@@ -323,6 +342,15 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
     """
 
     def __init__(self, dataset, dtype, engine):
+        # canonical string dtype is fixed-width bytes: str-valued
+        # variables (hand-built or legacy stored manifests) recode here
+        recode = {
+            name: xr.Variable(dataset[name].dims, _as_bytes(dataset[name].values))
+            for name in map(str, dataset.data_vars)
+            if dataset[name].dtype.kind in "OU"
+        }
+        if recode:
+            dataset = dataset.assign(recode)
         self.dataset = dataset
         self._cache = None
         if isinstance(engine, str):
@@ -368,7 +396,7 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         if "root" in dataset:
             if tuple(dataset["root"].dims) != ():
                 raise ValueError("`root` must be a 0-d variable")
-            self.root = str(dataset["root"].values[()])
+            self.root = os.fsdecode(dataset["root"].values[()])
         else:
             self.root = ""
         geometry = {
@@ -446,7 +474,9 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         paths = paths.reshape(paths.shape + (1,) * (ndim - paths.ndim))
         # reads are lazy and stored views outlive the session: anchor the
         # paths now, while the scan's working directory still applies
-        paths = np.frompyfunc(os.path.abspath, 1, 1)(paths)
+        paths = np.frompyfunc(lambda path: os.path.abspath(os.fsencode(path)), 1, 1)(
+            paths
+        )
         # the common directory is one shared constant, not a per-tile
         # repeat: split it off, the stored paths stay root-relative
         root, paths = _split_root(paths)
@@ -463,9 +493,9 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             raise ValueError(
                 f"`paths` shape {paths.shape} does not match the grid {counts}"
             )
-        data["paths"] = _fold_param(paths, counts, dims)
+        data["paths"] = _fold_param(paths.astype("S"), counts, dims)
         if root:
-            data["root"] = ((), np.asarray(root, dtype=object))
+            data["root"] = ((), np.asarray(root))
         reserved = (
             set(data)
             | {"root"}
@@ -684,7 +714,7 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
                 data[f"{kind}_{k}"] = (dims[k], values)
         root = _common_root([array.root for array in arrays])
         if root:
-            data["root"] = ((), np.asarray(root, dtype=object))
+            data["root"] = ((), np.asarray(os.fsencode(root)))
         for name in ("paths", *first._params):
             if name == "paths":
                 variables = [array._rebased_paths(root) for array in arrays]
@@ -712,11 +742,12 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         return cls(dataset, first.dtype, first.engine)
 
     def _full_paths(self):
-        """Return the full source path of every tile, root joined, over the grid."""
+        """Return the full source byte path of every tile, root joined, over the grid."""
         paths = self._grid_values("paths")
         if not self.root:
             return paths
-        return np.frompyfunc(lambda path: os.path.join(self.root, path), 1, 1)(paths)
+        root = os.fsencode(self.root)
+        return np.frompyfunc(lambda path: os.path.join(root, path), 1, 1)(paths)
 
     def _rebased_paths(self, root):
         """Return the ``paths`` variable of this array, rebased on directory *root*.
@@ -727,13 +758,14 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         variable = self.dataset["paths"].variable
         if root == self.root:
             return variable
+        mine, target = os.fsencode(self.root), os.fsencode(root)
 
         def rebase(path):
-            full = os.path.join(self.root, path)
-            return os.path.relpath(full, root) if root else full
+            full = os.path.join(mine, path)
+            return os.path.relpath(full, target) if root else full
 
         values = np.frompyfunc(rebase, 1, 1)(np.asarray(variable.values, dtype=object))
-        return xr.Variable(variable.dims, values)
+        return xr.Variable(variable.dims, _as_bytes(values))
 
     def _grid_values(self, name):
         """Load parameter *name* and broadcast it over the full tile grid."""
@@ -790,9 +822,10 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             selection, dest = tuple(selection), tuple(dest)
             kwargs = dict(spec)
             for name, values in params.items():
-                value = values[index]
-                kwargs[name] = value.item() if isinstance(value, np.generic) else value
-            path = os.path.join(self.root, str(paths[index]))
+                value = values[index].item()
+                # engines take str: bytes decode at this boundary only
+                kwargs[name] = os.fsdecode(value) if isinstance(value, bytes) else value
+            path = os.path.join(self.root, os.fsdecode(paths[index]))
             part = np.asarray(read(path, selection, **kwargs))
             widths = tuple(entry.stop - entry.start for entry in dest)
             if part.shape != widths or part.dtype != self.dtype:

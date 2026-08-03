@@ -218,8 +218,10 @@ class TestManifest:
         assert tuple(dataset["paths"].dims) == ("tile_0",)
         # the common directory splits off: 0-d root, root-relative paths
         assert dataset["root"].ndim == 0
-        assert str(dataset["root"].values[()]) == str(tmp_path)
-        assert dataset["paths"].values.tolist() == ["src0.h5", "src1.h5", "src2.h5"]
+        assert os.fsdecode(dataset["root"].values[()]) == str(tmp_path)
+        # strings are held as fixed-width bytes, not str objects
+        assert dataset["paths"].dtype.kind == "S"
+        assert dataset["paths"].values.tolist() == [b"src0.h5", b"src1.h5", b"src2.h5"]
         npt.assert_array_equal(dataset["starts_0"].values, [1, 1, 1])
         # all-default geometry columns are not stored
         assert "starts_1" not in dataset and "steps_0" not in dataset
@@ -280,6 +282,22 @@ class TestManifest:
             manifest.engine,
         )
         assert arr._params == ("record",)
+
+    def test_string_params_decode_to_str(self, tmp_path):
+        """Per-tile string parameters store as bytes but reach the engine as str."""
+        paths, parts = [], []
+        for k in range(2):
+            path = str(tmp_path / f"named{k}.h5")
+            data = 100.0 * k + np.arange(3.0 * NX).reshape(3, NX)
+            with h5py.File(path, "w") as file:
+                file.create_dataset(f"data{k}", data=data)
+            paths.append(path)
+            parts.append(data)
+        manifest = TileArray.from_tiles(
+            paths, ([3, 3], NX), "float64", "h5py", dataset=["data0", "data1"]
+        )
+        assert manifest.dataset["dataset"].dtype.kind == "S"
+        npt.assert_array_equal(np.asarray(manifest), np.concatenate(parts))
 
     def test_engine_validation(self):
         with pytest.raises(KeyError, match="no engine registered"):
@@ -364,14 +382,14 @@ class TestSourcePaths:
     def test_root_splits_off(self, tmp_path):
         manifest = self.make(tmp_path / "sources" / "f.h5")
         assert manifest.root == str(tmp_path / "sources")
-        assert self.stored(manifest) == ["f.h5"]
+        assert self.stored(manifest) == [b"f.h5"]
 
     def test_paths_round_trip(self, tmp_path):
         path = tmp_path / "sources" / "f.h5"
         restored = self.round_trip(self.make(path))
         assert restored.root == str(tmp_path / "sources")
-        assert self.stored(restored) == ["f.h5"]
-        assert restored._full_paths().item(0) == str(path)
+        assert self.stored(restored) == [b"f.h5"]
+        assert os.fsdecode(restored._full_paths().item(0)) == str(path)
 
     def test_stored_paths_read(self, tmp_path):
         # the tile's start row skips the first row of the file
@@ -399,9 +417,12 @@ class TestSourcePaths:
     def test_no_common_directory_keeps_paths_whole(self):
         from xdas.tiles import _common_root, _split_root
 
-        mixed = np.array(["rel/f.h5", "/abs/g.h5"], dtype=object)
+        mixed = np.array([b"rel/f.h5", b"/abs/g.h5"], dtype=object)
         root, kept = _split_root(mixed)
-        assert root == "" and kept is mixed
+        assert root == b"" and kept is mixed
+        empty = np.array([], dtype=object)
+        root, kept = _split_root(empty)
+        assert root == b"" and kept is empty
         assert _common_root(["/a/b", ""]) == ""
         assert _common_root(["/a/b", "relative"]) == ""
 
@@ -642,8 +663,8 @@ class TestConcat:
         fused = TileArray.concat(manifests)
         assert fused.root == str(tmp_path)
         assert fused.dataset["paths"].values.tolist() == [
-            os.path.join("a", "p0.h5"),
-            os.path.join("b", "p1.h5"),
+            os.fsencode(os.path.join("a", "p0.h5")),
+            os.fsencode(os.path.join("b", "p1.h5")),
         ]
         npt.assert_array_equal(np.asarray(fused), np.concatenate(parts))
 

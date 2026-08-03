@@ -190,6 +190,8 @@ def test_manifest_strings_stored_as_char_arrays(tmp_path):
         assert file["__tiles__/paths"].dtype == np.dtype("S1")
     reopened = xd.open_dataarray(out)
     assert isinstance(reopened.data, TileArray)
+    # and reopen as fixed-width bytes: no per-string decode, no heap
+    assert reopened.data.dataset["paths"].dtype.kind == "S"
     npt.assert_array_equal(reopened.values, da.values)
 
 
@@ -221,13 +223,16 @@ def test_legacy_vlen_manifest_reopens(tmp_path):
     manifest = tiled.data.to_dataset()
     for name in list(manifest.variables):
         manifest[name].encoding.clear()
-        if manifest[name].dtype == object:
+        if manifest[name].dtype.kind == "S":
             manifest[name] = manifest[name].astype(str)
     with h5py.File(out, "a") as file:
         del file["__tiles__"]
     manifest.to_netcdf(out, mode="a", group="__tiles__", engine="h5netcdf")
+    with h5py.File(out, "r") as file:
+        assert h5py.check_string_dtype(file["__tiles__/paths"].dtype) is not None
     reopened = xd.open_dataarray(out)
     assert isinstance(reopened.data, TileArray)
+    assert reopened.data.dataset["paths"].dtype.kind == "S"
     npt.assert_array_equal(reopened.values, da.values)
 
 
