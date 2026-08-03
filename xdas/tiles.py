@@ -1522,7 +1522,7 @@ def _split_virtual(array, func, args, kwargs):
         count = int(sections)
         if count <= 0:
             raise ValueError("number sections must be larger than 0.")
-        if func is np.split and extent % count:
+        if func is not np.array_split and extent % count:
             raise ValueError("array split does not result in an equal division")
         each, extras = divmod(extent, count)
         sizes = [each + 1] * extras + [each] * (count - extras)

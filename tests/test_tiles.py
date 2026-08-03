@@ -1133,6 +1133,10 @@ class TestManipulationRoutines:
             npt.assert_array_equal(np.asarray(got), expected)
         with pytest.raises(ValueError, match="3 or more"):
             np.dsplit(manifest, 1)
+        # int sections require an equal division for the whole family
+        # (numpy parity), array_split being the one lenient spelling
+        with pytest.raises(ValueError, match="equal division"):
+            np.vsplit(manifest, 2)
         line_manifest, line_reference = line
         with pytest.raises(ValueError, match="2 or more"):
             np.vsplit(line_manifest, 2)
