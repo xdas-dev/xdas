@@ -38,6 +38,8 @@ Methods
    TileArray.to_dataset
    TileArray.concat
    TileArray.expand_dims
+   TileArray.squeeze
+   TileArray.transpose
    TileArray.equals
 ```
 

@@ -26,18 +26,15 @@ class H5pyEngine(Engine, name="h5py"):
 
     The format engines each read their own layout; test files belong to
     no format, so they are described by this generic load-only engine
-    (its opening half stays abstract). Extra leading selection axes
-    (virtually expanded arrays) pad the output rank, as the production
-    engines do.
+    (its opening half stays abstract). The selection always has one
+    slice per source axis, in source order, whatever the virtual
+    arrangement.
     """
 
     @staticmethod
     def load_tile(path, selection, *, dataset):
         with h5py.File(path, "r") as file:
-            source = file[dataset]
-            extra = len(selection) - source.ndim
-            data = source[selection[extra:]]
-        return data.reshape((1,) * extra + data.shape)
+            return file[dataset][selection]
 
 
 @pytest.fixture
@@ -863,11 +860,14 @@ class TestEdgeCases:
         npt.assert_array_equal(manifest[-1], reference[-1])
         npt.assert_array_equal(manifest[[-1, -2]], reference[[-1, -2]])
 
-    def test_new_axis_materializes(self, stack):
+    def test_new_axis_stays_virtual(self, stack):
         manifest, reference = stack
         expanded = manifest[np.newaxis]
-        assert isinstance(expanded, np.ndarray)
-        npt.assert_array_equal(expanded, reference[np.newaxis])
+        assert isinstance(expanded, TileArray)
+        npt.assert_array_equal(np.asarray(expanded), reference[np.newaxis])
+        mixed = manifest[5:20, None, ::2]
+        assert isinstance(mixed, TileArray)
+        npt.assert_array_equal(np.asarray(mixed), reference[5:20, None, ::2])
 
     def test_bad_shapes(self, stack):
         manifest, _ = stack
@@ -922,14 +922,18 @@ class TestExpandDims:
         npt.assert_array_equal(np.asarray(expanded), reference[None, None])
 
     def test_expanded_geometry_carries_over(self, stack):
+        """Expansion appends a synthetic axis: the stored geometry never moves."""
         manifest, _ = stack
         expanded = manifest.expand_dims()
         npt.assert_array_equal(
-            expanded.dataset["sizes_1"].values, manifest.dataset["sizes_0"].values
+            expanded.dataset["sizes_0"].values, manifest.dataset["sizes_0"].values
         )
         npt.assert_array_equal(
-            expanded.dataset["starts_1"].values, manifest.dataset["starts_0"].values
+            expanded.dataset["starts_0"].values, manifest.dataset["starts_0"].values
         )
+        npt.assert_array_equal(expanded.dataset["sizes_2"].values, [1])
+        npt.assert_array_equal(expanded.dataset["axes"].values, [2, 0, 1])
+        assert int(expanded.dataset["source_ndim"].values[()]) == 2
 
     def test_expanded_slicing_folds(self, stack, engine_calls):
         manifest, reference = stack
@@ -947,22 +951,28 @@ class TestExpandDims:
         assert fused.shape == (2, *manifest.shape)
         npt.assert_array_equal(np.asarray(fused), np.stack([reference, reference]))
 
-    def test_non_leading_axis_materializes(self, stack):
+    def test_any_axis_stays_virtual(self, stack):
         manifest, reference = stack
-        expanded = np.expand_dims(manifest, 1)
-        assert isinstance(expanded, np.ndarray)
-        npt.assert_array_equal(expanded, reference[:, np.newaxis])
+        for axis in [1, 2, -1, -2]:
+            expanded = np.expand_dims(manifest, axis)
+            assert isinstance(expanded, TileArray)
+            npt.assert_array_equal(
+                np.asarray(expanded), np.expand_dims(reference, axis)
+            )
 
-    def test_tuple_axis_materializes(self, stack):
+    def test_tuple_axis_stays_virtual(self, stack):
         manifest, reference = stack
-        expanded = np.expand_dims(manifest, (0, 1))
-        assert isinstance(expanded, np.ndarray)
-        npt.assert_array_equal(expanded, reference[np.newaxis, np.newaxis])
+        for axis in [(0, 1), (0, 3), (3, 1), (-1, 0)]:
+            expanded = np.expand_dims(manifest, axis)
+            assert isinstance(expanded, TileArray)
+            npt.assert_array_equal(
+                np.asarray(expanded), np.expand_dims(reference, axis)
+            )
 
-    def test_non_leading_method_axis_raises(self, stack):
+    def test_out_of_range_method_axis_raises(self, stack):
         manifest, _ = stack
-        with pytest.raises(ValueError, match="leading"):
-            manifest.expand_dims(1)
+        with pytest.raises(ValueError, match="position"):
+            manifest.expand_dims(4)
 
     def test_negative_axis_method(self, stack):
         manifest, reference = stack
@@ -1058,23 +1068,24 @@ class TestGetitem:
             npt.assert_array_equal(np.asarray(sliced[key2]), reference[key][key2])
 
 
+@pytest.fixture
+def line(tmp_path):
+    """A 1-D two-tile manifest and its values."""
+    paths, parts = [], []
+    for k in range(2):
+        path = str(tmp_path / f"line{k}.h5")
+        data = 10.0 * k + np.arange(7.0)
+        _tile_file(path, data)
+        paths.append(path)
+        parts.append(data)
+    manifest = TileArray.from_tiles(
+        paths, ([7, 7],), "float64", {"name": "h5py", "dataset": "data"}
+    )
+    return manifest, np.concatenate(parts)
+
+
 class TestManipulationRoutines:
     """Numpy manipulation routines that rewrite the tile geometry lazily."""
-
-    @pytest.fixture
-    def line(self, tmp_path):
-        """A 1-D two-tile manifest and its values."""
-        paths, parts = [], []
-        for k in range(2):
-            path = str(tmp_path / f"line{k}.h5")
-            data = 10.0 * k + np.arange(7.0)
-            _tile_file(path, data)
-            paths.append(path)
-            parts.append(data)
-        manifest = TileArray.from_tiles(
-            paths, ([7, 7],), "float64", {"name": "h5py", "dataset": "data"}
-        )
-        return manifest, np.concatenate(parts)
 
     def test_split_stays_lazy(self, stack, engine_calls):
         manifest, reference = stack
@@ -1235,9 +1246,12 @@ class TestManipulationRoutines:
         npt.assert_array_equal(
             np.asarray(negative), np.stack([reference, reference], axis=-3)
         )
-        middle = np.stack([manifest, manifest], axis=1)  # non-leading: fallback
-        assert isinstance(middle, np.ndarray)
-        npt.assert_array_equal(middle, np.stack([reference, reference], axis=1))
+        for axis in [1, 2, -1]:
+            middle = np.stack([manifest, manifest], axis=axis)
+            assert isinstance(middle, TileArray)
+            npt.assert_array_equal(
+                np.asarray(middle), np.stack([reference, reference], axis=axis)
+            )
 
     def test_stack_wrappers(self, stack):
         manifest, reference = stack
@@ -1252,9 +1266,9 @@ class TestManipulationRoutines:
         npt.assert_array_equal(
             np.asarray(cols), np.column_stack([reference, reference])
         )
-        deep = np.dstack([manifest, manifest])  # 2-D needs a trailing axis
-        assert isinstance(deep, np.ndarray)
-        npt.assert_array_equal(deep, np.dstack([reference, reference]))
+        deep = np.dstack([manifest, manifest])
+        assert isinstance(deep, TileArray)
+        npt.assert_array_equal(np.asarray(deep), np.dstack([reference, reference]))
 
     def test_stack_wrappers_1d(self, line):
         manifest, reference = line
@@ -1264,9 +1278,11 @@ class TestManipulationRoutines:
         flat = np.hstack([manifest, manifest])
         assert isinstance(flat, TileArray)
         npt.assert_array_equal(np.asarray(flat), np.hstack([reference, reference]))
-        cols = np.column_stack([manifest, manifest])  # trailing axis: fallback
-        assert isinstance(cols, np.ndarray)
-        npt.assert_array_equal(cols, np.column_stack([reference, reference]))
+        cols = np.column_stack([manifest, manifest])
+        assert isinstance(cols, TileArray)
+        npt.assert_array_equal(
+            np.asarray(cols), np.column_stack([reference, reference])
+        )
 
     def test_atleast(self, stack, line):
         manifest, reference = stack
@@ -1276,9 +1292,12 @@ class TestManipulationRoutines:
         promoted = np.atleast_2d(line_manifest)
         assert isinstance(promoted, TileArray)
         npt.assert_array_equal(np.asarray(promoted), np.atleast_2d(line_reference))
-        deep = np.atleast_3d(manifest)  # trailing axis: fallback
-        assert isinstance(deep, np.ndarray)
-        npt.assert_array_equal(deep, np.atleast_3d(reference))
+        deep = np.atleast_3d(manifest)
+        assert isinstance(deep, TileArray)
+        npt.assert_array_equal(np.asarray(deep), np.atleast_3d(reference))
+        line_deep = np.atleast_3d(line_manifest)
+        assert isinstance(line_deep, TileArray)
+        npt.assert_array_equal(np.asarray(line_deep), np.atleast_3d(line_reference))
 
     def test_mixed_operands_materialize(self, stack):
         manifest, reference = stack
@@ -1381,6 +1400,291 @@ class TestManipulationRoutines:
         assert (
             tiles._stack_like_virtual(manifest, np.vstack, (5,), {}) is NotImplemented
         )
+
+
+class TestAxisMap:
+    """The axis map: transposes, inserted, hidden and pinned axes stay lazy."""
+
+    def test_transpose_stays_lazy(self, stack, engine_calls):
+        manifest, reference = stack
+        flipped = np.transpose(manifest)
+        assert isinstance(flipped, TileArray)
+        assert flipped.shape == reference.T.shape
+        assert engine_calls == []
+        npt.assert_array_equal(np.asarray(flipped), reference.T)
+
+    def test_transpose_variants(self, stack):
+        manifest, reference = stack
+        npt.assert_array_equal(
+            np.asarray(np.swapaxes(manifest, 0, 1)), np.swapaxes(reference, 0, 1)
+        )
+        npt.assert_array_equal(
+            np.asarray(np.moveaxis(manifest, 0, -1)), np.moveaxis(reference, 0, -1)
+        )
+        npt.assert_array_equal(
+            np.asarray(np.matrix_transpose(manifest)), np.matrix_transpose(reference)
+        )
+        npt.assert_array_equal(
+            np.asarray(np.permute_dims(manifest, (1, 0))), reference.T
+        )
+        npt.assert_array_equal(np.asarray(manifest.transpose()), reference.T)
+
+    def test_transpose_composes_with_slicing(self, stack, engine_calls):
+        manifest, reference = stack
+        view = np.transpose(manifest)[1:4, 9:20:2]
+        assert isinstance(view, TileArray)
+        assert engine_calls == []
+        npt.assert_array_equal(np.asarray(view), reference.T[1:4, 9:20:2])
+
+    def test_transpose_composes_with_concat(self, stack):
+        manifest, reference = stack
+        flipped = np.transpose(manifest)
+        fused = np.concatenate([flipped, flipped], axis=1)
+        assert isinstance(fused, TileArray)
+        npt.assert_array_equal(
+            np.asarray(fused), np.concatenate([reference.T, reference.T], axis=1)
+        )
+
+    def test_engine_receives_source_order(self, stack):
+        """The selection reaches the engine in source order, full rank."""
+        manifest, _ = stack
+        seen = []
+
+        class SelectionProbe(Engine, name="selection-probe"):
+            @staticmethod
+            def load_tile(path, selection, **params):
+                seen.append(selection)
+                widths = tuple(
+                    len(range(entry.start, entry.stop, entry.step or 1))
+                    for entry in selection
+                )
+                return np.zeros(widths)
+
+        try:
+            probe = TileArray(
+                manifest.dataset.drop_vars("record", errors="ignore"),
+                manifest.dtype,
+                "selection-probe",
+            )
+            np.asarray(np.expand_dims(np.transpose(probe), 1)[:, :, 9:13])
+            assert all(len(selection) == 2 for selection in seen)
+            # the time trim reaches source axis 0 whatever the virtual order
+            rows = [
+                len(range(sel[0].start, sel[0].stop, sel[0].step or 1)) for sel in seen
+            ]
+            columns = [
+                len(range(sel[1].start, sel[1].stop, sel[1].step or 1)) for sel in seen
+            ]
+            assert sum(rows) == 4 and set(columns) == {NX}
+        finally:
+            del Engine._registry["selection-probe"]
+
+    def test_integer_indexing_stays_lazy(self, stack, engine_calls):
+        manifest, reference = stack
+        column = manifest[:, 2]
+        assert isinstance(column, TileArray)
+        assert column.shape == (29,)
+        assert engine_calls == []
+        npt.assert_array_equal(np.asarray(column), reference[:, 2])
+        row = manifest[11]
+        assert isinstance(row, TileArray)
+        npt.assert_array_equal(np.asarray(row), reference[11])
+        npt.assert_array_equal(np.asarray(manifest[-1]), reference[-1])
+        # a pinned axis composes with later slicing and reads one tile
+        npt.assert_array_equal(np.asarray(row[1:4]), reference[11, 1:4])
+
+    def test_scalar_selection_materializes(self, stack):
+        manifest, reference = stack
+        value = manifest[11, 2]
+        assert not isinstance(value, TileArray)
+        npt.assert_array_equal(value, reference[11, 2])
+
+    def test_squeeze(self, stack):
+        manifest, reference = stack
+        expanded = np.expand_dims(manifest, 1)
+        squeezed = np.squeeze(expanded, axis=1)
+        assert isinstance(squeezed, TileArray)
+        npt.assert_array_equal(np.asarray(squeezed), reference)
+        # squeezing a real unit axis hides it: the source is still read
+        thin = manifest[:, 1:2]
+        squeezed = np.squeeze(thin)
+        assert isinstance(squeezed, TileArray)
+        assert squeezed.shape == (29,)
+        npt.assert_array_equal(np.asarray(squeezed), reference[:, 1])
+        assert np.squeeze(manifest) is manifest  # nothing to squeeze
+        with pytest.raises(ValueError, match="not equal to one"):
+            np.squeeze(manifest, axis=1)
+        scalar = manifest[0:1, 0:1].squeeze()
+        assert isinstance(scalar, np.ndarray) and scalar.shape == ()
+        npt.assert_array_equal(scalar, reference[0, 0])
+
+    def test_expand_middle_and_concat_along_it(self, stack):
+        manifest, reference = stack
+        expanded = np.expand_dims(manifest, 1)
+        fused = np.concatenate([expanded, expanded], axis=1)
+        assert isinstance(fused, TileArray)
+        npt.assert_array_equal(
+            np.asarray(fused), np.stack([reference, reference], axis=1)
+        )
+
+    def test_mapped_round_trip(self, stack, tmp_path):
+        """A transposed, pinned view survives the native format."""
+        manifest, reference = stack
+        view = np.transpose(manifest)[1:4]
+        da = wrap(view)
+        path = str(tmp_path / "mapped.nc")
+        da.to_netcdf(path)
+        reopened = xd.open_dataarray(path)
+        assert isinstance(reopened.data, TileArray)
+        assert reopened.data.equals(view)
+        npt.assert_array_equal(reopened.values, reference.T[1:4])
+
+    def test_expanded_round_trip(self, stack, tmp_path):
+        manifest, reference = stack
+        expanded = np.expand_dims(manifest, 1)
+        da = xd.DataArray(expanded, dims=("time", "extra", "distance"))
+        path = str(tmp_path / "expanded.nc")
+        da.to_netcdf(path)
+        reopened = xd.open_dataarray(path)
+        assert isinstance(reopened.data, TileArray)
+        assert reopened.data.equals(expanded)
+        npt.assert_array_equal(reopened.values, reference[:, np.newaxis])
+
+    def test_equals_distinguishes_maps(self, stack):
+        manifest, _ = stack
+        assert not manifest.equals(np.transpose(manifest))
+        assert not manifest.equals(np.expand_dims(manifest, 0))
+        assert np.transpose(manifest).equals(np.transpose(manifest))
+
+    def test_map_validation(self, stack):
+        manifest, _ = stack
+        with pytest.raises(ValueError, match="distinct geometry axes"):
+            TileArray(
+                manifest.dataset.assign(axes=("axis", np.array([0, 0]))),
+                manifest.dtype,
+                manifest.engine,
+            )
+        with pytest.raises(ValueError, match="1-D over its own"):
+            TileArray(
+                manifest.dataset.assign(axes=("tile_0", np.array([0, 1, 0]))),
+                manifest.dtype,
+                manifest.engine,
+            )
+        with pytest.raises(ValueError, match="between 1 and"):
+            TileArray(
+                manifest.dataset.assign(source_ndim=((), np.int64(3))),
+                manifest.dtype,
+                manifest.engine,
+            )
+        with pytest.raises(ValueError, match="sizes must be 1"):
+            TileArray(
+                manifest.dataset.assign(axes=("axis", np.array([1]))),
+                manifest.dtype,
+                manifest.engine,
+            )
+        two = manifest[9:11]  # two one-row tiles along the time axis
+        with pytest.raises(ValueError, match="single tile"):
+            TileArray(
+                two.dataset.assign(axes=("axis", np.array([1]))),
+                two.dtype,
+                two.engine,
+            )
+        with pytest.raises(ValueError, match="sizes must be 1"):
+            TileArray(
+                manifest.dataset.assign(source_ndim=((), np.int64(1))),
+                manifest.dtype,
+                manifest.engine,
+            )
+        with pytest.raises(ValueError, match="at least one visible"):
+            TileArray(
+                manifest.dataset.assign(axes=("axis", np.array([], dtype=np.int64))),
+                manifest.dtype,
+                manifest.engine,
+            )
+
+    def test_transpose_method_validation(self, stack):
+        manifest, _ = stack
+        with pytest.raises(ValueError, match="permute"):
+            manifest.transpose((0, 0))
+
+    def test_streaming_reduction_on_transposed(self, stack):
+        manifest, reference = stack
+        flipped = np.transpose(manifest)
+        npt.assert_allclose(np.mean(flipped, axis=1), reference.T.mean(1))
+        npt.assert_allclose(np.sum(flipped), reference.sum())
+
+    def test_chunks_follow_the_map(self, stack):
+        manifest, _ = stack
+        assert np.transpose(manifest).chunks == (
+            manifest.chunks[1],
+            manifest.chunks[0],
+        )
+        assert np.expand_dims(manifest, 1).chunks == (
+            manifest.chunks[0],
+            (1,),
+            manifest.chunks[1],
+        )
+
+    def test_map_error_parity(self, stack, line):
+        """Inexpressible or invalid map calls raise the numpy errors."""
+        manifest, _ = stack
+        line_manifest, _ = line
+        with pytest.raises(ValueError):
+            np.transpose(manifest, 0)  # too few axes
+        with pytest.raises(ValueError):
+            np.matrix_transpose(line_manifest)  # ndim < 2
+        with pytest.raises(np.exceptions.AxisError):
+            np.swapaxes(manifest, 0, 5)
+        with pytest.raises(np.exceptions.AxisError):
+            np.moveaxis(manifest, 0, 5)
+        with pytest.raises(ValueError):
+            np.moveaxis(manifest, (0, 1), (0,))  # length mismatch
+        with pytest.raises(ValueError):
+            np.moveaxis(manifest, (0, 0), (0, 1))  # repeated source
+        with pytest.raises(TypeError):
+            np.expand_dims(manifest, "bad")
+        with pytest.raises(ValueError):
+            np.expand_dims(manifest, (0, 0))  # repeated position
+        with pytest.raises(np.exceptions.AxisError):
+            np.expand_dims(manifest, 5)
+        with pytest.raises(np.exceptions.AxisError):
+            np.stack([manifest, manifest], axis=5)
+        with pytest.raises(TypeError):
+            np.squeeze(manifest, axis="bad")
+        with pytest.raises(ValueError, match="no axis"):
+            manifest.squeeze(axis=5)
+        with pytest.raises(ValueError, match="0-d"):
+            TileArray(
+                manifest.dataset.assign(source_ndim=("axis", np.array([2]))),
+                manifest.dtype,
+                manifest.engine,
+            )
+
+    def test_map_dispatch_guards(self, stack):
+        """Handlers step aside for calls that are not theirs to rewrite."""
+        from xdas import tiles
+
+        manifest, _ = stack
+        other = np.zeros((3, 4))
+        assert (
+            tiles._transpose_virtual(manifest, np.transpose, (other,), {})
+            is NotImplemented
+        )
+        assert (
+            tiles._squeeze_virtual(manifest, np.squeeze, (other,), {}) is NotImplemented
+        )
+
+    def test_masked_selection_on_bounded_path(self, stack):
+        """Advanced keys with integers still take the bounded read."""
+        manifest, reference = stack
+        picked = manifest[[3, 7, 20], -1]
+        assert isinstance(picked, np.ndarray)
+        npt.assert_array_equal(picked, reference[[3, 7, 20], -1])
+        with pytest.raises(IndexError, match="out of bounds"):
+            manifest[[3, 7], 99]
+        mask = np.zeros(manifest.shape, dtype=bool)
+        mask[3, 2] = True
+        npt.assert_array_equal(manifest[mask], reference[mask])
 
 
 class TestNumpyProtocols:

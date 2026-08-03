@@ -138,14 +138,11 @@ class MiniSEEDEngine(Engine, name="miniseed"):
         """Read a source selection of a MiniSEED file, decoding with ObsPy.
 
         Decodes the whole file with ObsPy (as the legacy dask path did)
-        and crops to *selection*. The decoded rank is padded with unit
-        leading axes for virtually expanded arrays, or squeezed when a
-        scalar channel folded an axis away.
+        and crops to *selection*. The decoded rank is squeezed when a
+        scalar channel folded an axis out of the scanned shape.
         """
         data = MiniSEEDEngine.read_data(path, method, ignore_last_sample)
-        if data.ndim < len(selection):
-            data = data.reshape((1,) * (len(selection) - data.ndim) + data.shape)
-        elif data.ndim > len(selection):
+        if data.ndim > len(selection):
             data = data.reshape(data.shape[data.ndim - len(selection) :])
         return data[selection]
 

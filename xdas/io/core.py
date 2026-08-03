@@ -124,9 +124,11 @@ class Engine:
         """Read the selected sub-box of one tile of *path* (abstract).
 
         The decode half of the tiles machinery: called on the class by
-        :class:`~xdas.tiles.TileArray` once per tile touched, with one
-        source-local, possibly strided :class:`slice` per source axis and
-        the manifest's engine specification (merged with the per-tile
+        :class:`~xdas.tiles.TileArray` once per tile touched, with
+        exactly one source-local, possibly strided :class:`slice` per
+        source axis, in source order — whatever virtual arrangement
+        (transposes, inserted axes) the tile array presents — and the
+        manifest's engine specification (merged with the per-tile
         variables) as keyword arguments. It must return exactly the
         selected sub-box of the decoded source as a numpy array, and must
         depend only on its arguments — never on engine instance state —

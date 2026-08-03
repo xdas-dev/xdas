@@ -20,7 +20,17 @@ dense rectilinear grid of file-backed *tiles*, described by a plain
 - an optional 0-d ``root`` variable: the common directory of the
   sources, split off so the per-tile ``paths`` stay root-relative —
   one shared constant instead of a per-tile repeat. Absent (or empty),
-  the paths are used as stored.
+  the paths are used as stored;
+- an optional *axis map*: the geometry axes are stored in *source*
+  order (``sizes_g`` describes source axis ``g``), and a 1-D ``axes``
+  variable lists the geometry axis each virtual axis presents, in
+  virtual order — how transposes and inserted axes stay lazy. Axes
+  beyond the 0-d ``source_ndim`` are *synthetic* (inserted, one sample
+  wide, backed by no source data); geometry axes left out of the map
+  are *hidden* (pinned to a single sample, read but not presented —
+  how integer indexing stays lazy). Both variables are absent from
+  freshly scanned manifests: the default is the identity, every
+  geometry axis a source axis presented in stored order.
 
 String variables (``paths``, ``root`` and any string parameter) are
 held as fixed-width bytes (numpy ``S`` kind, filesystem encoding): one
@@ -43,14 +53,17 @@ Every dataset attribute is a user attribute.
 
 Geometry loads eagerly at construction (tiny); parameters stay folded —
 a constant occupies one element whatever the grid size — and broadcast
-over the grid only as tiles are read. Positive-step slicing folds into
-the geometry and returns a new :class:`TileArray` (as lazy and
-self-described as its input); any other indexing reads the bounding box
-of the selection and resolves the rest in memory. ``np.asarray``
-materializes: tiles are read one by one by the registered *engine*
-(``xdas.io.Engine[name]``), whose ``load_tile`` opens each tile's path
-itself and returns the tile's *source selection* (one possibly strided
-slice per axis), every part landing directly in the output array.
+over the grid only as tiles are read. Positive-step slicing, integer
+indexing and ``np.newaxis`` fold into the geometry and the axis map
+and return a new :class:`TileArray` (as lazy and self-described as its
+input); any other indexing reads the bounding box of the selection and
+resolves the rest in memory. ``np.asarray`` materializes: tiles are
+read one by one by the registered *engine* (``xdas.io.Engine[name]``),
+whose ``load_tile`` opens each tile's path itself and returns the
+tile's *source selection* — always one possibly strided slice per
+source axis, in source order, whatever the virtual arrangement — every
+part landing (permuted through the axis map) directly in the output
+array.
 
 A tile array is used *raw* as the data of a :class:`xdas.DataArray`
 (``DataArray(arr, coords)``), so ``da.data`` returns the inspectable
@@ -61,18 +74,19 @@ stream one tile row at a time.
 :meth:`TileArray.concat` fuses arrays along any axis by concatenating
 the geometry and the per-tile parameters (O(tiles), the data is never
 read). On top of slicing and concatenation, the numpy manipulation
-routines whose effect is a rewrite of the tile geometry dispatch
-lazily too (see ``_LAZY_ROUTINES``): the ``split``, ``stack`` and
-``atleast`` families, ``roll``, ``tile``, ``delete``, and
+routines whose effect is a rewrite of the tile geometry or the axis
+map dispatch lazily too (see ``_LAZY_ROUTINES``): the ``split``,
+``stack``, ``atleast`` and transpose (``transpose``, ``swapaxes``,
+``moveaxis``, ``matrix_transpose``) families, ``expand_dims`` and
+``squeeze`` at any position, ``roll``, ``tile``, ``delete``, and
 ``append``/``insert`` between tile arrays. Each falls back to a
 materializing read for the cases the grid cannot express (axis
 fusion, element repetition, eager operands). Tile arrays persist
 inside the native xdas netCDF format: the wrapped dataset *is* the
 stored form.
 
-Ported from the 0.3 line (``xdas/virtual/tilearray.py``); the lazy
-:meth:`TileArray.expand_dims` is a 0.2 extension supporting the legacy
-concat-along-a-new-dimension path.
+Ported from the 0.3 line (``xdas/virtual/tilearray.py``); the axis map
+and the lazy manipulation routines are 0.2 extensions.
 """
 
 from __future__ import annotations
@@ -210,23 +224,45 @@ def _common_root(roots):
         return ""
 
 
+def _consumed(entry):
+    """How many data axes one key *entry* consumes, as numpy counts them.
+
+    ``None`` (a new axis) consumes none; a multi-dimensional boolean
+    mask consumes one axis per mask dimension; everything else one.
+    """
+    if entry is None:
+        return 0
+    if isinstance(entry, np.ndarray) and entry.dtype == bool:
+        return entry.ndim
+    return 1
+
+
 def _normalize_key(key, ndim):
     """Return *key* as a full-length tuple with ``Ellipsis`` expanded.
 
     Accepts the plain keys produced by xarray's indexing adapters and
     by dask-style block slicing, plus a defensive unwrap of explicit
-    indexer objects carrying a ``tuple`` attribute.
+    indexer objects carrying a ``tuple`` attribute. ``None`` entries
+    (new axes) consume no data axis.
     """
     key = getattr(key, "tuple", key)
     if not isinstance(key, tuple):
         key = (key,)
     if any(entry is Ellipsis for entry in key):
         index = key.index(Ellipsis)
-        fill = (slice(None),) * (ndim - len(key) + 1)
+        consumed = sum(_consumed(entry) for entry in key) - 1
+        fill = (slice(None),) * (ndim - consumed)
         key = key[:index] + fill + key[index + 1 :]
-    if len(key) > ndim:
-        raise IndexError(f"too many indices: got {len(key)} for {ndim} axes")
-    return key + (slice(None),) * (ndim - len(key))
+    consumed = sum(_consumed(entry) for entry in key)
+    if consumed > ndim:
+        raise IndexError(f"too many indices: got {consumed} for {ndim} axes")
+    return key + (slice(None),) * (ndim - consumed)
+
+
+def _reinsert_newaxes(key, residual):
+    """Weave the ``None`` entries of *key* back into the per-axis *residual*."""
+    residual = iter(residual)
+    return tuple(None if entry is None else next(residual) for entry in key)
 
 
 def _bounding_key(key, shape):
@@ -387,13 +423,12 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         self.dtype = np.dtype(dtype)
         if self.dtype.byteorder == ">":
             raise ValueError("only little-endian or single-byte dtypes are supported")
-        ndim = 0
-        while f"sizes_{ndim}" in dataset:
-            ndim += 1
-        if ndim == 0:
+        ngrid = 0
+        while f"sizes_{ngrid}" in dataset:
+            ngrid += 1
+        if ngrid == 0:
             raise ValueError("a tile array needs a `sizes_0` geometry variable")
-        self.ndim = ndim
-        self.dims = dims = tuple(f"{TILE_PREFIX}{k}" for k in range(ndim))
+        self.dims = dims = tuple(f"{TILE_PREFIX}{g}" for g in range(ngrid))
         self._sizes = self._geometry("sizes", None)
         self._starts = self._geometry("starts", 0)
         self._steps = self._geometry("steps", 1)
@@ -402,14 +437,49 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             ("starts", self._starts, 0),
             ("steps", self._steps, 1),
         ):
-            for k, values in enumerate(arrays):
+            for g, values in enumerate(arrays):
                 if np.any(values < bound):
                     kind_bound = "non-negative" if bound == 0 else "strictly positive"
-                    raise ValueError(f"`{kind}_{k}` must be {kind_bound}")
+                    raise ValueError(f"`{kind}_{g}` must be {kind_bound}")
         self._edges = tuple(
             np.concatenate(([0], np.cumsum(sizes))) for sizes in self._sizes
         )
-        self.shape = tuple(int(edges[-1]) for edges in self._edges)
+        # the axis map: which geometry axis each virtual axis presents.
+        # absent variables mean the identity — every geometry axis is a
+        # source axis, presented in stored (= source) order
+        if "source_ndim" in dataset:
+            if tuple(dataset["source_ndim"].dims) != ():
+                raise ValueError("`source_ndim` must be a 0-d variable")
+            self._source_ndim = int(dataset["source_ndim"].values[()])
+        else:
+            self._source_ndim = ngrid
+        if not 0 < self._source_ndim <= ngrid:
+            raise ValueError("`source_ndim` must be between 1 and the geometry rank")
+        if "axes" in dataset:
+            if len(dataset["axes"].dims) != 1 or dataset["axes"].dims[0] in dims:
+                raise ValueError("`axes` must be 1-D over its own dimension")
+            self._axes = tuple(int(g) for g in dataset["axes"].values)
+        else:
+            self._axes = tuple(range(ngrid))
+        if not self._axes:
+            raise ValueError("a tile array needs at least one visible axis")
+        if len(set(self._axes)) != len(self._axes) or not all(
+            0 <= g < ngrid for g in self._axes
+        ):
+            raise ValueError(f"`axes` must name distinct geometry axes below {ngrid}")
+        # synthetic axes (beyond the source rank) and hidden axes (absent
+        # from the map) have no extent to offer: their tiles are one
+        # sample wide, and a hidden axis holds a single tile — several
+        # would write the same destination
+        for g in range(ngrid):
+            if (g >= self._source_ndim or g not in self._axes) and not bool(
+                (self._sizes[g] == 1).all()
+            ):
+                raise ValueError(f"axis {g} is synthetic or hidden: sizes must be 1")
+            if g not in self._axes and len(self._sizes[g]) != 1:
+                raise ValueError(f"hidden axis {g} must hold a single tile")
+        self.ndim = len(self._axes)
+        self.shape = tuple(int(self._edges[g][-1]) for g in self._axes)
         if "paths" not in dataset:
             raise ValueError("a tile array needs a `paths` variable")
         if "root" in dataset:
@@ -419,13 +489,14 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         else:
             self.root = ""
         geometry = {
-            f"{kind}_{k}" for kind in ("sizes", "starts", "steps") for k in range(ndim)
+            f"{kind}_{g}" for kind in ("sizes", "starts", "steps") for g in range(ngrid)
         }
         self._params = tuple(
             sorted(
                 name
                 for name in map(str, dataset.data_vars)
-                if name not in geometry and name not in ("paths", "root")
+                if name not in geometry
+                and name not in ("paths", "root", "axes", "source_ndim")
             )
         )
         for name in ("paths", *self._params):
@@ -571,7 +642,24 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
 
         Not a hint — the tiling *is* the only blocking the array has.
         """
-        return tuple(tuple(int(size) for size in sizes) for sizes in self._sizes)
+        return tuple(tuple(int(size) for size in self._sizes[g]) for g in self._axes)
+
+    def _assign_axes(self, dataset, axes, ngrid):
+        """Set the axis map of *dataset* to *axes*, dropping what is derivable.
+
+        The identity parts stay absent: `axes` is stored only when it
+        differs from the stored geometry order, `source_ndim` only when
+        synthetic axes exist. The source rank is this array's.
+        """
+        drop = [name for name in ("axes", "source_ndim") if name in dataset]
+        if drop:
+            dataset = dataset.drop_vars(drop)
+        assign = {}
+        if axes != tuple(range(ngrid)):
+            assign["axes"] = ("axis", np.asarray(axes, dtype=np.int64))
+        if self._source_ndim != ngrid:
+            assign["source_ndim"] = ((), np.asarray(self._source_ndim, dtype=np.int64))
+        return dataset.assign(assign) if assign else dataset
 
     @property
     def ntiles(self):
@@ -596,10 +684,9 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         strides over entirely are dropped. The parameters are sliced
         through the wrapped dataset, so a lazy array stays lazy.
 
-        Every other key (integers, index arrays, boolean masks,
-        reversed slices, empty selections) reads the bounding box of
-        the selection and applies the remainder in memory, returning a
-        numpy array.
+        Every other key (index arrays, boolean masks, reversed slices,
+        empty selections) reads the bounding box of the selection and
+        applies the remainder in memory, returning a numpy array.
         """
         key = _normalize_key(key, self.ndim)
         try:
@@ -607,51 +694,72 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         except _Unfoldable:
             pass
         try:
-            box, residual, empty = _bounding_key(key, self.shape)
+            box, residual, empty = _bounding_key(
+                tuple(entry for entry in key if entry is not None), self.shape
+            )
         except NotImplementedError:
             return np.asarray(self)[key]
         if empty:
             # zero-strided: the result is empty, so no value is ever read
             # and the full shape is never allocated
             return np.broadcast_to(np.zeros((), self.dtype), self.shape)[key].copy()
-        return np.asarray(self._fold(box))[residual]
+        return np.asarray(self._fold(box))[_reinsert_newaxes(key, residual)]
 
     def _fold(self, key):
-        """Fold a full-length tuple of positive-step slices into a new array.
+        """Fold slices, integers and new axes into a new array, virtually.
 
-        Raises :class:`_Unfoldable` for non-foldable entries and for
-        empty selections (a grid needs at least one tile);
+        Positive-step slices trim the geometry; an integer pins the
+        geometry axis at one sample and hides it from the map; ``None``
+        inserts a synthetic axis. Raises :class:`_Unfoldable` for other
+        entries, for empty selections (a grid needs at least one tile)
+        and for all-integer keys (a scalar is not a tile array);
         :meth:`__getitem__` then falls back to a bounded read.
         """
         indexers = {}
         assign = {}
-        for axis, (entry, extent) in enumerate(zip(key, self.shape)):
-            if not isinstance(entry, slice) or (entry.step or 1) < 1:
+        new_axes = []
+        entries = (entry for entry in key if entry is not None)
+        for axis, (entry, extent) in enumerate(zip(entries, self.shape)):
+            g = self._axes[axis]
+            if isinstance(entry, (int, np.integer)):
+                index = int(entry)
+                if index < 0:
+                    index += extent
+                if not 0 <= index < extent:
+                    raise IndexError(
+                        f"index {entry} is out of bounds for axis of size {extent}"
+                    )
+                lo, hi, s = index, index + 1, 1
+            elif isinstance(entry, slice) and (entry.step or 1) >= 1:
+                lo, hi, s = entry.indices(extent)
+                if len(range(lo, hi, s)) == 0:
+                    raise _Unfoldable(f"empty selection along axis {axis}")
+                new_axes.append(g)
+            else:
                 raise _Unfoldable(
-                    "only positive-step slices can be folded into the tile grid"
+                    "only slices, integers and new axes fold into the tile grid"
                 )
-            lo, hi, s = entry.indices(extent)
-            if len(range(lo, hi, s)) == 0:
-                raise _Unfoldable(f"empty selection along axis {axis}")
             if (lo, hi, s) == (0, extent, 1):
                 continue
-            edges = self._edges[axis]
+            edges = self._edges[g]
             i0 = int(np.searchsorted(edges, lo, "right")) - 1
             i1 = int(np.searchsorted(edges, hi, "left"))
             pos = edges[i0:i1]
-            size = self._sizes[axis][i0:i1]
-            start = self._starts[axis][i0:i1]
-            step = self._steps[axis][i0:i1]
+            size = self._sizes[g][i0:i1]
+            start = self._starts[g][i0:i1]
+            step = self._steps[g][i0:i1]
             # selected positions are lo, lo + s, ...; j0/j1 index the first
             # and last of them falling inside each tile
             j0 = np.maximum(0, -((lo - pos) // s))
             j1 = (np.minimum(pos + size, hi) - 1 - lo) // s
             keep = j1 >= j0
-            dim = self.dims[axis]
+            dim = self.dims[g]
             indexers[dim] = slice(i0, i1) if keep.all() else i0 + np.flatnonzero(keep)
-            assign[f"sizes_{axis}"] = (dim, (j1 - j0 + 1)[keep])
-            assign[f"starts_{axis}"] = (dim, (start + (lo + j0 * s - pos) * step)[keep])
-            assign[f"steps_{axis}"] = (dim, (step * s)[keep])
+            assign[f"sizes_{g}"] = (dim, (j1 - j0 + 1)[keep])
+            assign[f"starts_{g}"] = (dim, (start + (lo + j0 * s - pos) * step)[keep])
+            assign[f"steps_{g}"] = (dim, (step * s)[keep])
+        if not new_axes:
+            raise _Unfoldable("an all-integer key selects a scalar, not a grid")
         # all-default starts/steps columns fold away (they stay derivable)
         drop = [
             name
@@ -662,7 +770,19 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         assign = {name: entry for name, entry in assign.items() if name not in drop}
         dataset = self.dataset.isel(indexers).assign(assign)
         dataset = dataset.drop_vars([name for name in drop if name in dataset])
-        return type(self)(dataset, self.dtype, self.engine)
+        new_axes = tuple(new_axes)
+        if new_axes != self._axes:
+            dataset = self._assign_axes(dataset, new_axes, len(self.dims))
+        result = type(self)(dataset, self.dtype, self.engine)
+        # np.newaxis entries insert synthetic axes at their output position
+        position = 0
+        for entry in key:
+            if entry is None:
+                result = result.expand_dims(position)
+                position += 1
+            elif isinstance(entry, slice):
+                position += 1
+        return result
 
     @classmethod
     def concat(cls, arrays, dim=0):
@@ -697,20 +817,24 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         if not 0 <= axis < ndim:
             raise ValueError(f"no axis {dim} in a {ndim}-dimensional tile array")
         dims = first.dims
+        ngrid = len(dims)
+        gaxis = first._axes[axis]
         for other in arrays[1:]:
             if (
-                other.ndim != ndim
+                other._axes != first._axes
+                or other._source_ndim != first._source_ndim
+                or len(other.dims) != ngrid
                 or other.dtype != first.dtype
                 or other.engine != first.engine
                 or other._params != first._params
                 or any(
-                    k != axis
+                    g != gaxis
                     and not (
-                        np.array_equal(other._sizes[k], first._sizes[k])
-                        and np.array_equal(other._starts[k], first._starts[k])
-                        and np.array_equal(other._steps[k], first._steps[k])
+                        np.array_equal(other._sizes[g], first._sizes[g])
+                        and np.array_equal(other._starts[g], first._starts[g])
+                        and np.array_equal(other._steps[g], first._steps[g])
                     )
-                    for k in range(ndim)
+                    for g in range(ngrid)
                 )
             ):
                 raise ValueError("can only concatenate compatible tile arrays")
@@ -720,14 +844,18 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             ("starts", [array._starts for array in arrays], 0),
             ("steps", [array._steps for array in arrays], 1),
         ):
-            for k in range(ndim):
-                if k == axis:
-                    values = np.concatenate([entries[k] for entries in per_axis])
+            for g in range(ngrid):
+                if g == gaxis:
+                    values = np.concatenate([entries[g] for entries in per_axis])
                 else:
-                    values = per_axis[0][k]
+                    values = per_axis[0][g]
                 if default is not None and bool((values == default).all()):
                     continue
-                data[f"{kind}_{k}"] = (dims[k], values)
+                data[f"{kind}_{g}"] = (dims[g], values)
+        if first._axes != tuple(range(ngrid)):
+            data["axes"] = ("axis", np.asarray(first._axes, dtype=np.int64))
+        if first._source_ndim != ngrid:
+            data["source_ndim"] = ((), np.asarray(first._source_ndim, dtype=np.int64))
         root = _common_root([array.root for array in arrays])
         if root:
             data["root"] = ((), np.asarray(os.fsencode(root)))
@@ -737,7 +865,7 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             else:
                 variables = [array.dataset[name].variable for array in arrays]
             vdims = variables[0].dims
-            if dims[axis] not in vdims and all(v.dims == vdims for v in variables):
+            if dims[gaxis] not in vdims and all(v.dims == vdims for v in variables):
                 values = variables[0].values
                 if all(np.array_equal(v.values, values) for v in variables[1:]):
                     data[name] = (vdims, values)
@@ -745,13 +873,13 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             union = tuple(
                 d
                 for d in dims
-                if d == dims[axis] or any(d in v.dims for v in variables)
+                if d == dims[gaxis] or any(d in v.dims for v in variables)
             )
             parts = []
             for variable, array in zip(variables, arrays):
                 counts = dict(zip(dims, (len(sizes) for sizes in array._sizes)))
                 parts.append(variable.set_dims({dim: counts[dim] for dim in union}))
-            axis_pos = union.index(dims[axis])
+            axis_pos = union.index(dims[gaxis])
             values = np.concatenate([part.values for part in parts], axis=axis_pos)
             data[name] = xr.Variable(union, values)
         dataset = xr.Dataset(data, attrs=first.attrs)
@@ -816,21 +944,35 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         return values
 
     def _read(self):
-        """Read every tile into a fresh output array, one engine call each."""
+        """Read every tile into a fresh output array, one engine call each.
+
+        The engine always receives one slice per *source* axis, in
+        source order — whatever the virtual arrangement. Its part comes
+        back source-ordered: the visible axes transpose into virtual
+        order, and the one-sample-wide hidden and synthetic axes fold
+        away in the final reshape.
+        """
         out = np.empty(self.shape, dtype=self.dtype)
         read, spec = self._engine_impl
         counts = tuple(len(sizes) for sizes in self._sizes)
         paths = self._grid_values("paths")
         params = {name: self._grid_values(name) for name in self._params}
+        rank = self._source_ndim
+        order = [g for g in self._axes if g < rank]
+        order += [g for g in range(rank) if g not in order]
         for index in np.ndindex(counts):
-            selection, dest = [], []
-            for k, i in enumerate(index):
-                first = int(self._starts[k][i])
-                size = int(self._sizes[k][i])
-                step = int(self._steps[k][i])
+            selection, widths = [], []
+            for g in range(rank):
+                first = int(self._starts[g][index[g]])
+                size = int(self._sizes[g][index[g]])
+                step = int(self._steps[g][index[g]])
                 selection.append(slice(first, first + (size - 1) * step + 1, step))
-                dest.append(slice(int(self._edges[k][i]), int(self._edges[k][i + 1])))
-            selection, dest = tuple(selection), tuple(dest)
+                widths.append(size)
+            selection, widths = tuple(selection), tuple(widths)
+            dest = tuple(
+                slice(int(self._edges[g][index[g]]), int(self._edges[g][index[g] + 1]))
+                for g in self._axes
+            )
             kwargs = dict(spec)
             for name, values in params.items():
                 value = values[index].item()
@@ -838,14 +980,14 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
                 kwargs[name] = os.fsdecode(value) if isinstance(value, bytes) else value
             path = os.path.join(self.root, os.fsdecode(paths[index]))
             part = np.asarray(read(path, selection, **kwargs))
-            widths = tuple(entry.stop - entry.start for entry in dest)
             if part.shape != widths or part.dtype != self.dtype:
                 raise ValueError(
                     f"engine {self.engine['name']!r} produced a {part.dtype} "
                     f"part of shape {part.shape} where the array records "
                     f"{self.dtype} parts and the selection has shape {widths}"
                 )
-            out[dest] = part
+            part = np.transpose(part, order)
+            out[dest] = part.reshape(tuple(entry.stop - entry.start for entry in dest))
         return out
 
     def equals(self, other):
@@ -864,13 +1006,16 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             or self.shape != other.shape
             or self.attrs != other.attrs
             or self._params != other._params
+            or self._axes != other._axes
+            or self._source_ndim != other._source_ndim
+            or len(self.dims) != len(other.dims)
         ):
             return False
-        for k in range(self.ndim):
+        for g in range(len(self.dims)):
             if not (
-                np.array_equal(self._sizes[k], other._sizes[k])
-                and np.array_equal(self._starts[k], other._starts[k])
-                and np.array_equal(self._steps[k], other._steps[k])
+                np.array_equal(self._sizes[g], other._sizes[g])
+                and np.array_equal(self._starts[g], other._starts[g])
+                and np.array_equal(self._steps[g], other._steps[g])
             ):
                 return False
         for name in self._params:
@@ -964,7 +1109,7 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         # stream one tile row at a time: the tiling is the only blocking
         # the array has, and a whole row bounds the memory held at once
         rest = tuple(slice(0, extent) for extent in self.shape[1:])
-        for lo, hi in itertools.pairwise(self._edges[0]):
+        for lo, hi in itertools.pairwise(self._edges[self._axes[0]]):
             box = (slice(int(lo), int(hi)), *rest)
             block = np.asarray(self[box])
             partial = np.asarray(block_reduce(block, axis=axes, keepdims=True))
@@ -995,45 +1140,93 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         return result
 
     def expand_dims(self, axis=0):
-        """Insert a unit leading axis, staying virtual (0.2 extension).
+        """Insert a unit axis at position *axis*, staying virtual.
 
-        The legacy concat-along-a-new-dimension path
-        (:meth:`xdas.DataArray.expand_dims` then :func:`xdas.concat`)
-        expands the data with :func:`numpy.expand_dims`; this keeps
-        that path lazy instead of materializing. Only the leading
-        position is supported: the new axis holds one tile of size
-        one, and the engine ``load_tile`` receives one extra leading
-        ``slice(0, 1)`` per expanded axis, padding its output rank
-        accordingly (see the silixa and miniseed engines).
+        A new synthetic geometry axis (one tile, one sample wide) is
+        appended to the stored grid and mapped into the virtual order
+        at *axis*; the sources — and the engine calls — are untouched.
 
         Parameters
         ----------
         axis : int, optional
-            Position of the new axis; only ``0`` (equivalently
-            ``-ndim - 1``) is supported.
+            Position of the new axis in the result. Default 0.
 
         Returns
         -------
         TileArray
         """
         axis = int(axis)
-        if axis == -self.ndim - 1:
-            axis = 0
-        if axis != 0:
-            raise ValueError("only a leading axis can be virtually expanded")
-        rename = {}
-        for k in range(self.ndim - 1, -1, -1):
-            rename[f"{TILE_PREFIX}{k}"] = f"{TILE_PREFIX}{k + 1}"
-            for kind in ("sizes", "starts", "steps"):
-                if f"{kind}_{k}" in self.dataset:
-                    rename[f"{kind}_{k}"] = f"{kind}_{k + 1}"
-        dataset = self.dataset.rename(rename)
-        dataset = dataset.assign(sizes_0=(f"{TILE_PREFIX}0", np.ones(1, np.int64)))
+        if axis < 0:
+            axis += self.ndim + 1
+        if not 0 <= axis <= self.ndim:
+            raise ValueError(f"no position {axis} in a {self.ndim}-dimensional array")
+        ngrid = len(self.dims)
+        dataset = self.dataset.assign(
+            {f"sizes_{ngrid}": (f"{TILE_PREFIX}{ngrid}", np.ones(1, np.int64))}
+        )
+        axes = self._axes[:axis] + (ngrid,) + self._axes[axis:]
+        dataset = self._assign_axes(dataset, axes, ngrid + 1)
         return type(self)(dataset, self.dtype, self.engine)
 
-    def transpose(self, order):
-        """Materialize and transpose to the given axis *order*."""
-        return np.transpose(np.asarray(self), order)
+    def squeeze(self, axis=None):
+        """Drop unit axes, staying virtual.
+
+        The dropped axes leave the virtual order (real ones stay in the
+        grid as hidden, one-sample reads); squeezing every axis away
+        materializes the value as a 0-d array, as a grid needs at least
+        one visible axis.
+
+        Parameters
+        ----------
+        axis : int or tuple of int, optional
+            The unit axes to drop; all of them when None (default).
+
+        Returns
+        -------
+        TileArray or numpy.ndarray
+        """
+        if axis is None:
+            drop = tuple(k for k in range(self.ndim) if self.shape[k] == 1)
+        else:
+            axis = axis if isinstance(axis, tuple) else (axis,)
+            axis = tuple(operator.index(a) for a in axis)
+            drop = tuple(a + self.ndim if a < 0 else a for a in axis)
+            for k in drop:
+                if not 0 <= k < self.ndim:
+                    raise ValueError(f"no axis {k} in a {self.ndim}-dimensional array")
+                if self.shape[k] != 1:
+                    raise ValueError(
+                        "cannot select an axis to squeeze out which has size "
+                        "not equal to one"
+                    )
+        if not drop:
+            return self
+        if len(drop) == self.ndim:
+            return np.asarray(self).reshape(())
+        axes = tuple(g for k, g in enumerate(self._axes) if k not in drop)
+        dataset = self._assign_axes(self.dataset, axes, len(self.dims))
+        return type(self)(dataset, self.dtype, self.engine)
+
+    def transpose(self, order=None):
+        """Permute the axes, staying virtual (reversed order by default).
+
+        Parameters
+        ----------
+        order : sequence of int, optional
+            The new order of the current axes; all of them, each once.
+
+        Returns
+        -------
+        TileArray
+        """
+        if order is None:
+            order = range(self.ndim - 1, -1, -1)
+        order = tuple(int(a) + self.ndim if int(a) < 0 else int(a) for a in order)
+        if sorted(order) != list(range(self.ndim)):
+            raise ValueError(f"axes {order} do not permute a {self.ndim}-d array")
+        axes = tuple(self._axes[a] for a in order)
+        dataset = self._assign_axes(self.dataset, axes, len(self.dims))
+        return type(self)(dataset, self.dtype, self.engine)
 
     def astype(self, dtype, **kwargs):
         """Materialize and cast the values to *dtype*."""
@@ -1132,11 +1325,74 @@ def _expand_dims_virtual(array, func, args, kwargs):
     axis = kwargs.pop("axis", args[1] if len(args) > 1 else None)
     if kwargs or len(args) > 2 or args[0] is not array:
         return NotImplemented
-    if not isinstance(axis, (int, np.integer)):
+    axis = axis if isinstance(axis, tuple) else (axis,)
+    if not all(isinstance(entry, (int, np.integer)) for entry in axis):
         return NotImplemented
-    if int(axis) not in (0, -array.ndim - 1):
+    final = array.ndim + len(axis)
+    positions = tuple(int(entry) + final if entry < 0 else int(entry) for entry in axis)
+    if len(set(positions)) != len(positions) or not all(
+        0 <= position < final for position in positions
+    ):
         return NotImplemented
-    return array.expand_dims(0)
+    result = array
+    # ascending insertion keeps every later position valid in the
+    # grown array, whatever order the caller listed them in
+    for position in sorted(positions):
+        result = result.expand_dims(position)
+    return result
+
+
+def _transpose_virtual(array, func, args, kwargs):
+    """Dispatch the transpose-like functions as axis-map permutations."""
+    arguments = _bind(func, args, kwargs)
+    if arguments is None or next(iter(arguments.values())) is not array:
+        return NotImplemented
+    ndim = array.ndim
+    if func is np.transpose:
+        order = arguments["axes"]
+        if order is None:
+            order = range(ndim - 1, -1, -1)
+        elif isinstance(order, (int, np.integer)):
+            order = (order,)
+    elif func is np.matrix_transpose:
+        if ndim < 2:
+            return NotImplemented
+        order = (*range(ndim - 2), ndim - 1, ndim - 2)
+    elif func is np.swapaxes:
+        one, two = arguments["axis1"], arguments["axis2"]
+        one, two = _normalize_axis(one, ndim), _normalize_axis(two, ndim)
+        if one is None or two is None:
+            return NotImplemented
+        order = list(range(ndim))
+        order[one], order[two] = order[two], order[one]
+    else:  # moveaxis
+        source, destination = arguments["source"], arguments["destination"]
+        source = source if isinstance(source, (tuple, list)) else (source,)
+        destination = (
+            destination if isinstance(destination, (tuple, list)) else (destination,)
+        )
+        source = tuple(_normalize_axis(entry, ndim) for entry in source)
+        destination = tuple(_normalize_axis(entry, ndim) for entry in destination)
+        if None in source or None in destination or len(source) != len(destination):
+            return NotImplemented
+        order = [a for a in range(ndim) if a not in source]
+        for position, a in sorted(zip(destination, source)):
+            order.insert(position, a)
+    try:
+        return array.transpose(order)
+    except (TypeError, ValueError):
+        return NotImplemented
+
+
+def _squeeze_virtual(array, func, args, kwargs):
+    """Dispatch ``numpy.squeeze``, delegating to :meth:`TileArray.squeeze`."""
+    arguments = _bind(func, args, kwargs)
+    if arguments is None or arguments["a"] is not array:
+        return NotImplemented
+    try:
+        return array.squeeze(arguments["axis"])
+    except TypeError:
+        return NotImplemented
 
 
 def _split_virtual(array, func, args, kwargs):
@@ -1349,7 +1605,7 @@ def _insert_virtual(array, func, args, kwargs):
 
 
 def _stack_virtual(array, func, args, kwargs):
-    """Stack lazily along a new leading axis (expand then concatenate)."""
+    """Stack lazily along a new axis (expand then concatenate)."""
     arguments = _bind(func, args, kwargs)
     if arguments is None:
         return NotImplemented
@@ -1365,18 +1621,15 @@ def _stack_virtual(array, func, args, kwargs):
         axis = operator.index(arguments["axis"])
     except TypeError:
         return NotImplemented
-    if axis not in (0, -arrays[0].ndim - 1):
+    if axis < 0:
+        axis += arrays[0].ndim + 1
+    if not 0 <= axis <= arrays[0].ndim:
         return NotImplemented
-    return _try_concat([entry.expand_dims(0) for entry in arrays], 0)
+    return _try_concat([entry.expand_dims(axis) for entry in arrays], axis)
 
 
 def _stack_like_virtual(array, func, args, kwargs):
-    """Dispatch the ``*stack`` wrappers where leading-only expansion suffices.
-
-    ``dstack`` and ``column_stack`` promote low-rank inputs by
-    *appending* a unit axis, which the tile grid cannot express yet:
-    those cases fall back to materializing.
-    """
+    """Dispatch the ``*stack`` wrappers: promote the inputs, concatenate."""
     arguments = _bind(func, args, kwargs)
     if arguments is None or arguments.get("dtype") is not None:
         return NotImplemented
@@ -1400,26 +1653,31 @@ def _stack_like_virtual(array, func, args, kwargs):
         else:
             axis = 1
     elif func is np.dstack:
-        if min(ndims) < 3:
-            return NotImplemented
+        arrays = [_at_least_3d(entry) for entry in arrays]
         axis = 2
     else:  # column_stack
-        if min(ndims) < 2:
-            return NotImplemented
+        arrays = [
+            entry.expand_dims(1) if entry.ndim == 1 else entry for entry in arrays
+        ]
         axis = 1
     return _try_concat(arrays, axis)
 
 
-def _atleast_virtual(array, func, args, kwargs):
-    """``atleast_1d``/``2d``/``3d`` on a single tile array, virtually.
+def _at_least_3d(array):
+    """Promote *array* to 3-D the way ``numpy.atleast_3d`` does, virtually."""
+    if array.ndim == 1:
+        return array.expand_dims(0).expand_dims(2)
+    if array.ndim == 2:
+        return array.expand_dims(2)
+    return array
 
-    ``atleast_3d`` on a 1-D or 2-D array would append a trailing unit
-    axis, which the grid cannot express yet: it falls back.
-    """
+
+def _atleast_virtual(array, func, args, kwargs):
+    """``atleast_1d``/``2d``/``3d`` on a single tile array, virtually."""
     if kwargs or len(args) != 1 or args[0] is not array:
         return NotImplemented
-    if func is np.atleast_3d and array.ndim < 3:
-        return NotImplemented
+    if func is np.atleast_3d:
+        return _at_least_3d(array)
     if func is np.atleast_2d and array.ndim == 1:
         return array.expand_dims(0)
     return array
@@ -1449,6 +1707,11 @@ _LAZY_ROUTINES = {
     np.atleast_1d: _atleast_virtual,
     np.atleast_2d: _atleast_virtual,
     np.atleast_3d: _atleast_virtual,
+    np.transpose: _transpose_virtual,  # also np.permute_dims, its alias
+    np.matrix_transpose: _transpose_virtual,
+    np.swapaxes: _transpose_virtual,
+    np.moveaxis: _transpose_virtual,
+    np.squeeze: _squeeze_virtual,
 }
 
 

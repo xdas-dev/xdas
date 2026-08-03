@@ -136,8 +136,10 @@ Beside the `hdf5` vtype shown above (an HDF5 virtual source), an engine can
 offer the `tiles` vtype: `open_dataarray` then backs the data array with a lazy
 {py:class}`xdas.tiles.TileArray` describing the file, and the engine implements
 the decoding half as a `load_tile` static method — called once per tile
-touched, with one source-local slice per axis and the manifest's engine
-specification as keyword arguments, returning exactly the selected sub-box:
+touched, with exactly one source-local slice per source axis, in source order
+(whatever transposes or inserted axes the tile array presents), and the
+manifest's engine specification as keyword arguments, returning exactly the
+selected sub-box:
 
 ```{code-cell}
 from xdas.tiles import TileArray

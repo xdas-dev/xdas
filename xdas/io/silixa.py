@@ -61,13 +61,9 @@ class SilixaEngine(Engine, name="silixa"):
 
         :class:`~xdas.io.tdms.TdmsReader` performs the decoding
         (``get_data`` bounds are inclusive, hence the ``stop - 1``); the
-        residual crop applies as numpy views. Leading extra selection
-        axes come from virtually expanded arrays and pad the output
-        rank.
+        residual crop applies as numpy views.
         """
-        extra = len(selection) - 2
-        rows = selection[extra]
+        rows = selection[0]
         with TdmsReader(path) as tdms:
             data = tdms.get_data(first_s=rows.start, last_s=rows.stop - 1)
-        data = data[(slice(None, None, rows.step), *selection[extra + 1 :])]
-        return data.reshape((1,) * extra + data.shape)
+        return data[(slice(None, None, rows.step), *selection[1:])]
