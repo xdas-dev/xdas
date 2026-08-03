@@ -535,6 +535,11 @@ def defaulttree(depth):
 # scan retains only a few kilobytes per file, so it gets no ceiling.
 MAX_OPEN_FILES = 100_000
 
+# How many scan products `open_mfdataarray` holds before fusing them into
+# compact runs. Bounds the scan memory; a scan that fits in one batch takes
+# the exact monolithic path.
+BATCH_SIZE = 10_000
+
 
 def _resolve_engine(engine, vtype, ctype, engine_kwargs):
     """Turn the `engine` argument of the open functions into an Engine instance."""
@@ -648,15 +653,26 @@ def open_mfdataarray(
             "`vtype='tiles'`, which has no ceiling."
         )
     max_workers = get_workers_count(parallel)
-    objs = []
+    objs = []  # pending scan products, drained into `runs` every BATCH_SIZE
+    runs = []  # per-batch continuous runs (streaming mode only)
     failures = []
+
+    def consume(da):
+        # stream the combine: every BATCH_SIZE scan products are fused into
+        # compact runs (losslessly: no coordinate simplification) and freed,
+        # so memory is bounded by the batch, not the archive
+        objs.append(da)
+        if len(objs) >= BATCH_SIZE:
+            runs.extend(combine_by_coords(objs, dim, False, False))
+            objs.clear()
+
     if (max_workers == 1) or (engine.name == "miniseed"):  # TODO: dirty miniseed fix
         iterator = (
             tqdm(paths, desc="Fetching metadata from files") if verbose else paths
         )
         for path in iterator:
             try:
-                objs.append(open_dataarray(path, engine=engine))
+                consume(open_dataarray(path, engine=engine))
             except Exception as error:  # noqa: BLE001 - collected and warned below
                 failures.append((path, error))
                 warnings.warn(f"could not open {path}: {error}", RuntimeWarning)
@@ -681,15 +697,72 @@ def open_mfdataarray(
                 failures.append((path, error))
                 warnings.warn(f"could not open {path}: {error}", RuntimeWarning)
             else:
-                objs.append(obj)
-    if len(objs) == 0:  # there must be failures
+                consume(obj)
+    if not objs and not runs:  # there must be failures
         path, error = failures[0]
         raise RuntimeError(
             f"could not open any file with engine: "
             f"{engine.name or type(engine).__name__}; "
             f"first failure was {path}: {error}"
         ) from error
-    return combine_by_coords(objs, dim, tolerance, squeeze, None, verbose)
+    if not runs:
+        # a single batch: the exact monolithic path
+        return combine_by_coords(objs, dim, tolerance, squeeze, None, verbose)
+    if objs:
+        runs.extend(combine_by_coords(objs, dim, False, False))
+        objs.clear()
+    return _combine_runs(runs, dim, tolerance, squeeze)
+
+
+def _combine_runs(runs, dim, tolerance, squeeze):
+    """Fuse the compact runs of a streamed scan into the final collection.
+
+    Runs are grouped by compatibility signature (unlike the monolithic
+    walk, grouping does not depend on time order, so acquisitions
+    interleaved in time still fuse into one array each). Each group is
+    concatenated without simplification — losslessly, whatever the arrival
+    order — then :func:`sortby` permutes the tiles into coordinate order
+    and spends the whole *tolerance* budget once, on sorted segments:
+    the same state, and so the same result, as the monolithic combine.
+    Groups whose data or coordinate :func:`sortby` cannot permute (eager
+    data, non-interpolated coordinates) are concatenated with *tolerance*
+    directly, correct whenever batches do not interleave in time.
+    """
+    if dim == "first":
+        dim = runs[0].dims[0]
+    if dim == "last":
+        dim = runs[0].dims[-1]
+    bags = []
+    for da in runs:
+        for bag in bags:
+            try:
+                bag.append(da)
+                break
+            except CompatibilityError:
+                continue
+        else:
+            bag = Bag(dim)
+            bag.append(da)
+            bags.append(bag)
+    results = []
+    for bag in bags:
+        try:
+            fused = sortby(concat(bag, dim, tolerance=False), dim, tolerance)
+        except (KeyError, ValueError, NotImplementedError):
+            fused = concat(bag, dim, tolerance)
+        results.append(fused)
+    if all(dim in da.coords for da in results):
+        results.sort(
+            key=lambda da: (
+                da[dim][0].values
+                if isinstance(da[dim], AxisCoordinate)
+                else da[dim].values
+            )
+        )
+    collection = DataCollection(results)
+    if squeeze and len(collection) == 1:
+        return collection[0]
+    return collection
 
 
 def open_dataarray(fname, engine=None, vtype=None, ctype=None, **engine_kwargs):
@@ -1133,6 +1206,102 @@ def concat(
 
 
 concatenate = concat  # TODO: deprecate it
+
+
+def sortby(da, dim="first", tolerance=None):
+    """
+    Sort a blocked virtual data array along *dim* by coordinate value, lazily.
+
+    The data blocks (the tiles of a :class:`~xdas.tiles.TileArray`, the
+    sources of a :class:`~xdas.virtual.VirtualStack`) are permuted into
+    ascending start-value order without reading any of them: the permutation
+    is a manifest (or source-list) gather, and the coordinate tie points are
+    gathered blockwise the same way. Ties between equal start values keep
+    their current order. The reordered coordinate is then simplified with
+    *tolerance*, spending the accuracy budget once, on sorted segments —
+    exactly as :func:`concat` does on time-ordered inputs.
+
+    Parameters
+    ----------
+    da : DataArray
+        The data array to sort. Its data must be a :class:`TileArray` or a
+        :class:`VirtualStack` blocked along *dim*, and its *dim* coordinate
+        an interpolated coordinate whose tie points align with the block
+        boundaries (the state produced by concatenation without
+        simplification, ``tolerance=False``).
+    dim : str, optional
+        The dimension to sort along. Default to "first".
+    tolerance : float or timedelta64, optional
+        The tolerance spent by the final coordinate simplification. If None
+        (default), each coordinate spends its own declared tolerance. Pass
+        ``False`` to skip simplification entirely.
+
+    Returns
+    -------
+    DataArray
+        The sorted data array, as lazy as its input.
+    """
+    from ..coordinates import InterpCoordinate
+    from ..tiles import TileArray
+
+    axis = da.get_axis_num(dim)
+    dim = da.dims[axis]
+    coord = da.coords[dim]
+    if not isinstance(coord, InterpCoordinate):
+        raise NotImplementedError("can only sort along an interpolated coordinate")
+    data = da.data
+    if isinstance(data, TileArray):
+        sizes = np.asarray(data.chunks[axis])
+    elif isinstance(data, VirtualStack) and data.axis == axis:
+        sizes = np.asarray([source.shape[axis] for source in data.sources])
+    else:
+        raise NotImplementedError(
+            "can only sort a TileArray or a VirtualStack blocked along `dim`"
+        )
+    edges = np.concatenate(([0], np.cumsum(sizes)))
+    tie_indices = coord.tie_indices
+    tie_values = coord.tie_values
+    order = np.argsort(coord._get_value(edges[:-1]), kind="stable")
+    if np.array_equal(order, np.arange(len(order))):
+        sorted_coord = coord
+    else:
+        # every block must begin and end on a tie point, so that the blockwise
+        # gather is exact: the state concatenation without simplification
+        # leaves; a simplified coordinate can only be verified, not permuted
+        starts = np.searchsorted(tie_indices, edges[:-1])
+        ends = np.searchsorted(tie_indices, edges[1:] - 1, side="right")
+        if not (
+            np.array_equal(tie_indices[starts], edges[:-1])
+            and np.array_equal(tie_indices[ends - 1], edges[1:] - 1)
+        ):
+            raise NotImplementedError(
+                "tie points do not align with the block boundaries; sort "
+                "before simplifying (or concatenate with `tolerance=False`)"
+            )
+        if isinstance(data, TileArray):
+            data = data._permute_tiles(order, axis)
+        else:
+            data = VirtualStack([data.sources[i] for i in order], axis)
+        # blockwise tie-point gather, fully vectorized: for each block in
+        # sorted order, its run of tie points, re-offset to its new position
+        counts = (ends - starts)[order]
+        offsets = np.cumsum(counts) - counts
+        gather = np.arange(counts.sum()) - np.repeat(offsets, counts)
+        gather += np.repeat(starts[order], counts)
+        new_edges = np.cumsum(sizes[order]) - sizes[order]
+        shift = np.repeat(new_edges - edges[:-1][order], counts)
+        parts = {
+            "tie_indices": tie_indices[gather] + shift,
+            "tie_values": tie_values[gather],
+        }
+        if coord.sampling_interval is not None:
+            parts["sampling_interval"] = coord.sampling_interval
+            parts["tolerance"] = coord.tolerance
+        sorted_coord = InterpCoordinate(parts, dim)
+    sorted_coord = sorted_coord.simplify(tolerance)
+    coords = da.coords.copy()
+    coords[dim] = sorted_coord
+    return DataArray(data, coords, da.dims, da.name, da.attrs)
 
 
 def concat_coords(

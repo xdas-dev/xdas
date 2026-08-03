@@ -56,6 +56,7 @@ __all__ = [  # noqa: RUF022 - grouped by kind, not alphabetically
     "open_mfdatacollection",
     "open_mfdatatree",
     "plot_availability",
+    "sortby",
     "split",
 ]
 
@@ -108,6 +109,7 @@ from .core import (
     open_mfdatatree,
     plot_availability,
     routines,
+    sortby,
     split,
 )
 from .core.methods import *

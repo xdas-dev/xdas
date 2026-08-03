@@ -2134,3 +2134,36 @@ class TestPersistence:
             da.to_netcdf(path, virtual=True)
         reopened = xd.open_dataarray(path)
         npt.assert_array_equal(reopened.values, np.zeros((4, NX)))
+
+
+class TestPermuteTiles:
+    def test_permutes_lazily(self, stack, engine_calls):
+        manifest, reference = stack
+        order = [2, 0, 1]
+        permuted = manifest._permute_tiles(order)
+        assert engine_calls == []
+        expected = np.concatenate(
+            [reference[lo:hi] for lo, hi in ((17, 29), (0, 10), (10, 17))]
+        )
+        npt.assert_array_equal(np.asarray(permuted), expected)
+
+    def test_folded_params_stay_folded(self, stack):
+        manifest, _ = stack
+        arr = TileArray(
+            manifest.dataset.assign(
+                constant=((), np.asarray(7)),
+                record=(("tile_0",), np.arange(3)),
+            ),
+            manifest.dtype,
+            manifest.engine,
+        )
+        permuted = arr._permute_tiles([1, 2, 0])
+        assert tuple(permuted.dataset["constant"].dims) == ()
+        npt.assert_array_equal(permuted.dataset["record"].values, [1, 2, 0])
+
+    def test_rejects_non_permutations(self, stack):
+        manifest, _ = stack
+        with pytest.raises(ValueError, match="permutation"):
+            manifest._permute_tiles([0, 0, 1])
+        with pytest.raises(ValueError, match="permutation"):
+            manifest._permute_tiles([0, 1])

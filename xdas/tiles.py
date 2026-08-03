@@ -783,6 +783,23 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
                 position += 1
         return result
 
+    def _permute_tiles(self, order, axis=0):
+        """Reorder the tiles along virtual *axis*, staying virtual.
+
+        One fancy-index over the manifest columns carrying the axis' tile
+        dimension — geometry, paths and varying parameters reorder together,
+        folded parameters and absent geometry columns are untouched — so no
+        per-tile object is ever created. *order* must be a permutation of
+        the axis' tiles (repeats or subsets would break the tile-to-sample
+        accounting of the callers).
+        """
+        g = self._axes[axis]
+        order = np.asarray(order)
+        if not np.array_equal(np.sort(order), np.arange(len(self._sizes[g]))):
+            raise ValueError(f"`order` must be a permutation of axis {axis} tiles")
+        dataset = self.dataset.isel({self.dims[g]: order})
+        return type(self)(dataset, self.dtype, self.engine)
+
     def _flip(self, axis):
         """Reverse the array along virtual *axis*, staying virtual.
 

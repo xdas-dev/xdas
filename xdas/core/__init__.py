@@ -26,6 +26,7 @@ __all__ = [
     "open_mfdatacollection",
     "open_mfdatatree",
     "plot_availability",
+    "sortby",
     "split",
 ]
 
@@ -48,5 +49,6 @@ from .routines import (
     open_mfdatacollection,
     open_mfdatatree,
     plot_availability,
+    sortby,
     split,
 )
