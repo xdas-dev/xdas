@@ -27,6 +27,16 @@ from ..virtual import VirtualSource, VirtualStack
 from .dataarray import DataArray
 from .datacollection import DataCollection, DataMapping, DataSequence
 
+# How many scan products one call may hold at once: a scan keeps one data array
+# per file (~6 KiB) until they are fused. Vtypes that consolidate drain a full
+# batch and carry on; for the others this is a hard ceiling.
+MAX_OPEN_FILES = 100_000
+
+# Vtypes whose concatenation fuses the per-file scan products into one compact
+# object, so draining a batch frees memory. An hdf5 stack keeps one virtual
+# mapping per source, so batching would free nothing.
+CONSOLIDATING_VTYPES = frozenset({"tiles"})
+
 
 def open(
     paths,
@@ -260,10 +270,11 @@ def open_mfdatacollection(
         )
     if len(paths) == 0:
         raise FileNotFoundError("no file to open")
-    if len(paths) > 100_000:
+    if len(paths) > MAX_OPEN_FILES:
         raise NotImplementedError(
-            "The maximum number of file that can be opened at once is for now limited "
-            "to 100 000."
+            f"cannot open {len(paths)} files at once: the limit is "
+            f"{MAX_OPEN_FILES}, because the scan holds one data collection per "
+            "file in memory. Open the files in batches and combine the results."
         )
     max_workers = get_workers_count(parallel)
     if max_workers == 1:
@@ -529,18 +540,6 @@ def defaulttree(depth):
         return defaultdict(lambda: defaulttree(depth - 1))
 
 
-# How many files one call may scan, for every vtype but "tiles". The hdf5
-# backing builds one HDF5 virtual mapping per file, which dominates both the
-# scan memory and the time and stops being practical at this scale. A tiles
-# scan retains only a few kilobytes per file, so it gets no ceiling.
-MAX_OPEN_FILES = 100_000
-
-# How many scan products `open_mfdataarray` holds before fusing them into
-# compact runs. Bounds the scan memory; a scan that fits in one batch takes
-# the exact monolithic path.
-BATCH_SIZE = 10_000
-
-
 def _resolve_engine(engine, vtype, ctype, engine_kwargs):
     """Turn the `engine` argument of the open functions into an Engine instance."""
     from ..io.core import Engine
@@ -626,10 +625,11 @@ def open_mfdataarray(
     FileNotFound
         If no file can be found.
     NotImplementedError
-        If more than `MAX_OPEN_FILES` files are given with a vtype other than
-        "tiles", whose scans are the only ones light enough to have no
-        ceiling. Larger sets must be opened in batches and combined with
-        `combine_by_coords`, or opened as tiles.
+        If more than `MAX_OPEN_FILES` files are given with a vtype that does not
+        consolidate (see `CONSOLIDATING_VTYPES`). A consolidating vtype scans any
+        number of files, `MAX_OPEN_FILES` at a time; the others hold every scan
+        product until the end, so larger sets must be opened in batches and
+        combined with `combine_by_coords`.
     """
     paths = _ensure_str_paths(paths)
     if isinstance(paths, str):
@@ -645,24 +645,26 @@ def open_mfdataarray(
     if len(paths) == 0:
         raise FileNotFoundError("no file to open")
     engine = _resolve_engine(engine, vtype, ctype, engine_kwargs)
-    if engine.vtype != "tiles" and len(paths) > MAX_OPEN_FILES:
+    if engine.vtype not in CONSOLIDATING_VTYPES and len(paths) > MAX_OPEN_FILES:
+        consolidating = ", ".join(repr(name) for name in sorted(CONSOLIDATING_VTYPES))
         raise NotImplementedError(
             f"cannot open {len(paths)} files at once with vtype "
-            f"{engine.vtype!r}: the limit is {MAX_OPEN_FILES}. Open the files "
-            "in batches and pass the results to `combine_by_coords`, or use "
-            "`vtype='tiles'`, which has no ceiling."
+            f"{engine.vtype!r}: the limit is {MAX_OPEN_FILES}, because its scan "
+            "products cannot be consolidated into a compact one. Open the files "
+            "in batches and pass the results to `combine_by_coords`, or use a "
+            f"vtype that consolidates ({consolidating}), which has no ceiling."
         )
     max_workers = get_workers_count(parallel)
-    objs = []  # pending scan products, drained into `runs` every BATCH_SIZE
+    objs = []  # pending scan products, drained into `runs` every MAX_OPEN_FILES
     runs = []  # per-batch continuous runs (streaming mode only)
     failures = []
 
     def consume(da):
-        # stream the combine: every BATCH_SIZE scan products are fused into
+        # stream the combine: every MAX_OPEN_FILES scan products are fused into
         # compact runs (losslessly: no coordinate simplification) and freed,
         # so memory is bounded by the batch, not the archive
         objs.append(da)
-        if len(objs) >= BATCH_SIZE:
+        if len(objs) >= MAX_OPEN_FILES:
             runs.extend(combine_by_coords(objs, dim, False, False))
             objs.clear()
 

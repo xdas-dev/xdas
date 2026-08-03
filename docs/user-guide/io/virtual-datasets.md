@@ -182,10 +182,11 @@ tiles as the archive grows.
 - Building either manifest starts with reading the metadata of every file. That scan is
   dominated by disk access and is usually the bulk of the total build time, so it is not a
   criterion for choosing between the two.
-- Scanning combines its results every 10 000 files, so memory does not grow with the
-  archive. What remains per file is the mapping itself: negligible for tiles (which is
-  why it has no file-count ceiling), one HDF5 virtual mapping for `hdf5`, whose cost
-  caps a single call at 100 000 files.
+- A scan holds at most 100 000 results at once. Tiles combines them every 100 000 files
+  into a manifest whose per-file cost is negligible, so the batch is freed and a single
+  call can scan any number of files. Fusing changes nothing for `hdf5`, which keeps one
+  HDF5 virtual mapping per file whatever it does, so 100 000 is a ceiling for it instead
+  of a batch size.
 - The combined result does not depend on the scan order: files are sorted by their
   coordinate values, not by their names.
 - Neither backend helps when a coordinate is not monotonic — for instance when files

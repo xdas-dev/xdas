@@ -840,21 +840,34 @@ class TestStreamingCombine:
             chunk.to_netcdf(tmp_path / f"{name}.nc")
         return expected
 
-    @pytest.mark.parametrize("vtype", ["tiles", "hdf5"])
-    def test_matches_monolithic(self, tmp_path, monkeypatch, vtype):
+    def test_matches_monolithic(self, tmp_path, monkeypatch):
         from xdas.core import routines
 
         expected = self.save_shuffled(tmp_path)
         mono = xd.open_mfdataarray(
-            tmp_path / "*.nc", engine="xdas", vtype=vtype, parallel=False
+            tmp_path / "*.nc", engine="xdas", vtype="tiles", parallel=False
         )
-        monkeypatch.setattr(routines, "BATCH_SIZE", 2)
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", 2)
         streamed = xd.open_mfdataarray(
-            tmp_path / "*.nc", engine="xdas", vtype=vtype, parallel=False
+            tmp_path / "*.nc", engine="xdas", vtype="tiles", parallel=False
         )
         assert streamed.equals(expected)
         assert streamed["time"].equals(mono["time"])
         np.testing.assert_array_equal(np.asarray(streamed.data), np.asarray(mono.data))
+
+    def test_non_consolidating_vtype_raises_instead_of_streaming(
+        self, tmp_path, monkeypatch
+    ):
+        from xdas.core import routines
+
+        # the batch size is the ceiling, so a vtype that cannot consolidate
+        # never reaches the streaming path: it raises at the first batch
+        self.save_shuffled(tmp_path)
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", 2)
+        with pytest.raises(NotImplementedError, match="cannot be consolidated"):
+            xd.open_mfdataarray(
+                tmp_path / "*.nc", engine="xdas", vtype="hdf5", parallel=False
+            )
 
     def test_warns_and_recovers_on_corrupted_file(self, tmp_path, monkeypatch):
         from xdas.core import routines
@@ -862,7 +875,7 @@ class TestStreamingCombine:
         expected = self.save_shuffled(tmp_path)
         with (tmp_path / "ba.nc").open("wb") as file:
             file.write(b"corrupted")
-        monkeypatch.setattr(routines, "BATCH_SIZE", 2)
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", 2)
         with pytest.warns(RuntimeWarning):
             streamed = xd.open_mfdataarray(
                 tmp_path / "*.nc", engine="xdas", vtype="tiles", parallel=False
@@ -884,7 +897,7 @@ class TestStreamingCombine:
         chunks[0].to_netcdf(tmp_path / "a.nc")
         narrow.to_netcdf(tmp_path / "b.nc")
         chunks[1].to_netcdf(tmp_path / "c.nc")
-        monkeypatch.setattr(routines, "BATCH_SIZE", 2)
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", 2)
         streamed = xd.open_mfdataarray(
             tmp_path / "*.nc", engine="xdas", vtype="tiles", parallel=False
         )
@@ -895,7 +908,7 @@ class TestStreamingCombine:
         from xdas.core import routines
 
         expected = self.save_shuffled(tmp_path)
-        monkeypatch.setattr(routines, "BATCH_SIZE", 2)
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", 2)
         collection = xd.open_mfdataarray(
             tmp_path / "*.nc",
             engine="xdas",
@@ -916,7 +929,7 @@ class TestStreamingCombineFallbacks:
         names = ["c", "a", "b"]
         for chunk, name in zip(xd.split(expected, 3, "time"), names):
             chunk.to_netcdf(tmp_path / f"{name}.nc")
-        monkeypatch.setattr(routines, "BATCH_SIZE", 2)
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", 2)
         for dim in ("last", "time"):
             result = xd.open_mfdataarray(
                 tmp_path / "*.nc",
@@ -937,7 +950,7 @@ class TestStreamingCombineFallbacks:
         )
         for index, chunk in enumerate(xd.split(expected, 3, "time")):
             chunk.to_netcdf(tmp_path / f"chunk_{index}.nc")
-        monkeypatch.setattr(routines, "BATCH_SIZE", 2)
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", 2)
         result = xd.open_mfdataarray(
             tmp_path / "*.nc", engine="xdas", vtype="tiles", parallel=False
         )
@@ -953,7 +966,7 @@ class TestStreamingCombineFallbacks:
         )
         for index in range(3):
             da[10 * index : 10 * (index + 1)].to_netcdf(tmp_path / f"chunk_{index}.nc")
-        monkeypatch.setattr(routines, "BATCH_SIZE", 2)
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", 2)
         result = xd.open_mfdataarray(
             tmp_path / "*.nc", engine="xdas", vtype="tiles", parallel=False
         )
