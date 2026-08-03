@@ -30,20 +30,16 @@ class TestCore:
 
         for idx, da in enumerate(wavelet_wavefronts(nchunk=3), start=1):
             da.to_netcdf(tmp_path / f"{idx:03}.nc")
-        monkeypatch.setattr(routines, "MAX_OPEN_FILES", {None: 2, "hdf5": 2})
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", 2)
         with pytest.raises(NotImplementedError, match="the limit is 2"):
             xd.open_mfdataarray(tmp_path / "00*.nc")
 
-    def test_open_mfdataarray_file_limit_is_higher_for_tiles(
-        self, tmp_path, monkeypatch
-    ):
+    def test_open_mfdataarray_no_file_limit_for_tiles(self, tmp_path, monkeypatch):
         from xdas.core import routines
 
         for idx, da in enumerate(wavelet_wavefronts(nchunk=3), start=1):
             da.to_netcdf(tmp_path / f"{idx:03}.nc")
-        monkeypatch.setattr(
-            routines, "MAX_OPEN_FILES", {None: 2, "hdf5": 2, "tiles": 3}
-        )
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", 2)
         da = xd.open_mfdataarray(tmp_path / "00*.nc", engine="xdas", vtype="tiles")
         assert da.shape == wavelet_wavefronts().shape
 
@@ -53,9 +49,7 @@ class TestCore:
 
         for idx, da in enumerate(wavelet_wavefronts(nchunk=3), start=1):
             da.to_netcdf(tmp_path / f"{idx:03}.nc")
-        monkeypatch.setattr(
-            routines, "MAX_OPEN_FILES", {None: 2, "hdf5": 2, "tiles": 3}
-        )
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", 2)
         # the configured instance carries the vtype the limit is keyed on
         with pytest.raises(NotImplementedError, match="the limit is 2"):
             xd.open_mfdataarray(tmp_path / "00*.nc", engine=XdasEngine(vtype="hdf5"))

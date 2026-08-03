@@ -182,8 +182,10 @@ tiles as the archive grows.
 - Building either manifest starts with reading the metadata of every file. That scan is
   dominated by disk access and is usually the bulk of the total build time, so it is not a
   criterion for choosing between the two.
-- Both keep one data array per file in memory while scanning, so very large file sets must
-  be opened in batches and combined afterwards, whichever backend is used.
+- Both keep one data array per file in memory while scanning — a few kilobytes each for
+  tiles, much more for HDF5, whose per-file mapping cost caps a single call at 100 000
+  files. Sets beyond that (or beyond what memory allows) must be opened in batches and
+  combined afterwards.
 - Neither backend helps when a coordinate is not monotonic — for instance when files
   overlap in time. Label-based selection then falls back to a slow path in both cases, and
   is better addressed in the data itself.

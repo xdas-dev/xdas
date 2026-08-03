@@ -529,12 +529,11 @@ def defaulttree(depth):
         return defaultdict(lambda: defaulttree(depth - 1))
 
 
-# How many files one call may scan, per virtualization type. Every vtype
-# holds one data array per file in memory until they are combined; the hdf5
-# one additionally builds an HDF5 virtual mapping per file, which dominates
-# both the memory and the time. Tiles pays neither, so it gets far more room.
-# The None entry is the fallback for engines whose vtype cannot be known here.
-MAX_OPEN_FILES = {None: 100_000, "hdf5": 100_000, "tiles": 2_000_000}
+# How many files one call may scan, for every vtype but "tiles". The hdf5
+# backing builds one HDF5 virtual mapping per file, which dominates both the
+# scan memory and the time and stops being practical at this scale. A tiles
+# scan retains only a few kilobytes per file, so it gets no ceiling.
+MAX_OPEN_FILES = 100_000
 
 
 def _resolve_engine(engine, vtype, ctype, engine_kwargs):
@@ -622,11 +621,10 @@ def open_mfdataarray(
     FileNotFound
         If no file can be found.
     NotImplementedError
-        If more files are given than the vtype allows in one call. Scanning
-        keeps one data array per file in memory until they are combined, so the
-        ceiling is given by `MAX_OPEN_FILES`, which leaves far more room to the
-        much lighter tiles manifests. Larger sets must be opened in batches and
-        combined with `combine_by_coords`.
+        If more than `MAX_OPEN_FILES` files are given with a vtype other than
+        "tiles", whose scans are the only ones light enough to have no
+        ceiling. Larger sets must be opened in batches and combined with
+        `combine_by_coords`, or opened as tiles.
     """
     paths = _ensure_str_paths(paths)
     if isinstance(paths, str):
@@ -642,13 +640,12 @@ def open_mfdataarray(
     if len(paths) == 0:
         raise FileNotFoundError("no file to open")
     engine = _resolve_engine(engine, vtype, ctype, engine_kwargs)
-    limit = MAX_OPEN_FILES.get(engine.vtype, MAX_OPEN_FILES[None])
-    if len(paths) > limit:
+    if engine.vtype != "tiles" and len(paths) > MAX_OPEN_FILES:
         raise NotImplementedError(
-            f"cannot open {len(paths)} files at once: the limit is {limit} for "
-            f"vtype {engine.vtype!r} because the scan holds one data array per "
-            "file in memory until they are combined. Open the files in batches "
-            "and pass the results to `combine_by_coords`."
+            f"cannot open {len(paths)} files at once with vtype "
+            f"{engine.vtype!r}: the limit is {MAX_OPEN_FILES}. Open the files "
+            "in batches and pass the results to `combine_by_coords`, or use "
+            "`vtype='tiles'`, which has no ceiling."
         )
     max_workers = get_workers_count(parallel)
     objs = []

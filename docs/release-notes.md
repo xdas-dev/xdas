@@ -7,7 +7,7 @@
 - **`vtype="tiles"` on every HDF5 engine.** The open functions with `vtype="tiles"` return tile-backed arrays for the asn, febus, terra15, apsensing, prodml and native xdas engines. Silixa and MiniSEED always emit them now (replacing the serialized-dask-graph fallback, with time-axis push-down for Silixa), and Febus defaults to them — one tile per file, where the HDF5 backing needed one virtual mapping per data block. Custom engines add support by implementing `Engine.load_tile(path, selection, **params)` (@atrabattoni).
 - Tile-backed arrays round-trip through the native xdas netCDF format: the manifest is stored as a compact `__tiles__` sibling group, relocatable by editing its single root path and directly readable by the 0.3 line (@atrabattoni).
 - **Explicit engine configuration.** The open functions declare `engine`, `vtype` and `ctype`, and `engine` also accepts a configured `xdas.io.Engine` instance. Format-specific parameters (`overlaps`/`offset` for febus, `ignore_last_sample` for miniseed, `swapped_dims` for prodml, `tz` for terra15, `group` for the native format) are engine constructor parameters, validated up front (@atrabattoni).
-- `open_mfdataarray` accepts up to 2 000 000 files with `vtype="tiles"`; the ceiling now depends on the resolved vtype and stays 100 000 for `hdf5` (@atrabattoni).
+- `open_mfdataarray` no longer caps the number of files when the resolved vtype is `tiles`; the 100 000 ceiling remains for `hdf5`, which builds one virtual mapping per file (@atrabattoni).
 
 ### Breaking Changes
 - Passing a bare read function as `engine` now raises a `TypeError`: subclass `xdas.io.Engine` instead (see the data-formats documentation) (@atrabattoni).
