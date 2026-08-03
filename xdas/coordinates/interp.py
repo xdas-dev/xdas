@@ -571,13 +571,14 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
     def simplify(self, tolerance=None, *, reduce=True, regularize=False):
         """Canonicalise within *tolerance*: drop tie points, then promote to regular.
 
-        The *reduce* stage runs Douglas-Peucker to drop tie points whose removal
-        shifts the curve by no more than *tolerance*. The CF 8.3 structure is
-        preserved as an emergent property of that bound: real discontinuities are
-        kept (any spanning line crosses them by far more than *tolerance*), soft
-        ones are fused into a single ramp, and synchronisation tie points survive
-        because removing them would, by definition, drift more than *tolerance*.
-        Surviving values are never moved.
+        The *reduce* stage runs a one-pass greedy sleeve (see :func:`_sleeve`)
+        to drop tie points whose removal shifts the curve by no more than
+        *tolerance*. The CF 8.3 structure is preserved as an emergent property
+        of that bound: real discontinuities are kept (any spanning line crosses
+        them by far more than *tolerance*), soft ones are fused into a single
+        ramp, and synchronisation tie points survive because removing them
+        would, by definition, drift more than *tolerance*. Surviving values
+        are never moved.
 
         The *regularize* stage promotes the result to *regular* when the
         surviving continuous segments admit a single ``sampling_interval`` within
@@ -597,7 +598,7 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             tolerance = self.tolerance
         tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
         if reduce:
-            tie_indices, tie_values = _douglas_peucker(
+            tie_indices, tie_values = _sleeve(
                 self.tie_indices, self.tie_values, tolerance
             )
         else:
@@ -672,12 +673,25 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         return num[mask], den[mask]
 
 
-def _douglas_peucker(x, y, epsilon):
+def _sleeve(x, y, epsilon):
     """
-    Reduce the piecewise-linear curve *(x, y)* using the Douglas-Peucker algorithm.
+    Reduce the piecewise-linear curve *(x, y)* with a one-pass greedy sleeve.
 
-    Points are dropped when they deviate less than *epsilon* from the simplified
-    line connecting their neighbours.
+    Points are dropped when the segment connecting the surviving neighbours
+    passes within *epsilon* of them. The walk is left to right (the direction
+    acquisition produces tie points): from the current anchor it maintains the
+    intersection of every dropped point's ±*epsilon* slope cone — the sleeve —
+    and emits a knot exactly when a candidate leaves it. Knots are original
+    points, so surviving values are never moved, and any point whose removal
+    would drift the curve by more than *epsilon* (a discontinuity edge, a
+    synchronisation tie) empties the sleeve and survives. One pass, O(n)
+    whatever the number of surviving points — where Douglas-Peucker
+    degenerates quadratically once discontinuities or jitter make many
+    points survive.
+
+    Integer and datetime values are compared with exact (arbitrary-precision)
+    cross-multiplied integer arithmetic, so a zero *epsilon* drops exactly the
+    collinear points; float values use float arithmetic.
 
     Parameters
     ----------
@@ -693,25 +707,56 @@ def _douglas_peucker(x, y, epsilon):
     x_simplified : numpy.ndarray
     y_simplified : numpy.ndarray
     """
-    mask = np.ones(len(x), dtype=bool)
-    stack = [(0, len(x))]
-    while stack:
-        start, stop = stack.pop()
-        ysimple = forward(
-            x[start:stop],
-            x[[start, stop - 1]],
-            y[[start, stop - 1]],
-        )
-        d = np.abs(y[start:stop] - ysimple)
-        index = np.argmax(d)
-        dmax = d[index]
-        index += start
-        if dmax > epsilon:
-            stack.append([start, index + 1])
-            stack.append([index, stop])
+    if len(x) < 3:
+        return x, y
+    if np.issubdtype(y.dtype, np.datetime64):
+        # exact integer arithmetic, with epsilon brought to the finer of the
+        # two time units so sub-unit tolerances are not truncated
+        unit, count = np.datetime_data(y.dtype)
+        one = np.timedelta64(count, unit)
+        common = np.promote_types(one.dtype, epsilon.dtype)
+        scale = int(one.astype(common).view("i8"))
+        values = (y.view("i8") * scale).tolist()
+        eps = int(epsilon.astype(common).view("i8"))
+        margin = one
+    else:
+        values = y.tolist()
+        eps = epsilon
+        margin = 1 if np.issubdtype(y.dtype, np.integer) else 0.0
+    # fast path: one chord spans the whole curve (the fully continuous case,
+    # resolved vectorized). `forward` rounds to the value unit, so the chord
+    # is only trusted beyond a one-unit margin; near the boundary the exact
+    # loop below decides
+    deviation = np.abs(y - forward(x, x[[0, -1]], y[[0, -1]]))
+    if deviation.max() + margin <= epsilon:
+        return x[[0, -1]], y[[0, -1]]
+    positions = x.tolist()
+    keep = np.zeros(len(x), dtype=bool)
+    keep[0] = keep[-1] = True
+    ax, ay = positions[0], values[0]
+    # the sleeve: feasible slope interval from the anchor, as exact
+    # (numerator, positive denominator) rationals; None while unbounded
+    lo = hi = None
+    for i in range(1, len(positions)):
+        dx = positions[i] - ax
+        dy = values[i] - ay
+        if (lo is None or lo[0] * dx <= dy * lo[1]) and (
+            hi is None or dy * hi[1] <= hi[0] * dx
+        ):
+            # the chord anchor -> i passes within epsilon of every dropped
+            # point; tighten the sleeve with this point's own cone
+            if lo is None or (dy - eps) * lo[1] > lo[0] * dx:
+                lo = (dy - eps, dx)
+            if hi is None or (dy + eps) * hi[1] < hi[0] * dx:
+                hi = (dy + eps, dx)
         else:
-            mask[start + 1 : stop - 1] = False
-    return x[mask], y[mask]
+            keep[i - 1] = True
+            ax, ay = positions[i - 1], values[i - 1]
+            dx = positions[i] - ax
+            dy = values[i] - ay
+            lo = (dy - eps, dx)
+            hi = (dy + eps, dx)
+    return x[keep], y[keep]
 
 
 def _chebyshev_center_pair(num, den):
