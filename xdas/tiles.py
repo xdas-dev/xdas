@@ -76,6 +76,7 @@ import itertools
 import json
 import math
 import os
+import sys
 
 import numpy as np
 import xarray as xr
@@ -139,11 +140,32 @@ def _fold_param(values, counts, dims):
 def _as_bytes(values):
     """Recode string *values* to a fixed-width bytes (``S``) array.
 
-    Filesystem encoding, element by element; the re-wrap keeps 0-d
-    inputs 0-d (``frompyfunc`` unboxes them to a bare element).
+    Filesystem encoding, as :func:`os.fsencode` spells it.
     """
-    encoded = np.frompyfunc(os.fsencode, 1, 1)(np.asarray(values, dtype=object))
-    return np.asarray(encoded, dtype=object).astype("S")
+    values = np.asarray(values)
+    if values.dtype.kind == "U":
+        return np.strings.encode(
+            values, sys.getfilesystemencoding(), sys.getfilesystemencodeerrors()
+        )
+    # object arrays may mix str and bytes, so encode element by element
+    encoded = [os.fsencode(value) for value in values.flat]
+    return np.asarray(encoded, dtype="S").reshape(values.shape)
+
+
+def _trim(values):
+    """Shrink a bytes array to the width of its longest element.
+
+    The ``np.strings`` ufuncs size their output from the input widths,
+    which overshoots once a common part is added or removed.
+    """
+    width = max(int(np.strings.str_len(values).max(initial=0)), 1)
+    return values.astype(f"S{width}") if width < values.dtype.itemsize else values
+
+
+def _as_prefix(root):
+    """Return byte directory *root* as a plain concatenation prefix."""
+    sep = os.fsencode(os.sep)
+    return root if root.endswith(sep) else root + sep
 
 
 def _split_root(paths):
@@ -167,8 +189,7 @@ def _split_root(paths):
     if cut < 0:
         return b"", paths
     root = extremes[0][:cut] if cut else sep
-    strip = np.frompyfunc(lambda path: path[cut + 1 :], 1, 1)
-    return root, strip(paths)
+    return root, _trim(np.strings.slice(paths, cut + 1, None))
 
 
 def _common_root(roots):
@@ -474,9 +495,8 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         paths = paths.reshape(paths.shape + (1,) * (ndim - paths.ndim))
         # reads are lazy and stored views outlive the session: anchor the
         # paths now, while the scan's working directory still applies
-        paths = np.frompyfunc(lambda path: os.path.abspath(os.fsencode(path)), 1, 1)(
-            paths
-        )
+        anchored = [os.path.abspath(os.fsencode(path)) for path in paths.flat]
+        paths = np.asarray(anchored, dtype="S").reshape(paths.shape)
         # the common directory is one shared constant, not a per-tile
         # repeat: split it off, the stored paths stay root-relative
         root, paths = _split_root(paths)
@@ -493,7 +513,7 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             raise ValueError(
                 f"`paths` shape {paths.shape} does not match the grid {counts}"
             )
-        data["paths"] = _fold_param(paths.astype("S"), counts, dims)
+        data["paths"] = _fold_param(paths, counts, dims)
         if root:
             data["root"] = ((), np.asarray(root))
         reserved = (
@@ -746,26 +766,27 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         paths = self._grid_values("paths")
         if not self.root:
             return paths
-        root = os.fsencode(self.root)
-        return np.frompyfunc(lambda path: os.path.join(root, path), 1, 1)(paths)
+        # the stored paths are root-relative, so the join is a prefix
+        return np.strings.add(_as_prefix(os.fsencode(self.root)), paths)
 
     def _rebased_paths(self, root):
         """Return the ``paths`` variable of this array, rebased on directory *root*.
 
         Folded dimensions are preserved: the rebase rewrites the stored
-        values under the new root, it never broadcasts.
+        values under the new root, it never broadcasts. *root* must be a
+        parent of (or equal to) the current one, or empty — the only
+        cases :meth:`concat` produces — so that where the old root sits
+        under the new one is a plain prefix, shared by every tile.
         """
         variable = self.dataset["paths"].variable
         if root == self.root:
             return variable
-        mine, target = os.fsencode(self.root), os.fsencode(root)
-
-        def rebase(path):
-            full = os.path.join(mine, path)
-            return os.path.relpath(full, target) if root else full
-
-        values = np.frompyfunc(rebase, 1, 1)(np.asarray(variable.values, dtype=object))
-        return xr.Variable(variable.dims, _as_bytes(values))
+        mine = os.fsencode(self.root)
+        prefix = os.path.relpath(mine, os.fsencode(root)) if root else mine
+        prefix = b"" if prefix == b"." else _as_prefix(prefix)
+        return xr.Variable(
+            variable.dims, _trim(np.strings.add(prefix, variable.values))
+        )
 
     def _grid_values(self, name):
         """Load parameter *name* and broadcast it over the full tile grid."""

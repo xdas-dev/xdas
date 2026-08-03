@@ -17,7 +17,7 @@ dependencies = [
     "loky",
     "msgpack",
     "numba",
-    "numpy",
+    "numpy>=2.1",
     "obspy",
     "pandas",
     "plotly",
