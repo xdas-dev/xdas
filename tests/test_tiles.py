@@ -1687,6 +1687,175 @@ class TestAxisMap:
         npt.assert_array_equal(manifest[mask], reference[mask])
 
 
+class TestSignedSteps:
+    """Negative steps: lazy reversal in the geometry, ascending engine reads."""
+
+    def test_reversed_slices_fold(self, stack, engine_calls):
+        manifest, reference = stack
+        flipped = manifest[::-1]
+        assert isinstance(flipped, TileArray)
+        assert engine_calls == []
+        npt.assert_array_equal(np.asarray(flipped), reference[::-1])
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            np.s_[::-1, ::-1],
+            np.s_[::-2],
+            np.s_[20:5:-3],
+            np.s_[::-1, 3:1:-1],
+            np.s_[25:, ::-2],
+        ],
+    )
+    def test_reversed_slice_values(self, stack, key):
+        manifest, reference = stack
+        view = manifest[key]
+        assert isinstance(view, TileArray)
+        npt.assert_array_equal(np.asarray(view), reference[key])
+
+    def test_reversal_composes(self, stack, windowed):
+        manifest, reference = stack
+        npt.assert_array_equal(np.asarray(manifest[::2][::-1]), reference[::2][::-1])
+        npt.assert_array_equal(np.asarray(manifest[::-1][::2]), reference[::-1][::2])
+        npt.assert_array_equal(np.asarray(manifest[::-2][3:8]), reference[::-2][3:8])
+        windowed_manifest, windowed_reference = windowed
+        npt.assert_array_equal(
+            np.asarray(windowed_manifest[::-1]), windowed_reference[::-1]
+        )
+        flipped = np.transpose(manifest)[::-1, 9:20:2]
+        assert isinstance(flipped, TileArray)
+        npt.assert_array_equal(np.asarray(flipped), reference.T[::-1, 9:20:2])
+
+    def test_double_reversal_leaves_no_trace(self, stack):
+        manifest, reference = stack
+        back = manifest[::-1][::-1]
+        assert isinstance(back, TileArray)
+        assert "steps_0" not in back.dataset
+        assert back.equals(manifest)
+        npt.assert_array_equal(np.asarray(back), reference)
+
+    def test_flip_family(self, stack, engine_calls):
+        manifest, reference = stack
+        for flip in [
+            lambda a: np.flip(a),
+            lambda a: np.flip(a, 1),
+            lambda a: np.flip(a, (0, 1)),
+            np.flipud,
+            np.fliplr,
+        ]:
+            flipped = flip(manifest)
+            assert isinstance(flipped, TileArray)
+            npt.assert_array_equal(np.asarray(flipped), flip(reference))
+        assert engine_calls != []  # reads happened, but only at np.asarray
+
+    def test_rot90(self, stack):
+        manifest, reference = stack
+        for k in [0, 1, 2, 3, 4, -1]:
+            rotated = np.rot90(manifest, k)
+            assert isinstance(rotated, TileArray)
+            npt.assert_array_equal(np.asarray(rotated), np.rot90(reference, k))
+        rotated = np.rot90(manifest, 1, axes=(1, 0))
+        assert isinstance(rotated, TileArray)
+        npt.assert_array_equal(np.asarray(rotated), np.rot90(reference, 1, axes=(1, 0)))
+
+    def test_engine_reads_stay_ascending(self, stack):
+        """Whatever the reversal, the engine sees ascending selections."""
+        manifest, _ = stack
+        seen = []
+
+        class AscendingProbe(Engine, name="ascending-probe"):
+            @staticmethod
+            def load_tile(path, selection, **params):
+                seen.append(selection)
+                widths = tuple(
+                    len(range(entry.start, entry.stop, entry.step or 1))
+                    for entry in selection
+                )
+                return np.zeros(widths)
+
+        try:
+            probe = TileArray(manifest.dataset, manifest.dtype, "ascending-probe")
+            np.asarray(np.flip(probe[::-2, ::-1]))
+            assert seen and all(
+                entry.start <= entry.stop and (entry.step or 1) >= 1
+                for selection in seen
+                for entry in selection
+            )
+        finally:
+            del Engine._registry["ascending-probe"]
+
+    def test_flipped_round_trip(self, stack, tmp_path):
+        manifest, reference = stack
+        view = np.flip(manifest, 0)[5:20]
+        da = wrap(view)
+        path = str(tmp_path / "flipped.nc")
+        da.to_netcdf(path)
+        reopened = xd.open_dataarray(path)
+        assert isinstance(reopened.data, TileArray)
+        assert reopened.data.equals(view)
+        npt.assert_array_equal(reopened.values, reference[::-1][5:20])
+
+    def test_streaming_reduction_on_flipped(self, stack):
+        manifest, reference = stack
+        flipped = np.flip(manifest)
+        npt.assert_allclose(np.mean(flipped, axis=0), reference[::-1, ::-1].mean(0))
+        npt.assert_allclose(np.max(flipped), reference.max())
+
+    def test_step_validation(self, stack):
+        manifest, _ = stack
+        with pytest.raises(ValueError, match="nonzero"):
+            TileArray(
+                manifest.dataset.assign(
+                    steps_0=("tile_0", np.zeros(3, dtype=np.int64))
+                ),
+                manifest.dtype,
+                manifest.engine,
+            )
+        with pytest.raises(ValueError, match="walks out of the source"):
+            TileArray(
+                manifest.dataset.assign(
+                    steps_0=("tile_0", np.full(3, -1, dtype=np.int64))
+                ),
+                manifest.dtype,
+                manifest.engine,
+            )
+
+    def test_flip_error_parity(self, stack, line):
+        manifest, _ = stack
+        line_manifest, _ = line
+        with pytest.raises(ValueError, match="repeated"):
+            np.flip(manifest, (0, 0))
+        with pytest.raises(np.exceptions.AxisError):
+            np.flip(manifest, 5)
+        with pytest.raises(ValueError, match="different"):
+            np.rot90(manifest, axes=(0, 0))
+        with pytest.raises(ValueError, match="out of range"):
+            np.rot90(manifest, axes=(0, 5))
+        with pytest.raises(ValueError):
+            np.rot90(line_manifest)
+        with pytest.raises(ValueError, match=">= 2-d"):
+            np.fliplr(line_manifest)
+
+    def test_reversed_slice_on_bounded_path(self, stack):
+        """A reversed slice next to an index array takes the bounded read."""
+        manifest, reference = stack
+        picked = manifest[::-1, [1, 3]]
+        assert isinstance(picked, np.ndarray)
+        npt.assert_array_equal(picked, reference[::-1, [1, 3]])
+
+    def test_flip_dispatch_guards(self, stack):
+        from xdas import tiles
+
+        manifest, _ = stack
+        other = np.zeros((3, 4))
+        assert tiles._flip_virtual(manifest, np.flip, (other,), {}) is NotImplemented
+        assert tiles._rot90_virtual(manifest, np.rot90, (other,), {}) is NotImplemented
+        assert (
+            tiles._rot90_virtual(manifest, np.rot90, (manifest, 1.5), {})
+            is NotImplemented
+        )
+
+
 class TestNumpyProtocols:
     """Direct duck-array protocol behavior, without a wrapping DataArray."""
 

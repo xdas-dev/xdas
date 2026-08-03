@@ -53,11 +53,12 @@ Every dataset attribute is a user attribute.
 
 Geometry loads eagerly at construction (tiny); parameters stay folded —
 a constant occupies one element whatever the grid size — and broadcast
-over the grid only as tiles are read. Positive-step slicing, integer
-indexing and ``np.newaxis`` fold into the geometry and the axis map
-and return a new :class:`TileArray` (as lazy and self-described as its
-input); any other indexing reads the bounding box of the selection and
-resolves the rest in memory. ``np.asarray`` materializes: tiles are
+over the grid only as tiles are read. Slicing (any nonzero step,
+negative ones reversing lazily), integer indexing and ``np.newaxis``
+fold into the geometry and the axis map and return a new
+:class:`TileArray` (as lazy and self-described as its input); any
+other indexing reads the bounding box of the selection and resolves
+the rest in memory. ``np.asarray`` materializes: tiles are
 read one by one by the registered *engine* (``xdas.io.Engine[name]``),
 whose ``load_tile`` opens each tile's path itself and returns the
 tile's *source selection* — always one possibly strided slice per
@@ -76,9 +77,10 @@ the geometry and the per-tile parameters (O(tiles), the data is never
 read). On top of slicing and concatenation, the numpy manipulation
 routines whose effect is a rewrite of the tile geometry or the axis
 map dispatch lazily too (see ``_LAZY_ROUTINES``): the ``split``,
-``stack``, ``atleast`` and transpose (``transpose``, ``swapaxes``,
-``moveaxis``, ``matrix_transpose``) families, ``expand_dims`` and
-``squeeze`` at any position, ``roll``, ``tile``, ``delete``, and
+``stack``, ``atleast``, transpose (``transpose``, ``swapaxes``,
+``moveaxis``, ``matrix_transpose``) and flip (``flip``, ``flipud``,
+``fliplr``, ``rot90``) families, ``expand_dims`` and ``squeeze`` at
+any position, ``roll``, ``tile``, ``delete``, and
 ``append``/``insert`` between tile arrays. Each falls back to a
 materializing read for the cases the grid cannot express (axis
 fusion, element repetition, eager operands). Tile arrays persist
@@ -435,12 +437,19 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         for kind, arrays, bound in (
             ("sizes", self._sizes, 1),
             ("starts", self._starts, 0),
-            ("steps", self._steps, 1),
         ):
             for g, values in enumerate(arrays):
                 if np.any(values < bound):
                     kind_bound = "non-negative" if bound == 0 else "strictly positive"
                     raise ValueError(f"`{kind}_{g}` must be {kind_bound}")
+        for g in range(ngrid):
+            if np.any(self._steps[g] == 0):
+                raise ValueError(f"`steps_{g}` must be nonzero")
+            # a negative step walks backward from `start`: the last
+            # sample read must still land inside the source
+            reach = self._starts[g] + (self._sizes[g] - 1) * self._steps[g]
+            if np.any(reach < 0):
+                raise ValueError(f"`steps_{g}` walks out of the source")
         self._edges = tuple(
             np.concatenate(([0], np.cumsum(sizes))) for sizes in self._sizes
         )
@@ -674,18 +683,20 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
     def __getitem__(self, key):
         """Index the array, staying virtual whenever possible.
 
-        Positive-step slices fold into the geometry and return a new
+        Slices of any nonzero step, integers and ``np.newaxis`` fold
+        into the geometry and the axis map and return a new
         :class:`TileArray` without touching the sources:
         ``np.asarray(arr[key])`` equals ``np.asarray(arr)[key]``. Per
         axis, the overlapping tiles are located by binary search on the
         running tile sizes and their geometry is trimmed — and, for
-        stepped slices, decimated — to the selection (steps multiply,
-        origins compose, one tile stays one tile); tiles the selection
-        strides over entirely are dropped. The parameters are sliced
-        through the wrapped dataset, so a lazy array stays lazy.
+        stepped slices, decimated, negative steps reversing the axis —
+        to the selection (steps multiply, origins compose, one tile
+        stays one tile); tiles the selection strides over entirely are
+        dropped. The parameters are sliced through the wrapped dataset,
+        so a lazy array stays lazy.
 
-        Every other key (index arrays, boolean masks, reversed slices,
-        empty selections) reads the bounding box of the selection and
+        Every other key (index arrays, boolean masks, empty selections,
+        all-integer keys) reads the bounding box of the selection and
         applies the remainder in memory, returning a numpy array.
         """
         key = _normalize_key(key, self.ndim)
@@ -708,16 +719,18 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
     def _fold(self, key):
         """Fold slices, integers and new axes into a new array, virtually.
 
-        Positive-step slices trim the geometry; an integer pins the
-        geometry axis at one sample and hides it from the map; ``None``
-        inserts a synthetic axis. Raises :class:`_Unfoldable` for other
-        entries, for empty selections (a grid needs at least one tile)
-        and for all-integer keys (a scalar is not a tile array);
-        :meth:`__getitem__` then falls back to a bounded read.
+        Slices of any nonzero step trim the geometry (a negative step
+        folds as its ascending twin, then the axis flips); an integer
+        pins the geometry axis at one sample and hides it from the map;
+        ``None`` inserts a synthetic axis. Raises :class:`_Unfoldable`
+        for other entries, for empty selections (a grid needs at least
+        one tile) and for all-integer keys (a scalar is not a tile
+        array); :meth:`__getitem__` then falls back to a bounded read.
         """
         indexers = {}
         assign = {}
         new_axes = []
+        flips = []
         entries = (entry for entry in key if entry is not None)
         for axis, (entry, extent) in enumerate(zip(entries, self.shape)):
             g = self._axes[axis]
@@ -730,10 +743,15 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
                         f"index {entry} is out of bounds for axis of size {extent}"
                     )
                 lo, hi, s = index, index + 1, 1
-            elif isinstance(entry, slice) and (entry.step or 1) >= 1:
+            elif isinstance(entry, slice):
                 lo, hi, s = entry.indices(extent)
-                if len(range(lo, hi, s)) == 0:
+                count = len(range(lo, hi, s))
+                if count == 0:
                     raise _Unfoldable(f"empty selection along axis {axis}")
+                if s < 0:
+                    # fold the ascending twin, flip the result axis after
+                    flips.append(len(new_axes))
+                    lo, hi, s = lo + (count - 1) * s, lo + 1, -s
                 new_axes.append(g)
             else:
                 raise _Unfoldable(
@@ -774,6 +792,8 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         if new_axes != self._axes:
             dataset = self._assign_axes(dataset, new_axes, len(self.dims))
         result = type(self)(dataset, self.dtype, self.engine)
+        for axis in flips:
+            result = result._flip(axis)
         # np.newaxis entries insert synthetic axes at their output position
         position = 0
         for entry in key:
@@ -783,6 +803,34 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             elif isinstance(entry, slice):
                 position += 1
         return result
+
+    def _flip(self, axis):
+        """Reverse the array along virtual *axis*, staying virtual.
+
+        The tiles trade places (last first) and each reads its same
+        source samples backward: the origin moves to the walk's far
+        end and the step negates. Sources are never touched.
+        """
+        g = self._axes[axis]
+        dim = self.dims[g]
+        starts = self._starts[g] + (self._sizes[g] - 1) * self._steps[g]
+        steps = -self._steps[g]
+        dataset = self.dataset.isel({dim: slice(None, None, -1)})
+        assign = {
+            f"starts_{g}": (dim, starts[::-1]),
+            f"steps_{g}": (dim, steps[::-1]),
+        }
+        # all-default columns fold away (a double flip leaves no trace)
+        drop = [
+            name
+            for name, (_, values) in assign.items()
+            if (name.startswith("starts_") and not values.any())
+            or (name.startswith("steps_") and not (values != 1).any())
+        ]
+        assign = {name: entry for name, entry in assign.items() if name not in drop}
+        dataset = dataset.assign(assign)
+        dataset = dataset.drop_vars([name for name in drop if name in dataset])
+        return type(self)(dataset, self.dtype, self.engine)
 
     @classmethod
     def concat(cls, arrays, dim=0):
@@ -961,11 +1009,16 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         order = [g for g in self._axes if g < rank]
         order += [g for g in range(rank) if g not in order]
         for index in np.ndindex(counts):
-            selection, widths = [], []
+            selection, widths, backward = [], [], []
             for g in range(rank):
                 first = int(self._starts[g][index[g]])
                 size = int(self._sizes[g][index[g]])
                 step = int(self._steps[g][index[g]])
+                # the engine always reads ascending; a negative step
+                # reads the walk's span forward and reverses in memory
+                if step < 0:
+                    first, step = first + (size - 1) * step, -step
+                    backward.append(g)
                 selection.append(slice(first, first + (size - 1) * step + 1, step))
                 widths.append(size)
             selection, widths = tuple(selection), tuple(widths)
@@ -986,6 +1039,13 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
                     f"part of shape {part.shape} where the array records "
                     f"{self.dtype} parts and the selection has shape {widths}"
                 )
+            if backward:
+                part = part[
+                    tuple(
+                        slice(None, None, -1) if g in backward else slice(None)
+                        for g in range(rank)
+                    )
+                ]
             part = np.transpose(part, order)
             out[dest] = part.reshape(tuple(entry.stop - entry.start for entry in dest))
         return out
@@ -1395,6 +1455,55 @@ def _squeeze_virtual(array, func, args, kwargs):
         return NotImplemented
 
 
+def _flip_virtual(array, func, args, kwargs):
+    """Dispatch the flip family as reversed slices (lazy in the geometry)."""
+    arguments = _bind(func, args, kwargs)
+    if arguments is None or next(iter(arguments.values())) is not array:
+        return NotImplemented
+    ndim = array.ndim
+    if func is np.flipud:
+        axes = (0,)
+    elif func is np.fliplr:
+        if ndim < 2:
+            return NotImplemented
+        axes = (1,)
+    else:
+        axis = arguments["axis"]
+        if axis is None:
+            axes = tuple(range(ndim))
+        else:
+            axis = axis if isinstance(axis, (tuple, list)) else (axis,)
+            axes = tuple(_normalize_axis(entry, ndim) for entry in axis)
+            if None in axes or len(set(axes)) != len(axes):
+                return NotImplemented
+    return array[
+        tuple(slice(None, None, -1) if a in axes else slice(None) for a in range(ndim))
+    ]
+
+
+def _rot90_virtual(array, func, args, kwargs):
+    """Dispatch ``numpy.rot90`` as its own flip/transpose composition."""
+    arguments = _bind(func, args, kwargs)
+    if arguments is None or arguments["m"] is not array or array.ndim < 2:
+        return NotImplemented
+    try:
+        turns = operator.index(arguments["k"]) % 4
+    except TypeError:
+        return NotImplemented
+    axes = tuple(_normalize_axis(entry, array.ndim) for entry in arguments["axes"])
+    if None in axes or axes[0] == axes[1]:
+        return NotImplemented
+    order = list(range(array.ndim))
+    order[axes[0]], order[axes[1]] = order[axes[1]], order[axes[0]]
+    if turns == 0:
+        return array[(slice(None),) * array.ndim]
+    if turns == 1:
+        return np.transpose(np.flip(array, axes[1]), order)
+    if turns == 2:
+        return np.flip(np.flip(array, axes[0]), axes[1])
+    return np.flip(np.transpose(array, order), axes[1])
+
+
 def _split_virtual(array, func, args, kwargs):
     """Split into lazy sub-arrays for the ``numpy.split`` family.
 
@@ -1712,6 +1821,10 @@ _LAZY_ROUTINES = {
     np.swapaxes: _transpose_virtual,
     np.moveaxis: _transpose_virtual,
     np.squeeze: _squeeze_virtual,
+    np.flip: _flip_virtual,
+    np.flipud: _flip_virtual,
+    np.fliplr: _flip_virtual,
+    np.rot90: _rot90_virtual,
 }
 
 
