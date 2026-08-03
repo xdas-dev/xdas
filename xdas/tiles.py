@@ -216,16 +216,6 @@ def _split_root(paths):
     return root, _trim(np.strings.slice(paths, cut + 1, None))
 
 
-def _common_root(roots):
-    """Return the deepest directory containing every *root* ("" when none does)."""
-    if any(not root for root in roots):
-        return ""
-    try:
-        return os.path.commonpath(roots)
-    except ValueError:
-        return ""
-
-
 def _consumed(entry):
     """How many data axes one key *entry* consumes, as numpy counts them.
 
@@ -259,12 +249,6 @@ def _normalize_key(key, ndim):
     if consumed > ndim:
         raise IndexError(f"too many indices: got {consumed} for {ndim} axes")
     return key + (slice(None),) * (ndim - consumed)
-
-
-def _reinsert_newaxes(key, residual):
-    """Weave the ``None`` entries of *key* back into the per-axis *residual*."""
-    residual = iter(residual)
-    return tuple(None if entry is None else next(residual) for entry in key)
 
 
 def _bounding_key(key, shape):
@@ -329,6 +313,25 @@ def _bounding_key(key, shape):
     return tuple(box), tuple(residual), empty
 
 
+def _assign_geometry(dataset, assign):
+    """Apply geometry *assign* to *dataset*, folding all-default columns away.
+
+    A column of zero starts or unit steps stays derivable and is
+    dropped rather than stored, so that slicing back to the full
+    extent, or flipping twice, leaves no trace in the manifest.
+    """
+    drop = [
+        name
+        for name, (_, values) in assign.items()
+        if (name.startswith("starts_") and not values.any())
+        or (name.startswith("steps_") and not (values != 1).any())
+    ]
+    assign = {name: entry for name, entry in assign.items() if name not in drop}
+    if assign:
+        dataset = dataset.assign(assign)
+    return dataset.drop_vars([name for name in drop if name in dataset])
+
+
 def _materialize(value):
     """Read any :class:`TileArray` in *value*, descending one level."""
     if isinstance(value, TileArray):
@@ -340,20 +343,6 @@ def _materialize(value):
             np.asarray(item) if isinstance(item, TileArray) else item for item in value
         )
     return value
-
-
-def _to_si(nbytes):
-    """Render a byte count the way xarray renders its ``Size:`` header.
-
-    Decimal units, no decimals: the repr sits right under that header,
-    so a base-1024 count would read as a different number.
-    """
-    dividend = float(nbytes)
-    index = 0
-    while dividend >= 1000.0 and index < len(_UNITS) - 1:
-        dividend /= 1000.0
-        index += 1
-    return f"{dividend:.0f}{_UNITS[index]}"
 
 
 class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
@@ -434,15 +423,11 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         self._sizes = self._geometry("sizes", None)
         self._starts = self._geometry("starts", 0)
         self._steps = self._geometry("steps", 1)
-        for kind, arrays, bound in (
-            ("sizes", self._sizes, 1),
-            ("starts", self._starts, 0),
-        ):
-            for g, values in enumerate(arrays):
-                if np.any(values < bound):
-                    kind_bound = "non-negative" if bound == 0 else "strictly positive"
-                    raise ValueError(f"`{kind}_{g}` must be {kind_bound}")
         for g in range(ngrid):
+            if np.any(self._sizes[g] < 1):
+                raise ValueError(f"`sizes_{g}` must be strictly positive")
+            if np.any(self._starts[g] < 0):
+                raise ValueError(f"`starts_{g}` must be non-negative")
             if np.any(self._steps[g] == 0):
                 raise ValueError(f"`steps_{g}` must be nonzero")
             # a negative step walks backward from `start`: the last
@@ -714,7 +699,10 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             # zero-strided: the result is empty, so no value is ever read
             # and the full shape is never allocated
             return np.broadcast_to(np.zeros((), self.dtype), self.shape)[key].copy()
-        return np.asarray(self._fold(box))[_reinsert_newaxes(key, residual)]
+        # weave the None entries of the key back into the per-axis residual
+        residual = iter(residual)
+        outer = tuple(None if entry is None else next(residual) for entry in key)
+        return np.asarray(self._fold(box))[outer]
 
     def _fold(self, key):
         """Fold slices, integers and new axes into a new array, virtually.
@@ -778,16 +766,7 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             assign[f"steps_{g}"] = (dim, (step * s)[keep])
         if not new_axes:
             raise _Unfoldable("an all-integer key selects a scalar, not a grid")
-        # all-default starts/steps columns fold away (they stay derivable)
-        drop = [
-            name
-            for name, (_, values) in assign.items()
-            if (name.startswith("starts_") and not values.any())
-            or (name.startswith("steps_") and not (values != 1).any())
-        ]
-        assign = {name: entry for name, entry in assign.items() if name not in drop}
-        dataset = self.dataset.isel(indexers).assign(assign)
-        dataset = dataset.drop_vars([name for name in drop if name in dataset])
+        dataset = _assign_geometry(self.dataset.isel(indexers), assign)
         new_axes = tuple(new_axes)
         if new_axes != self._axes:
             dataset = self._assign_axes(dataset, new_axes, len(self.dims))
@@ -815,21 +794,13 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         dim = self.dims[g]
         starts = self._starts[g] + (self._sizes[g] - 1) * self._steps[g]
         steps = -self._steps[g]
-        dataset = self.dataset.isel({dim: slice(None, None, -1)})
-        assign = {
-            f"starts_{g}": (dim, starts[::-1]),
-            f"steps_{g}": (dim, steps[::-1]),
-        }
-        # all-default columns fold away (a double flip leaves no trace)
-        drop = [
-            name
-            for name, (_, values) in assign.items()
-            if (name.startswith("starts_") and not values.any())
-            or (name.startswith("steps_") and not (values != 1).any())
-        ]
-        assign = {name: entry for name, entry in assign.items() if name not in drop}
-        dataset = dataset.assign(assign)
-        dataset = dataset.drop_vars([name for name in drop if name in dataset])
+        dataset = _assign_geometry(
+            self.dataset.isel({dim: slice(None, None, -1)}),
+            {
+                f"starts_{g}": (dim, starts[::-1]),
+                f"steps_{g}": (dim, steps[::-1]),
+            },
+        )
         return type(self)(dataset, self.dtype, self.engine)
 
     @classmethod
@@ -904,7 +875,13 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             data["axes"] = ("axis", np.asarray(first._axes, dtype=np.int64))
         if first._source_ndim != ngrid:
             data["source_ndim"] = ((), np.asarray(first._source_ndim, dtype=np.int64))
-        root = _common_root([array.root for array in arrays])
+        # the fused root is the deepest directory containing every input
+        # root ("" when an input has none or no common directory exists)
+        roots = [array.root for array in arrays]
+        try:
+            root = os.path.commonpath(roots) if all(roots) else ""
+        except ValueError:
+            root = ""
         if root:
             data["root"] = ((), np.asarray(os.fsencode(root)))
         for name in ("paths", *first._params):
@@ -1164,8 +1141,7 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         kept = tuple(a for a in range(self.ndim) if a not in axes)
         out_shape = tuple(self.shape[a] for a in kept)
         acc = None
-        filled = np.zeros(out_shape, dtype=bool)
-        counts = np.zeros(out_shape) if counting else None
+        counts = np.zeros(out_shape) if counting == "nancount" else None
         # stream one tile row at a time: the tiling is the only blocking
         # the array has, and a whole row bounds the memory held at once
         rest = tuple(slice(0, extent) for extent in self.shape[1:])
@@ -1175,18 +1151,20 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
             partial = np.asarray(block_reduce(block, axis=axes, keepdims=True))
             partial = partial.reshape(tuple(block.shape[a] for a in kept))
             target = tuple(box[a] for a in kept)
-            if acc is None:
-                acc = np.zeros(out_shape, dtype=partial.dtype)
-            acc[target] = np.where(
-                filled[target], combine(acc[target], partial), partial
-            )
-            filled[target] = True
-            if counting == "count":
-                counts[target] += np.prod([block.shape[a] for a in axes])
-            elif counting == "nancount":
+            if 0 in axes:
+                # every row reduces into the same output: combine pairwise
+                acc = partial if acc is None else combine(acc, partial)
+            else:
+                # rows land in disjoint output rows: plain assignment
+                if acc is None:
+                    acc = np.empty(out_shape, dtype=partial.dtype)
+                acc[target] = partial
+            if counting == "nancount":
                 counts[target] += np.sum(~np.isnan(block), axis=axes).reshape(
                     partial.shape
                 )
+        if counting == "count":
+            counts = math.prod(self.shape[a] for a in axes)
         result = acc / counts if counting else acc
         if dtype is None and counting:
             dtype = func(np.zeros(1, self.dtype)).dtype
@@ -1303,9 +1281,17 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         above. What remains is what only the tiling knows — the volume
         it stands for, and how many tiles it took.
         """
+        # decimal units, no decimals, the way xarray renders its `Size:`
+        # header: the repr sits right under it, and a base-1024 count
+        # would read as a different number
+        nbytes = float(self.size * self.dtype.itemsize)
+        index = 0
+        while nbytes >= 1000.0 and index < len(_UNITS) - 1:
+            nbytes /= 1000.0
+            index += 1
         return (
             f"TileArray[{self.engine['name']}] "
-            f"{_to_si(self.size * self.dtype.itemsize)} ({self.dtype}) "
+            f"{nbytes:.0f}{_UNITS[index]} ({self.dtype}) "
             f"{self.ntiles} {'tile' if self.ntiles == 1 else 'tiles'}"
         )
 
@@ -1381,10 +1367,10 @@ def _concatenate_virtual(array, func, args, kwargs):
 
 def _expand_dims_virtual(array, func, args, kwargs):
     """Dispatch ``numpy.expand_dims``, delegating to :meth:`TileArray.expand_dims`."""
-    kwargs = dict(kwargs)
-    axis = kwargs.pop("axis", args[1] if len(args) > 1 else None)
-    if kwargs or len(args) > 2 or args[0] is not array:
+    arguments = _bind(func, args, kwargs)
+    if arguments is None or arguments["a"] is not array:
         return NotImplemented
+    axis = arguments["axis"]
     axis = axis if isinstance(axis, tuple) else (axis,)
     if not all(isinstance(entry, (int, np.integer)) for entry in axis):
         return NotImplemented

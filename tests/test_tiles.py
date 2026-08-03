@@ -269,6 +269,9 @@ class TestManifest:
             )
         with pytest.raises(ValueError, match="`paths`"):
             TileArray(dataset.drop_vars("paths"), manifest.dtype, manifest.engine)
+        bad_starts = dataset.assign(starts_0=("tile_0", np.array([-1, 0, 0])))
+        with pytest.raises(ValueError, match="non-negative"):
+            TileArray(bad_starts, manifest.dtype, manifest.engine)
 
     def test_extra_variables_are_params(self, stack):
         """Any non-geometry manifest variable is a per-tile engine parameter."""
@@ -412,7 +415,7 @@ class TestSourcePaths:
         assert legacy.equals(manifest) and manifest.equals(legacy)
 
     def test_no_common_directory_keeps_paths_whole(self):
-        from xdas.tiles import _common_root, _split_root
+        from xdas.tiles import _split_root
 
         mixed = np.array([b"rel/f.h5", b"/abs/g.h5"], dtype=object)
         root, kept = _split_root(mixed)
@@ -420,8 +423,26 @@ class TestSourcePaths:
         empty = np.array([], dtype=object)
         root, kept = _split_root(empty)
         assert root == b"" and kept is empty
-        assert _common_root(["/a/b", ""]) == ""
-        assert _common_root(["/a/b", "relative"]) == ""
+
+    def test_concat_with_unrelatable_roots_stores_whole_paths(self):
+        """Roots `commonpath` cannot relate (absolute vs relative) fuse rootless."""
+
+        def make(root, path):
+            dataset = xr.Dataset(
+                {
+                    "sizes_0": ("tile_0", np.array([3])),
+                    "paths": ((), np.asarray(os.fsencode(path))),
+                    "root": ((), np.asarray(os.fsencode(root))),
+                }
+            )
+            return TileArray(dataset, "float64", ENGINE)
+
+        fused = TileArray.concat([make("/a/b", "f.h5"), make("rel", "g.h5")])
+        assert fused.root == ""
+        assert fused.dataset["paths"].values.tolist() == [
+            os.fsencode(os.path.join("/a/b", "f.h5")),
+            os.fsencode(os.path.join("rel", "g.h5")),
+        ]
 
     def test_no_common_directory_falls_back_rootless(self, tmp_path, monkeypatch):
         """Paths sharing no directory (several drives) store whole, rootless."""
