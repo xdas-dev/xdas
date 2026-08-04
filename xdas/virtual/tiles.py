@@ -420,8 +420,8 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
 
         Engine[engine["name"]]  # fail fast on unregistered engines
         self._engine = engine
-        self.dtype = np.dtype(dtype)
-        if self.dtype.byteorder == ">":
+        self._dtype = np.dtype(dtype)
+        if self._dtype.byteorder == ">":
             raise ValueError("only little-endian or single-byte dtypes are supported")
         ngrid = 0
         while f"sizes_{ngrid}" in dataset:
@@ -481,8 +481,7 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
                 raise ValueError(f"axis {g} is synthetic or hidden: sizes must be 1")
             if g not in self._axes and len(self._sizes[g]) != 1:
                 raise ValueError(f"hidden axis {g} must hold a single tile")
-        self.ndim = len(self._axes)
-        self.shape = tuple(int(self._edges[g][-1]) for g in self._axes)
+        self._shape = tuple(int(self._edges[g][-1]) for g in self._axes)
         if "paths" not in dataset:
             raise ValueError("a tile array needs a `paths` variable")
         if "root" in dataset:
@@ -744,14 +743,19 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
         return dataset.assign(assign) if assign else dataset
 
     @property
+    def shape(self):
+        """Tuple of int: array dimensions, summed from the tile sizes."""
+        return self._shape
+
+    @property
+    def dtype(self):
+        """numpy.dtype: element type of the sources as the engine decodes them."""
+        return self._dtype
+
+    @property
     def ntiles(self):
         """int: total number of tiles in the grid."""
         return math.prod(len(sizes) for sizes in self._sizes)
-
-    @property
-    def size(self):
-        """int: total number of elements."""
-        return math.prod(self.shape)
 
     def __getitem__(self, key):
         """Index the array, staying virtual whenever possible.

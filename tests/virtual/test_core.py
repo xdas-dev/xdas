@@ -38,11 +38,33 @@ class TestVirtualBackend:
         assert isinstance(source, VirtualBackend)
         assert isinstance(VirtualStack([source]), VirtualBackend)
 
-    def test_persistence_contract_defaults(self):
+    def test_contract_stubs(self):
         backend = VirtualBackend()
+        with pytest.raises(NotImplementedError):
+            _ = backend.shape
+        with pytest.raises(NotImplementedError):
+            _ = backend.dtype
+        with pytest.raises(NotImplementedError):
+            backend[0]
+        with pytest.raises(NotImplementedError):
+            backend.__array__()
+        with pytest.raises(NotImplementedError):
+            VirtualBackend.from_variable(None)
         with pytest.raises(NotImplementedError):
             backend.create_variable(None, "data")
         assert backend.finalize_save("path.nc") is None
+
+    def test_derived_properties_shared_by_both_backends(self):
+        source = VirtualSource("path.h5", "data", (2, 3), np.dtype("f8"))
+        assert source.ndim == 2
+        assert source.size == 6
+        assert source.nbytes == 48
+        assert not source.empty
+        tiled = TileArray.from_tiles("path.h5", (2, 3), "f8", "xdas")
+        assert tiled.ndim == 2
+        assert tiled.size == 6
+        assert tiled.nbytes == 48
+        assert not tiled.empty
 
     def test_from_variable_dispatches_to_each_backend(self, tmp_path):
         data = np.arange(6.0).reshape(2, 3)
