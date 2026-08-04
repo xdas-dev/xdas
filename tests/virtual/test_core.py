@@ -38,6 +38,12 @@ class TestVirtualBackend:
         assert isinstance(source, VirtualBackend)
         assert isinstance(VirtualStack([source]), VirtualBackend)
 
+    def test_persistence_contract_defaults(self):
+        backend = VirtualBackend()
+        with pytest.raises(NotImplementedError):
+            backend.create_variable(None, "data")
+        assert backend.finalize_save("path.nc") is None
+
     def test_from_variable_dispatches_to_each_backend(self, tmp_path):
         data = np.arange(6.0).reshape(2, 3)
         path = tmp_path / "source.h5"

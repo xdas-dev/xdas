@@ -12,10 +12,12 @@ class VirtualBackend:
     lazily through ``__getitem__``, and materializes through
     ``__array__``; a ``from_variable`` classmethod wraps one stored
     HDF5 variable, so open paths dispatch
-    ``VirtualBackend[vtype].from_variable(...)``. That contract is
-    informal — the backends share no implementation and differ beyond
-    it (blocking, persistence, concatenation), so this base only names
-    them: subclasses register by
+    ``VirtualBackend[vtype].from_variable(...)``, and the
+    :meth:`create_variable`/:meth:`finalize_save` pair writes the
+    backend's stored form, so save paths need no per-backend branch.
+    The rest of the contract is informal — the backends share no
+    implementation and differ beyond it (blocking, concatenation), so
+    this base only names them: subclasses register by
     passing ``vtype=`` in the class definition and are retrieved with
     the ``VirtualBackend[vtype]`` syntax — the same registry fashion as
     :class:`~xdas.io.Engine` (by name) and
@@ -64,3 +66,24 @@ class VirtualBackend:
             f"no virtual backend registered under {item!r}; "
             f"available: {sorted(cls._registry)}"
         )
+
+    def create_variable(self, file, name, dims=None, dtype=None):
+        """
+        Write this array as variable *name* of an open h5netcdf *file*.
+
+        The first half of the persistence contract (abstract — each
+        backend writes its own stored form): an HDF5 virtual dataset
+        for the hdf5 backend, a placeholder variable carrying the
+        engine specification for the tiles backend.
+        """
+        raise NotImplementedError
+
+    def finalize_save(self, fname, group=None):
+        """
+        Append what of the stored form outlives the variable.
+
+        The second half of the persistence contract, called once the
+        file handle of :meth:`create_variable` is closed. Default: the
+        variable is the whole stored form, nothing to append — the
+        tiles backend appends its manifest as a sibling group.
+        """

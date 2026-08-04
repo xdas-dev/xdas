@@ -110,6 +110,9 @@ from .core import VirtualBackend
 TILE_PREFIX = "tile_"
 """Prefix of the tile-grid dimensions of a manifest dataset."""
 
+TILES_GROUP = "__tiles__"
+"""Name of the sibling group holding a stored tile array's manifest."""
+
 _UNITS = ("B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
 """Decimal byte units, as xarray spells them in its ``Size:`` header."""
 
@@ -635,6 +638,61 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
             The manifest dataset.
         """
         return self.dataset.copy()
+
+    def create_variable(self, file, name, dims=None, dtype=None):
+        """
+        Create the placeholder variable of the stored form.
+
+        The placeholder records the dtype (as any typed store would,
+        e.g. zarr array metadata) and carries the engine specification
+        by value in a ``__tile_array__`` attribute; the manifest itself
+        is appended by :meth:`finalize_save` once *file* is closed.
+
+        Parameters
+        ----------
+        file : h5netcdf.File or h5netcdf.Group
+            Open writable file or group.
+        name : str
+            Variable name to create inside *file*.
+        dims : sequence of str, optional
+            Dimension names for the variable.
+        dtype : dtype-like, optional
+            Element type of the placeholder. Default to :attr:`dtype`.
+
+        Returns
+        -------
+        variable
+            The newly created file variable.
+        """
+        variable = file.create_variable(
+            name, dims, self.dtype if dtype is None else dtype
+        )
+        variable.attrs["__tile_array__"] = json.dumps({"engine": self.engine})
+        return variable
+
+    def finalize_save(self, fname, group=None):
+        """
+        Append the manifest as a sibling group of the stored variable.
+
+        The second half of the stored form, written natively by xarray
+        once the file handle of :meth:`create_variable` is closed: the
+        manifest dataset lands in a ``__tiles__`` group next to the
+        placeholder variable.
+
+        Parameters
+        ----------
+        fname : str
+            Path of the file holding the placeholder variable.
+        group : str, optional
+            Group of the placeholder variable within the file.
+        """
+        manifest = self.to_dataset()
+        # strings are fixed-width bytes by construction and land on disk
+        # as char arrays; only stale open-time encodings need clearing
+        for name in list(manifest.variables):
+            manifest[name].encoding.clear()
+        location = TILES_GROUP if group is None else f"{group}/{TILES_GROUP}"
+        manifest.to_netcdf(fname, mode="a", group=location, engine="h5netcdf")
 
     def _geometry(self, kind, default):
         """Load the eager 1-D ``{kind}_k`` arrays (*default* where absent)."""

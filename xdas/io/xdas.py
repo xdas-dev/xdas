@@ -19,11 +19,9 @@ from dask.array import Array as DaskArray
 from ..coordinates import Coordinates
 from ..core import DataArray, DataCollection, DataMapping, DataSequence
 from ..dask import create_variable, loads
-from ..virtual import TileArray, VirtualArray, VirtualBackend
+from ..virtual import TileArray, VirtualBackend
+from ..virtual.tiles import TILES_GROUP
 from .core import Engine
-
-TILES_GROUP = "__tiles__"
-"""Name of the sibling group holding a virtual variable's tile manifest."""
 
 
 class XdasEngine(Engine, name="xdas"):
@@ -229,17 +227,9 @@ def save_dataarray(
         else:
             if encoding is not None:
                 raise ValueError("cannot use `encoding` with in virtual mode")
-            if isinstance(da.data, VirtualArray):
+            if isinstance(da.data, VirtualBackend):
                 variable = da.data.create_variable(
                     file, variable_name, da.dims, da.dtype
-                )
-            elif isinstance(da.data, TileArray):
-                # the placeholder variable already records the dtype (as any
-                # typed store would, e.g. zarr array metadata): only the
-                # engine needs the by-value sidecar
-                variable = file.create_variable(variable_name, da.dims, da.dtype)
-                variable.attrs["__tile_array__"] = json.dumps(
-                    {"engine": da.data.engine}
                 )
             elif isinstance(da.data, DaskArray):
                 warnings.warn(
@@ -262,15 +252,9 @@ def save_dataarray(
     # write metadata
     dataset.to_netcdf(fname, mode="a", group=group, engine="h5netcdf")
 
-    # write the tile manifest as a sibling group
-    if virtual and isinstance(da.data, TileArray):
-        manifest = da.data.to_dataset()
-        # strings are fixed-width bytes by construction and land on disk
-        # as char arrays; only stale open-time encodings need clearing
-        for name in list(manifest.variables):
-            manifest[name].encoding.clear()
-        location = TILES_GROUP if group is None else f"{group}/{TILES_GROUP}"
-        manifest.to_netcdf(fname, mode="a", group=location, engine="h5netcdf")
+    # append what of the stored form outlives the variable (the tile manifest)
+    if virtual and isinstance(da.data, VirtualBackend):
+        da.data.finalize_save(fname, group)
 
 
 def open_datacollection(fname, group=None):

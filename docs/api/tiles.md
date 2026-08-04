@@ -39,6 +39,8 @@ Methods
    TileArray.from_tiles
    TileArray.from_variable
    TileArray.to_dataset
+   TileArray.create_variable
+   TileArray.finalize_save
    TileArray.concat
    TileArray.expand_dims
    TileArray.squeeze
