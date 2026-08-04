@@ -10,9 +10,12 @@ class VirtualBackend:
     A virtual backend is a lazy, numpy-like duck array whose values stay
     on disk: it reports ``shape`` and ``dtype`` without reading, slices
     lazily through ``__getitem__``, and materializes through
-    ``__array__``. That contract is informal — the backends share no
-    implementation and differ beyond it (blocking, persistence,
-    concatenation), so this base only names them: subclasses register by
+    ``__array__``; a ``from_variable`` classmethod wraps one stored
+    HDF5 variable, so open paths dispatch
+    ``VirtualBackend[vtype].from_variable(...)``. That contract is
+    informal — the backends share no implementation and differ beyond
+    it (blocking, persistence, concatenation), so this base only names
+    them: subclasses register by
     passing ``vtype=`` in the class definition and are retrieved with
     the ``VirtualBackend[vtype]`` syntax — the same registry fashion as
     :class:`~xdas.io.Engine` (by name) and

@@ -39,6 +39,7 @@ Methods
 .. autosummary::
    :toctree: ../_autosummary
 
+   VirtualArray.from_variable
    VirtualArray.to_dataset
 ```
 

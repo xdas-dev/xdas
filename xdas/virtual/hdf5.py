@@ -47,6 +47,22 @@ class VirtualArray(VirtualBackend, vtype="hdf5"):
         """Write this virtual array as an HDF5 dataset (abstract — must be overridden)."""
         raise NotImplementedError
 
+    @classmethod
+    def from_variable(cls, variable):
+        """
+        Expose one stored HDF5 variable as a lazy virtual source.
+
+        Parameters
+        ----------
+        variable : h5py.Dataset
+            The open variable to wrap.
+
+        Returns
+        -------
+        VirtualSource
+        """
+        return VirtualSource(variable)
+
     @property
     def ndim(self):
         """Number of dimensions."""

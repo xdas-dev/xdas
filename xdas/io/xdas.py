@@ -19,7 +19,7 @@ from dask.array import Array as DaskArray
 from ..coordinates import Coordinates
 from ..core import DataArray, DataCollection, DataMapping, DataSequence
 from ..dask import create_variable, loads
-from ..virtual import TileArray, VirtualArray, VirtualBackend, VirtualSource
+from ..virtual import TileArray, VirtualArray, VirtualBackend
 from .core import Engine
 
 TILES_GROUP = "__tiles__"
@@ -152,15 +152,9 @@ def open_dataarray(fname, group=None, vtype=None):
             if group:
                 file = file[group]
             variable = file["__values__" if name is None else name]
-            if vtype == "tiles":
-                data = TileArray.from_tiles(
-                    str(fname),
-                    variable.shape,
-                    variable.dtype,
-                    {"name": "xdas", "dataset": variable.name},
-                )
-            else:
-                data = VirtualSource(variable)
+            data = VirtualBackend["hdf5" if vtype is None else vtype].from_variable(
+                variable
+            )
 
     # pack everything
     return DataArray(

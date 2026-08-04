@@ -595,6 +595,30 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
         dataset = xr.Dataset(data, attrs=dict(attrs or {}))
         return cls(dataset, dtype, engine)
 
+    @classmethod
+    def from_variable(cls, variable):
+        """
+        Expose one stored HDF5 variable as a single-tile array.
+
+        The whole variable is one tile, decoded by the generic "xdas"
+        engine (a plain h5py read of the named dataset).
+
+        Parameters
+        ----------
+        variable : h5py.Dataset
+            The open variable to wrap.
+
+        Returns
+        -------
+        TileArray
+        """
+        return cls.from_tiles(
+            variable.file.filename,
+            variable.shape,
+            variable.dtype,
+            {"name": "xdas", "dataset": variable.name},
+        )
+
     def to_dataset(self):
         """Encode this tile array as its manifest dataset.
 

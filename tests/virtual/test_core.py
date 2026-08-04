@@ -1,3 +1,5 @@
+import h5py
+import numpy as np
 import pytest
 
 from xdas.virtual import (
@@ -35,3 +37,16 @@ class TestVirtualBackend:
         source = VirtualSource("path.h5", "data", (2, 3), "f8")
         assert isinstance(source, VirtualBackend)
         assert isinstance(VirtualStack([source]), VirtualBackend)
+
+    def test_from_variable_dispatches_to_each_backend(self, tmp_path):
+        data = np.arange(6.0).reshape(2, 3)
+        path = tmp_path / "source.h5"
+        with h5py.File(path, "w") as file:
+            file.create_dataset("data", data=data)
+        with h5py.File(path) as file:
+            source = VirtualBackend["hdf5"].from_variable(file["data"])
+            tiled = VirtualBackend["tiles"].from_variable(file["data"])
+        assert isinstance(source, VirtualSource)
+        assert isinstance(tiled, TileArray)
+        np.testing.assert_array_equal(np.asarray(source), data)
+        np.testing.assert_array_equal(np.asarray(tiled), data)
