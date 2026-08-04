@@ -13,6 +13,7 @@
 - `simplify` runs in linear time whatever the number of gaps: the reduce stage is now a one-pass sleeve instead of Douglas-Peucker, which degenerated quadratically on gap-rich coordinates (a 100 000-file gappy archive simplified in minutes; now milliseconds). The deviation guarantee is unchanged — dropped tie points stay within `tolerance` of the curve, surviving values never move — though the surviving tie-point selection may differ slightly on jittery axes (@atrabattoni).
 
 ### Breaking Changes
+- Python 3.10 support is dropped and the numpy requirement is raised to 2.3: the tile manifests use `np.strings` routines introduced in numpy 2.3, which itself requires Python 3.11+. Python 3.10 reaches end of life in October 2026 (@atrabattoni).
 - Passing a bare read function as `engine` now raises a `TypeError`: subclass `xdas.io.Engine` instead (see the data-formats documentation) (@atrabattoni).
 - Misspelled or unsupported keyword arguments passed next to an engine name now raise a `TypeError` instead of being silently ignored, and combining `vtype`, `ctype` or engine keywords with an already configured engine instance raises a `ValueError` (@atrabattoni).
 

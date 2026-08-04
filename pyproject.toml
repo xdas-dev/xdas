@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "xdas"
 dynamic = ["version"]
-requires-python = ">= 3.10"
+requires-python = ">= 3.11"
 authors = [
     { name = "Alister Trabattoni", email = "alister.trabattoni@gmail.com" },
 ]
@@ -17,7 +17,7 @@ dependencies = [
     "loky",
     "msgpack",
     "numba",
-    "numpy>=2.1",
+    "numpy>=2.3",
     "obspy",
     "pandas",
     "plotly",
