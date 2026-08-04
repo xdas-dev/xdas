@@ -8,8 +8,7 @@ import numpy as np
 
 from ..coordinates import Coordinate
 from ..core import DataArray, concat, concat_coords
-from ..tiles import TileArray
-from ..virtual import VirtualSource
+from ..virtual import TileArray, VirtualSource
 from .core import Engine
 
 

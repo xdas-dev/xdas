@@ -12,7 +12,7 @@ import xarray as xr
 
 import xdas as xd
 from xdas.io import Engine
-from xdas.tiles import TileArray
+from xdas.virtual.tiles import TileArray
 
 NX = 5
 
@@ -415,7 +415,7 @@ class TestSourcePaths:
         assert legacy.equals(manifest) and manifest.equals(legacy)
 
     def test_no_common_directory_keeps_paths_whole(self):
-        from xdas.tiles import _split_root
+        from xdas.virtual.tiles import _split_root
 
         mixed = np.array([b"rel/f.h5", b"/abs/g.h5"], dtype=object)
         root, kept = _split_root(mixed)
@@ -446,11 +446,13 @@ class TestSourcePaths:
 
     def test_no_common_directory_falls_back_rootless(self, tmp_path, monkeypatch):
         """Paths sharing no directory (several drives) store whole, rootless."""
-        import xdas.tiles
+        import xdas.virtual.tiles
 
         data = np.arange(4.0 * NX).reshape(4, NX)
         _tile_file(tmp_path / "d.h5", data)
-        monkeypatch.setattr(xdas.tiles, "_split_root", lambda paths: ("", paths))
+        monkeypatch.setattr(
+            xdas.virtual.tiles, "_split_root", lambda paths: ("", paths)
+        )
         manifest = TileArray.from_tiles(str(tmp_path / "d.h5"), (4, NX), "f8", ENGINE)
         assert manifest.root == "" and "root" not in manifest.dataset
         npt.assert_array_equal(np.asarray(manifest), data)
@@ -1002,7 +1004,7 @@ class TestExpandDims:
         npt.assert_array_equal(np.asarray(expanded), reference[np.newaxis])
 
     def test_dispatch_guards(self, stack):
-        from xdas.tiles import _expand_dims_virtual
+        from xdas.virtual.tiles import _expand_dims_virtual
 
         manifest, _ = stack
         expand = np.expand_dims
@@ -1903,7 +1905,7 @@ class TestNumpyProtocols:
         manifest, reference = stack
         mask = reference[:, 0] > 10
         npt.assert_array_equal(manifest[mask], reference[mask])
-        from xdas.tiles import _bounding_key
+        from xdas.virtual.tiles import _bounding_key
 
         with pytest.raises(NotImplementedError, match="boolean mask"):
             _bounding_key(
@@ -1938,7 +1940,7 @@ class TestNumpyProtocols:
         assert casted.dtype == np.float32
         out = np.concatenate([manifest, manifest], 0, None)
         npt.assert_array_equal(out, np.concatenate([reference, reference]))
-        from xdas.tiles import _concatenate_virtual
+        from xdas.virtual.tiles import _concatenate_virtual
 
         concat = np.concatenate
         assert _concatenate_virtual(manifest, concat, (), {}) is NotImplemented

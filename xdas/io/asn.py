@@ -15,8 +15,7 @@ import zmq
 
 from ..coordinates import Coordinate, get_sampling_interval
 from ..core import DataArray, concat_coords
-from ..tiles import TileArray
-from ..virtual import VirtualSource
+from ..virtual import TileArray, VirtualSource
 from .core import Engine
 
 

@@ -12,7 +12,7 @@ from ..coordinates import (
     get_sampling_interval,
 )
 from ..core import DataArray, concat_coords
-from ..tiles import TileArray
+from ..virtual import TileArray
 from .core import Engine
 
 

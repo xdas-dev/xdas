@@ -15,7 +15,7 @@ from dask.array import Array as DaskArray
 from numpy.lib.mixins import NDArrayOperatorsMixin
 
 from ..coordinates import AxisCoordinate, Coordinates
-from ..virtual import _to_human
+from ..virtual.hdf5 import _to_human
 
 HANDLED_NUMPY_FUNCTIONS = {}
 HANDLED_METHODS = {}
@@ -188,7 +188,7 @@ class DataArray(NDArrayOperatorsMixin):
 
     @property
     def data(self):
-        """The underlying array (numpy, dask, :class:`~xdas.virtual.VirtualArray`, or :class:`~xdas.tiles.TileArray`)."""
+        """The underlying array (numpy, dask, :class:`~xdas.virtual.VirtualArray`, or :class:`~xdas.virtual.TileArray`)."""
         return self._data
 
     @data.setter

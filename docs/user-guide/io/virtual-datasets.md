@@ -91,7 +91,7 @@ When loading large part of a virtual dataset, you might end up with nan values. 
 ## Tile Virtualization
 
 With the `tiles` vtype, the mapping is not delegated to HDF5. *Xdas* stores it as a
-{py:class}`xdas.tiles.TileArray`: a plain array manifest that records, for each tile, which
+{py:class}`xdas.virtual.TileArray`: a plain array manifest that records, for each tile, which
 file it comes from and which part of that file it contributes. Reading a region resolves
 which tiles it touches and asks the engine to decode each of them through its `load_tile`
 method. The manifest is ordinary data, so it can be inspected, sliced and concatenated

@@ -2,7 +2,7 @@ import numpy as np
 import numpy.testing as npt
 
 from xdas.io import silixa
-from xdas.tiles import TileArray
+from xdas.virtual import TileArray
 
 
 class FakeTdms:

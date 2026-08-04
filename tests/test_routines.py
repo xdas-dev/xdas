@@ -769,7 +769,7 @@ class TestSortby:
         return expected, xd.concat(runs, "time", tolerance=False)
 
     def test_sorts_tiles_lazily(self, tmp_path):
-        from xdas.tiles import TileArray
+        from xdas.virtual import TileArray
 
         expected, shuffled = self.make_archive(tmp_path, "tiles")
         result = xd.sortby(shuffled, "time")

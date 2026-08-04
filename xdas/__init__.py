@@ -25,7 +25,6 @@ __all__ = [  # noqa: RUF022 - grouped by kind, not alphabetically
     "signal",
     "synthetics",
     "testing",
-    "tiles",
     "virtual",
     # classes
     "Coordinate",
@@ -71,7 +70,6 @@ from . import (
     signal,
     synthetics,
     testing,
-    tiles,
     virtual,
 )
 from .coordinates import (

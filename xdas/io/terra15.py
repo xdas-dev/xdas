@@ -7,8 +7,7 @@ import pandas as pd
 
 from ..coordinates import Coordinate
 from ..core import DataArray
-from ..tiles import TileArray
-from ..virtual import VirtualSource
+from ..virtual import TileArray, VirtualSource
 from .core import Engine
 
 

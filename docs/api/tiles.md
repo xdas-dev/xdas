@@ -1,8 +1,8 @@
 ```{eval-rst}
-.. currentmodule:: xdas.tiles
+.. currentmodule:: xdas.virtual.tiles
 ```
 
-# xdas.tiles
+# xdas.virtual.tiles
 
 Lazy tile-backed virtual arrays: the only backend of the formats that
 HDF5 virtual datasets cannot serve (Silixa TDMS, MiniSEED), the default

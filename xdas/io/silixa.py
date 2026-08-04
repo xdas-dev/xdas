@@ -6,7 +6,7 @@ import numpy as np
 
 from ..coordinates import Coordinate
 from ..core import DataArray
-from ..tiles import TileArray
+from ..virtual import TileArray
 from .core import Engine
 from .tdms import TdmsReader
 

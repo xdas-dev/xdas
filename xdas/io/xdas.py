@@ -19,8 +19,7 @@ from dask.array import Array as DaskArray
 from ..coordinates import Coordinates
 from ..core import DataArray, DataCollection, DataMapping, DataSequence
 from ..dask import create_variable, loads
-from ..tiles import TileArray
-from ..virtual import VirtualArray, VirtualSource
+from ..virtual import TileArray, VirtualArray, VirtualSource
 from .core import Engine
 
 TILES_GROUP = "__tiles__"
@@ -98,7 +97,7 @@ def open_dataarray(fname, group=None, vtype=None):
     vtype : str, optional
         Virtualization backing of the returned data: ``"hdf5"`` (default,
         an HDF5 virtual source) or ``"tiles"`` (a lazy
-        :class:`~xdas.tiles.TileArray` over the stored variable). Files
+        :class:`~xdas.virtual.TileArray` over the stored variable). Files
         that store a tile manifest reopen as tile arrays regardless.
 
     Returns
@@ -251,7 +250,7 @@ def save_dataarray(
             elif isinstance(da.data, DaskArray):
                 warnings.warn(
                     "writing dask-backed virtual arrays is deprecated; the "
-                    "tile-backed engines (xdas.tiles) replace them",
+                    "tile-backed engines (xdas.virtual.tiles) replace them",
                     FutureWarning,
                 )
                 variable = create_variable(

@@ -407,7 +407,7 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         if not isinstance(engine, dict) or "name" not in engine:
             raise ValueError("the engine specification must have a `name` key")
         # imported here: xdas.io imports this module at package init
-        from .io.core import Engine
+        from ..io.core import Engine
 
         Engine[engine["name"]]  # fail fast on unregistered engines
         self._engine = engine
@@ -962,7 +962,7 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
     @functools.cached_property
     def _engine_impl(self):
         """The ``(load_tile, spec)`` of the engine specification."""
-        from .io.core import Engine
+        from ..io.core import Engine
 
         spec = dict(self.engine)
         name = spec.pop("name")

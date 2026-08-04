@@ -6,7 +6,7 @@ import numpy.testing as npt
 import pytest
 
 import xdas as xd
-from xdas.tiles import TileArray
+from xdas.virtual import TileArray
 
 
 def ramp(shape, dtype="float32"):

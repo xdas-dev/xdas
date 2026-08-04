@@ -124,7 +124,7 @@ class Engine:
         """Read the selected sub-box of one tile of *path* (abstract).
 
         The decode half of the tiles machinery: called on the class by
-        :class:`~xdas.tiles.TileArray` once per tile touched, with
+        :class:`~xdas.virtual.TileArray` once per tile touched, with
         exactly one source-local, possibly strided :class:`slice` per
         source axis, in source order — whatever virtual arrangement
         (transposes, inserted axes) the tile array presents — and the

@@ -1,5 +1,5 @@
 """
-Virtual (lazy) array types for deferred HDF5/NetCDF4 access.
+The HDF5 virtual dataset backend (``vtype="hdf5"``).
 
 Includes :class:`VirtualArray` base, :class:`VirtualSource` for a single
 dataset slice, and :class:`VirtualStack` for concatenating sources along

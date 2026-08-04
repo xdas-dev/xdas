@@ -6,7 +6,7 @@ import pytest
 import xdas as xd
 from xdas.coordinates import Coordinate
 from xdas.io.miniseed import MiniSEEDEngine, get_band_code, to_stream
-from xdas.tiles import TileArray
+from xdas.virtual import TileArray
 
 
 def make_network(dirpath, gap=False, samples=100):

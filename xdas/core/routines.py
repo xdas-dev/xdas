@@ -23,7 +23,7 @@ from tqdm import tqdm
 
 from ..coordinates import AxisCoordinate, Coordinates
 from ..parallel import get_workers_count
-from ..virtual import VirtualSource, VirtualStack
+from ..virtual import TileArray, VirtualSource, VirtualStack
 from .dataarray import DataArray
 from .datacollection import DataCollection, DataMapping, DataSequence
 
@@ -1214,7 +1214,7 @@ def sortby(da, dim="first", tolerance=None):
     """
     Sort a blocked virtual data array along *dim* by coordinate value, lazily.
 
-    The data blocks (the tiles of a :class:`~xdas.tiles.TileArray`, the
+    The data blocks (the tiles of a :class:`~xdas.virtual.TileArray`, the
     sources of a :class:`~xdas.virtual.VirtualStack`) are permuted into
     ascending start-value order without reading any of them: the permutation
     is a manifest (or source-list) gather, and the coordinate tie points are
@@ -1244,7 +1244,6 @@ def sortby(da, dim="first", tolerance=None):
         The sorted data array, as lazy as its input.
     """
     from ..coordinates import InterpCoordinate
-    from ..tiles import TileArray
 
     axis = da.get_axis_num(dim)
     dim = da.dims[axis]

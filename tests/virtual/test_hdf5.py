@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 import xdas as xd
-from xdas.virtual import (
+from xdas.virtual.hdf5 import (
     Selection,
     Selectors,
     SingleSelector,
