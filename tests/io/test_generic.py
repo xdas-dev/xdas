@@ -16,6 +16,18 @@ class TestEngineRegistry:
         with pytest.raises(ValueError, match="vtype must be None or a string"):
             Engine["asn"](vtype=42)
 
+    def test_unregistered_vtype_raises_key_error(self):
+        with pytest.raises(KeyError, match="no virtual backend registered"):
+            Engine["asn"](vtype="netcdf")
+
+    def test_auto_engine_validates_vtype_upfront(self):
+        with pytest.raises(KeyError, match="no virtual backend registered"):
+            AutoEngine(vtype="netcdf")
+
+    def test_registered_but_unsupported_vtype_still_engine_checked(self):
+        with pytest.raises(NotImplementedError, match="not supported by"):
+            Engine["silixa"](vtype="hdf5")
+
     def test_dict_ctype_fills_missing_keys(self):
         engine = Engine["asn"](ctype={"time": "interpolated"})
         assert engine.ctype["time"] == "interpolated"

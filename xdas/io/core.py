@@ -8,6 +8,8 @@ Also provides :class:`AutoEngine` for format auto-detection and
 import socket
 from typing import ClassVar
 
+from ..virtual import VirtualBackend
+
 
 class Engine:
     """
@@ -44,7 +46,8 @@ class Engine:
     Notes
     -----
     Subclasses should define class attributes:
-    - `_supported_vtypes` (list): List of supported virtualization types
+    - `_supported_vtypes` (list): List of supported virtualization types, each
+    the name of a registered :class:`~xdas.virtual.VirtualBackend`
     - `_supported_ctypes` (dict): Maps component names to lists of supported coordinate
     types
 
@@ -137,14 +140,14 @@ class Engine:
         raise NotImplementedError
 
     def _parse_vtype(self, vtype):
+        if vtype is not None:
+            if not isinstance(vtype, str):
+                raise ValueError("vtype must be None or a string")
+            VirtualBackend[vtype]  # fail fast on unregistered vtypes
         if self._supported_vtypes is None:
             return vtype
         if vtype is None:
             vtype = self._supported_vtypes[0]
-        elif isinstance(vtype, str):
-            pass
-        else:
-            raise ValueError("vtype must be None or a string")
         if vtype not in self._supported_vtypes:
             raise NotImplementedError(
                 f"vtype '{vtype}' is not supported by {self.__class__.__name__}"
