@@ -23,7 +23,7 @@ from tqdm import tqdm
 
 from ..coordinates import AxisCoordinate, Coordinates
 from ..parallel import get_workers_count
-from ..virtual import TileArray, VirtualSource, VirtualStack
+from ..virtual import TileArray, VirtualBackend, VirtualSource, VirtualStack
 from .dataarray import DataArray
 from .datacollection import DataCollection, DataMapping, DataSequence
 
@@ -31,11 +31,6 @@ from .datacollection import DataCollection, DataMapping, DataSequence
 # per file (~6 KiB) until they are fused. Vtypes that consolidate drain a full
 # batch and carry on; for the others this is a hard ceiling.
 MAX_OPEN_FILES = 100_000
-
-# Vtypes whose concatenation fuses the per-file scan products into one compact
-# object, so draining a batch frees memory. An hdf5 stack keeps one virtual
-# mapping per source, so batching would free nothing.
-CONSOLIDATING_VTYPES = frozenset({"tiles"})
 
 
 def open(
@@ -626,7 +621,7 @@ def open_mfdataarray(
         If no file can be found.
     NotImplementedError
         If more than `MAX_OPEN_FILES` files are given with a vtype that does not
-        consolidate (see `CONSOLIDATING_VTYPES`). A consolidating vtype scans any
+        consolidate (see `VirtualBackend.consolidates`). A consolidating vtype scans any
         number of files, `MAX_OPEN_FILES` at a time; the others hold every scan
         product until the end, so larger sets must be opened in batches and
         combined with `combine_by_coords`.
@@ -645,8 +640,16 @@ def open_mfdataarray(
     if len(paths) == 0:
         raise FileNotFoundError("no file to open")
     engine = _resolve_engine(engine, vtype, ctype, engine_kwargs)
-    if engine.vtype not in CONSOLIDATING_VTYPES and len(paths) > MAX_OPEN_FILES:
-        consolidating = ", ".join(repr(name) for name in sorted(CONSOLIDATING_VTYPES))
+    backend = VirtualBackend._registry.get(engine.vtype)
+    if (
+        not (backend is not None and backend.consolidates)
+        and len(paths) > MAX_OPEN_FILES
+    ):
+        consolidating = ", ".join(
+            repr(vtype)
+            for vtype, cls in sorted(VirtualBackend._registry.items())
+            if cls.consolidates
+        )
         raise NotImplementedError(
             f"cannot open {len(paths)} files at once with vtype "
             f"{engine.vtype!r}: the limit is {MAX_OPEN_FILES}, because its scan "

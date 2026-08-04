@@ -19,7 +19,7 @@ from dask.array import Array as DaskArray
 from ..coordinates import Coordinates
 from ..core import DataArray, DataCollection, DataMapping, DataSequence
 from ..dask import create_variable, loads
-from ..virtual import TileArray, VirtualArray, VirtualSource
+from ..virtual import TileArray, VirtualArray, VirtualBackend, VirtualSource
 from .core import Engine
 
 TILES_GROUP = "__tiles__"
@@ -199,7 +199,7 @@ def save_dataarray(
         fname = str(fname)
 
     if virtual is None:
-        virtual = isinstance(da.data, (VirtualArray, DaskArray, TileArray))
+        virtual = isinstance(da.data, (VirtualBackend, DaskArray))
 
     # initialize
     dataset = xr.Dataset(attrs={"Conventions": "CF-1.9"})
