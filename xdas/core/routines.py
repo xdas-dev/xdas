@@ -641,10 +641,7 @@ def open_mfdataarray(
         raise FileNotFoundError("no file to open")
     engine = _resolve_engine(engine, vtype, ctype, engine_kwargs)
     backend = VirtualBackend._registry.get(engine.vtype)
-    if (
-        not (backend is not None and backend.consolidates)
-        and len(paths) > MAX_OPEN_FILES
-    ):
+    if (backend is None or not backend.consolidates) and len(paths) > MAX_OPEN_FILES:
         consolidating = ", ".join(
             repr(vtype)
             for vtype, cls in sorted(VirtualBackend._registry.items())

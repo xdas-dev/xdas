@@ -114,7 +114,8 @@ def test_febus_block_crossing_reads(tmp_path):
     path = str(tmp_path / "febus.h5")
     make_febus_file(path)
     kwargs = {"overlaps": (1, 1), "offset": 0}
-    expected = xd.open_dataarray(path, engine="febus", **kwargs).values
+    # the hdf5 vtype is the independent reference (tiles is the febus default)
+    expected = xd.open_dataarray(path, engine="febus", vtype="hdf5", **kwargs).values
     result = xd.open_dataarray(path, engine="febus", vtype="tiles", **kwargs)
     assert result.data.engine["block_size"] == 12
     assert result.data.engine["overlaps"] == [1, 1]
