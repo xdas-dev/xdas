@@ -389,18 +389,13 @@ class TestSliceSelector:
 
 
 class TestVirtualArrayAbstract:
-    def test_abstract_stubs(self):
-        va = VirtualArray()
+    def test_cannot_instantiate(self):
+        with pytest.raises(TypeError, match="abstract"):
+            VirtualArray()
+
+    def test_to_dataset_stub(self):
         with pytest.raises(NotImplementedError):
-            _ = va[0]
-        with pytest.raises(NotImplementedError):
-            va.__array__()
-        with pytest.raises(NotImplementedError):
-            _ = va.shape
-        with pytest.raises(NotImplementedError):
-            _ = va.dtype
-        with pytest.raises(NotImplementedError):
-            va.to_dataset(None, None)
+            VirtualArray.to_dataset(None, None, None)
 
 
 class TestVirtualStackExtra:

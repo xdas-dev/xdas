@@ -1,12 +1,13 @@
 """Registry base class :class:`VirtualBackend` for the virtual array backends."""
 
 import math
+from abc import ABC, abstractmethod
 from typing import ClassVar
 
 
-class VirtualBackend:
+class VirtualBackend(ABC):
     """
-    Base class and registry for the virtual array backends.
+    Abstract base class and registry for the virtual array backends.
 
     A virtual backend is a lazy, numpy-like duck array whose values
     stay on disk. The contract, declared here:
@@ -75,49 +76,49 @@ class VirtualBackend:
     # --- the contract, implemented by every backend ---
 
     @property
+    @abstractmethod
     def shape(self):
-        """Tuple of array dimensions (abstract — must be overridden)."""
-        raise NotImplementedError
+        """Tuple of array dimensions."""
 
     @property
+    @abstractmethod
     def dtype(self):
-        """NumPy dtype of the array elements (abstract — must be overridden)."""
-        raise NotImplementedError
+        """NumPy dtype of the array elements."""
 
+    @abstractmethod
     def __getitem__(self, key):
-        """Select lazily, returning an array of the same kind (abstract)."""
-        raise NotImplementedError
+        """Select lazily, returning an array of the same kind."""
 
+    @abstractmethod
     def __array__(self, dtype=None, copy=None):
-        """Materialize as a numpy array (abstract — must be overridden)."""
-        raise NotImplementedError
+        """Materialize as a numpy array (numpy array protocol)."""
 
     @classmethod
+    @abstractmethod
     def from_variable(cls, variable):
         """
         Expose one stored HDF5 variable as this backend's lazy array.
 
-        The open half of the dispatch (abstract — each backend wraps
-        its own way): a virtual source pointing at the variable for the
-        hdf5 backend, a single tile covering it for the tiles backend.
+        The open half of the dispatch — each backend wraps its own way:
+        a virtual source pointing at the variable for the hdf5 backend,
+        a single tile covering it for the tiles backend.
 
         Parameters
         ----------
         variable : h5py.Dataset
             The open variable to wrap.
         """
-        raise NotImplementedError
 
+    @abstractmethod
     def create_variable(self, file, name, dims=None, dtype=None):
         """
         Write this array as variable *name* of an open h5netcdf *file*.
 
-        The first half of the persistence contract (abstract — each
-        backend writes its own stored form): an HDF5 virtual dataset
-        for the hdf5 backend, a placeholder variable carrying the
-        engine specification for the tiles backend.
+        The first half of the persistence contract — each backend
+        writes its own stored form: an HDF5 virtual dataset for the
+        hdf5 backend, a placeholder variable carrying the engine
+        specification for the tiles backend.
         """
-        raise NotImplementedError
 
     def finalize_save(self, fname, group=None):
         """
