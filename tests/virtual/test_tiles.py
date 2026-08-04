@@ -1403,7 +1403,7 @@ class TestManipulationRoutines:
 
     def test_lazy_rewrite_guards(self, stack):
         """Handlers step aside for calls that are not theirs to rewrite."""
-        from xdas import tiles
+        from xdas.virtual import tiles
 
         manifest, _ = stack
         other = np.zeros(3)
@@ -1689,7 +1689,7 @@ class TestAxisMap:
 
     def test_map_dispatch_guards(self, stack):
         """Handlers step aside for calls that are not theirs to rewrite."""
-        from xdas import tiles
+        from xdas.virtual import tiles
 
         manifest, _ = stack
         other = np.zeros((3, 4))
@@ -1871,7 +1871,7 @@ class TestSignedSteps:
         npt.assert_array_equal(picked, reference[::-1, [1, 3]])
 
     def test_flip_dispatch_guards(self, stack):
-        from xdas import tiles
+        from xdas.virtual import tiles
 
         manifest, _ = stack
         other = np.zeros((3, 4))
