@@ -1,5 +1,28 @@
 # Release notes
 
+## 0.2.9 (unreleased)
+
+### New Features
+- **Tile-backed virtual arrays.** The new `xdas.virtual.tiles` module exposes file archives as one lazy `TileArray`. Slicing (any step, including negative), integer indexing, `np.newaxis`, concatenation, and the numpy manipulation routines (the `transpose`, `flip`, `split`, `stack` and `atleast` families, `expand_dims`, `squeeze`, `roll`, `tile`, `delete`, `append`/`insert`) all stay lazy; whole-array reductions (`sum`, `mean`, `min`, `max`, …) stream one tile row at a time; reads touch only the tiles the selection overlaps (@atrabattoni).
+- **`vtype="tiles"` on every HDF5 engine.** The open functions with `vtype="tiles"` return tile-backed arrays for the asn, febus, terra15, apsensing, prodml and native xdas engines. Silixa and MiniSEED always emit them now (replacing the serialized-dask-graph fallback, with time-axis push-down for Silixa), and Febus defaults to them — one tile per file, where the HDF5 backing needed one virtual mapping per data block. Custom engines add support by implementing `Engine.load_tile(path, selection, **params)` (@atrabattoni).
+- Tile-backed arrays round-trip through the native xdas netCDF format: the manifest is stored as a compact `__tiles__` sibling group, relocatable by editing its single root path and directly readable by the 0.3 line (@atrabattoni).
+- **Explicit engine configuration.** The open functions declare `engine`, `vtype` and `ctype`, and `engine` also accepts a configured `xdas.io.Engine` instance. Format-specific parameters (`overlaps`/`offset` for febus, `ignore_last_sample` for miniseed, `swapped_dims` for prodml, `tz` for terra15, `group` for the native format) are engine constructor parameters, validated up front (@atrabattoni).
+- `open_mfdataarray` no longer caps the number of files when the resolved vtype consolidates its scan results, which `tiles` does; the 100 000 ceiling remains for `hdf5`, which builds one virtual mapping per file and so cannot be fused into anything smaller (@atrabattoni).
+- **Streamed multi-file combining.** `open_mfdataarray` now fuses scan results every 100 000 files instead of holding one data array per file until the end, so memory no longer grows with the archive: results are accumulated without coordinate simplification (lossless in any arrival order) and sorted once at the end, giving the same result as before whatever the file naming. Acquisitions interleaved in time now group by compatibility, one array per acquisition, instead of splitting at each alternation. Since the batch size is also the ceiling, anything that opened in one call before still takes the single-batch path unchanged (@atrabattoni).
+- **`xdas.sortby`.** Sort a tile- or stack-backed data array along a dimension by coordinate value, lazily: the blocks are permuted through the manifest without reading any data. This is how the streamed combine orders shuffled archives, exposed for standalone use (@atrabattoni).
+- `simplify` runs in linear time whatever the number of gaps: the reduce stage is now a one-pass sleeve instead of Douglas-Peucker, which degenerated quadratically on gap-rich coordinates (a 100 000-file gappy archive simplified in minutes; now milliseconds). The deviation guarantee is unchanged — dropped tie points stay within `tolerance` of the curve, surviving values never move — though the surviving tie-point selection may differ slightly on jittery axes (@atrabattoni).
+
+### Breaking Changes
+- Python 3.10 support is dropped and the numpy requirement is raised to 2.3: the tile manifests use `np.strings` routines introduced in numpy 2.3, which itself requires Python 3.11+. Python 3.10 reaches end of life in October 2026 (@atrabattoni).
+- Passing a bare read function as `engine` now raises a `TypeError`: subclass `xdas.io.Engine` instead (see the data-formats documentation) (@atrabattoni).
+- Misspelled or unsupported keyword arguments passed next to an engine name now raise a `TypeError` instead of being silently ignored, and combining `vtype`, `ctype` or engine keywords with an already configured engine instance raises a `ValueError` (@atrabattoni).
+
+### Deprecations
+- Writing dask-backed virtual arrays is deprecated and emits a `FutureWarning`; existing files still open, but no engine emits them any more (@atrabattoni).
+
+### Bug Fixes
+- The miniseed `ctype` argument is now honored: it previously routed to an unused attribute and the reader always built interpolated time coordinates. The default is unchanged (@atrabattoni).
+
 ## 0.2.8
 
 ### New Features

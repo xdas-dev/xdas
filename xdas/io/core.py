@@ -8,6 +8,8 @@ Also provides :class:`AutoEngine` for format auto-detection and
 import socket
 from typing import ClassVar
 
+from ..virtual import VirtualBackend
+
 
 class Engine:
     """
@@ -44,32 +46,39 @@ class Engine:
     Notes
     -----
     Subclasses should define class attributes:
-    - `_supported_vtypes` (list): List of supported virtualization types
+    - `_supported_vtypes` (list): List of supported virtualization types, each
+    the name of a registered :class:`~xdas.virtual.VirtualBackend`
     - `_supported_ctypes` (dict): Maps component names to lists of supported coordinate
     types
+
+    Engines with format-specific parameters define their own `__init__` taking those
+    parameters after `vtype` and `ctype` and calling `super().__init__(vtype, ctype)`.
+    They are then reachable from the open functions either by configuring an instance
+    or as extra keyword arguments next to the engine name.
 
     Examples
     --------
     Subclass registration (automatic via `__init_subclass__`):
 
-    >>> class NetCDFEngine(Engine, name="netcdf", aliases=["nc"]):
+    >>> class MyFormatEngine(Engine, name="myformat", aliases=["my"]):
     ...     _supported_vtypes = ["hdf5"]
     ...     _supported_ctypes = {
     ...         "time": ["sampled", "dense"], "distance": ["sampled", "dense"]
     ...     }
-    ...     def open_dataarray(self, fname, **kwargs):
-    ...         ...
+    ...     def open_dataarray(self, fname):
+    ...         raise NotImplementedError
 
     Access registered engines:
 
-    >>> engine = Engine["netcdf"](vtype="hdf5")
-    >>> engine = Engine["nc"](ctype="dense")  # Using alias
+    >>> engine = Engine["myformat"](vtype="hdf5")
+    >>> engine = Engine["my"](ctype="dense")  # Using alias
     """
 
     _registry: ClassVar[dict] = {}
     _aliases: ClassVar[dict] = {}
     _supported_vtypes = None
     _supported_ctypes = None
+    name = None
 
     def __init__(self, vtype=None, ctype=None):
         self.vtype = self._parse_vtype(vtype)
@@ -78,6 +87,7 @@ class Engine:
     def __init_subclass__(cls, *, name=None, aliases=None, **kwargs):
         super().__init_subclass__(**kwargs)
         if name is not None:
+            cls.name = name
             Engine._registry[name] = cls
         if aliases is not None:
             for alias in aliases:
@@ -91,9 +101,12 @@ class Engine:
         elif item in cls._aliases:
             return cls._registry[cls._aliases[item]]
         else:
-            raise KeyError(f"Item '{item}' not found in registry or aliases")
+            raise KeyError(
+                f"no engine registered under {item!r}; "
+                f"available: {sorted([*cls._registry, *cls._aliases])}"
+            )
 
-    def open_dataarray(self, fname, **kwargs):
+    def open_dataarray(self, fname):
         """Open *fname* and return a :class:`DataArray` (abstract)."""
         raise NotImplementedError
 
@@ -101,7 +114,7 @@ class Engine:
         """Write *da* to *fname* (abstract)."""
         raise NotImplementedError
 
-    def open_datacollection(self, fname, **kwargs):
+    def open_datacollection(self, fname):
         """Open *fname* and return a :class:`DataCollection` (abstract)."""
         raise NotImplementedError
 
@@ -109,15 +122,32 @@ class Engine:
         """Write *dc* to *fname* (abstract)."""
         raise NotImplementedError
 
+    @staticmethod
+    def load_tile(path, selection, **kwargs):
+        """Read the selected sub-box of one tile of *path* (abstract).
+
+        The decode half of the tiles machinery: called on the class by
+        :class:`~xdas.virtual.TileArray` once per tile touched, with
+        exactly one source-local, possibly strided :class:`slice` per
+        source axis, in source order — whatever virtual arrangement
+        (transposes, inserted axes) the tile array presents — and the
+        manifest's engine specification (merged with the per-tile
+        variables) as keyword arguments. It must return exactly the
+        selected sub-box of the decoded source as a numpy array, and must
+        depend only on its arguments — never on engine instance state —
+        so that stored manifests decode identically everywhere.
+        """
+        raise NotImplementedError
+
     def _parse_vtype(self, vtype):
+        if vtype is not None:
+            if not isinstance(vtype, str):
+                raise ValueError("vtype must be None or a string")
+            VirtualBackend[vtype]  # fail fast on unregistered vtypes
         if self._supported_vtypes is None:
             return vtype
         if vtype is None:
             vtype = self._supported_vtypes[0]
-        elif isinstance(vtype, str):
-            pass
-        else:
-            raise ValueError("vtype must be None or a string")
         if vtype not in self._supported_vtypes:
             raise NotImplementedError(
                 f"vtype '{vtype}' is not supported by {self.__class__.__name__}"
@@ -175,6 +205,8 @@ class AutoEngine(Engine):
     ctype : str or dict, optional
         The coordinate type(s) to use. Passed to all engines during auto-detection.
         Can be a string, dict, or None (each engine uses its default).
+        Format-specific engine parameters cannot be used with auto-detection:
+        they require naming a concrete engine.
 
     Attributes
     ----------
@@ -198,12 +230,12 @@ class AutoEngine(Engine):
 
     _last_successful_engine = "xdas"
 
-    def open_dataarray(self, fname, **kwargs):
+    def open_dataarray(self, fname):
         """Try each registered engine in order and return the first successful result."""
         for engine in self._ordered_engines():
             try:
                 out = Engine[engine](vtype=self.vtype, ctype=self.ctype).open_dataarray(
-                    fname, **kwargs
+                    fname
                 )
                 AutoEngine._last_successful_engine = engine
                 return out

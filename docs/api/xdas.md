@@ -32,6 +32,7 @@
    concatenate
    concat_coords
    get_sampling_interval
+   sortby
    split
    plot_availability
 ```

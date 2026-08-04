@@ -2,8 +2,8 @@ import re
 
 import xdas as xd
 
-# Release segment, optionally followed by a PEP 440 pre-release marker (e.g. 0.2.8rc0).
-VERSION_PATTERN = re.compile(r"^\d+(\.\d+)*((a|b|rc)\d+)?$")
+# Release segment, plus the optional PEP 440 pre/post/dev markers (e.g. 0.2.9.dev0).
+VERSION_PATTERN = re.compile(r"^\d+(\.\d+)*((a|b|rc)\d+)?(\.post\d+)?(\.dev\d+)?$")
 
 
 def test_version():

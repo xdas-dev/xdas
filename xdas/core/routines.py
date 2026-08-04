@@ -23,9 +23,14 @@ from tqdm import tqdm
 
 from ..coordinates import AxisCoordinate, Coordinates
 from ..parallel import get_workers_count
-from ..virtual import VirtualSource, VirtualStack
+from ..virtual import TileArray, VirtualBackend, VirtualSource, VirtualStack
 from .dataarray import DataArray
 from .datacollection import DataCollection, DataMapping, DataSequence
+
+# How many scan products one call may hold at once: a scan keeps one data array
+# per file (~6 KiB) until they are fused. Vtypes that consolidate drain a full
+# batch and carry on; for the others this is a hard ceiling.
+MAX_OPEN_FILES = 100_000
 
 
 def open(
@@ -34,9 +39,11 @@ def open(
     tolerance=None,
     squeeze=None,
     engine=None,
+    vtype=None,
+    ctype=None,
     parallel=None,
     verbose=False,
-    **kwargs,
+    **engine_kwargs,
 ):
     """
     Open one or several files as a data array or collection.
@@ -75,10 +82,17 @@ def open(
         contains only one data array. When ``None`` (default), the behaviour depends
         on the dispatch path: ``True`` for multi-file data arrays, ``False``
         otherwise. Ignored when opening a single file.
-    engine : str or callable, optional
-        The file format engine to use, or a custom read callable. When ``None``
-        (default), the xdas NetCDF format is assumed. Providing an engine skips the
-        automatic DataCollection detection.
+    engine : str or Engine, optional
+        The file format engine to use, given by name or as a configured
+        :class:`~xdas.io.Engine` instance. When ``None`` (default), the format is
+        auto-detected. Providing an engine skips the automatic DataCollection
+        detection.
+    vtype : str, optional
+        The virtualization type to use. If None, the engine default is used.
+        Only valid when `engine` is given by name (or None).
+    ctype : str or dict, optional
+        The coordinate type(s) to use. If None, the engine defaults are used.
+        Only valid when `engine` is given by name (or None).
     parallel: bool or int, optional
         Whether to use multiprocessing to fetch file metadata. If False or 1,
         runs in single-process mode. If an integer, use that many processes.
@@ -87,9 +101,9 @@ def open(
     verbose : bool, optional
         Whether to display a progress bar while reading metadata. Ignored when
         opening a single file. Default is ``False``.
-    **kwargs
-        Additional keyword arguments forwarded to the underlying engine read
-        function. Only used when `engine` is not ``None``.
+    **engine_kwargs
+        Format-specific engine parameters forwarded to the engine constructor
+        (e.g. ``overlaps`` for "febus"). Only valid when `engine` is given by name.
 
     Returns
     -------
@@ -153,7 +167,9 @@ def open(
                     return open_datacollection(paths)
                 except Exception:  # noqa: BLE001, S110 - fall back to dataarray
                     pass
-            return open_dataarray(paths, engine=engine, **kwargs)
+            return open_dataarray(
+                paths, engine=engine, vtype=vtype, ctype=ctype, **engine_kwargs
+            )
         case "multi-file":
             if engine is None:
                 try:
@@ -173,9 +189,11 @@ def open(
                 tolerance,
                 squeeze=True if squeeze is None else squeeze,
                 engine=engine,
+                vtype=vtype,
+                ctype=ctype,
                 parallel=parallel,
                 verbose=verbose,
-                **kwargs,
+                **engine_kwargs,
             )
         case "tree-like":  # pragma: no branch
             return open_mfdatatree(
@@ -184,9 +202,11 @@ def open(
                 tolerance,
                 squeeze=False if squeeze is None else squeeze,
                 engine=engine,
+                vtype=vtype,
+                ctype=ctype,
                 parallel=parallel,
                 verbose=verbose,
-                **kwargs,
+                **engine_kwargs,
             )
 
 
@@ -245,10 +265,11 @@ def open_mfdatacollection(
         )
     if len(paths) == 0:
         raise FileNotFoundError("no file to open")
-    if len(paths) > 100_000:
+    if len(paths) > MAX_OPEN_FILES:
         raise NotImplementedError(
-            "The maximum number of file that can be opened at once is for now limited "
-            "to 100 000."
+            f"cannot open {len(paths)} files at once: the limit is "
+            f"{MAX_OPEN_FILES}, because the scan holds one data collection per "
+            "file in memory. Open the files in batches and combine the results."
         )
     max_workers = get_workers_count(parallel)
     if max_workers == 1:
@@ -278,9 +299,11 @@ def open_mfdatatree(
     tolerance=None,
     squeeze=False,
     engine=None,
+    vtype=None,
+    ctype=None,
     verbose=False,
     parallel=None,
-    **kwargs,
+    **engine_kwargs,
 ):
     """
     Open a directory tree structure as a data collection.
@@ -312,8 +335,15 @@ def open_mfdatatree(
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
-    engine: str or callable, optional
-        The type of file to open or a read function. Default to xdas netcdf format.
+    engine: str or Engine, optional
+        The file format engine to use, given by name or as a configured
+        :class:`~xdas.io.Engine` instance. Default to format auto-detection.
+    vtype : str, optional
+        The virtualization type to use. If None, the engine default is used.
+        Only valid when `engine` is given by name (or None).
+    ctype : str or dict, optional
+        The coordinate type(s) to use. If None, the engine defaults are used.
+        Only valid when `engine` is given by name (or None).
     parallel: bool or int, optional
         Whether to use multiprocessing to fetch file metadata. If False or 1,
         runs in single-process mode. If an integer, use that many processes.
@@ -321,8 +351,9 @@ def open_mfdatatree(
         global xdas configuration. Default to None.
     verbose: bool
         Whether to display a progress bar. Default to False.
-    **kwargs
-        Additional keyword arguments to be passed to the read function.
+    **engine_kwargs
+        Format-specific engine parameters forwarded to the engine constructor
+        (e.g. ``overlaps`` for "febus"). Only valid when `engine` is given by name.
 
     Returns
     -------
@@ -389,7 +420,17 @@ def open_mfdatatree(
         bag.append(fname)
 
     return collect(
-        tree, fields, dim, tolerance, squeeze, engine, parallel, verbose, **kwargs
+        tree,
+        fields,
+        dim,
+        tolerance,
+        squeeze,
+        engine,
+        vtype,
+        ctype,
+        parallel,
+        verbose,
+        **engine_kwargs,
     )
 
 
@@ -400,9 +441,11 @@ def collect(
     tolerance=None,
     squeeze=False,
     engine=None,
+    vtype=None,
+    ctype=None,
     parallel=None,
     verbose=False,
-    **kwargs,
+    **engine_kwargs,
 ):
     """
     Collect the data from a tree of paths using `fields` as level names.
@@ -422,8 +465,15 @@ def collect(
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
-    engine: str or callable, optional
-        The type of file to open or a read function. Default to xdas netcdf format.
+    engine: str or Engine, optional
+        The file format engine to use, given by name or as a configured
+        :class:`~xdas.io.Engine` instance. Default to format auto-detection.
+    vtype : str, optional
+        The virtualization type to use. If None, the engine default is used.
+        Only valid when `engine` is given by name (or None).
+    ctype : str or dict, optional
+        The coordinate type(s) to use. If None, the engine defaults are used.
+        Only valid when `engine` is given by name (or None).
     parallel: bool or int, optional
         Whether to use multiprocessing to fetch file metadata. If False or 1,
         runs in single-process mode. If an integer, use that many processes.
@@ -431,8 +481,9 @@ def collect(
         global xdas configuration. Default to None.
     verbose: bool
         Whether to display a progress bar. Default to False.
-    **kwargs
-        Additional keyword arguments to be passed to the read function.
+    **engine_kwargs
+        Format-specific engine parameters forwarded to the engine constructor
+        (e.g. ``overlaps`` for "febus"). Only valid when `engine` is given by name.
 
 
     Returns
@@ -446,7 +497,16 @@ def collect(
     for key, value in tree.items():
         if isinstance(value, list):
             dc = open_mfdataarray(
-                value, dim, tolerance, squeeze, engine, parallel, verbose, **kwargs
+                value,
+                dim,
+                tolerance,
+                squeeze,
+                engine,
+                vtype,
+                ctype,
+                parallel,
+                verbose,
+                **engine_kwargs,
             )
             dc.name = fields[0]
             collection[key] = dc
@@ -458,9 +518,11 @@ def collect(
                 tolerance,
                 squeeze,
                 engine,
+                vtype,
+                ctype,
                 parallel,
                 verbose,
-                **kwargs,
+                **engine_kwargs,
             )
     return collection
 
@@ -473,15 +535,38 @@ def defaulttree(depth):
         return defaultdict(lambda: defaulttree(depth - 1))
 
 
+def _resolve_engine(engine, vtype, ctype, engine_kwargs):
+    """Turn the `engine` argument of the open functions into an Engine instance."""
+    from ..io.core import Engine
+
+    if isinstance(engine, Engine):
+        if vtype is not None or ctype is not None or engine_kwargs:
+            raise ValueError(
+                "`vtype`, `ctype` and engine keyword arguments cannot be combined "
+                "with an already configured engine instance; configure the instance "
+                "instead"
+            )
+        return engine
+    elif engine is None or isinstance(engine, str):
+        return Engine[engine](vtype=vtype, ctype=ctype, **engine_kwargs)
+    else:
+        raise TypeError(
+            "engine must be None, a registered engine name or an Engine instance, "
+            f"found {type(engine)}"
+        )
+
+
 def open_mfdataarray(
     paths,
     dim="first",
     tolerance=None,
     squeeze=True,
     engine=None,
+    vtype=None,
+    ctype=None,
     parallel=None,
     verbose=False,
-    **kwargs,
+    **engine_kwargs,
 ):
     """
     Open a multiple file dataset.
@@ -504,8 +589,15 @@ def open_mfdataarray(
     squeeze : bool, optional
         Whether to return a DataArray instead of a DataCollection if the combination
         results in a data collection containing a unique data array.
-    engine: str or callable, optional
-        The type of file to open or a read function. Default to xdas netcdf format.
+    engine: str or Engine, optional
+        The file format engine to use, given by name or as a configured
+        :class:`~xdas.io.Engine` instance. Default to format auto-detection.
+    vtype : str, optional
+        The virtualization type to use. If None, the engine default is used.
+        Only valid when `engine` is given by name (or None).
+    ctype : str or dict, optional
+        The coordinate type(s) to use. If None, the engine defaults are used.
+        Only valid when `engine` is given by name (or None).
     parallel: bool or int, optional
         Whether to use multiprocessing to fetch file metadata. If False or 1,
         runs in single-process mode. If an integer, use that many processes.
@@ -513,8 +605,9 @@ def open_mfdataarray(
         global xdas configuration. Default to None.
     verbose: bool
         Whether to display a progress bar. Default to False.
-    **kwargs
-        Additional keyword arguments to be passed to the read function.
+    **engine_kwargs
+        Format-specific engine parameters forwarded to the engine constructor
+        (e.g. ``overlaps`` for "febus"). Only valid when `engine` is given by name.
 
     Returns
     -------
@@ -526,6 +619,12 @@ def open_mfdataarray(
     ------
     FileNotFound
         If no file can be found.
+    NotImplementedError
+        If more than `MAX_OPEN_FILES` files are given with a vtype that does not
+        consolidate (see `VirtualBackend.consolidates`). A consolidating vtype scans any
+        number of files, `MAX_OPEN_FILES` at a time; the others hold every scan
+        product until the end, so larger sets must be opened in batches and
+        combined with `combine_by_coords`.
     """
     paths = _ensure_str_paths(paths)
     if isinstance(paths, str):
@@ -540,29 +639,49 @@ def open_mfdataarray(
         )
     if len(paths) == 0:
         raise FileNotFoundError("no file to open")
-    if len(paths) > 100_000:
+    engine = _resolve_engine(engine, vtype, ctype, engine_kwargs)
+    backend = VirtualBackend._registry.get(engine.vtype)
+    if (backend is None or not backend.consolidates) and len(paths) > MAX_OPEN_FILES:
+        consolidating = ", ".join(
+            repr(vtype)
+            for vtype, cls in sorted(VirtualBackend._registry.items())
+            if cls.consolidates
+        )
         raise NotImplementedError(
-            "The maximum number of file that can be opened at once is for now limited "
-            "to 100 000."
+            f"cannot open {len(paths)} files at once with vtype "
+            f"{engine.vtype!r}: the limit is {MAX_OPEN_FILES}, because its scan "
+            "products cannot be consolidated into a compact one. Open the files "
+            "in batches and pass the results to `combine_by_coords`, or use a "
+            f"vtype that consolidates ({consolidating}), which has no ceiling."
         )
     max_workers = get_workers_count(parallel)
-    objs = []
+    objs = []  # pending scan products, drained into `runs` every MAX_OPEN_FILES
+    runs = []  # per-batch continuous runs (streaming mode only)
     failures = []
-    if (max_workers == 1) or (engine == "miniseed"):  # TODO: dirty miniseed fix
+
+    def consume(da):
+        # stream the combine: every MAX_OPEN_FILES scan products are fused into
+        # compact runs (losslessly: no coordinate simplification) and freed,
+        # so memory is bounded by the batch, not the archive
+        objs.append(da)
+        if len(objs) >= MAX_OPEN_FILES:
+            runs.extend(combine_by_coords(objs, dim, False, False))
+            objs.clear()
+
+    if (max_workers == 1) or (engine.name == "miniseed"):  # TODO: dirty miniseed fix
         iterator = (
             tqdm(paths, desc="Fetching metadata from files") if verbose else paths
         )
         for path in iterator:
             try:
-                objs.append(open_dataarray(path, engine=engine, **kwargs))
+                consume(open_dataarray(path, engine=engine))
             except Exception as error:  # noqa: BLE001 - collected and warned below
                 failures.append((path, error))
                 warnings.warn(f"could not open {path}: {error}", RuntimeWarning)
     else:
         executor = get_reusable_executor(max_workers)
         futures_to_paths = {
-            executor.submit(open_dataarray, path, engine=engine, **kwargs): path
-            for path in paths
+            executor.submit(open_dataarray, path, engine=engine): path for path in paths
         }
         if verbose:
             iterator = tqdm(
@@ -580,16 +699,75 @@ def open_mfdataarray(
                 failures.append((path, error))
                 warnings.warn(f"could not open {path}: {error}", RuntimeWarning)
             else:
-                objs.append(obj)
-    if len(objs) == 0:  # there must be failures
+                consume(obj)
+    if not objs and not runs:  # there must be failures
         path, error = failures[0]
         raise RuntimeError(
-            f"could not open any file with engine: {engine}; first failure was {path}: {error}"
+            f"could not open any file with engine: "
+            f"{engine.name or type(engine).__name__}; "
+            f"first failure was {path}: {error}"
         ) from error
-    return combine_by_coords(objs, dim, tolerance, squeeze, None, verbose)
+    if not runs:
+        # a single batch: the exact monolithic path
+        return combine_by_coords(objs, dim, tolerance, squeeze, None, verbose)
+    if objs:
+        runs.extend(combine_by_coords(objs, dim, False, False))
+        objs.clear()
+    return _combine_runs(runs, dim, tolerance, squeeze)
 
 
-def open_dataarray(fname, engine=None, vtype=None, ctype=None, **kwargs):
+def _combine_runs(runs, dim, tolerance, squeeze):
+    """Fuse the compact runs of a streamed scan into the final collection.
+
+    Runs are grouped by compatibility signature (unlike the monolithic
+    walk, grouping does not depend on time order, so acquisitions
+    interleaved in time still fuse into one array each). Each group is
+    concatenated without simplification — losslessly, whatever the arrival
+    order — then :func:`sortby` permutes the tiles into coordinate order
+    and spends the whole *tolerance* budget once, on sorted segments:
+    the same state, and so the same result, as the monolithic combine.
+    Groups whose data or coordinate :func:`sortby` cannot permute (eager
+    data, non-interpolated coordinates) are concatenated with *tolerance*
+    directly, correct whenever batches do not interleave in time.
+    """
+    if dim == "first":
+        dim = runs[0].dims[0]
+    if dim == "last":
+        dim = runs[0].dims[-1]
+    bags = []
+    for da in runs:
+        for bag in bags:
+            try:
+                bag.append(da)
+                break
+            except CompatibilityError:
+                continue
+        else:
+            bag = Bag(dim)
+            bag.append(da)
+            bags.append(bag)
+    results = []
+    for bag in bags:
+        try:
+            fused = sortby(concat(bag, dim, tolerance=False), dim, tolerance)
+        except (KeyError, ValueError, NotImplementedError):
+            fused = concat(bag, dim, tolerance)
+        results.append(fused)
+    if all(dim in da.coords for da in results):
+        results.sort(
+            key=lambda da: (
+                da[dim][0].values
+                if isinstance(da[dim], AxisCoordinate)
+                else da[dim].values
+            )
+        )
+    collection = DataCollection(results)
+    if squeeze and len(collection) == 1:
+        return collection[0]
+    return collection
+
+
+def open_dataarray(fname, engine=None, vtype=None, ctype=None, **engine_kwargs):
     """
     Open a dataarray.
 
@@ -597,10 +775,18 @@ def open_dataarray(fname, engine=None, vtype=None, ctype=None, **kwargs):
     ----------
     fname : str
         The path of the dataarray.
-    engine: str or callable, optional
-        The type of file to open or a read function. Default to xdas netcdf format.
-    **kwargs
-        Additional keyword arguments to be passed to the read function.
+    engine: str or Engine, optional
+        The file format engine to use, given by name or as a configured
+        :class:`~xdas.io.Engine` instance. Default to format auto-detection.
+    vtype : str, optional
+        The virtualization type to use. If None, the engine default is used.
+        Only valid when `engine` is given by name (or None).
+    ctype : str or dict, optional
+        The coordinate type(s) to use. If None, the engine defaults are used.
+        Only valid when `engine` is given by name (or None).
+    **engine_kwargs
+        Format-specific engine parameters forwarded to the engine constructor
+        (e.g. ``overlaps`` for "febus"). Only valid when `engine` is given by name.
 
     Returns
     -------
@@ -609,12 +795,13 @@ def open_dataarray(fname, engine=None, vtype=None, ctype=None, **kwargs):
 
     Raises
     ------
+    TypeError
+        If `engine` is neither None, an engine name nor an Engine instance, or
+        if an engine keyword argument is unknown to the engine.
     ValueError
-        If the engine is not recognized.
-
-    Raises
-    ------
-    FileNotFound
+        If `vtype`, `ctype` or engine keyword arguments are combined with an
+        already configured engine instance.
+    FileNotFoundError
         If no file can be found.
     """
     # parse & checks
@@ -623,15 +810,8 @@ def open_dataarray(fname, engine=None, vtype=None, ctype=None, **kwargs):
         raise FileNotFoundError("no file to open")
 
     # dispatch & open
-    if engine is None or isinstance(engine, str):
-        from ..io.core import Engine
-
-        engine = Engine[engine](vtype=vtype, ctype=ctype)
-        return engine.open_dataarray(fname, **kwargs)
-    elif callable(engine):
-        return engine(fname, **kwargs)
-    else:
-        raise ValueError("engine not recognized")
+    engine = _resolve_engine(engine, vtype, ctype, engine_kwargs)
+    return engine.open_dataarray(fname)
 
 
 def open_datacollection(fname, group=None):
@@ -1028,6 +1208,101 @@ def concat(
 
 
 concatenate = concat  # TODO: deprecate it
+
+
+def sortby(da, dim="first", tolerance=None):
+    """
+    Sort a blocked virtual data array along *dim* by coordinate value, lazily.
+
+    The data blocks (the tiles of a :class:`~xdas.virtual.TileArray`, the
+    sources of a :class:`~xdas.virtual.VirtualStack`) are permuted into
+    ascending start-value order without reading any of them: the permutation
+    is a manifest (or source-list) gather, and the coordinate tie points are
+    gathered blockwise the same way. Ties between equal start values keep
+    their current order. The reordered coordinate is then simplified with
+    *tolerance*, spending the accuracy budget once, on sorted segments —
+    exactly as :func:`concat` does on time-ordered inputs.
+
+    Parameters
+    ----------
+    da : DataArray
+        The data array to sort. Its data must be a :class:`TileArray` or a
+        :class:`VirtualStack` blocked along *dim*, and its *dim* coordinate
+        an interpolated coordinate whose tie points align with the block
+        boundaries (the state produced by concatenation without
+        simplification, ``tolerance=False``).
+    dim : str, optional
+        The dimension to sort along. Default to "first".
+    tolerance : float or timedelta64, optional
+        The tolerance spent by the final coordinate simplification. If None
+        (default), each coordinate spends its own declared tolerance. Pass
+        ``False`` to skip simplification entirely.
+
+    Returns
+    -------
+    DataArray
+        The sorted data array, as lazy as its input.
+    """
+    from ..coordinates import InterpCoordinate
+
+    axis = da.get_axis_num(dim)
+    dim = da.dims[axis]
+    coord = da.coords[dim]
+    if not isinstance(coord, InterpCoordinate):
+        raise NotImplementedError("can only sort along an interpolated coordinate")
+    data = da.data
+    if isinstance(data, TileArray):
+        sizes = np.asarray(data.chunks[axis])
+    elif isinstance(data, VirtualStack) and data.axis == axis:
+        sizes = np.asarray([source.shape[axis] for source in data.sources])
+    else:
+        raise NotImplementedError(
+            "can only sort a TileArray or a VirtualStack blocked along `dim`"
+        )
+    edges = np.concatenate(([0], np.cumsum(sizes)))
+    tie_indices = coord.tie_indices
+    tie_values = coord.tie_values
+    order = np.argsort(coord._get_value(edges[:-1]), kind="stable")
+    if np.array_equal(order, np.arange(len(order))):
+        sorted_coord = coord
+    else:
+        # every block must begin and end on a tie point, so that the blockwise
+        # gather is exact: the state concatenation without simplification
+        # leaves; a simplified coordinate can only be verified, not permuted
+        starts = np.searchsorted(tie_indices, edges[:-1])
+        ends = np.searchsorted(tie_indices, edges[1:] - 1, side="right")
+        if not (
+            np.array_equal(tie_indices[starts], edges[:-1])
+            and np.array_equal(tie_indices[ends - 1], edges[1:] - 1)
+        ):
+            raise NotImplementedError(
+                "tie points do not align with the block boundaries; sort "
+                "before simplifying (or concatenate with `tolerance=False`)"
+            )
+        if isinstance(data, TileArray):
+            data = data._permute_tiles(order, axis)
+        else:
+            data = VirtualStack([data.sources[i] for i in order], axis)
+        # blockwise tie-point gather, fully vectorized: for each block in
+        # sorted order, its run of tie points, re-offset to its new position
+        counts = (ends - starts)[order]
+        offsets = np.cumsum(counts) - counts
+        gather = np.arange(counts.sum()) - np.repeat(offsets, counts)
+        gather += np.repeat(starts[order], counts)
+        new_edges = np.cumsum(sizes[order]) - sizes[order]
+        shift = np.repeat(new_edges - edges[:-1][order], counts)
+        parts = {
+            "tie_indices": tie_indices[gather] + shift,
+            "tie_values": tie_values[gather],
+        }
+        if coord.sampling_interval is not None:
+            parts["sampling_interval"] = coord.sampling_interval
+            parts["tolerance"] = coord.tolerance
+        sorted_coord = InterpCoordinate(parts, dim)
+    sorted_coord = sorted_coord.simplify(tolerance)
+    coords = da.coords.copy()
+    coords[dim] = sorted_coord
+    return DataArray(data, coords, da.dims, da.name, da.attrs)
 
 
 def concat_coords(

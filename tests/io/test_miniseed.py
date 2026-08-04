@@ -1,9 +1,12 @@
 import numpy as np
+import numpy.testing as npt
 import obspy
 import pytest
 
 import xdas as xd
+from xdas.coordinates import Coordinate
 from xdas.io.miniseed import MiniSEEDEngine, get_band_code, to_stream
+from xdas.virtual import TileArray
 
 
 def make_network(dirpath, gap=False, samples=100):
@@ -78,6 +81,10 @@ def test_miniseed(tmp_path):
     assert da.coords["station"].values == "CH001"
     assert da.coords["location"].values == "00"
     assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
+
+    # the ctype engine parameter drives the time coordinate flavor
+    da = xd.open(paths[0], engine="miniseed", ctype="dense")
+    assert isinstance(da.coords["time"], Coordinate["dense"])
 
     # read one file with gaps
     make_network(tmp_path, gap=True, samples=100)
@@ -176,6 +183,42 @@ def test_miniseed(tmp_path):
     assert values_gap_trimmed.shape == (3, 89)
 
 
+def test_miniseed_tile_backend(tmp_path):
+    make_network(tmp_path, samples=100)
+
+    # single files open lazily, tile-backed
+    paths = sorted(tmp_path.glob("*00.mseed"))
+    da = xd.open(paths[0], engine="miniseed")
+    assert isinstance(da.data, TileArray)
+    assert da.data.engine == {
+        "name": "miniseed",
+        "method": "synchronized",
+        "ignore_last_sample": False,
+    }
+
+    # concatenation along a new dimension stays lazy and reads correctly
+    objs = [xd.open(path, engine="miniseed") for path in paths]
+    stacked = xd.concat(objs, "station")
+    assert isinstance(stacked.data, TileArray)
+    npt.assert_array_equal(stacked.values, np.stack([obj.values for obj in objs]))
+
+    # single-trace files fold the channel axis to a scalar coordinate
+    single = tmp_path / "single.mseed"
+    st = obspy.Stream([obspy.Trace(np.random.rand(50), make_header(1, "Z", 0))])
+    st.write(str(single))
+    da = xd.open(single, engine="miniseed")
+    assert da.dims == ("time",)
+    assert da.shape == (50,)
+    npt.assert_allclose(da.values, st[0].data, rtol=1e-6)
+
+    # round trip through the native format
+    da = xd.open(paths[0], engine="miniseed")
+    da.to_netcdf(tmp_path / "view.nc")
+    reopened = xd.open_dataarray(tmp_path / "view.nc")
+    assert isinstance(reopened.data, TileArray)
+    npt.assert_array_equal(reopened.values, da.values)
+
+
 def test_miniseed_helpers(tmp_path):
     # get_band_code with out-of-range sampling rate
     assert get_band_code(0.0) == "X"
@@ -204,4 +247,4 @@ def test_miniseed_unsynchronized_traces(tmp_path):
     )
     st.write(str(path), format="MSEED")
     with pytest.raises(ValueError, match="synchronized"):
-        MiniSEEDEngine().read_header(str(path), False, "interpolated")
+        MiniSEEDEngine().read_header(str(path))

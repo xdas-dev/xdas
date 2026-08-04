@@ -468,22 +468,42 @@ class TestOpenEdgeCases:
         with pytest.raises(Exception, match="paths"):
             xd.open(123)
 
-    def test_callable_engine(self, tmp_path):
+    def test_engine_instance(self, tmp_path):
+        from xdas.io import Engine
+
         da = xd.testing.dummy(shape=(10, 5))
         path = str(tmp_path / "test.nc")
         da.to_netcdf(path)
-
-        def my_engine(fname, **kwargs):
-            return xd.open_dataarray(fname)
-
-        result = xd.open_dataarray(path, engine=my_engine)
+        result = xd.open_dataarray(path, engine=Engine["xdas"]())
         assert result.equals(da)
+
+    def test_engine_instance_rejects_extra_config(self, tmp_path):
+        from xdas.io import Engine
+
+        da = xd.testing.dummy(shape=(10, 5))
+        path = str(tmp_path / "test.nc")
+        da.to_netcdf(path)
+        engine = Engine["xdas"]()
+        with pytest.raises(ValueError, match="configured engine instance"):
+            xd.open_dataarray(path, engine=engine, vtype="tiles")
+        with pytest.raises(ValueError, match="configured engine instance"):
+            xd.open_dataarray(path, engine=engine, group="somegroup")
+
+    def test_unknown_engine_kwarg_raises(self, tmp_path):
+        da = xd.testing.dummy(shape=(10, 5))
+        path = str(tmp_path / "test.nc")
+        da.to_netcdf(path)
+        with pytest.raises(TypeError, match="overlpas"):
+            xd.open_dataarray(path, engine="febus", overlpas=(1, 1))
+        # auto-detection accepts no format-specific parameters
+        with pytest.raises(TypeError, match="overlaps"):
+            xd.open_dataarray(path, overlaps=(1, 1))
 
     def test_invalid_engine_type_raises(self, tmp_path):
         da = xd.testing.dummy(shape=(10, 5))
         path = str(tmp_path / "test.nc")
         da.to_netcdf(path)
-        with pytest.raises(ValueError, match="engine"):
+        with pytest.raises(TypeError, match="engine must be"):
             xd.open_dataarray(path, engine=42)
 
 
@@ -724,3 +744,246 @@ class TestPlotAvailability:
 
         with pytest.raises(TypeError, match="DataCollection"):
             _get_timeline_dataframe("not_valid")
+
+
+class TestSortby:
+    def make_archive(self, tmp_path, vtype, pairs=((0, 2), (1, 3))):
+        """Save 4 time chunks and fuse them losslessly as two runs.
+
+        `concat` sorts whatever it is given, so tile-level disorder is
+        built the way streamed scans produce it: runs that are internally
+        ordered but interleave each other. The default pairing yields the
+        tile order 0, 2, 1, 3.
+        """
+        expected = xd.testing.dummy(dims=("time", "space"), shape=(20, 5))
+        chunks = xd.split(expected, 4, "time")
+        parts = []
+        for index, chunk in enumerate(chunks):
+            path = tmp_path / f"chunk_{index}.nc"
+            chunk.to_netcdf(path)
+            parts.append(xd.open_dataarray(path, engine="xdas", vtype=vtype))
+        runs = [
+            xd.concat([parts[i] for i in pair], "time", tolerance=False)
+            for pair in pairs
+        ]
+        return expected, xd.concat(runs, "time", tolerance=False)
+
+    def test_sorts_tiles_lazily(self, tmp_path):
+        from xdas.virtual import TileArray
+
+        expected, shuffled = self.make_archive(tmp_path, "tiles")
+        result = xd.sortby(shuffled, "time")
+        assert isinstance(result.data, TileArray)
+        assert result.equals(expected)
+        assert result["time"].equals(expected["time"])
+
+    def test_sorts_virtual_stack(self, tmp_path):
+        from xdas.virtual import VirtualStack
+
+        expected, shuffled = self.make_archive(tmp_path, "hdf5")
+        result = xd.sortby(shuffled, "time")
+        assert isinstance(result.data, VirtualStack)
+        assert result.equals(expected)
+
+    def test_already_sorted_fast_path(self, tmp_path):
+        expected, arranged = self.make_archive(
+            tmp_path, "tiles", pairs=((0, 1), (2, 3))
+        )
+        result = xd.sortby(arranged, "time")
+        assert result.equals(expected)
+        # a second sort is a no-op even though the coordinate is simplified
+        assert xd.sortby(result, "time").equals(expected)
+
+    def test_tolerance_false_skips_simplification(self, tmp_path):
+        _, shuffled = self.make_archive(tmp_path, "tiles")
+        result = xd.sortby(shuffled, "time", tolerance=False)
+        # sorted but not simplified: one tie pair per chunk remains
+        assert len(result["time"].tie_indices) == 8
+        assert bool(np.all(np.diff(result["time"].tie_values.astype("i8")) > 0))
+
+    def test_eager_data_raises(self):
+        da = xd.testing.dummy(dims=("time", "space"), shape=(10, 5))
+        with pytest.raises(NotImplementedError, match="TileArray or a VirtualStack"):
+            xd.sortby(da, "time")
+
+    def test_dense_coordinate_raises(self, tmp_path):
+        _, shuffled = self.make_archive(tmp_path, "tiles")
+        shuffled["time"] = shuffled["time"].values
+        with pytest.raises(NotImplementedError, match="interpolated"):
+            xd.sortby(shuffled, "time")
+
+    def test_simplified_unsorted_raises(self, tmp_path):
+        # a coordinate whose ties span the first two tiles as one segment
+        # (the state a prior simplification leaves) while the tile order
+        # still needs fixing: the exact blockwise gather is impossible
+        from xdas.coordinates import InterpCoordinate
+
+        _, misaligned = self.make_archive(tmp_path, "tiles")
+        coord = misaligned["time"]
+        misaligned["time"] = InterpCoordinate(
+            {
+                "tie_indices": np.array([0, 9, 10, 14, 15, 19]),
+                "tie_values": coord.tie_values[[0, 3, 4, 5, 6, 7]],
+            },
+            "time",
+        )
+        with pytest.raises(NotImplementedError, match="align"):
+            xd.sortby(misaligned, "time")
+
+
+class TestStreamingCombine:
+    def save_shuffled(self, tmp_path, nchunk=6):
+        """Save chunks under names whose lexicographic order shuffles time."""
+        expected = xd.testing.dummy(dims=("time", "space"), shape=(30, 5))
+        names = ["e", "b", "f", "a", "d", "c"][:nchunk]
+        for chunk, name in zip(xd.split(expected, nchunk, "time"), names):
+            chunk.to_netcdf(tmp_path / f"{name}.nc")
+        return expected
+
+    def test_matches_monolithic(self, tmp_path, monkeypatch):
+        from xdas.core import routines
+
+        expected = self.save_shuffled(tmp_path)
+        mono = xd.open_mfdataarray(
+            tmp_path / "*.nc", engine="xdas", vtype="tiles", parallel=False
+        )
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", 2)
+        streamed = xd.open_mfdataarray(
+            tmp_path / "*.nc", engine="xdas", vtype="tiles", parallel=False
+        )
+        assert streamed.equals(expected)
+        assert streamed["time"].equals(mono["time"])
+        np.testing.assert_array_equal(np.asarray(streamed.data), np.asarray(mono.data))
+
+    def test_non_consolidating_vtype_raises_instead_of_streaming(
+        self, tmp_path, monkeypatch
+    ):
+        from xdas.core import routines
+
+        # the batch size is the ceiling, so a vtype that cannot consolidate
+        # never reaches the streaming path: it raises at the first batch
+        self.save_shuffled(tmp_path)
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", 2)
+        with pytest.raises(NotImplementedError, match="cannot be consolidated"):
+            xd.open_mfdataarray(
+                tmp_path / "*.nc", engine="xdas", vtype="hdf5", parallel=False
+            )
+
+    def test_warns_and_recovers_on_corrupted_file(self, tmp_path, monkeypatch):
+        from xdas.core import routines
+
+        expected = self.save_shuffled(tmp_path)
+        with (tmp_path / "ba.nc").open("wb") as file:
+            file.write(b"corrupted")
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", 2)
+        with pytest.warns(RuntimeWarning):
+            streamed = xd.open_mfdataarray(
+                tmp_path / "*.nc", engine="xdas", vtype="tiles", parallel=False
+            )
+        assert streamed.equals(expected)
+
+    def test_groups_interleaved_acquisitions_by_signature(self, tmp_path, monkeypatch):
+        from xdas.core import routines
+
+        # acquisition A (5 channels) at t0 and t2, B (3 channels) at t1:
+        # signature grouping fuses A whole where the monolithic time-ordered
+        # walk would split it around B
+        wide = xd.testing.dummy(dims=("time", "space"), shape=(20, 5))
+        chunks = xd.split(wide, 2, "time")
+        narrow = xd.testing.dummy(dims=("time", "space"), shape=(10, 3))
+        narrow["time"] = narrow["time"] + (
+            chunks[1]["time"][0].values - narrow["time"][0].values
+        )
+        chunks[0].to_netcdf(tmp_path / "a.nc")
+        narrow.to_netcdf(tmp_path / "b.nc")
+        chunks[1].to_netcdf(tmp_path / "c.nc")
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", 2)
+        streamed = xd.open_mfdataarray(
+            tmp_path / "*.nc", engine="xdas", vtype="tiles", parallel=False
+        )
+        assert isinstance(streamed, xd.DataCollection)
+        assert len(streamed) == 2
+
+    def test_single_run_squeezes(self, tmp_path, monkeypatch):
+        from xdas.core import routines
+
+        expected = self.save_shuffled(tmp_path)
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", 2)
+        collection = xd.open_mfdataarray(
+            tmp_path / "*.nc",
+            engine="xdas",
+            vtype="tiles",
+            parallel=False,
+            squeeze=False,
+        )
+        assert isinstance(collection, xd.DataCollection)
+        assert len(collection) == 1
+        assert collection[0].equals(expected)
+
+
+class TestStreamingCombineFallbacks:
+    def test_dim_last_and_plain_name(self, tmp_path, monkeypatch):
+        from xdas.core import routines
+
+        expected = xd.testing.dummy(dims=("time",), shape=(30,), step=0.01)
+        names = ["c", "a", "b"]
+        for chunk, name in zip(xd.split(expected, 3, "time"), names):
+            chunk.to_netcdf(tmp_path / f"{name}.nc")
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", 2)
+        for dim in ("last", "time"):
+            result = xd.open_mfdataarray(
+                tmp_path / "*.nc",
+                dim=dim,
+                engine="xdas",
+                vtype="tiles",
+                parallel=False,
+            )
+            assert result.equals(expected)
+
+    def test_unsortable_group_falls_back_to_plain_concat(self, tmp_path, monkeypatch):
+        from xdas.core import routines
+
+        # dense time coordinates: sortby cannot permute them, the group is
+        # concatenated with the tolerance directly (runs sorted by start)
+        expected = xd.testing.dummy(
+            dims=("time", "space"), shape=(30, 5), ctype="dense"
+        )
+        for index, chunk in enumerate(xd.split(expected, 3, "time")):
+            chunk.to_netcdf(tmp_path / f"chunk_{index}.nc")
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", 2)
+        result = xd.open_mfdataarray(
+            tmp_path / "*.nc", engine="xdas", vtype="tiles", parallel=False
+        )
+        assert result.equals(expected)
+
+    def test_no_dim_coordinate(self, tmp_path, monkeypatch):
+        from xdas.core import routines
+
+        da = xd.DataArray(
+            np.arange(30.0 * 5).reshape(30, 5),
+            coords={"space": {"tie_indices": [0, 4], "tie_values": [0.0, 40.0]}},
+            dims=("time", "space"),
+        )
+        for index in range(3):
+            da[10 * index : 10 * (index + 1)].to_netcdf(tmp_path / f"chunk_{index}.nc")
+        monkeypatch.setattr(routines, "MAX_OPEN_FILES", 2)
+        result = xd.open_mfdataarray(
+            tmp_path / "*.nc", engine="xdas", vtype="tiles", parallel=False
+        )
+        assert result.shape == (30, 5)
+
+
+class TestSortbyMetadataFree:
+    def test_permutes_without_declared_sampling_interval(self, tmp_path):
+        from xdas.coordinates import InterpCoordinate
+
+        helper = TestSortby()
+        expected, shuffled = helper.make_archive(tmp_path, "tiles")
+        coord = shuffled["time"]
+        shuffled["time"] = InterpCoordinate(
+            {"tie_indices": coord.tie_indices, "tie_values": coord.tie_values},
+            "time",
+        )
+        result = xd.sortby(shuffled, "time")
+        assert np.array_equal(result["time"].values, expected["time"].values)
+        np.testing.assert_array_equal(np.asarray(result.data), expected.values)

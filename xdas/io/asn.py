@@ -15,14 +15,14 @@ import zmq
 
 from ..coordinates import Coordinate, get_sampling_interval
 from ..core import DataArray, concat_coords
-from ..virtual import VirtualSource
+from ..virtual import TileArray, VirtualSource
 from .core import Engine
 
 
 class ASNEngine(Engine, name="asn"):
     """Engine for reading ASN HDF5 files."""
 
-    _supported_vtypes: ClassVar[list] = ["hdf5"]
+    _supported_vtypes: ClassVar[list] = ["hdf5", "tiles"]
     _supported_ctypes: ClassVar[dict] = {
         "time": ["interpolated", "sampled", "dense"],
         "distance": ["interpolated"],
@@ -37,7 +37,12 @@ class ASNEngine(Engine, name="asn"):
             t0 = np.datetime64(round(header["time"][()] * 1e9), "ns")
             dt = np.timedelta64(round(1e9 * header["dt"][()]), "ns")
             dx = float(header["dx"][()])  # Note: dx before (internal) downsampling!
-            data = VirtualSource(file["data"])
+            if self.vtype == "tiles":
+                data = TileArray.from_tiles(
+                    str(fname), file["data"].shape, file["data"].dtype, "asn"
+                )
+            else:
+                data = VirtualSource(file["data"])
 
             # Get the optical distance for all the recorded channels (after downsampling)
             # Note that this vector is not continuous for more than one ROI
@@ -89,6 +94,12 @@ class ASNEngine(Engine, name="asn"):
         # still fail the fit. Reducing is off so the ROI structure is preserved.
         distance = concat_coords(roi_blocks, reduce=False, regularize=True)
         return DataArray(data, {"time": time, "distance": distance})
+
+    @staticmethod
+    def load_tile(path, selection):
+        """Read a source selection of the ``/data`` dataset of an ASN file."""
+        with h5py.File(path, "r") as file:
+            return file["/data"][selection]
 
     def _get_roi_bound_indices(self, all_dists, n_start, n_end, dx):
         start_index = bisect_left(all_dists, n_start * dx)

@@ -4,8 +4,11 @@ I/O engine for the native xdas HDF5/NetCDF4 format (:class:`XdasEngine`).
 Supports :class:`DataArray`, :class:`DataSequence`, and :class:`DataMapping`.
 """
 
+import json
 import os
+import warnings
 from pathlib import Path
+from typing import ClassVar
 
 import h5netcdf
 import h5py
@@ -16,31 +19,70 @@ from dask.array import Array as DaskArray
 from ..coordinates import Coordinates
 from ..core import DataArray, DataCollection, DataMapping, DataSequence
 from ..dask import create_variable, loads
-from ..virtual import VirtualArray, VirtualSource
+from ..virtual import TileArray, VirtualBackend
+from ..virtual.tiles import TILES_GROUP
 from .core import Engine
 
 
 class XdasEngine(Engine, name="xdas"):
-    """Engine for the native xdas HDF5/NetCDF4 format."""
+    """
+    Engine for the native xdas HDF5/NetCDF4 format.
 
-    def open_dataarray(self, fname, **kwargs):
+    Parameters
+    ----------
+    vtype : str, optional
+        The virtualization type to use. Default to "hdf5".
+    ctype : str or dict, optional
+        Ignored: the native format stores coordinates as they were written.
+    group : str, optional
+        The location of the data array within the file. Default to the root group.
+
+    """
+
+    _supported_vtypes: ClassVar[list] = ["hdf5", "tiles"]
+
+    def __init__(self, vtype=None, ctype=None, group=None):
+        super().__init__(vtype, ctype)
+        self.group = group
+
+    def open_dataarray(self, fname):
         """Delegate to module-level :func:`open_dataarray`."""
-        return open_dataarray(fname, **kwargs)
+        return open_dataarray(fname, group=self.group, vtype=self.vtype)
 
     def save_dataarray(self, da, fname, **kwargs):
         """Delegate to module-level :func:`save_dataarray`."""
         return save_dataarray(da, fname, **kwargs)
 
-    def open_datacollection(self, fname, **kwargs):
+    def open_datacollection(self, fname):
         """Delegate to module-level :func:`open_datacollection`."""
-        return open_datacollection(fname, **kwargs)
+        return open_datacollection(fname, group=self.group)
 
     def save_datacollection(self, dc, fname, **kwargs):
         """Delegate to module-level :func:`save_datacollection`."""
         return save_datacollection(dc, fname, **kwargs)
 
+    @staticmethod
+    def load_tile(path, selection, *, dataset):
+        """Read a source selection of a native xdas file.
 
-def open_dataarray(fname, group=None):
+        The variable is read with h5py, which resolves any HDF5 virtual
+        dataset the file may store transparently.
+
+        Parameters
+        ----------
+        path : str
+            Path of the NetCDF4/HDF5 file.
+        selection : tuple of slice
+            The source selection to read, one possibly strided slice per
+            axis.
+        dataset : str
+            Location of the data variable within the file.
+        """
+        with h5py.File(path, "r") as file:
+            return file[dataset][selection]
+
+
+def open_dataarray(fname, group=None, vtype=None):
     """
     Read a :class:`DataArray` from a native xdas NetCDF4/HDF5 file.
 
@@ -50,6 +92,11 @@ def open_dataarray(fname, group=None):
         Path to the file.
     group : str, optional
         HDF5 group path inside the file.
+    vtype : str, optional
+        Virtualization backing of the returned data: ``"hdf5"`` (default,
+        an HDF5 virtual source) or ``"tiles"`` (a lazy
+        :class:`~xdas.virtual.TileArray` over the stored variable). Files
+        that store a tile manifest reopen as tile arrays regardless.
 
     Returns
     -------
@@ -89,14 +136,23 @@ def open_dataarray(fname, group=None):
         coords = Coordinates._from_dataset(dataset, name)
 
     # read data
-    if "__dask_array__" in dataset[name].attrs:
+    if "__tile_array__" in dataset[name].attrs:
+        spec = json.loads(dataset[name].attrs.pop("__tile_array__"))
+        location = TILES_GROUP if group is None else f"{group}/{TILES_GROUP}"
+        with xr.open_dataset(fname, group=location, engine="h5netcdf") as manifest:
+            manifest = manifest.load()
+        # the placeholder variable carries the dtype; the spec only the engine
+        data = TileArray(manifest, dataset[name].dtype, spec["engine"])
+    elif "__dask_array__" in dataset[name].attrs:
         data = loads(dataset[name].attrs.pop("__dask_array__"))
     else:
         with h5py.File(fname) as file:
             if group:
                 file = file[group]
             variable = file["__values__" if name is None else name]
-            data = VirtualSource(variable)
+            data = VirtualBackend["hdf5" if vtype is None else vtype].from_variable(
+                variable
+            )
 
     # pack everything
     return DataArray(
@@ -135,7 +191,7 @@ def save_dataarray(
         fname = str(fname)
 
     if virtual is None:
-        virtual = isinstance(da.data, (VirtualArray, DaskArray))
+        virtual = isinstance(da.data, (VirtualBackend, DaskArray))
 
     # initialize
     dataset = xr.Dataset(attrs={"Conventions": "CF-1.9"})
@@ -171,11 +227,16 @@ def save_dataarray(
         else:
             if encoding is not None:
                 raise ValueError("cannot use `encoding` with in virtual mode")
-            if isinstance(da.data, VirtualArray):
+            if isinstance(da.data, VirtualBackend):
                 variable = da.data.create_variable(
                     file, variable_name, da.dims, da.dtype
                 )
             elif isinstance(da.data, DaskArray):
+                warnings.warn(
+                    "writing dask-backed virtual arrays is deprecated; the "
+                    "tile-backed engines (xdas.virtual.tiles) replace them",
+                    FutureWarning,
+                )
                 variable = create_variable(
                     da.data, file, variable_name, da.dims, da.dtype
                 )
@@ -190,6 +251,10 @@ def save_dataarray(
 
     # write metadata
     dataset.to_netcdf(fname, mode="a", group=group, engine="h5netcdf")
+
+    # append what of the stored form outlives the variable (the tile manifest)
+    if virtual and isinstance(da.data, VirtualBackend):
+        da.data.finalize_save(fname, group)
 
 
 def open_datacollection(fname, group=None):
@@ -284,8 +349,20 @@ def save_datasequence(
 
 
 def _get_depth(group):
+    """Nesting depth of *group*, ignoring any tile manifest it contains.
+
+    A tile-backed data array keeps its manifest in a `TILES_GROUP`
+    sibling of its variables. That group must not count, or the data
+    array would look one level deeper than it is and be mistaken for a
+    nested collection.
+    """
     if not isinstance(group, h5py.Group):
         raise ValueError("not a group")
-    depths = []
-    group.visit(lambda name: depths.append(name.count("/")))
+    depths = [0]
+
+    def visit(name):
+        if TILES_GROUP not in name.split("/"):
+            depths.append(name.count("/"))
+
+    group.visit(visit)
     return max(depths)

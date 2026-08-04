@@ -9,12 +9,24 @@ from xdas.io.core import AutoEngine, Engine
 
 class TestEngineRegistry:
     def test_unknown_engine_raises_key_error(self):
-        with pytest.raises(KeyError, match="not found"):
+        with pytest.raises(KeyError, match="no engine registered"):
             Engine["nonexistent_engine_xyz"]
 
     def test_invalid_vtype_raises_value_error(self):
         with pytest.raises(ValueError, match="vtype must be None or a string"):
             Engine["asn"](vtype=42)
+
+    def test_unregistered_vtype_raises_key_error(self):
+        with pytest.raises(KeyError, match="no virtual backend registered"):
+            Engine["asn"](vtype="netcdf")
+
+    def test_auto_engine_validates_vtype_upfront(self):
+        with pytest.raises(KeyError, match="no virtual backend registered"):
+            AutoEngine(vtype="netcdf")
+
+    def test_registered_but_unsupported_vtype_still_engine_checked(self):
+        with pytest.raises(NotImplementedError, match="not supported by"):
+            Engine["silixa"](vtype="hdf5")
 
     def test_dict_ctype_fills_missing_keys(self):
         engine = Engine["asn"](ctype={"time": "interpolated"})

@@ -84,8 +84,10 @@ Gaps represent missing data and are generally not problematic; overlaps
 usually arise from labelling errors and should be resolved.
 
 Using the {py:meth}`~xdas.coordinates.InterpCoordinate.simplify` method,
-the coordinate can be compressed with controlled accuracy using the
-[Ramer–Douglas–Peucker algorithm][RDP].  In the example below, the
+the coordinate can be compressed with controlled accuracy using a
+one-pass [sleeve algorithm][SDT] (tie points are dropped as long as the
+segment joining the surviving neighbours passes within `tolerance` of
+them, in a single left-to-right walk).  In the example below, the
 second tie point carries no additional information and is safely discarded:
 
 ```{code-cell}
@@ -162,4 +164,4 @@ coord.to_index(slice("2023-01-01T00:10:00", "2023-01-01T00:20:00"))
 ```
 
 [CF]: <http://cfconventions.org/Data/cf-conventions/cf-conventions-1.10/cf-conventions.html#compression-by-coordinate-subsampling>
-[RDP]: <https://en.wikipedia.org/wiki/Ramer–Douglas–Peucker_algorithm>
+[SDT]: <https://en.wikipedia.org/wiki/Swinging_door_algorithm>

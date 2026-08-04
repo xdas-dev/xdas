@@ -2,30 +2,28 @@
 
 from typing import ClassVar
 
-import dask
 import numpy as np
 
 from ..coordinates import Coordinate
 from ..core import DataArray
+from ..virtual import TileArray
 from .core import Engine
 from .tdms import TdmsReader
 
 
 class SilixaEngine(Engine, name="silixa"):
-    """Engine for reading Silixa iDAS TDMS files as lazy dask-backed DataArrays."""
+    """Engine for reading Silixa iDAS TDMS files as lazy tile-backed DataArrays."""
 
-    _supported_vtypes: ClassVar[list] = ["dask"]
+    _supported_vtypes: ClassVar[list] = ["tiles"]
     _supported_ctypes: ClassVar[dict] = {
         "time": ["interpolated", "sampled", "dense"],
         "distance": ["interpolated", "sampled", "dense"],
     }
 
     def open_dataarray(self, fname):
-        """Return a lazy dask-backed :class:`DataArray` for the TDMS file *fname*."""
+        """Return a lazy tile-backed :class:`DataArray` for the TDMS file *fname*."""
         shape, dtype, coords = self.read_header(fname)
-        data = dask.array.from_delayed(
-            dask.delayed(self.read_data)(fname), shape, dtype
-        )
+        data = TileArray.from_tiles(str(fname), shape, np.dtype(dtype), "silixa")
         return DataArray(data, coords)
 
     def read_header(self, fname):
@@ -56,3 +54,16 @@ class SilixaEngine(Engine, name="silixa"):
         with TdmsReader(fname) as tdms:
             data = tdms.get_data()
         return data
+
+    @staticmethod
+    def load_tile(path, selection):
+        """Read a source selection of a Silixa TDMS file (rows are time samples).
+
+        :class:`~xdas.io.tdms.TdmsReader` performs the decoding
+        (``get_data`` bounds are inclusive, hence the ``stop - 1``); the
+        residual crop applies as numpy views.
+        """
+        rows = selection[0]
+        with TdmsReader(path) as tdms:
+            data = tdms.get_data(first_s=rows.start, last_s=rows.stop - 1)
+        return data[(slice(None, None, rows.step), *selection[1:])]

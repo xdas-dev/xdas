@@ -184,11 +184,12 @@ class RealTimeLoader(Observer):
     ----------
     path : str or Path
         Directory to watch.
-    engine : str, optional
-        Engine used to open arriving files.  Defaults to ``"netcdf"``.
+    engine : str or Engine, optional
+        Engine used to open arriving files, given by name or as a configured
+        :class:`~xdas.io.Engine` instance.  Defaults to ``"xdas"``.
     """
 
-    def __init__(self, path, engine="netcdf"):
+    def __init__(self, path, engine="xdas"):
         super().__init__()
         self.path = str(path) if isinstance(path, Path) else path
         self.queue = Queue()

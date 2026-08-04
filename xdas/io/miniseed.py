@@ -2,7 +2,6 @@
 
 from typing import ClassVar
 
-import dask
 import numpy as np
 import obspy
 
@@ -13,31 +12,51 @@ from ..coordinates import (
     get_sampling_interval,
 )
 from ..core import DataArray, concat_coords
+from ..virtual import TileArray
 from .core import Engine
 
 
 class MiniSEEDEngine(Engine, name="miniseed"):
-    """Engine for reading MiniSEED files via ObsPy as lazy dask-backed DataArrays."""
+    """
+    Engine for reading MiniSEED files via ObsPy as lazy tile-backed DataArrays.
 
-    _supported_vtypes: ClassVar[list] = ["dask"]
+    Parameters
+    ----------
+    vtype : str, optional
+        The virtualization type to use. Default to "tiles".
+    ctype : str or dict, optional
+        The coordinate type to use for the time axis. Default to "interpolated".
+    ignore_last_sample : bool, optional
+        Whether to drop the last sample of each contiguous segment. Useful for
+        files whose last sample overlaps the first one of the next file.
+        Default to False.
+
+    """
+
+    _supported_vtypes: ClassVar[list] = ["tiles"]
     _supported_ctypes: ClassVar[dict] = {
         "time": ["interpolated", "sampled", "dense"],
     }
 
-    def open_dataarray(self, fname, ignore_last_sample=False, ctype="interpolated"):
-        """Return a lazy dask-backed :class:`DataArray` for the MiniSEED file *fname*."""
-        shape, dtype, coords, method = self.read_header(
-            fname, ignore_last_sample, ctype
-        )
-        data = dask.array.from_delayed(
-            dask.delayed(self.read_data)(fname, method, ignore_last_sample),
-            shape,
-            dtype,
-        )
+    def __init__(self, vtype=None, ctype=None, ignore_last_sample=False):
+        super().__init__(vtype, ctype)
+        self.ignore_last_sample = bool(ignore_last_sample)
+
+    def open_dataarray(self, fname):
+        """Return a lazy tile-backed :class:`DataArray` for the MiniSEED file *fname*."""
+        shape, dtype, coords, method = self.read_header(fname)
+        engine = {
+            "name": "miniseed",
+            "method": method,
+            "ignore_last_sample": self.ignore_last_sample,
+        }
+        data = TileArray.from_tiles(str(fname), shape, np.dtype(dtype), engine)
         return DataArray(data, coords)
 
-    def read_header(self, path, ignore_last_sample, ctype):
+    def read_header(self, path):
         """Read metadata from *path* and return ``(shape, dtype, coords, method)``."""
+        ignore_last_sample = self.ignore_last_sample
+        ctype = self.ctype["time"]
         st = obspy.read(path, headonly=True)
 
         dtype = uniquifiy(tr.data.dtype for tr in st)
@@ -92,7 +111,8 @@ class MiniSEEDEngine(Engine, name="miniseed"):
         )
         return shape, dtype, coords, method
 
-    def read_data(self, path, method, ignore_last_sample):
+    @staticmethod
+    def read_data(path, method, ignore_last_sample):
         """Load and return the raw data array from *path* using *method*."""
         st = obspy.read(path)
         if method == "synchronized":
@@ -112,6 +132,19 @@ class MiniSEEDEngine(Engine, name="miniseed"):
                     channel_data.append(tr.data)
                 data.append(np.concatenate(channel_data))
             return np.array(data)
+
+    @staticmethod
+    def load_tile(path, selection, *, method="synchronized", ignore_last_sample=False):
+        """Read a source selection of a MiniSEED file, decoding with ObsPy.
+
+        Decodes the whole file with ObsPy (as the legacy dask path did)
+        and crops to *selection*. The decoded rank is squeezed when a
+        scalar channel folded an axis out of the scanned shape.
+        """
+        data = MiniSEEDEngine.read_data(path, method, ignore_last_sample)
+        if data.ndim > len(selection):
+            data = data.reshape(data.shape[data.ndim - len(selection) :])
+        return data[selection]
 
 
 def to_stream(
