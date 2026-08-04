@@ -13,8 +13,10 @@ from tempfile import TemporaryDirectory
 import h5py
 import numpy as np
 
+from .core import VirtualBackend
 
-class VirtualArray:
+
+class VirtualArray(VirtualBackend, vtype="hdf5"):
     """
     Abstract base class for lazy array objects backed by HDF5/NetCDF4 files.
 

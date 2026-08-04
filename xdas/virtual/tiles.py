@@ -105,6 +105,8 @@ import sys
 import numpy as np
 import xarray as xr
 
+from .core import VirtualBackend
+
 TILE_PREFIX = "tile_"
 """Prefix of the tile-grid dimensions of a manifest dataset."""
 
@@ -345,7 +347,7 @@ def _materialize(value):
     return value
 
 
-class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
+class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tiles"):
     """A dense rectilinear grid of file-backed tiles as one virtual array.
 
     Numpy-like duck array over the *manifest dataset* described in the
@@ -386,6 +388,10 @@ class TileArray(np.lib.mixins.NDArrayOperatorsMixin):
         reproduce the decode with no instance alive, so open-time
         settings (``vtype``, ``ctype``) do not belong in it.
     """
+
+    # manifest concatenation fuses scan products into one compact array,
+    # so multi-file scans can drain batches (see VirtualBackend)
+    consolidates = True
 
     def __init__(self, dataset, dtype, engine):
         # canonical string dtype is fixed-width bytes: str-valued
