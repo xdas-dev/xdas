@@ -12,7 +12,7 @@ import xarray as xr
 
 import xdas as xd
 from xdas.io import Engine
-from xdas.virtual.tiles import TileArray
+from xdas.virtual.tiles import TileArray, _Edges
 
 NX = 5
 
@@ -108,6 +108,25 @@ def windowed(tmp_path):
 
 
 @pytest.fixture
+def uniform(tmp_path):
+    """Four files of identical height: the size column is constant.
+
+    What a scanned acquisition looks like — ``combine`` starts a new one
+    whenever the geometry changes, so every file contributes the same
+    number of rows.
+    """
+    paths, parts = [], []
+    for k in range(4):
+        path = str(tmp_path / f"uni{k}.h5")
+        data = 100.0 * k + np.arange(6 * NX).reshape(6, NX)
+        _tile_file(path, data)
+        paths.append(path)
+        parts.append(data)
+    manifest = TileArray.from_tiles(paths, ([6] * 4, NX), "float64", ENGINE)
+    return manifest, np.concatenate(parts)
+
+
+@pytest.fixture
 def engine_calls(monkeypatch):
     """Record the path of every h5py engine read, delegating to the real one."""
     calls = []
@@ -198,7 +217,7 @@ class TestManifest:
         manifest, reference = stack
         assert manifest.shape == reference.shape
         assert manifest.ntiles == 3
-        npt.assert_array_equal(manifest._edges[0], [0, 10, 17, 29])
+        npt.assert_array_equal(list(manifest._edges[0]), [0, 10, 17, 29])
 
     def test_reads_across_sources(self, stack):
         manifest, reference = stack
@@ -363,6 +382,138 @@ class TestManifest:
     def test_attrs(self, stack):
         manifest, _ = stack
         assert manifest.attrs == {"units": "strain"}
+
+
+def _is_collapsed(values):
+    """Whether a geometry column is held as a zero-stride broadcast view."""
+    return values.strides == (0,)
+
+
+class TestConstantGeometry:
+    """Constant geometry columns cost O(1), and behave exactly like full ones."""
+
+    def test_absent_columns_are_broadcast_views(self, uniform):
+        manifest, _ = uniform
+        assert "starts_0" not in manifest.dataset
+        assert "steps_0" not in manifest.dataset
+        for column, default in ((manifest._starts[0], 0), (manifest._steps[0], 1)):
+            assert _is_collapsed(column)
+            npt.assert_array_equal(column, [default] * 4)
+
+    def test_stored_constant_column_collapses(self, uniform):
+        manifest, reference = uniform
+        # the column is read (it is in the file), then found constant
+        assert "sizes_0" in manifest.dataset
+        assert _is_collapsed(manifest._sizes[0])
+        npt.assert_array_equal(manifest._sizes[0], [6] * 4)
+        assert manifest._edges[0].size == 6
+        assert manifest._edges[0].values is None
+        assert manifest.shape == reference.shape
+        assert manifest.chunks == ((6, 6, 6, 6), (NX,))
+
+    def test_varying_column_stays_eager(self, stack):
+        manifest, _ = stack
+        assert not _is_collapsed(manifest._sizes[0])
+        assert manifest._edges[0].size is None
+        npt.assert_array_equal(manifest._edges[0].values, [0, 10, 17, 29])
+
+    def test_truncated_last_tile_keeps_the_column_varying(self, tmp_path):
+        paths, parts = [], []
+        for k, height in enumerate([6, 6, 4]):
+            path = str(tmp_path / f"trunc{k}.h5")
+            data = 100.0 * k + np.arange(height * NX).reshape(height, NX)
+            _tile_file(path, data)
+            paths.append(path)
+            parts.append(data)
+        manifest = TileArray.from_tiles(paths, ([6, 6, 4], NX), "float64", ENGINE)
+        assert not _is_collapsed(manifest._sizes[0])
+        assert manifest._edges[0].size is None
+        npt.assert_array_equal(np.asarray(manifest), np.concatenate(parts))
+
+    @pytest.mark.parametrize("sizes", [[6, 6, 6, 6], [1, 1, 1], [5], [3, 3]])
+    def test_closed_form_edges_match_the_eager_ones(self, sizes):
+        count, size = len(sizes), sizes[0]
+        closed = _Edges(np.broadcast_to(np.int64(size), (count,)))
+        eager = _Edges(np.asarray(sizes, dtype=np.int64))
+        assert closed.size == size and eager.size is None
+        assert closed.total == eager.total
+        assert list(closed) == [int(edge) for edge in eager]
+        for i in range(count + 1):
+            assert closed.at(i) == eager.at(i)
+        for value in range(-2, closed.total + 3):
+            for side in ("left", "right"):
+                assert closed.searchsorted(value, side) == eager.searchsorted(
+                    value, side
+                )
+        for i0 in range(count + 1):
+            for i1 in range(i0, count + 1):
+                npt.assert_array_equal(closed.span(i0, i1), eager.span(i0, i1))
+
+    @pytest.mark.parametrize("seed", range(8))
+    def test_uniform_slicing_matches_numpy(self, uniform, seed):
+        manifest, reference = uniform
+        rng = np.random.default_rng(seed)
+        key = _random_key(rng, manifest.shape, max_step=3)
+        npt.assert_array_equal(np.asarray(manifest[key]), reference[key])
+
+    def test_tile_aligned_slice_stays_collapsed(self, uniform):
+        manifest, reference = uniform
+        view = manifest[6:18]
+        assert _is_collapsed(view._sizes[0])
+        assert view._edges[0].size == 6
+        npt.assert_array_equal(np.asarray(view), reference[6:18])
+
+    def test_partial_slice_falls_back_to_the_eager_form(self, uniform):
+        manifest, reference = uniform
+        view = manifest[4:20]
+        assert not _is_collapsed(view._sizes[0])
+        assert view._edges[0].size is None
+        npt.assert_array_equal(np.asarray(view), reference[4:20])
+
+    def test_reversal_and_streaming_on_a_uniform_grid(self, uniform):
+        manifest, reference = uniform
+        npt.assert_array_equal(np.asarray(manifest[::-1]), reference[::-1])
+        # the streaming reductions walk the boundaries pairwise
+        npt.assert_allclose(np.mean(manifest), np.mean(reference))
+        npt.assert_array_equal(np.max(manifest, axis=1), np.max(reference, axis=1))
+
+    def test_uniform_concat_stays_collapsed(self, uniform):
+        manifest, reference = uniform
+        fused = TileArray.concat([manifest, manifest])
+        assert _is_collapsed(fused._sizes[0])
+        assert fused._edges[0].size == 6
+        npt.assert_array_equal(
+            np.asarray(fused), np.concatenate([reference, reference])
+        )
+
+    def test_uniform_round_trip(self, uniform, tmp_path):
+        manifest, reference = uniform
+        path = str(tmp_path / "uniform.nc")
+        wrap(manifest).to_netcdf(path)
+        reopened = xd.open_dataarray(path)
+        assert reopened.data.equals(manifest)
+        assert _is_collapsed(reopened.data._sizes[0])
+        npt.assert_array_equal(reopened.values, reference)
+
+    def test_flipped_uniform_round_trip(self, uniform, tmp_path):
+        manifest, reference = uniform
+        view = np.flip(manifest, axis=0)[:, ::2]
+        assert _is_collapsed(view._sizes[0])
+        path = str(tmp_path / "flipped.nc")
+        wrap(view).to_netcdf(path)
+        reopened = xd.open_dataarray(path)
+        assert reopened.data.equals(view)
+        npt.assert_array_equal(reopened.values, reference[::-1, ::2])
+
+    def test_hidden_and_synthetic_axes_round_trip(self, uniform, tmp_path):
+        manifest, reference = uniform
+        view = np.expand_dims(manifest[:, 2], 1)
+        assert view.shape == (24, 1)
+        path = str(tmp_path / "mapped.nc")
+        wrap(view).to_netcdf(path)
+        reopened = xd.open_dataarray(path)
+        assert reopened.data.equals(view)
+        npt.assert_array_equal(reopened.values, reference[:, 2][:, None])
 
 
 class TestSourcePaths:
@@ -614,7 +765,7 @@ class TestConcat:
         manifest, reference = stack
         fused = TileArray.concat([manifest, manifest])
         assert fused.ntiles == 6
-        npt.assert_array_equal(fused._edges[0], [0, 10, 17, 29, 39, 46, 58])
+        npt.assert_array_equal(list(fused._edges[0]), [0, 10, 17, 29, 39, 46, 58])
         npt.assert_array_equal(
             np.asarray(fused), np.concatenate([reference, reference])
         )

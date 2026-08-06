@@ -51,8 +51,12 @@ verifies it against every decoded tile. Casting is an explicit
 extra step (:meth:`TileArray.astype`), outside the tiles machinery.
 Every dataset attribute is a user attribute.
 
-Geometry loads eagerly at construction (tiny); parameters stay folded —
-a constant occupies one element whatever the grid size — and broadcast
+Geometry loads eagerly at construction; a column holding one value
+everywhere (the absent ``starts_k`` and ``steps_k``, and the ``sizes_k``
+of an acquisition of equal-length files) is detected and kept as a
+broadcast view, so it costs one element instead of one per tile and its
+tile boundaries stay a closed form. Parameters stay folded — a constant
+occupies one element whatever the grid size — and broadcast
 over the grid only as tiles are read. Slicing (any nonzero step,
 negative ones reversing lazily), integer indexing and ``np.newaxis``
 fold into the geometry and the axis map and return a new
@@ -337,6 +341,58 @@ def _assign_geometry(dataset, assign):
     return dataset.drop_vars([name for name in drop if name in dataset])
 
 
+class _Edges:
+    """The running sample offsets of the tiles along one geometry axis.
+
+    Either the eager ``cumsum`` of a varying size column, or — when
+    every tile is the same width — that width alone, every boundary
+    being a multiple of it. Constant columns arrive as zero-stride
+    broadcast views (see :meth:`TileArray._geometry`), which is what
+    picks the closed forms: they hold no array and turn locating a
+    tile into a division.
+    """
+
+    def __init__(self, sizes):
+        self.count = len(sizes)
+        self.size = int(sizes[0]) if self.count and sizes.strides == (0,) else None
+        self.values = (
+            None if self.size is not None else np.concatenate(([0], np.cumsum(sizes)))
+        )
+
+    @property
+    def total(self):
+        """int: the extent the axis spans, every tile summed."""
+        if self.size is None:
+            return int(self.values[-1])
+        return self.count * self.size
+
+    def at(self, index):
+        """int: the sample offset where tile *index* begins."""
+        if self.size is None:
+            return int(self.values[index])
+        return int(index) * self.size
+
+    def searchsorted(self, value, side):
+        """int: locate *value*, exactly as :func:`numpy.searchsorted` would."""
+        if self.size is None:
+            return int(np.searchsorted(self.values, value, side))
+        # boundaries are 0, size, ..., count * size: count them by division
+        index = -(-value // self.size) if side == "left" else value // self.size + 1
+        return int(min(max(index, 0), self.count + 1))
+
+    def span(self, start, stop):
+        """Return the offsets of tiles *start* to *stop* (excluded), as an array."""
+        if self.size is None:
+            return self.values[start:stop]
+        return np.arange(start, stop, dtype=np.int64) * self.size
+
+    def __iter__(self):
+        """Iterate over the boundaries, first to last."""
+        if self.size is None:
+            return iter(self.values)
+        return iter(range(0, (self.count + 1) * self.size, self.size))
+
+
 def _materialize(value):
     """Read any :class:`TileArray` in *value*, descending one level."""
     if isinstance(value, TileArray):
@@ -444,9 +500,7 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
             reach = self._starts[g] + (self._sizes[g] - 1) * self._steps[g]
             if np.any(reach < 0):
                 raise ValueError(f"`steps_{g}` walks out of the source")
-        self._edges = tuple(
-            np.concatenate(([0], np.cumsum(sizes))) for sizes in self._sizes
-        )
+        self._edges = tuple(_Edges(sizes) for sizes in self._sizes)
         # the axis map: which geometry axis each virtual axis presents.
         # absent variables mean the identity — every geometry axis is a
         # source axis, presented in stored (= source) order
@@ -481,7 +535,7 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
                 raise ValueError(f"axis {g} is synthetic or hidden: sizes must be 1")
             if g not in self._axes and len(self._sizes[g]) != 1:
                 raise ValueError(f"hidden axis {g} must hold a single tile")
-        self._shape = tuple(int(self._edges[g][-1]) for g in self._axes)
+        self._shape = tuple(self._edges[g].total for g in self._axes)
         if "paths" not in dataset:
             raise ValueError("a tile array needs a `paths` variable")
         if "root" in dataset:
@@ -694,17 +748,32 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
         manifest.to_netcdf(fname, mode="a", group=location, engine="h5netcdf")
 
     def _geometry(self, kind, default):
-        """Load the eager 1-D ``{kind}_k`` arrays (*default* where absent)."""
+        """Load the eager 1-D ``{kind}_k`` arrays (*default* where absent).
+
+        A column holding one value everywhere — always so when the
+        variable is absent — is kept as a zero-stride broadcast view
+        instead of a full-length array: nothing downstream writes to
+        the geometry, and :class:`_Edges` keys its closed forms off
+        that view. Detected, never assumed — a truncated last tile
+        makes a size column vary.
+        """
         arrays = []
         for k, dim in enumerate(self.dims):
             name = f"{kind}_{k}"
             if name in self.dataset:
                 if tuple(self.dataset[name].dims) != (dim,):
                     raise ValueError(f"`{name}` must have dimensions ({dim!r},)")
-                arrays.append(np.asarray(self.dataset[name].values, dtype=np.int64))
+                values = np.asarray(self.dataset[name].values, dtype=np.int64)
+                if (
+                    values.strides != (0,)
+                    and len(values)
+                    and (values == values[0]).all()
+                ):
+                    values = np.broadcast_to(values[0], values.shape)
             else:
                 count = int(self.dataset.sizes[dim])
-                arrays.append(np.full(count, default, dtype=np.int64))
+                values = np.broadcast_to(np.int64(default), (count,))
+            arrays.append(values)
         return tuple(arrays)
 
     @property
@@ -840,9 +909,9 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
             if (lo, hi, s) == (0, extent, 1):
                 continue
             edges = self._edges[g]
-            i0 = int(np.searchsorted(edges, lo, "right")) - 1
-            i1 = int(np.searchsorted(edges, hi, "left"))
-            pos = edges[i0:i1]
+            i0 = edges.searchsorted(lo, "right") - 1
+            i1 = edges.searchsorted(hi, "left")
+            pos = edges.span(i0, i1)
             size = self._sizes[g][i0:i1]
             start = self._starts[g][i0:i1]
             step = self._steps[g][i0:i1]
@@ -1109,7 +1178,7 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
                 widths.append(size)
             selection, widths = tuple(selection), tuple(widths)
             dest = tuple(
-                slice(int(self._edges[g][index[g]]), int(self._edges[g][index[g] + 1]))
+                slice(self._edges[g].at(index[g]), self._edges[g].at(index[g] + 1))
                 for g in self._axes
             )
             kwargs = dict(spec)
