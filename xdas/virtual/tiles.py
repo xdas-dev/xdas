@@ -6,12 +6,20 @@ dense rectilinear grid of file-backed *tiles*, described by a plain
 :class:`xarray.Dataset` (used as a container only) with one dimension
 ``tile_k`` per data axis:
 
-- 1-D *geometry* variables place the grid along each axis ``k``:
+- *geometry* variables place the grid along each axis ``k``:
   ``sizes_k`` (samples contributed by each tile, required), ``starts_k``
   (origin inside the decoded source, default 0) and ``steps_k`` (source
   stride, the per-tile decimation, default 1), reading as
   ``virtual[pos : pos + size] = source[start : start + size * step : step]``
-  with ``pos`` the running sum of the previous sizes along the axis;
+  with ``pos`` the running sum of the previous sizes along the axis.
+  A column that varies is 1-D over ``tile_k``; one holding the same
+  value everywhere folds to a 0-d variable (and one holding its kind's
+  default is left out), so an acquisition of equal-length files spends
+  one element instead of one per tile. A folded ``sizes_k`` carries an
+  ``ntiles`` attribute giving the tile count of its axis: the manifest
+  states the shape of an axis it no longer measures, instead of leaving
+  it to be inferred from whichever variable happens to still carry the
+  dimension;
 - N-D *parameter* variables: ``paths`` (the source file of each tile,
   required) plus any format-private per-tile values forwarded to the
   engine as keyword arguments. A parameter carries only the tile
@@ -116,6 +124,9 @@ TILE_PREFIX = "tile_"
 
 TILES_GROUP = "__tiles__"
 """Name of the sibling group holding a stored tile array's manifest."""
+
+NTILES = "ntiles"
+"""Attribute of a folded ``sizes_k`` holding how many tiles the axis holds."""
 
 _UNITS = ("B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
 """Decimal byte units, as xarray spells them in its ``Size:`` header."""
@@ -341,6 +352,54 @@ def _assign_geometry(dataset, assign):
     return dataset.drop_vars([name for name in drop if name in dataset])
 
 
+def _isel(dataset, indexers):
+    """Index *dataset* along the tile dimensions it still carries.
+
+    An axis whose every variable folded has no dimension left to index:
+    what it holds is one value for the whole axis, which selecting
+    among its tiles leaves untouched. The count such a selection
+    changes is restated by the geometry the caller assigns, or by
+    :data:`NTILES` when it assigns none.
+    """
+    return dataset.isel(
+        {dim: key for dim, key in indexers.items() if dim in dataset.dims}
+    )
+
+
+def _fold_geometry(dataset, counts, sizes, starts, steps):
+    """Rewrite the geometry of *dataset* in its canonical stored form.
+
+    A column holding one value everywhere is stored as a 0-d variable —
+    one element whatever the tile count — and one holding the kind's
+    default is not stored at all. No column has to stay expanded to
+    keep the grid measurable: a folded ``sizes_g`` states how many
+    tiles its axis holds in its :data:`NTILES` attribute, the count no
+    dimension is left to give.
+    """
+    columns = {
+        f"{kind}_{g}": values
+        for kind, per_axis in (("sizes", sizes), ("starts", starts), ("steps", steps))
+        for g, values in enumerate(per_axis)
+    }
+    assign, drop = {}, []
+    for name, values in columns.items():
+        kind, g = name.split("_")
+        default = {"sizes": None, "starts": 0, "steps": 1}[kind]
+        if not len(values) or not bool((values == values[0]).all()):
+            continue  # varying: worth one value per tile, and it sizes the axis
+        if default is not None and int(values[0]) == default:
+            if name in dataset:
+                drop.append(name)
+            continue
+        attrs = {NTILES: counts[int(g)]} if kind == "sizes" else {}
+        stored = dataset.get(name)
+        if stored is None or stored.dims != () or dict(stored.attrs) != attrs:
+            assign[name] = xr.Variable((), np.asarray(values[0], np.int64), attrs)
+    if assign:
+        dataset = dataset.assign(assign)
+    return dataset.drop_vars(drop) if drop else dataset
+
+
 class _Edges:
     """The running sample offsets of the tiles along one geometry axis.
 
@@ -485,6 +544,7 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
         if ngrid == 0:
             raise ValueError("a tile array needs a `sizes_0` geometry variable")
         self.dims = dims = tuple(f"{TILE_PREFIX}{g}" for g in range(ngrid))
+        self._counts = self._tile_counts(ngrid)
         self._sizes = self._geometry("sizes", None)
         self._starts = self._geometry("starts", 0)
         self._steps = self._geometry("steps", 1)
@@ -500,6 +560,11 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
             reach = self._starts[g] + (self._sizes[g] - 1) * self._steps[g]
             if np.any(reach < 0):
                 raise ValueError(f"`steps_{g}` walks out of the source")
+        # canonical stored geometry: constant columns hold one element,
+        # whatever the tile count (legacy manifests fold on open)
+        self.dataset = _fold_geometry(
+            self.dataset, self._counts, self._sizes, self._starts, self._steps
+        )
         self._edges = tuple(_Edges(sizes) for sizes in self._sizes)
         # the axis map: which geometry axis each virtual axis presents.
         # absent variables mean the identity — every geometry axis is a
@@ -552,7 +617,7 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
                 name
                 for name in map(str, dataset.data_vars)
                 if name not in geometry
-                and name not in ("paths", "root", "axes", "source_ndim")
+                and name not in ("paths", "root", "axes", "source_ndim", NTILES)
             )
         )
         for name in ("paths", *self._params):
@@ -748,18 +813,17 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
         """Load the eager 1-D ``{kind}_k`` arrays (*default* where absent).
 
         A column holding one value everywhere — always so when the
-        variable is absent — is kept as a zero-stride broadcast view
-        instead of a full-length array: nothing downstream writes to
-        the geometry, and :class:`_Edges` keys its closed forms off
-        that view. Detected, never assumed — a truncated last tile
-        makes a size column vary.
+        variable is absent or stored 0-d — is kept as a zero-stride
+        broadcast view instead of a full-length array: nothing
+        downstream writes to the geometry, and :class:`_Edges` keys its
+        closed forms off that view. Detected, never assumed — a
+        truncated last tile makes a size column vary.
         """
         arrays = []
         for k, dim in enumerate(self.dims):
             name = f"{kind}_{k}"
-            if name in self.dataset:
-                if tuple(self.dataset[name].dims) != (dim,):
-                    raise ValueError(f"`{name}` must have dimensions ({dim!r},)")
+            stored = self.dataset[name].dims if name in self.dataset else None
+            if stored == (dim,):
                 values = np.asarray(self.dataset[name].values, dtype=np.int64)
                 if (
                     values.strides != (0,)
@@ -767,11 +831,37 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
                     and (values == values[0]).all()
                 ):
                     values = np.broadcast_to(values[0], values.shape)
-            else:
-                count = int(self.dataset.sizes[dim])
-                values = np.broadcast_to(np.int64(default), (count,))
-            arrays.append(values)
+                arrays.append(values)
+                continue
+            if stored is not None and stored != ():
+                raise ValueError(f"`{name}` must have dimensions ({dim!r},) or ()")
+            # a folded column names one value, the grid the tile count
+            value = np.int64(
+                default if stored is None else self.dataset[name].values[()]
+            )
+            arrays.append(np.broadcast_to(value, (self._counts[k],)))
         return tuple(arrays)
+
+    def _tile_counts(self, ngrid):
+        """Return how many tiles each geometry axis holds.
+
+        A tile dimension the manifest declares gives its own count, and
+        is the stronger statement: a view that drops tiles rewrites
+        nothing, the counts are restated when it is stored. An axis
+        whose columns have all folded has no dimension left to ask, and
+        names its count in the :data:`NTILES` attribute of ``sizes_k``
+        (an older manifest, having none, folded nothing and held one
+        tile there).
+        """
+        counts = []
+        for k, dim in enumerate(self.dims):
+            count = self.dataset[f"sizes_{k}"].attrs.get(NTILES, 1)
+            if dim in self.dataset.dims:
+                count = int(self.dataset.sizes[dim])
+            elif not (isinstance(count, (int, np.integer)) and count >= 1):
+                raise ValueError(f"`sizes_{k}` has an invalid `{NTILES}` attribute")
+            counts.append(int(count))
+        return tuple(counts)
 
     @property
     def engine(self):
@@ -924,7 +1014,7 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
             assign[f"steps_{g}"] = (dim, (step * s)[keep])
         if not new_axes:
             raise _Unfoldable("an all-integer key selects a scalar, not a grid")
-        dataset = _assign_geometry(self.dataset.isel(indexers), assign)
+        dataset = _assign_geometry(_isel(self.dataset, indexers), assign)
         new_axes = tuple(new_axes)
         if new_axes != self._axes:
             dataset = self._assign_axes(dataset, new_axes, len(self.dims))
@@ -955,7 +1045,7 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
         order = np.asarray(order)
         if not np.array_equal(np.sort(order), np.arange(len(self._sizes[g]))):
             raise ValueError(f"`order` must be a permutation of axis {axis} tiles")
-        dataset = self.dataset.isel({self.dims[g]: order})
+        dataset = _isel(self.dataset, {self.dims[g]: order})
         return type(self)(dataset, self.dtype, self.engine)
 
     def _flip(self, axis):
@@ -970,7 +1060,7 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
         starts = self._starts[g] + (self._sizes[g] - 1) * self._steps[g]
         steps = -self._steps[g]
         dataset = _assign_geometry(
-            self.dataset.isel({dim: slice(None, None, -1)}),
+            _isel(self.dataset, {dim: slice(None, None, -1)}),
             {
                 f"starts_{g}": (dim, starts[::-1]),
                 f"steps_{g}": (dim, steps[::-1]),

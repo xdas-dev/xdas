@@ -12,7 +12,7 @@ import xarray as xr
 
 import xdas as xd
 from xdas.io import Engine
-from xdas.virtual.tiles import TileArray, _Edges
+from xdas.virtual.tiles import NTILES, TILES_GROUP, TileArray, _Edges
 
 NX = 5
 
@@ -228,8 +228,13 @@ class TestManifest:
     def test_dataset_model(self, stack, tmp_path):
         manifest, _ = stack
         dataset = manifest.dataset
+        # a varying column sizes its own axis, and says nothing
         assert tuple(dataset["sizes_0"].dims) == ("tile_0",)
-        assert tuple(dataset["sizes_1"].dims) == ("tile_1",)
+        assert dataset["sizes_0"].attrs == {}
+        # one tile spans the trailing axis: a constant column, folded,
+        # stating the tile count its dimension no longer gives
+        assert tuple(dataset["sizes_1"].dims) == ()
+        assert dataset["sizes_1"].attrs == {NTILES: 1}
         # per-file paths vary along tile_0 only: the trailing axis folds
         assert tuple(dataset["paths"].dims) == ("tile_0",)
         # the common directory splits off: 0-d root, root-relative paths
@@ -504,6 +509,107 @@ class TestConstantGeometry:
         reopened = xd.open_dataarray(path)
         assert reopened.data.equals(view)
         npt.assert_array_equal(reopened.values, reference[::-1, ::2])
+
+    def test_constant_column_is_stored_as_one_element(self, uniform):
+        manifest, _ = uniform
+        # a constant column costs one element, not one per tile
+        assert manifest.dataset["sizes_0"].dims == ()
+        assert int(manifest.dataset["sizes_0"].values[()]) == 6
+
+    def test_constant_non_default_starts_are_stored_as_one_element(self, stack):
+        manifest, _ = stack
+        assert manifest.dataset["starts_0"].dims == ()
+        npt.assert_array_equal(manifest._starts[0], [1] * 3)
+
+    def test_every_constant_column_folds(self, uniform):
+        manifest, _ = uniform
+        # nothing carries `tile_1` any more, and nothing has to: the
+        # folded column states how many tiles its axis holds
+        assert manifest.dataset["sizes_1"].dims == ()
+        assert "tile_1" not in manifest.dataset.dims
+        assert manifest.dataset["sizes_1"].attrs[NTILES] == 1
+        # every folded column says it, whether or not a dimension remains
+        assert manifest.dataset["sizes_0"].attrs[NTILES] == 4
+        assert manifest.shape[1] == NX
+        assert manifest.chunks[1] == (NX,)
+
+    def test_varying_column_is_stored_expanded(self, stack):
+        manifest, _ = stack
+        assert manifest.dataset["sizes_0"].dims == ("tile_0",)
+
+    def test_expanded_stored_column_folds_on_open(self, uniform):
+        manifest, reference = uniform
+        legacy = manifest.dataset.assign(
+            sizes_0=("tile_0", np.full(4, 6, dtype="int64")),
+            starts_0=("tile_0", np.zeros(4, dtype="int64")),
+            steps_0=("tile_0", np.ones(4, dtype="int64")),
+        )
+        reopened = TileArray(legacy, manifest.dtype, manifest.engine)
+        # the manifest an older xdas wrote folds on the way in
+        assert reopened.dataset["sizes_0"].dims == ()
+        assert "starts_0" not in reopened.dataset
+        assert "steps_0" not in reopened.dataset
+        assert reopened.equals(manifest)
+        npt.assert_array_equal(np.asarray(reopened), reference)
+
+    def test_folded_column_is_not_written_per_tile(self, uniform, tmp_path):
+        manifest, _ = uniform
+        path = str(tmp_path / "folded.nc")
+        wrap(manifest).to_netcdf(path)
+        with h5py.File(path) as file:
+            assert file[f"/{TILES_GROUP}/sizes_0"].shape == ()
+        reopened = xd.open_dataarray(path)
+        assert reopened.data.dataset["sizes_0"].dims == ()
+
+    def test_wholly_folded_grid_keeps_its_shape(self, uniform, tmp_path):
+        manifest, reference = uniform
+        # one tile of one file, concatenated with itself: every column
+        # is constant, so only the grid still counts the tiles
+        path = os.fsdecode(manifest._full_paths().item(0))
+        single = TileArray.from_tiles(path, ([6], NX), "float64", ENGINE)
+        doubled = TileArray.concat([single, single])
+        assert doubled.shape == (12, NX)
+        assert not any(
+            dim.startswith("tile_") for dim in map(str, doubled.dataset.dims)
+        )
+        assert doubled.dataset["sizes_0"].attrs[NTILES] == 2
+        path = str(tmp_path / "folded_grid.nc")
+        wrap(doubled).to_netcdf(path)
+        reopened = xd.open_dataarray(path)
+        expected = np.concatenate([reference[:6], reference[:6]])
+        assert reopened.data.shape == (12, NX)
+        assert reopened.data.equals(doubled)
+        npt.assert_array_equal(reopened.values, expected)
+        # and it stays sliceable with no tile dimension to index
+        npt.assert_array_equal(np.asarray(reopened.data[3:9]), expected[3:9])
+
+    def test_tile_counts_follow_a_view(self, uniform):
+        manifest, _ = uniform
+        # a tile-aligned slice folds, and restates what it leaves behind
+        assert manifest[6:18].dataset["sizes_0"].attrs[NTILES] == 2
+        # a synthetic axis is one tile it never had to be told about
+        assert np.expand_dims(manifest, 0).dataset["sizes_2"].attrs[NTILES] == 1
+
+    def test_legacy_manifest_without_the_attribute_reopens(self, uniform):
+        manifest, reference = uniform
+        legacy = manifest.dataset.assign(
+            sizes_0=("tile_0", np.full(4, 6, dtype="int64")),
+            sizes_1=((), np.int64(NX)),  # folded, but with nothing to say
+        )
+        # an older manifest measures itself by the dimensions it declares
+        reopened = TileArray(legacy, manifest.dtype, manifest.engine)
+        assert reopened.dataset["sizes_0"].attrs[NTILES] == 4
+        assert reopened.equals(manifest)
+        npt.assert_array_equal(np.asarray(reopened), reference)
+
+    @pytest.mark.parametrize("count", [0, -1, "many", np.array([4, 1])])
+    def test_malformed_tile_count_raises(self, uniform, count):
+        manifest, _ = uniform
+        broken = manifest.dataset.assign(
+            sizes_1=xr.Variable((), np.int64(NX), {NTILES: count})
+        )
+        with pytest.raises(ValueError, match=f"invalid `{NTILES}` attribute"):
+            TileArray(broken, manifest.dtype, manifest.engine)
 
     def test_hidden_and_synthetic_axes_round_trip(self, uniform, tmp_path):
         manifest, reference = uniform
