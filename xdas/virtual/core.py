@@ -18,9 +18,9 @@ class VirtualBackend(ABC):
     - ``__getitem__`` selects lazily and ``__array__`` materializes;
     - :meth:`from_variable` wraps one stored HDF5 variable, so open
       paths dispatch ``VirtualBackend[vtype].from_variable(...)``;
-    - the :meth:`create_variable`/:meth:`finalize_save` pair writes
-      the backend's stored form, so save paths need no per-backend
-      branch.
+    - the :meth:`create_variable`/:meth:`sibling_datasets` pair
+      describes the backend's stored form, so save paths need no
+      per-backend branch.
 
     Beyond the contract the backends share no implementation and
     differ freely (blocking, concatenation). Subclasses register by
@@ -120,15 +120,18 @@ class VirtualBackend(ABC):
         specification for the tiles backend.
         """
 
-    def finalize_save(self, fname, group=None):
+    def sibling_datasets(self):
         """
-        Append what of the stored form outlives the variable.
+        Return what of the stored form lives beside the variable.
 
-        The second half of the persistence contract, called once the
-        file handle of :meth:`create_variable` is closed. Default: the
-        variable is the whole stored form, nothing to append — the
-        tiles backend appends its manifest as a sibling group.
+        The second half of the persistence contract: a mapping from
+        group name, relative to the variable's group, to the
+        :class:`xarray.Dataset` to store there. The writer lands them
+        with the rest of the file's metadata. Default: the variable is
+        the whole stored form, nothing beside it — the tiles backend
+        returns its manifest under a ``__tiles__`` sibling group.
         """
+        return {}
 
     # --- derived from the contract, shared by every backend ---
 
