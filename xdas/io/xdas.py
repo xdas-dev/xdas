@@ -105,9 +105,14 @@ def open_dataarray(fname, group=None, vtype=None):
     if isinstance(fname, Path):
         fname = str(fname)
 
-    # read metadata
+    # read metadata. "access" is xarray's own default and silences its warning;
+    # "sort" would rescan every group of the file on each open.
     with xr.open_dataset(
-        fname, group=group, engine="h5netcdf", decode_timedelta=False, phony_dims="sort"
+        fname,
+        group=group,
+        engine="h5netcdf",
+        decode_timedelta=False,
+        phony_dims="access",
     ) as dataset:
         # check file format
         if not (
