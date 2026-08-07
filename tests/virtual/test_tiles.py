@@ -139,35 +139,6 @@ def _tile_file(path, data, **kwargs):
         file.create_dataset("data", data=data, **kwargs)
 
 
-def _downgrade(path, manifest):
-    """Rewrite the native file at *path* into the form predating the header.
-
-    The mirror image of what the reader must still accept: the engine
-    on the placeholder, the root, the axis map and the tile counts back
-    in the manifest as variables and variable attributes.
-    """
-    with h5py.File(path, "a") as file:
-        placeholder = file["__values__"]
-        del placeholder.attrs["__tiling__"]
-        placeholder.attrs["__tile_array__"] = json.dumps({"engine": manifest.engine})
-        group = file[TILES_GROUP]
-        header = json.loads(group.attrs["header"])
-        del group.attrs["header"]
-        if "root" in header:
-            group.create_dataset("root", data=np.bytes_(os.fsencode(header["root"])))
-        for k, count in enumerate(header["ntiles"]):
-            if group[f"sizes_{k}"].shape == ():
-                group[f"sizes_{k}"].attrs["ntiles"] = count
-        if "axes" in header:
-            source_ndim = len(header["ntiles"]) - header["axes"].count(None)
-            axes, synthetic = [], source_ndim
-            for g in header["axes"]:
-                axes.append(synthetic if g is None else g)
-                synthetic += g is None
-            group.create_dataset("axes", data=np.asarray(axes, np.int64))
-            group.create_dataset("source_ndim", data=np.int64(source_ndim))
-
-
 def _with_starts(manifest, *starts):
     """Rebuild *manifest* with per-axis tile origins inside their sources.
 
@@ -590,13 +561,13 @@ class TestConstantGeometry:
 
     def test_expanded_stored_column_folds_on_open(self, uniform):
         manifest, reference = uniform
-        legacy = manifest.dataset.assign(
+        expanded = manifest.dataset.assign(
             sizes_0=("tile_0", np.full(4, 6, dtype="int64")),
             starts_0=("tile_0", np.zeros(4, dtype="int64")),
             steps_0=("tile_0", np.ones(4, dtype="int64")),
         )
-        reopened = TileArray(legacy)
-        # the manifest an older xdas wrote folds on the way in
+        reopened = TileArray(expanded)
+        # a column written per tile folds on the way in
         assert reopened.dataset["sizes_0"].dims == ()
         assert "starts_0" not in reopened.dataset
         assert "steps_0" not in reopened.dataset
@@ -642,32 +613,24 @@ class TestConstantGeometry:
         # a synthetic axis is one tile it never had to be told about
         assert counts(np.expand_dims(manifest, 0)) == [4, 1, 1]
 
-    def test_legacy_manifest_without_a_header_reopens(self, uniform):
+    def test_a_hand_built_manifest_implies_its_header(self, uniform):
+        """No header: the declared dimensions give the counts, the rest defaults."""
         manifest, reference = uniform
-        legacy = manifest.dataset.drop_attrs().assign(
-            sizes_0=("tile_0", np.full(4, 6, dtype="int64")),
-            sizes_1=xr.Variable((), np.int64(NX), {"ntiles": 1}),
-            root=((), np.asarray(os.fsencode(manifest.root))),
+        paths = manifest._full_paths().ravel()
+        built = xr.Dataset(
+            {
+                "sizes_0": ("tile_0", np.full(4, 6, dtype="int64")),
+                "sizes_1": ((), np.int64(NX)),
+                "paths": ("tile_0", paths),
+            }
         )
-        legacy["paths"] = xr.Variable(
-            manifest.dataset["paths"].dims, manifest.dataset["paths"].values
-        )
-        # the pre-header form spread over variables and variable attrs
-        reopened = TileArray(legacy, manifest.dtype, manifest.engine)
-        assert json.loads(reopened.dataset.attrs["header"])["ntiles"] == [4, 1]
-        assert "root" not in reopened.dataset
-        assert reopened.root == manifest.root
+        reopened = TileArray(built, manifest.dtype, manifest.engine)
+        header = json.loads(reopened.dataset.attrs["header"])
+        assert header["ntiles"] == [4, 1]
+        assert "root" not in header and "axes" not in header
+        assert reopened.root == ""  # paths stored whole
         assert reopened.equals(manifest)
         npt.assert_array_equal(np.asarray(reopened), reference)
-
-    @pytest.mark.parametrize("count", [0, -1, "many", np.array([4, 1])])
-    def test_malformed_legacy_tile_count_raises(self, uniform, count):
-        manifest, _ = uniform
-        broken = manifest.dataset.drop_attrs().assign(
-            sizes_1=xr.Variable((), np.int64(NX), {"ntiles": count})
-        )
-        with pytest.raises(ValueError, match="invalid `ntiles` attribute"):
-            TileArray(broken, manifest.dtype, manifest.engine)
 
     @pytest.mark.parametrize(
         "ntiles, match",
@@ -729,7 +692,7 @@ class TestSourcePaths:
         npt.assert_array_equal(np.asarray(restored), data[1:])
 
     def test_rootless_manifest_reads(self, tmp_path):
-        """Manifests without a `root` (the pre-split stored form) still work."""
+        """A manifest whose header states no root uses its paths as stored."""
         data = np.arange(5 * NX, dtype="<f4").reshape(5, NX)
         _tile_file(tmp_path / "f.h5", data)
         manifest = self.make(tmp_path / "f.h5")
@@ -737,11 +700,11 @@ class TestSourcePaths:
         dataset["paths"] = xr.Variable(
             (), np.asarray(str(tmp_path / "f.h5"), dtype=object)
         )
-        legacy = TileArray(dataset)
-        assert legacy.root == ""
-        npt.assert_array_equal(np.asarray(legacy), data[1:])
+        rootless = TileArray(dataset)
+        assert rootless.root == ""
+        npt.assert_array_equal(np.asarray(rootless), data[1:])
         # same files, however split between root and relative paths
-        assert legacy.equals(manifest) and manifest.equals(legacy)
+        assert rootless.equals(manifest) and manifest.equals(rootless)
 
     def test_no_common_directory_keeps_paths_whole(self):
         from xdas.virtual.tiles import _split_root
@@ -761,10 +724,15 @@ class TestSourcePaths:
                 {
                     "sizes_0": ("tile_0", np.array([3])),
                     "paths": ((), np.asarray(os.fsencode(path))),
-                    "root": ((), np.asarray(os.fsencode(root))),
                 }
             )
-            return TileArray(dataset, "float64", ENGINE)  # no header: upgraded
+            header = {
+                "ntiles": [1],
+                "engine": ENGINE,
+                "dtype": "float64",
+                "root": root,
+            }
+            return TileArray(dataset.assign_attrs(header=json.dumps(header)))
 
         fused = TileArray.concat([make("/a/b", "f.h5"), make("rel", "g.h5")])
         assert fused.root == ""
@@ -1018,7 +986,7 @@ class TestConcat:
         npt.assert_array_equal(np.asarray(fused), np.concatenate(parts))
 
     def test_concat_without_common_root_stores_absolute(self, tmp_path):
-        """A rootless (legacy) input drags the fusion to absolute paths."""
+        """A rootless input drags the fusion to absolute paths."""
         engine = {"name": "h5py", "dataset": "data"}
         parts, manifests = [], []
         for k in range(2):
@@ -1031,8 +999,8 @@ class TestConcat:
         dataset["paths"] = xr.Variable(
             (), np.asarray(str(tmp_path / "r1.h5"), dtype=object)
         )
-        legacy = TileArray(dataset)
-        fused = TileArray.concat([manifests[0], legacy])
+        rootless = TileArray(dataset)
+        fused = TileArray.concat([manifests[0], rootless])
         assert fused.root == ""
         assert all(os.path.isabs(path) for path in fused.dataset["paths"].values)
         npt.assert_array_equal(np.asarray(fused), np.concatenate(parts))
@@ -1928,55 +1896,6 @@ class TestAxisMap:
         with pytest.raises(ValueError, match="single tile"):
             TileArray(_reheader(two, axes=[1]))
 
-    def test_legacy_map_variables_upgrade(self, stack, tmp_path):
-        """The pre-header form spelled the map as two variables."""
-        manifest, reference = stack
-        view = np.expand_dims(np.transpose(manifest), 1)  # axes [1, null, 0]
-        legacy = view.dataset.drop_attrs().assign(
-            axes=("axis", np.array([1, 2, 0])),
-            source_ndim=((), np.int64(2)),
-            root=((), np.asarray(os.fsencode(view.root))),
-        )
-        reopened = TileArray(legacy, view.dtype, view.engine)
-        assert json.loads(reopened.dataset.attrs["header"])["axes"] == [1, None, 0]
-        assert not {"axes", "source_ndim", "root"} & set(reopened.dataset.variables)
-        assert reopened.equals(view)
-        npt.assert_array_equal(np.asarray(reopened), reference.T[:, None])
-
-    def test_legacy_map_validation(self, stack):
-        manifest, _ = stack
-        headless = manifest.dataset.drop_attrs()
-        with pytest.raises(ValueError, match="1-D over its own"):
-            TileArray(
-                headless.assign(axes=("tile_0", np.array([0, 1, 0]))),
-                manifest.dtype,
-                manifest.engine,
-            )
-        with pytest.raises(ValueError, match="distinct geometry axes below 2"):
-            TileArray(
-                headless.assign(axes=("axis", np.array([0, 2]))),
-                manifest.dtype,
-                manifest.engine,
-            )
-        with pytest.raises(ValueError, match="between 1 and"):
-            TileArray(
-                headless.assign(source_ndim=((), np.int64(3))),
-                manifest.dtype,
-                manifest.engine,
-            )
-        with pytest.raises(ValueError, match="0-d"):
-            TileArray(
-                headless.assign(source_ndim=("axis", np.array([2]))),
-                manifest.dtype,
-                manifest.engine,
-            )
-        with pytest.raises(ValueError, match="0-d"):
-            TileArray(
-                headless.assign(root=("tile_0", np.array([b"a", b"b", b"c"]))),
-                manifest.dtype,
-                manifest.engine,
-            )
-
     def test_transpose_method_validation(self, stack):
         manifest, _ = stack
         with pytest.raises(ValueError, match="permute"):
@@ -2694,28 +2613,6 @@ class TestStoredForm:
             file[TILES_GROUP].attrs["header"] = json.dumps(header)
         with pytest.raises(ValueError, match="placeholder is float64"):
             xd.open_dataarray(path, engine="xdas")
-
-    @pytest.mark.parametrize("view", ["plain", "mapped"])
-    def test_a_file_of_the_earlier_format_opens_the_same(self, uniform, tmp_path, view):
-        """The break is one-way: what earlier versions wrote still reads."""
-        manifest, reference = uniform
-        expected = reference
-        if view == "mapped":
-            manifest = np.transpose(manifest)[:, np.newaxis]
-            expected = reference.T[:, np.newaxis]
-        modern = str(tmp_path / f"modern_{view}.nc")
-        legacy = str(tmp_path / f"legacy_{view}.nc")
-        dims = tuple(f"dim_{k}" for k in range(manifest.ndim))
-        for path in (modern, legacy):
-            xd.DataArray(manifest, dims=dims).to_netcdf(path)
-        _downgrade(legacy, manifest)
-        upgraded = xd.open_dataarray(legacy, engine="xdas")
-        assert isinstance(upgraded.data, TileArray)
-        assert upgraded.data.equals(xd.open_dataarray(modern, engine="xdas").data)
-        # the upgrade is complete: nothing of the old spelling survives
-        assert self.header(upgraded.data) == self.header(manifest)
-        assert set(upgraded.data.dataset.variables) == set(manifest.dataset.variables)
-        npt.assert_array_equal(upgraded.values, expected)
 
     def test_dunder_attributes_stay_out_of_the_data_array(self, uniform, tmp_path):
         """The `__*__` namespace is the format's; the rest is the user's."""

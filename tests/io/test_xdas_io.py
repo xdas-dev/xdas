@@ -186,7 +186,7 @@ class TestOpenDatamappingOnVariable:
         path = str(tmp_path / "dc.nc")
         dc.to_netcdf(path)
         with pytest.raises(ValueError, match="data array as a data collection"):
-            open_datacollection(path, group="collection/a/time_values")
+            open_datacollection(path, group="collection/a/time_indices")
 
 
 class TestNestedCollections:

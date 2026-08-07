@@ -12,7 +12,6 @@ writable `h5netcdf` handle. One handle matters on write: every writable
 id, so per-array opens made saving a collection quadratic in its size.
 """
 
-import json
 import os
 import warnings
 from pathlib import Path
@@ -28,7 +27,7 @@ from ..coordinates import Coordinates
 from ..core import DataArray, DataCollection, DataMapping, DataSequence
 from ..dask import create_variable, loads
 from ..virtual import TileArray, VirtualBackend
-from ..virtual.tiles import TILES_GROUP, TILING
+from ..virtual.tiles import TILING
 from .core import Engine
 
 
@@ -181,12 +180,6 @@ def _read_dataarray(node, fname, group=None, vtype=None):
                 f"the placeholder is {dataset[name].dtype} where its manifest "
                 f"records {data.dtype}"
             )
-    elif "__tile_array__" in attrs:
-        # the form predating the header: the engine travelled on the
-        # placeholder, which also carried the dtype
-        spec = json.loads(attrs["__tile_array__"])
-        manifest = node[TILES_GROUP].to_dataset(inherit=False).load()
-        data = TileArray(manifest, dataset[name].dtype, spec["engine"])
     elif "__dask_array__" in attrs:
         data = loads(attrs["__dask_array__"])
     else:

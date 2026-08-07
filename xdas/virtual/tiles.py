@@ -65,11 +65,10 @@ fixed-width bytes (numpy ``S`` kind, filesystem encoding): one
 contiguous block instead of a heap of str objects, comparisons that
 vectorize, and a stored form that lands on disk as netCDF char arrays
 with no encoding step. The constructor recodes str-valued variables
-(hand-built manifests, legacy stored forms) on entry; values decode
-back to str only when handed to the engine. The ``root``, being a
-header value, travels through JSON instead: non-UTF-8 directory names
-survive as escaped surrogates, exactly as :func:`os.fsdecode` spells
-them.
+(hand-built manifests) on entry; values decode back to str only when
+handed to the engine. The ``root``, being a header value, travels
+through JSON instead: non-UTF-8 directory names survive as escaped
+surrogates, exactly as :func:`os.fsdecode` spells them.
 
 A tile array carries no user attributes of its own — it is a duck
 array, like the numpy array it stands in for. Metadata belongs to the
@@ -434,58 +433,19 @@ def _write_header(dataset, header):
     return dataset.assign_attrs({HEADER: json.dumps(header)})
 
 
-def _upgrade(dataset, ngrid):
-    """Return ``(dataset, header)`` for a manifest predating the header.
+def _bare_header(dataset, ngrid):
+    """Return the header of a manifest that carries none: the columns alone.
 
-    The earlier stored form spread over variables (``root``, ``axes``,
-    ``source_ndim``) and per-variable ``ntiles`` attributes what the
-    header now holds in one place; dataset attributes, which a tile
-    array no longer carries, are dropped. The dtype and the engine
-    travelled beside the manifest and are the caller's to fill in.
+    What a hand-assembled dataset says by itself — the tile counts, from
+    the dimensions it declares — for the identity arrangement, with the
+    paths stored whole. The dtype and the engine are the caller's to
+    pass; everything else is the default.
     """
-    counts = []
-    for k in range(ngrid):
-        dim = f"{TILE_PREFIX}{k}"
-        count = dataset[f"sizes_{k}"].attrs.get("ntiles", 1)
-        if dim in dataset.dims:
-            count = int(dataset.sizes[dim])
-        elif not (isinstance(count, (int, np.integer)) and count >= 1):
-            raise ValueError(f"`sizes_{k}` has an invalid `ntiles` attribute")
-        counts.append(int(count))
-    source_ndim = ngrid
-    if "source_ndim" in dataset:
-        if tuple(dataset["source_ndim"].dims) != ():
-            raise ValueError("`source_ndim` must be a 0-d variable")
-        source_ndim = int(dataset["source_ndim"].values[()])
-        if not 0 < source_ndim <= ngrid:
-            raise ValueError("`source_ndim` must be between 1 and the geometry rank")
-    if "axes" in dataset:
-        dims = tuple(map(str, dataset["axes"].dims))
-        if len(dims) != 1 or dims[0].startswith(TILE_PREFIX):
-            raise ValueError("`axes` must be 1-D over its own dimension")
-        axes = tuple(int(g) for g in np.atleast_1d(dataset["axes"].values))
-        if len(set(axes)) != len(axes) or not all(0 <= g < ngrid for g in axes):
-            raise ValueError(f"`axes` must name distinct geometry axes below {ngrid}")
-    else:
-        axes = tuple(range(ngrid))
-    root = ""
-    if "root" in dataset:
-        if tuple(dataset["root"].dims) != ():
-            raise ValueError("`root` must be a 0-d variable")
-        root = os.fsdecode(dataset["root"].values[()])
-    dataset = dataset.drop_vars(
-        [name for name in ("root", "axes", "source_ndim") if name in dataset]
-    ).drop_attrs(deep=True)
-    header = {"ntiles": counts}
-    # the earlier form let a pinned synthetic axis linger as a hidden
-    # one, and transposes renumber nothing: canonicalize before storing
-    dataset, axes = _canonical(dataset, header, axes, source_ndim)
-    encoded = _encode_axes(axes, source_ndim, len(header["ntiles"]))
-    if encoded is not None:
-        header["axes"] = encoded
-    if root:
-        header["root"] = root
-    return dataset, header
+    counts = [
+        int(dataset.sizes[dim]) if dim in dataset.dims else 1
+        for dim in (f"{TILE_PREFIX}{k}" for k in range(ngrid))
+    ]
+    return {"ntiles": counts}
 
 
 def _canonical(dataset, header, axes, source_ndim):
@@ -707,7 +667,7 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
         report it without reading. Verified against every decoded
         tile, never used to cast. Read off the header when omitted;
         given, it must agree with the header when there is one (a
-        manifest predating it has none, and then it is required).
+        hand-built dataset carries none, and then it is required).
     engine : str or dict, optional
         The engine specification, stored by value with the array: the
         key ``"name"`` selects a registered engine
@@ -726,7 +686,7 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
 
     def __init__(self, dataset, dtype=None, engine=None):
         # canonical string dtype is fixed-width bytes: str-valued
-        # variables (hand-built or legacy stored manifests) recode here
+        # variables (hand-built manifests) recode here
         recode = {
             name: xr.Variable(dataset[name].dims, _as_bytes(dataset[name].values))
             for name in map(str, dataset.data_vars)
@@ -742,12 +702,16 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
         if HEADER in dataset.attrs:
             header = _read_header(dataset)
         else:
-            dataset, header = _upgrade(dataset, ngrid)
+            # a hand-assembled dataset: the columns are all it says, and
+            # the tiles machinery owns the whole manifest, stray
+            # attributes included
+            header = _bare_header(dataset, ngrid)
+            dataset = dataset.drop_attrs(deep=True)
         self.dataset = dataset
         self._cache = None
         # the header is authoritative; an explicit argument fills in for
-        # a manifest that states nothing (the scan-time assembly, and
-        # the forms predating the header) and must otherwise agree
+        # a manifest that carries none (the scan-time assembly, and
+        # hand-built datasets) and must otherwise agree
         if engine is None and "engine" not in header:
             raise ValueError("the manifest records no engine")
         self._engine = _as_engine(header["engine"] if engine is None else engine)
