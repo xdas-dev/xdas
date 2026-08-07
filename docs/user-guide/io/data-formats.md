@@ -43,11 +43,23 @@ engine named after the library rather than after a format:
 | Xdas              | `None`            | HDF5, tiles       | `hdf5`    |
 | ProdML            | `"prodml"`        | HDF5, tiles       | `hdf5`    |
 | ObsPy formats     | `"obspy"`         | tiles             | `tiles`   |
+| miniSEED (legacy) | `"miniseed"`      | tiles             | `tiles`   |
 
 The `"obspy"` engine is the only one that describes a file as a *collection*
 rather than a single array: it emits one lazy data array per ObsPy `Trace`,
-nested on the SEED hierarchy. See [](obspy.md). `engine="miniseed"` remains a
-registered alias for it.
+nested on the SEED hierarchy. See [](obspy.md).
+
+```{note}
+`"miniseed"` is the engine `"obspy"` replaced, kept so that views written by
+it keep decoding and code written against it keeps running. It describes a
+whole file as one tile of stacked channels, which it classifies as
+*synchronized* or *unsynchronized* and refuses anything else — a file holding
+two sampling rates, for instance. Both engines read the same files, so
+registration order settles auto-detection: `"obspy"` is tried first, and
+`"miniseed"` is reached only through {py:func}`xdas.open_dataarray`, which
+asks for the single stacked array the new engine cannot produce. Prefer
+`"obspy"` in new code.
+```
 
 ```{note}
 A Febus file stores a stack of overlapping blocks rather than one contiguous array. The

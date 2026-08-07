@@ -2,8 +2,8 @@
 
 The engine is named for the library, not for a format: decoding is
 :func:`obspy.read`, so every format ObsPy supports — MiniSEED, SAC, GSE2,
-SEG-2 and the rest — goes through it. ``engine="miniseed"`` remains a
-registered alias.
+SEG-2 and the rest — goes through it. It replaces
+:mod:`xdas.io.miniseed`, which is kept alongside it for the views it wrote.
 """
 
 from typing import ClassVar
@@ -46,7 +46,7 @@ MSEED_DTYPES = {
 }
 
 
-class ObsPyEngine(Engine, name="obspy", aliases=["miniseed"]):
+class ObsPyEngine(Engine, name="obspy"):
     """
     Engine for the file formats ObsPy reads, as lazy tile-backed data arrays.
 
@@ -135,14 +135,12 @@ class ObsPyEngine(Engine, name="obspy", aliases=["miniseed"]):
         path,
         selection,
         *,
-        network=None,
-        station=None,
-        location=None,
-        channel=None,
-        starttime=None,
-        endtime=None,
-        method=None,
-        ignore_last_sample=False,
+        network,
+        station,
+        location,
+        channel,
+        starttime,
+        endtime,
     ):
         """Read a source selection of *path*, decoding with :func:`obspy.read`.
 
@@ -154,11 +152,10 @@ class ObsPyEngine(Engine, name="obspy", aliases=["miniseed"]):
         before the span is looked up, so the pointer resolves whatever record
         boundaries the reader drew.
 
-        Manifests written before the engine was renamed carry a ``method``
-        instead, and are decoded by the legacy branch.
+        Manifests written before the engine was renamed name the `"miniseed"`
+        engine instead, and are decoded by
+        :meth:`~xdas.io.miniseed.MiniSEEDEngine.load_tile`.
         """
-        if starttime is None:
-            return load_legacy_tile(path, selection, method, ignore_last_sample)
         st = obspy.read(path).select(
             network=network,
             station=station,
@@ -296,37 +293,6 @@ def join_contiguous(traces):
         }
         for run in runs
     ]
-
-
-def load_legacy_tile(path, selection, method, ignore_last_sample):
-    """Decode a tile written by the pre-rename "miniseed" engine.
-
-    That engine described one file as one tile of stacked channels, classified
-    at scan time as "synchronized" or "unsynchronized". Stored views still
-    carry those keys, so their decoding is kept verbatim; nothing writes them
-    any more.
-    """
-    st = obspy.read(path)
-    if method == "synchronized":
-        if ignore_last_sample:
-            for tr in st:
-                tr.data = tr.data[:-1]
-        data = np.array(st)
-    else:
-        channels = [tr.stats.channel for tr in st]
-        data = []
-        for channel in np.unique(channels):
-            tmp_st = st.select(channel=channel)
-            channel_data = []
-            for n, tr in enumerate(tmp_st):
-                if ignore_last_sample and n == len(tmp_st) - 1:
-                    tr.data = tr.data[:-1]
-                channel_data.append(tr.data)
-            data.append(np.concatenate(channel_data))
-        data = np.array(data)
-    if data.ndim > len(selection):
-        data = data.reshape(data.shape[data.ndim - len(selection) :])
-    return data[selection]
 
 
 def to_stream(

@@ -285,6 +285,7 @@ def test_default_vtypes():
         "apsensing": "hdf5",
         "asn": "hdf5",
         "febus": "tiles",
+        "miniseed": "tiles",
         "obspy": "tiles",
         "prodml": "hdf5",
         "silixa": "tiles",

@@ -197,6 +197,10 @@ class AutoEngine(Engine):
     - The first engine that successfully opens the file is used
     - If all engines fail, an informative error message is raised
 
+    Registration order therefore settles which engine wins when several read
+    the same file: `"obspy"` is registered before the legacy `"miniseed"`, and
+    both after the format-specific engines.
+
     Parameters
     ----------
     vtype : str, optional

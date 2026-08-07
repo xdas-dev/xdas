@@ -276,60 +276,14 @@ class TestLoadTile:
 
 
 class TestLegacy:
-    def test_alias_still_resolves(self):
+    def test_the_legacy_engine_is_separate(self):
         from xdas.io import Engine
+        from xdas.io.miniseed import MiniSEEDEngine
 
-        assert Engine["miniseed"] is ObsPyEngine
-        assert Engine["miniseed"]().vtype == "tiles"
-
-    def test_pre_rename_manifest_still_decodes(self, tmp_path):
-        path = tmp_path / "three.mseed"
-        st = write(
-            path,
-            [
-                (header(channel=f"HH{component}"), np.random.rand(100))
-                for component in "ZNE"
-            ],
-        )
-        # the shape the old engine described: one file, one tile, channels
-        # stacked, with the classifier's verdict in the engine specification
-        data = TileArray.from_tiles(
-            str(path),
-            (3, 100),
-            np.dtype("float64"),
-            {"name": "miniseed", "method": "synchronized", "ignore_last_sample": False},
-        )
-        npt.assert_allclose(np.asarray(data), np.array(st))
-
-        trimmed = TileArray.from_tiles(
-            str(path),
-            (3, 99),
-            np.dtype("float64"),
-            {"name": "miniseed", "method": "synchronized", "ignore_last_sample": True},
-        )
-        npt.assert_allclose(np.asarray(trimmed), np.array(st)[:, :-1])
-
-    def test_pre_rename_unsynchronized_manifest(self, tmp_path):
-        path = tmp_path / "gap.mseed"
-        st = write(
-            path,
-            [
-                (header(channel=channel, starttime=start), np.random.rand(50))
-                for channel in ("HHZ",)
-                for start in (0.0, 1.0)
-            ],
-        )
-        data = TileArray.from_tiles(
-            str(path),
-            (1, 100),
-            np.dtype("float64"),
-            {
-                "name": "miniseed",
-                "method": "unsynchronized",
-                "ignore_last_sample": False,
-            },
-        )
-        npt.assert_allclose(np.asarray(data)[0], np.concatenate([tr.data for tr in st]))
+        # `engine="miniseed"` names the engine this one replaced, kept for the
+        # views it wrote; see tests/io/test_miniseed.py
+        assert Engine["miniseed"] is MiniSEEDEngine
+        assert Engine["obspy"] is ObsPyEngine
 
 
 class TestOpenRouting:
