@@ -162,7 +162,7 @@ class DataCollection:
         indexer applies wherever its level sits in the tree, not only at the
         root.
         """
-        key = indexers.get(self.name, None) if self.name in indexers else None
+        key = indexers.get(self.name)
         if self.issequence():
             data = list(self)
             if self.name in indexers:
@@ -171,7 +171,7 @@ class DataCollection:
                 elif isinstance(key, slice):
                     data = data[key]
                 else:
-                    raise ValueError(f"{self.name} query must be a string")
+                    raise ValueError(f"{self.name} query must be an integer or a slice")
             data = [
                 (value._query(indexers) if isinstance(value, DataCollection) else value)
                 for value in data

@@ -333,7 +333,7 @@ class TestDataCollection:
     def test_query_invalid_key_in_sequence(self):
         da = xd.testing.dummy()
         dc = xd.DataCollection([da, da], "seq")
-        with pytest.raises(ValueError, match="query must be a string"):
+        with pytest.raises(ValueError, match="query must be an integer or a slice"):
             dc.query(seq="bad_string_key")
 
     def test_query_invalid_key_in_mapping(self):

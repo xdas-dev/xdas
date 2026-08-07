@@ -242,7 +242,7 @@ def _save_tree(leaves, fname, mode, virtual, encoding, create_dirs):
         isvirtual = isinstance(da.data, VirtualBackend) if virtual is None else virtual
         if isvirtual:
             if encoding is not None:
-                raise ValueError("cannot use `encoding` with in virtual mode")
+                raise ValueError("cannot use `encoding` in virtual mode")
             if not isinstance(da.data, VirtualBackend):
                 raise ValueError(
                     "can only use `virtual=True` with a virtual array as data"
