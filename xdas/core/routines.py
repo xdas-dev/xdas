@@ -1107,6 +1107,54 @@ class Bag:
                 raise CompatibilityError("sampling intervals are not compatible")
 
 
+def _get_promoted_coords(objs, dim):
+    """Check the non-concat coordinates of *objs* and report the varying scalars.
+
+    Called when *dim* opens a new dimension, where :func:`concat` would
+    otherwise keep the first element's coordinates and silently discard the
+    others'. Coordinates that every element shares are kept as they are;
+    scalar ones that differ are what the new dimension is made of, and are
+    returned for promotion to a coordinate along it — the ``channel`` of a
+    stack of seismic traces, say. Anything else is a genuine incompatibility.
+
+    Parameters
+    ----------
+    objs : list of DataArray
+        The data arrays about to be concatenated, before ``expand_dims``.
+    dim : str
+        The name of the new dimension. A coordinate of that name is left
+        alone: ``expand_dims`` promotes it.
+
+    Returns
+    -------
+    dict
+        Mapping from coordinate name to the list of per-element scalar values,
+        in the order of *objs*.
+    """
+    names = [name for name in objs[0].coords if name != dim]
+    for da in objs[1:]:
+        other = [name for name in da.coords if name != dim]
+        if set(other) != set(names):
+            raise ValueError(
+                "objects to concatenate along the new dimension "
+                f"{dim!r} must share their coordinates; got {sorted(names)} "
+                f"and {sorted(other)}"
+            )
+    promoted = {}
+    for name in names:
+        coord = objs[0].coords[name]
+        if all(da.coords[name].equals(coord) for da in objs[1:]):
+            continue
+        if not all(da.coords[name].dim is None for da in objs):
+            raise ValueError(
+                f"coordinate {name!r} differs across the objects to concatenate "
+                f"along the new dimension {dim!r}; only scalar coordinates may "
+                "vary, and are then promoted to a coordinate along that dimension"
+            )
+        promoted[name] = [da.coords[name].values for da in objs]
+    return promoted
+
+
 def concat(
     objs,
     dim="first",
@@ -1150,7 +1198,16 @@ def concat(
     -------
     DataArray
         The concatenated dataarray. Coordinates along axes other than *dim* are
-        taken from the first element; no compatibility check is performed on ``objs[1:]``.
+        taken from the first element. When *dim* opens a new dimension, the
+        other elements must carry the same non-concat coordinates, except for
+        scalar ones, which are promoted to a coordinate along the new dimension
+        when they vary.
+
+    Raises
+    ------
+    ValueError
+        If *dim* opens a new dimension and the elements do not agree on their
+        non-concat coordinates other than varying scalars.
 
     """
     objs = list(objs)
@@ -1166,16 +1223,18 @@ def concat(
         axis = objs[0].get_axis_num(dim)
         dim = objs[0].dims[axis]  # ensure not "first" or "last"
         dims = objs[0].dims
+        promoted = {}
     else:
         axis = 0
         dims = (dim, *objs[0].dims)
+        promoted = _get_promoted_coords(objs, dim)
         objs = [da.expand_dims(dim) for da in objs]
 
-    # TODO: check that objs[1:] have the same non-concat coords as objs[0]
     coords = objs[0].coords.drop_dims(dim)
     name = objs[0].name
     attrs = objs[0].attrs
     dim_has_coords = dim in objs[0].coords
+    order = list(range(len(objs)))
 
     if dim_has_coords:
         coord, order = concat_coords(
@@ -1188,6 +1247,9 @@ def concat(
         )
         objs = [objs[idx] for idx in order]
         coords[dim] = coord
+
+    for coord_name, values in promoted.items():
+        coords[coord_name] = (dim, [values[idx] for idx in order])
 
     iterator = (
         tqdm(objs, desc="Linking dataarray") if verbose else objs
@@ -1439,6 +1501,130 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
     return DataCollection(
         [da.isel({dim: slice(start, stop)}) for start, stop in pairwise(div_points)]
     )
+
+
+def trim_overlaps(obj, keep="last", dim="first", tolerance=None):
+    """
+    Remove the overlapping samples of a data array, keeping one copy of each.
+
+    An overlap is a place where the coordinate steps backwards: two segments
+    describe the same span of time (or distance), typically because two files
+    share a sample at their seam, or because an acquisition was restarted
+    slightly before it stopped. This routine cuts the data array at its
+    overlaps, drops the duplicated samples from all but one segment, and
+    concatenates what is left back into a single data array.
+
+    Trimming lands on a sample boundary, never between two: nothing is ever
+    resampled, interpolated or filled. Sub-sample misalignment therefore
+    survives as a discontinuity of the coordinate. Everything is done at the
+    manifest level, so a lazy data array stays lazy and no data is read.
+
+    Parameters
+    ----------
+    obj : DataArray or DataCollection
+        The data to trim. A data collection is trimmed leaf by leaf, its tree
+        preserved.
+    keep : {"last", "first"}, optional
+        Which copy of an overlapping span to keep. ``"last"`` (default) gives
+        the later segment precedence, on the assumption that the following
+        data carries the more correct time — this is ObsPy's
+        ``Stream.merge(method=1, interpolation_samples=0)``. ``"first"`` is
+        the mirror image.
+    dim : str, optional
+        The dimension along which to look for overlaps. Default to "first".
+    tolerance : float or timedelta64, optional
+        The magnitude below which a backward step is not considered an
+        overlap. For time coordinates, numeric values are considered as
+        seconds. By default only exactly zero-magnitude steps are ignored.
+        Note that jitter is usually better handled upstream, by spending a
+        tolerance when combining or by `da[dim] = da[dim].simplify(tolerance)`.
+
+    Returns
+    -------
+    DataArray or DataCollection
+        The data with its overlaps resolved, of the same type as *obj*.
+
+    See Also
+    --------
+    split : Cut a data array at its overlaps, keeping every copy (1 to N).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import xdas as xd
+
+    Two segments of five samples overlapping by two:
+
+    >>> coord = {"tie_indices": [0, 4, 5, 9], "tie_values": [0.0, 4.0, 3.0, 7.0]}
+    >>> da = xd.DataArray(np.arange(10.0), {"time": coord})
+    >>> xd.trim_overlaps(da).values
+    array([0., 1., 2., 5., 6., 7., 8., 9.])
+    >>> xd.trim_overlaps(da, keep="first").values
+    array([0., 1., 2., 3., 4., 7., 8., 9.])
+
+    """
+    if keep not in ("last", "first"):
+        raise ValueError(f"`keep` must be either 'last' or 'first', got {keep!r}")
+    if isinstance(obj, DataCollection):
+        return obj.map(lambda da: trim_overlaps(da, keep, dim, tolerance))
+    axis = obj.get_axis_num(dim)
+    dim = obj.dims[axis]
+    parts = split(obj, "overlaps", dim, tolerance)
+    if len(parts) == 1:
+        return obj
+
+    # The parts are walked in order of decreasing precedence, each keeping only
+    # what no higher-precedence part already claimed. Claims accumulate as a set
+    # of spans rather than a single watermark, because a part may be *enveloped*
+    # in a lower-precedence one — the covering part then keeps a run on each
+    # side of it, and a watermark, which can only trim an end, would drop the
+    # far side along with the overlap. This also resolves a part wholly covered
+    # by a neighbour (it contributes nothing, while the part beyond it is still
+    # compared against that neighbour) and chains of mutually overlapping parts.
+    kept = []
+    claimed = []
+    for part in reversed(parts) if keep == "last" else parts:
+        coord = part[dim]
+        for start, stop in _uncovered(coord, claimed):
+            kept.append(part.isel({dim: slice(start, stop)}))
+        claimed = _claim(claimed, coord[0].values, coord[-1].values)
+    return concat(kept, dim, tolerance)
+
+
+def _uncovered(coord, claimed):
+    """Index ranges of *coord* that no span of *claimed* covers.
+
+    *claimed* is a list of disjoint ``(first, last)`` value pairs in ascending
+    order, both bounds inclusive. Bounds are resolved through the coordinate's
+    own label look-up, so nothing is materialised.
+    """
+    runs = []
+    cursor = 0
+    for first, last in claimed:
+        if cursor >= len(coord):
+            break
+        # `to_index` clamps: a bound past either end of the coordinate resolves
+        # to the full length or to zero rather than raising
+        stop = coord.to_index(slice(None, first), endpoint=False).stop
+        if stop > cursor:
+            runs.append((cursor, stop))
+        cursor = max(cursor, coord.to_index(slice(None, last)).stop)
+    if cursor < len(coord):
+        runs.append((cursor, len(coord)))
+    return runs
+
+
+def _claim(claimed, first, last):
+    """Add the span ``(first, last)`` to the disjoint, ascending list *claimed*."""
+    out = []
+    for start, stop in claimed:
+        if stop < first or start > last:
+            out.append((start, stop))
+        else:
+            first, last = min(first, start), max(last, stop)
+    out.append((first, last))
+    out.sort()
+    return out
 
 
 def align(*objs):

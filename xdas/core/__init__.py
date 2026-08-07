@@ -28,6 +28,7 @@ __all__ = [
     "plot_availability",
     "sortby",
     "split",
+    "trim_overlaps",
 ]
 
 from .dataarray import DataArray
@@ -51,4 +52,5 @@ from .routines import (
     plot_availability,
     sortby,
     split,
+    trim_overlaps,
 )

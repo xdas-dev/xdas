@@ -1,4 +1,6 @@
 import numpy as np
+import numpy.testing as npt
+import obspy
 import pytest
 
 import xdas as xd
@@ -665,6 +667,76 @@ class TestConcatEdgeCases:
         assert result.equals(da)
 
 
+class TestConcatNewDim:
+    def trace(self, channel, station="CH001", values=None):
+        time = {"tie_indices": [0, 4], "tie_values": [0.0, 4.0]}
+        if values is None:
+            values = np.arange(5.0)
+        return xd.DataArray(
+            values,
+            {
+                "network": (None, "DX"),
+                "station": (None, station),
+                "channel": (None, channel),
+                "time": time,
+            },
+        )
+
+    def test_varying_scalar_is_promoted(self):
+        objs = [self.trace(channel) for channel in ("HHZ", "HHN", "HHE")]
+        da = xd.concat(objs, "channel")
+        assert da.dims == ("channel", "time")
+        assert da.shape == (3, 5)
+        # `channel` is the concat coordinate: `expand_dims` promotes it and
+        # `concat_coords` sorts it
+        assert sorted(da["channel"].values.tolist()) == ["HHE", "HHN", "HHZ"]
+        # the constant scalars stay scalar
+        assert da["network"].dim is None
+        assert da["station"].dim is None
+
+    def test_other_varying_scalar_is_promoted_along_the_new_dim(self):
+        objs = [self.trace("HHZ", station=f"CH{idx:03d}") for idx in (1, 2, 3)]
+        da = xd.concat(objs, "component")
+        assert da.dims == ("component", "time")
+        assert da["station"].dim == "component"
+        assert da["station"].values.tolist() == ["CH001", "CH002", "CH003"]
+        assert da["network"].dim is None
+
+    def test_promotion_follows_the_concat_order(self):
+        # `concat` sorts by the concat coordinate; a promoted scalar must be
+        # gathered in that same order, not in input order
+        objs = [
+            self.trace(channel, station=station)
+            for channel, station in [("HHZ", "C"), ("HHE", "A"), ("HHN", "B")]
+        ]
+        da = xd.concat(objs, "channel")
+        assert da["channel"].values.tolist() == ["HHE", "HHN", "HHZ"]
+        assert da["station"].values.tolist() == ["A", "B", "C"]
+
+    def test_unequal_non_scalar_coord_raises(self):
+        da1 = self.trace("HHZ")
+        da2 = self.trace("HHN")
+        da2["time"] = {"tie_indices": [0, 4], "tie_values": [10.0, 14.0]}
+        with pytest.raises(ValueError, match="'time' differs"):
+            xd.concat([da1, da2], "channel")
+
+    def test_missing_coord_raises(self):
+        da1 = self.trace("HHZ")
+        da2 = self.trace("HHN").drop_coords("network")
+        with pytest.raises(ValueError, match="must share their coordinates"):
+            xd.concat([da1, da2], "channel")
+
+    def test_concat_along_existing_dim_is_unchanged(self):
+        # the promotion machinery only runs when a new dimension is opened
+        da1 = self.trace("HHZ")
+        da2 = self.trace("HHN")
+        da2["time"] = {"tie_indices": [0, 4], "tie_values": [5.0, 9.0]}
+        da = xd.concat([da1, da2], "time")
+        assert da.dims == ("time",)
+        assert da.shape == (10,)
+        assert da["channel"].values == "HHZ"
+
+
 class TestConcatCoordsEdgeCases:
     def test_tolerance_with_dense_coord_is_noop(self):
         # Dense coordinates now implement a (degenerate) `simplify`, so passing a
@@ -744,6 +816,202 @@ class TestPlotAvailability:
 
         with pytest.raises(TypeError, match="DataCollection"):
             _get_timeline_dataframe("not_valid")
+
+
+class TestTrimOverlaps:
+    delta = 0.01
+
+    def segments(self, spans, dtype=float):
+        """Build ``(obspy.Stream, DataArray)`` from ``(start_second, values)`` pairs."""
+        st = obspy.Stream()
+        objs = []
+        for start, values in spans:
+            values = np.asarray(values, dtype=dtype)
+            st.append(
+                obspy.Trace(
+                    values.copy(),
+                    {
+                        "delta": self.delta,
+                        "starttime": obspy.UTCDateTime(start),
+                        "network": "DX",
+                        "station": "CH001",
+                        "location": "00",
+                        "channel": "HHZ",
+                    },
+                )
+            )
+            t0 = np.datetime64(round(start * 1e9), "ns")
+            dt = np.timedelta64(round(self.delta * 1e9), "ns")
+            objs.append(
+                xd.DataArray(
+                    values,
+                    {
+                        "time": {
+                            "tie_indices": [0, len(values) - 1],
+                            "tie_values": [t0, t0 + (len(values) - 1) * dt],
+                        }
+                    },
+                )
+            )
+        return st, xd.concat(objs, "time", tolerance=False)
+
+    def test_keep_last_matches_obspy_merge(self):
+        for spans in [
+            [(0.0, np.arange(5.0)), (0.03, np.arange(100.0, 105.0))],
+            [(0.0, np.arange(5.0)), (0.04, np.arange(100.0, 105.0))],
+            [
+                (0.0, np.arange(5.0)),
+                (0.03, np.arange(100.0, 105.0)),
+                (0.06, np.arange(200.0, 205.0)),
+            ],
+        ]:
+            st, da = self.segments(spans)
+            st.merge(method=1, interpolation_samples=0)
+            result = xd.trim_overlaps(da)
+            npt.assert_array_equal(result.values, np.asarray(st[0].data))
+            assert result["time"][0].values == np.datetime64(
+                str(st[0].stats.starttime.datetime), "ns"
+            )
+
+    def test_keep_first_is_the_mirror(self):
+        # the later segment's head goes instead of the earlier one's tail
+        _, da = self.segments(
+            [(0.0, np.arange(5.0)), (0.03, np.arange(100.0, 105.0))]
+        )
+        npt.assert_array_equal(
+            xd.trim_overlaps(da, keep="first").values,
+            [0.0, 1.0, 2.0, 3.0, 4.0, 102.0, 103.0, 104.0],
+        )
+        npt.assert_array_equal(
+            xd.trim_overlaps(da, keep="last").values,
+            [0.0, 1.0, 2.0, 100.0, 101.0, 102.0, 103.0, 104.0],
+        )
+
+    def test_replaces_ignore_last_sample(self):
+        # the old flag dropped the last sample of every segment; the shared
+        # sample only, and only where it is genuinely shared, is enough
+        _, da = self.segments(
+            [(0.0, np.arange(5.0)), (0.04, np.arange(100.0, 105.0))]
+        )
+        result = xd.trim_overlaps(da)
+        npt.assert_array_equal(
+            result.values, [0.0, 1.0, 2.0, 3.0, 100.0, 101.0, 102.0, 103.0, 104.0]
+        )
+        # a clean seam is left untouched
+        _, clean = self.segments(
+            [(0.0, np.arange(5.0)), (0.05, np.arange(100.0, 105.0))]
+        )
+        assert xd.trim_overlaps(clean).equals(clean)
+
+    def test_no_overlap_is_a_noop(self):
+        da = xd.testing.dummy(dims=("time",), shape=(10,), step=0.01)
+        assert xd.trim_overlaps(da).equals(da)
+
+    def test_wholly_covered_part_is_dropped(self):
+        # the middle segment is entirely covered by the last one; the first
+        # must still be trimmed against that last one, not against the middle
+        _, da = self.segments(
+            [
+                (0.0, np.arange(10.0)),
+                (0.05, np.arange(100.0, 103.0)),
+                (0.04, np.arange(200.0, 210.0)),
+            ]
+        )
+        result = xd.trim_overlaps(da)
+        # sorted by start: [0.00-0.09], [0.04-0.13], [0.05-0.07]; keeping the
+        # last, the 0.04-0.13 segment survives only outside 0.05-0.07
+        npt.assert_array_equal(
+            result.values,
+            # 0.00-0.03 from the first, 0.04 from the third, 0.05-0.07 from the
+            # second, 0.08-0.13 from the third again
+            [0.0, 1.0, 2.0, 3.0, 200.0, 100.0, 101.0, 102.0]
+            + [204.0, 205.0, 206.0, 207.0, 208.0, 209.0],
+        )
+        assert result["time"].get_split_indices("overlaps").size == 0
+
+    def test_enveloped_part_keeps_both_sides(self):
+        # a short high-precedence segment inside a long one: the long one must
+        # keep a run on each side of it, not lose everything past the overlap
+        _, da = self.segments(
+            [(0.0, np.arange(20.0)), (0.05, np.arange(100.0, 103.0))]
+        )
+        result = xd.trim_overlaps(da)
+        expected = np.concatenate(
+            [np.arange(5.0), np.arange(100.0, 103.0), np.arange(8.0, 20.0)]
+        )
+        npt.assert_array_equal(result.values, expected)
+        assert result.sizes["time"] == 20
+
+    def test_chain_of_three_mutual_overlaps(self):
+        _, da = self.segments(
+            [
+                (0.0, np.arange(10.0)),
+                (0.05, np.arange(100.0, 110.0)),
+                (0.10, np.arange(200.0, 210.0)),
+            ]
+        )
+        result = xd.trim_overlaps(da)
+        npt.assert_array_equal(
+            result.values,
+            np.concatenate(
+                [np.arange(5.0), np.arange(100.0, 105.0), np.arange(200.0, 210.0)]
+            ),
+        )
+        assert result["time"].get_split_indices("overlaps").size == 0
+
+    def test_sub_tolerance_jitter_is_not_trimmed(self):
+        t0 = np.datetime64("2024-01-01T00:00:00.000000000")
+        dt = np.timedelta64(10_000_000, "ns")
+        # the second segment starts one microsecond early: jitter, not an overlap
+        coord = {
+            "tie_indices": [0, 4, 5, 9],
+            "tie_values": [
+                t0,
+                t0 + 4 * dt,
+                t0 + 5 * dt - np.timedelta64(1000, "ns"),
+                t0 + 9 * dt - np.timedelta64(1000, "ns"),
+            ],
+        }
+        da = xd.DataArray(np.arange(10.0), {"time": coord})
+        result = xd.trim_overlaps(da, tolerance=0.001)
+        npt.assert_array_equal(result.values, np.arange(10.0))
+
+    def test_stays_lazy(self, tmp_path):
+        from xdas.virtual import TileArray
+
+        objs = []
+        for index, start in enumerate([0, 8]):
+            da = xd.testing.dummy(dims=("time",), shape=(10,), step=0.01)
+            da["time"] = da["time"] + np.timedelta64(start * 10_000_000, "ns")
+            path = tmp_path / f"chunk_{index}.nc"
+            da.to_netcdf(path)
+            objs.append(xd.open_dataarray(path, engine="xdas", vtype="tiles"))
+        da = xd.concat(objs, "time", tolerance=False)
+        result = xd.trim_overlaps(da)
+        assert isinstance(result.data, TileArray)
+        assert result.sizes["time"] == 18
+        assert result["time"].get_split_indices("overlaps").size == 0
+
+    def test_recurses_over_a_collection(self):
+        _, da = self.segments(
+            [(0.0, np.arange(5.0)), (0.03, np.arange(100.0, 105.0))]
+        )
+        dc = xd.DataCollection(
+            {"CH001": xd.DataCollection([da, da], "acquisition")}, "station"
+        )
+        result = xd.trim_overlaps(dc)
+        assert result.fields == ("station", "acquisition")
+        assert list(result) == ["CH001"]
+        assert len(result["CH001"]) == 2
+        for element in result["CH001"]:
+            npt.assert_array_equal(
+                element.values, [0.0, 1.0, 2.0, 100.0, 101.0, 102.0, 103.0, 104.0]
+            )
+
+    def test_invalid_keep_raises(self):
+        da = xd.testing.dummy(dims=("time",), shape=(10,), step=0.01)
+        with pytest.raises(ValueError, match="`keep` must be"):
+            xd.trim_overlaps(da, keep="both")
 
 
 class TestSortby:

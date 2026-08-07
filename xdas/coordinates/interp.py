@@ -222,7 +222,10 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
                     "jitter in the tie values, consider smoothing the coordinate by "
                     "including some tolerance. This can be done by "
                     "`da[dim] = da[dim].simplify(tolerance)`, or by specifying a "
-                    "tolerance when opening multiple files."
+                    "tolerance when opening multiple files. If the overlaps are "
+                    "genuine, resolve them with `xdas.trim_overlaps(da)`, which "
+                    "drops the duplicated samples, or cut them apart with "
+                    "`xdas.split(da, 'overlaps')`, which keeps every copy."
                 )
             else:  # pragma: no cover
                 raise

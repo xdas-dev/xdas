@@ -75,12 +75,29 @@ class DataCollection:
         """``True`` if the collection contains no elements."""
         return len(self) == 0
 
+    @property
+    def fields(self):
+        """Ordered, deduplicated tuple of the node names of the whole subtree."""
+        values = self.values() if self.ismapping() else self
+        out = (self.name,) + tuple(
+            name
+            for value in values
+            if isinstance(value, DataCollection)
+            for name in value.fields
+        )
+        return uniquifiy(out)
+
     def query(self, indexers=None, **indexers_kwargs):
         """
         Query a given subset from a data collection.
 
         The data collection is walked through, if any node name corresponds to a key of
         the `indexers`, the corresponding value is used to select a subset of that node.
+
+        Each indexer must name a level of the collection, i.e. be one of `fields`.
+        This is what distinguishes querying from `sel`: `query` chooses *which*
+        leaves are kept by their position in the hierarchy, while `sel` trims
+        *inside* each leaf by coordinate label.
 
         Parameters
         ----------
@@ -94,6 +111,11 @@ class DataCollection:
         -------
         DataCollection:
             The queried data.
+
+        Raises
+        ------
+        KeyError
+            If an indexer does not name any level of the collection.
 
         Examples
         --------
@@ -114,9 +136,27 @@ class DataCollection:
             0: <xdas.DataArray (time: 300, distance: 401)>
 
         """
-        if indexers is None:
-            indexers = {}
+        indexers = {} if indexers is None else dict(indexers)
         indexers.update(indexers_kwargs)
+        fields = self.fields
+        unknown = [key for key in indexers if key not in fields]
+        if unknown:
+            raise KeyError(
+                f"{unknown} do not name any level of the collection; "
+                f"available: {list(fields)}"
+            )
+        return self._query(indexers)
+
+    def select(self, indexers=None, **indexers_kwargs):
+        """
+        Select a given subset from a data collection.
+
+        Alias of `query`, named after `obspy.Stream.select`. See `query`.
+        """
+        return self.query(indexers, **indexers_kwargs)
+
+    def _query(self, indexers):
+        """Recursive half of `query`, with the indexers already validated."""
         if self.name in indexers:
             key = indexers[self.name]
             if self.issequence():
@@ -128,7 +168,7 @@ class DataCollection:
                     raise ValueError(f"{self.name} query must be a string")
                 data = [
                     (
-                        value.query(indexers)
+                        value._query(indexers)
                         if isinstance(value, DataCollection)
                         else value
                     )
@@ -145,7 +185,7 @@ class DataCollection:
                     raise ValueError(f"{self.name} query must be a string")
                 data = {
                     name: (
-                        value.query(indexers)
+                        value._query(indexers)
                         if isinstance(value, DataCollection)
                         else value
                     )
@@ -237,14 +277,6 @@ class DataMapping(DataCollection, dict):
 
     def __reduce__(self):
         return self.__class__, (dict(self), self.name)
-
-    @property
-    def fields(self):
-        """Ordered, deduplicated tuple of node names at this level and its immediate children."""
-        out = (self.name,) + tuple(
-            value.name for value in self.values() if isinstance(value, DataCollection)
-        )
-        return uniquifiy(out)
 
     def to_netcdf(
         self,
@@ -432,14 +464,6 @@ class DataSequence(DataCollection, list):
 
     def __reduce__(self):
         return self.__class__, (list(self), self.name)
-
-    @property
-    def fields(self):
-        """Ordered, deduplicated tuple of node names at this level and its immediate children."""
-        out = (self.name,) + tuple(
-            value.name for value in self if isinstance(value, DataCollection)
-        )
-        return uniquifiy(out)
 
     def to_mapping(self):
         """Convert to an integer-keyed :class:`DataMapping`."""

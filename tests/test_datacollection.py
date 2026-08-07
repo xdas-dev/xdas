@@ -133,6 +133,58 @@ class TestDataCollection:
         dc = self.nest(da)
         assert dc.fields == ("instrument", "acquisition")
 
+    def test_fields_recursive(self):
+        da = xd.testing.dummy()
+        dc = xd.DataCollection(
+            {
+                "DX": xd.DataCollection(
+                    {
+                        "CH001": xd.DataCollection(
+                            {
+                                "00": xd.DataCollection(
+                                    {"HHZ": xd.DataCollection([da], "acquisition")},
+                                    "channel",
+                                )
+                            },
+                            "location",
+                        )
+                    },
+                    "station",
+                )
+            },
+            "network",
+        )
+        assert dc.fields == (
+            "network",
+            "station",
+            "location",
+            "channel",
+            "acquisition",
+        )
+
+    def test_query_is_strict(self):
+        da = xd.testing.dummy()
+        dc = self.nest(da)
+        with pytest.raises(KeyError, match="do not name any level"):
+            dc.query(nonexistent="das1")
+        # a dimension name is not a level name: `sel` trims inside leaves,
+        # `query` chooses leaves
+        with pytest.raises(KeyError, match="do not name any level"):
+            dc.query(time=slice(0, 5))
+
+    def test_select_is_query(self):
+        da = xd.testing.dummy()
+        dc = self.nest(da)
+        assert dc.select(instrument="das1").equals(dc.query(instrument="das1"))
+        assert dc.select({"instrument": "das1"}).equals(dc.query(instrument="das1"))
+
+    def test_query_does_not_mutate_indexers(self):
+        da = xd.testing.dummy()
+        dc = self.nest(da)
+        indexers = {"instrument": "das1"}
+        dc.query(indexers, acquisition=0)
+        assert indexers == {"instrument": "das1"}
+
     def test_map(self):
         da = xd.testing.dummy()
         dc = self.nest(da)
