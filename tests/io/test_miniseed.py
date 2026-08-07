@@ -235,6 +235,20 @@ def test_miniseed_helpers(tmp_path):
         to_stream(da_3d)
 
 
+def test_compressed_element_type_comes_from_the_encoding(tmp_path):
+    # `headonly=True` leaves `tr.data` an empty float64 array whatever the file
+    # holds, so a STEIM-compressed int32 file used to be scanned as float64 and
+    # the tile array then rejected the int32 it decoded
+    path = str(tmp_path / "steim.mseed")
+    tr = obspy.Trace(np.arange(100, dtype="int32"), make_header(1, "Z", 0))
+    obspy.Stream([tr]).write(path, format="MSEED", encoding="STEIM2", reclen=512)
+    assert obspy.read(path)[0].stats.mseed["encoding"] == "STEIM2"
+
+    da = xd.open_dataarray(path, engine="miniseed")
+    assert da.dtype == np.int32
+    npt.assert_array_equal(da.values, tr.data)
+
+
 def test_obspy_engine_is_preferred_by_auto_detection(tmp_path):
     # both engines read the same files, so registration order settles which
     # one auto-detection reaches first

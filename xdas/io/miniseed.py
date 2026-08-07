@@ -29,7 +29,7 @@ from .core import Engine
 # the stream converters and the band-code table were never miniSEED-specific
 # and now live with the obspy engine; re-exported so that imports from this
 # module keep working
-from .obspy import from_stream, get_band_code, to_stream
+from .obspy import from_stream, get_band_code, get_dtype, to_stream
 
 __all__ = [
     "MiniSEEDEngine",
@@ -84,7 +84,10 @@ class MiniSEEDEngine(Engine, name="miniseed"):
         ctype = self.ctype["time"]
         st = obspy.read(path, headonly=True)
 
-        dtype = uniquifiy(tr.data.dtype for tr in st)
+        # from the encoding, not from `tr.data`, which `headonly=True` leaves
+        # an empty float64 array: a STEIM-compressed file decodes to int32 and
+        # the tile array checks the scanned type against every decoded tile
+        dtype = uniquifiy(get_dtype(tr) for tr in st)
         if not isinstance(dtype, np.dtype):  # pragma: no cover
             raise ValueError("All traces must have the same dtype")
 
