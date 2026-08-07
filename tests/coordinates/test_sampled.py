@@ -1,6 +1,7 @@
 import tempfile
 
 import numpy as np
+import numpy.testing as npt
 import pandas as pd
 import pytest
 
@@ -812,6 +813,62 @@ class TestSampledCoordinateToNetCDF:
             expected.to_netcdf(file.name)
             result = xd.open(file.name)
             assert result.equals(expected)
+
+    def test_collect_legacy_spelling(self):
+        # the spelling that predates the CF-shaped grammar: the group named the
+        # coordinate, the mapping listed both tie point variables, and the
+        # interval was the sampling variable's own value
+        import xarray as xr
+
+        dataset = xr.Dataset(
+            {
+                "time_values": ("time_points", np.array([0, 1_000_000_000])),
+                "time_lengths": ("time_points", np.array([100, 100])),
+                "time_sampling": (
+                    (),
+                    8,
+                    {
+                        "tie_point_mapping": "time: time_values time_lengths",
+                        "dtype": "timedelta64[ns]",
+                        "units": "milliseconds",
+                    },
+                ),
+                "__values__": (
+                    ("time",),
+                    np.zeros(200),
+                    {"coordinate_sampling": "time: time_sampling"},
+                ),
+            }
+        )
+        recovered = SampledCoordinate._collect_from_dataset(dataset, "__values__")
+        coord = recovered["time"]
+        assert coord.dim == "time"
+        assert coord.sampling_interval == np.timedelta64(8, "ms")
+        npt.assert_array_equal(coord.tie_lengths, [100, 100])
+
+    def test_collect_legacy_spelling_numeric(self):
+        # the same, on a numeric axis: no units/dtype attributes to decode, the
+        # sampling variable's value is the interval as it stands
+        import xarray as xr
+
+        dataset = xr.Dataset(
+            {
+                "distance_values": ("distance_points", np.array([0.0])),
+                "distance_lengths": ("distance_points", np.array([30])),
+                "distance_sampling": (
+                    (),
+                    2.5,
+                    {"tie_point_mapping": "distance: distance_values distance_lengths"},
+                ),
+                "__values__": (
+                    ("distance",),
+                    np.zeros(30),
+                    {"coordinate_sampling": "distance: distance_sampling"},
+                ),
+            }
+        )
+        recovered = SampledCoordinate._collect_from_dataset(dataset, "__values__")
+        assert recovered["distance"].sampling_interval == 2.5
 
 
 class TestGetSplitIndices:

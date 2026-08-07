@@ -10,6 +10,7 @@ import numpy as np
 from typing_extensions import override
 
 from .core import (
+    UNITS_TO_CODE,
     AxisCoordinate,
     Coordinate,
     decode_delta,
@@ -358,18 +359,33 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
         coords = {}
         mapping = dataset[name].attrs.pop("coordinate_sampling", None)
         if mapping is not None:
-            for values, sampling in re.findall(r"(\w+): (\w+)", mapping):
-                coord = sampling.removesuffix("_sampling")
+            for first, sampling in re.findall(r"(\w+): (\w+)", mapping):
                 sampling_attrs = dataset[sampling].attrs
-                dim, lengths, _ = re.match(
+                dim, second, third = re.match(
                     r"(\w+): (\w+) (\w+)", sampling_attrs["tie_point_mapping"]
                 ).groups()
+                if "sampling_interval" in sampling_attrs:
+                    coord, values, lengths = (
+                        sampling.removesuffix("_sampling"),
+                        first,
+                        second,
+                    )
+                    interval = decode_delta("sampling_interval", sampling_attrs)
+                else:
+                    # the spelling that predates the CF-shaped grammar: the
+                    # group named the coordinate rather than its tie point
+                    # variable, the mapping listed both tie point variables,
+                    # and the interval was the sampling variable's own value
+                    coord, values, lengths = first, second, third
+                    interval = dataset[sampling].values[()]
+                    if "units" in sampling_attrs and "dtype" in sampling_attrs:
+                        interval = np.timedelta64(
+                            interval, UNITS_TO_CODE[sampling_attrs["units"]]
+                        ).astype(sampling_attrs["dtype"])
                 data = {
                     "tie_values": dataset[values].values,
                     "tie_lengths": dataset[lengths].values,
-                    "sampling_interval": decode_delta(
-                        "sampling_interval", sampling_attrs
-                    ),
+                    "sampling_interval": interval,
                 }
                 coords[coord] = Coordinate(data, dim)
         return coords
