@@ -4,7 +4,6 @@ import json
 import math
 import os
 
-import dask.array as da_
 import h5py
 import numpy as np
 import numpy.testing as npt
@@ -2386,17 +2385,6 @@ class TestPersistence:
         reopened = xd.open_dataarray(path)
         assert not isinstance(reopened.data, TileArray)
         npt.assert_array_equal(reopened.values, reference)
-
-    def test_dask_write_deprecated(self, tmp_path):
-        import dask
-
-        data = da_.from_delayed(dask.delayed(np.zeros)((4, NX)), (4, NX), np.float64)
-        da = xd.DataArray(data, dims=DIMS)
-        path = str(tmp_path / "dask.nc")
-        with pytest.warns(FutureWarning, match="dask-backed"):
-            da.to_netcdf(path, virtual=True)
-        reopened = xd.open_dataarray(path)
-        npt.assert_array_equal(reopened.values, np.zeros((4, NX)))
 
 
 class TestStoredForm:

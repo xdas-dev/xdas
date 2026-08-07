@@ -13,7 +13,6 @@ id, so per-array opens made saving a collection quadratic in its size.
 """
 
 import os
-import warnings
 from pathlib import Path
 from typing import ClassVar
 
@@ -21,11 +20,9 @@ import h5netcdf
 import h5py
 import hdf5plugin  # noqa
 import xarray as xr
-from dask.array import Array as DaskArray
 
 from ..coordinates import Coordinates
 from ..core import DataArray, DataCollection, DataMapping, DataSequence
-from ..dask import create_variable, loads
 from ..virtual import TileArray, VirtualBackend
 from ..virtual.tiles import TILING
 from .core import Engine
@@ -180,8 +177,6 @@ def _read_dataarray(node, fname, group=None, vtype=None):
                 f"the placeholder is {dataset[name].dtype} where its manifest "
                 f"records {data.dtype}"
             )
-    elif "__dask_array__" in attrs:
-        data = loads(attrs["__dask_array__"])
     else:
         with h5py.File(fname) as file:
             if group:
@@ -244,15 +239,11 @@ def _save_tree(leaves, fname, mode, virtual, encoding, create_dirs):
     nodes = {}
     entries = []
     for location, da in leaves.items():
-        isvirtual = (
-            isinstance(da.data, (VirtualBackend, DaskArray))
-            if virtual is None
-            else virtual
-        )
+        isvirtual = isinstance(da.data, VirtualBackend) if virtual is None else virtual
         if isvirtual:
             if encoding is not None:
                 raise ValueError("cannot use `encoding` with in virtual mode")
-            if not isinstance(da.data, (VirtualBackend, DaskArray)):
+            if not isinstance(da.data, VirtualBackend):
                 raise ValueError(
                     "can only use `virtual=True` with a virtual array as data"
                 )
@@ -261,7 +252,7 @@ def _save_tree(leaves, fname, mode, virtual, encoding, create_dirs):
         for coord in da.coords.values():
             dataset, attrs = coord._to_dataset(dataset, attrs)
         nodes["/" if location is None else location] = dataset
-        if isvirtual and isinstance(da.data, VirtualBackend):
+        if isvirtual:
             for relpath, sibling in da.data.sibling_datasets().items():
                 nodes[relpath if location is None else f"{location}/{relpath}"] = (
                     sibling
@@ -294,24 +285,17 @@ def _save_tree(leaves, fname, mode, virtual, encoding, create_dirs):
 
             # variable
             variable_name = "__values__" if da.name is None else da.name
-            if not isvirtual:
+            if isvirtual:
+                variable = da.data.create_variable(target, variable_name, da.dims)
+            else:
+                # anything not virtual is materialized here, a dask array
+                # computed like any other lazy value
                 variable = target.create_variable(
                     variable_name,
                     da.dims,
                     da.dtype,
                     data=da.values,
                     **({} if encoding is None else encoding),
-                )
-            elif isinstance(da.data, VirtualBackend):
-                variable = da.data.create_variable(target, variable_name, da.dims)
-            else:
-                warnings.warn(
-                    "writing dask-backed virtual arrays is deprecated; the "
-                    "tile-backed engines (xdas.virtual.tiles) replace them",
-                    FutureWarning,
-                )
-                variable = create_variable(
-                    da.data, target, variable_name, da.dims, da.dtype
                 )
 
             # attrs

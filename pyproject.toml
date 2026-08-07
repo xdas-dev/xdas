@@ -15,7 +15,6 @@ dependencies = [
     "h5py",
     "hdf5plugin",
     "loky",
-    "msgpack",
     "numba",
     "numpy>=2.3",
     "obspy",
