@@ -776,6 +776,22 @@ class TestInterpCoordinateExtra:
         assert "time_indices" in dataset
         assert dataset["time_values"].dtype == np.dtype("datetime64[ns]")
 
+    def test_collect_legacy_spelling(self):
+        # the pre-break grammar, written without any interpolation variable
+        dataset = xr.Dataset(
+            {
+                "x_indices": ("x_points", np.array([0, 8])),
+                "x_values": ("x_points", np.array([100.0, 900.0])),
+                "__values__": (
+                    ("x",),
+                    np.zeros(9),
+                    {"coordinate_interpolation": "x: x_indices x_values"},
+                ),
+            }
+        )
+        recovered = InterpCoordinate._collect_from_dataset(dataset, "__values__")
+        assert np.allclose(recovered["x"].tie_values, [100.0, 900.0])
+
 
 class TestInterpCoordinateRegular:
     """Tests for InterpCoordinate with an enforced sampling_interval (regular mode)."""

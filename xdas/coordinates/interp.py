@@ -355,7 +355,13 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
                     "tie_indices": dataset[indices].values,
                     "tie_values": dataset[values].values,
                 }
-                interp_attrs = dataset[f"{coord}_interpolation"].attrs
+                # the oldest files spelled the mapping without writing an
+                # interpolation variable at all
+                interp_attrs = (
+                    dataset[f"{coord}_interpolation"].attrs
+                    if f"{coord}_interpolation" in dataset
+                    else {}
+                )
                 if "sampling_interval" in interp_attrs:
                     data["sampling_interval"] = decode_delta(
                         "sampling_interval", interp_attrs
@@ -689,7 +695,8 @@ def _parse_interpolation(mapping, dataset):
     ``tie_point_mapping``; xdas wrote ``dimension: index_variable
     value_variable`` before the format break. Only the CF spelling ends
     a group with a variable carrying ``interpolation_name``, which is
-    what tells the two apart.
+    what tells the two apart. The tie point coordinate variable name is
+    taken from the group as written, whatever it is.
 
     Parameters
     ----------

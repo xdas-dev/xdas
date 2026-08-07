@@ -10,10 +10,10 @@ import numpy as np
 from typing_extensions import override
 
 from .core import (
-    CODE_TO_UNITS,
-    UNITS_TO_CODE,
     AxisCoordinate,
     Coordinate,
+    decode_delta,
+    encode_delta,
     is_monotonic_increasing,
     parse_data_dim,
     parse_scalar_delta,
@@ -322,7 +322,13 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
 
     @override
     def _to_dataset(self, dataset, attrs):
-        mapping = f"{self.name}: {self.name}_sampling"
+        # Variation on CF-1.13 coordinate subsampling: a group names its
+        # tie point coordinate variable and ends with the sampling
+        # variable describing it. The sampling variable is a container
+        # whose mapping puts the segment length variable in the tie point
+        # index variable's slot, and whose spacing travels as attributes,
+        # like the regular metadata of an interpolated coordinate.
+        mapping = f"{self.name}_values: {self.name}_sampling"
         if "coordinate_sampling" in attrs:
             attrs["coordinate_sampling"] += " " + mapping
         else:
@@ -332,25 +338,16 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
             if np.issubdtype(self.tie_values.dtype, np.datetime64)
             else self.tie_values
         )
-        tie_lengths = self.tie_lengths
-        interp_attrs = {
-            "tie_point_mapping": f"{self.dim}: {self.name}_values {self.name}_lengths",
+        sampling_attrs = {
+            # interpolated dimension: segment length variable, subsampled dimension
+            "tie_point_mapping": f"{self.dim}: {self.name}_lengths {self.name}_points",
+            **encode_delta("sampling_interval", self.sampling_interval),
         }
-
-        # timedelta
-        if np.issubdtype(self.sampling_interval.dtype, np.timedelta64):
-            code, count = np.datetime_data(self.sampling_interval.dtype)
-            interp_attrs["dtype"] = "timedelta64[ns]"
-            interp_attrs["units"] = CODE_TO_UNITS[code]
-            sampling_interval = count * self.sampling_interval.astype(int)
-        else:
-            sampling_interval = self.sampling_interval
-
         dataset.update(
             {
-                f"{self.name}_sampling": ((), sampling_interval, interp_attrs),
+                f"{self.name}_sampling": ((), np.nan, sampling_attrs),
+                f"{self.name}_lengths": (f"{self.name}_points", self.tie_lengths),
                 f"{self.name}_values": (f"{self.name}_points", tie_values),
-                f"{self.name}_lengths": (f"{self.name}_points", tie_lengths),
             }
         )
         return dataset, attrs
@@ -361,29 +358,20 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
         coords = {}
         mapping = dataset[name].attrs.pop("coordinate_sampling", None)
         if mapping is not None:
-            matches = re.findall(r"(\w+): (\w+)", mapping)
-            for match in matches:
-                name, sampling = match
-                dim, values, lengths = re.match(
-                    r"(\w+): (\w+) (\w+)", dataset[sampling].attrs["tie_point_mapping"]
+            for values, sampling in re.findall(r"(\w+): (\w+)", mapping):
+                coord = sampling.removesuffix("_sampling")
+                sampling_attrs = dataset[sampling].attrs
+                dim, lengths, _ = re.match(
+                    r"(\w+): (\w+) (\w+)", sampling_attrs["tie_point_mapping"]
                 ).groups()
                 data = {
                     "tie_values": dataset[values].values,
                     "tie_lengths": dataset[lengths].values,
-                    "sampling_interval": dataset[sampling].values[()],
+                    "sampling_interval": decode_delta(
+                        "sampling_interval", sampling_attrs
+                    ),
                 }
-
-                # timedelta
-                if (
-                    "dtype" in dataset[sampling].attrs
-                    and "units" in dataset[sampling].attrs
-                ):
-                    data["sampling_interval"] = np.timedelta64(
-                        data["sampling_interval"],
-                        UNITS_TO_CODE[dataset[sampling].attrs.pop("units")],
-                    ).astype(dataset[sampling].attrs.pop("dtype"))
-
-                coords[name] = Coordinate(data, dim)
+                coords[coord] = Coordinate(data, dim)
         return coords
 
     def __add__(self, other):
