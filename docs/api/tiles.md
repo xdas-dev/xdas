@@ -27,7 +27,7 @@ Attributes
    TileArray.chunks
    TileArray.ntiles
    TileArray.engine
-   TileArray.attrs
+   TileArray.root
 ```
 
 Methods
@@ -40,7 +40,7 @@ Methods
    TileArray.from_variable
    TileArray.to_dataset
    TileArray.create_variable
-   TileArray.finalize_save
+   TileArray.sibling_datasets
    TileArray.concat
    TileArray.expand_dims
    TileArray.squeeze

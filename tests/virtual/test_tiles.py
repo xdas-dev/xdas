@@ -1,5 +1,6 @@
 """The tile-backed virtual array and its integration in the DataArray and native format."""
 
+import json
 import math
 import os
 
@@ -12,7 +13,7 @@ import xarray as xr
 
 import xdas as xd
 from xdas.io import Engine
-from xdas.virtual.tiles import NTILES, TILES_GROUP, TileArray, _Edges
+from xdas.virtual.tiles import TILES_GROUP, TileArray, _Edges
 
 NX = 5
 
@@ -60,14 +61,10 @@ def stack(tmp_path):
         sizes.append(useful)
         parts.append(data[1:-1])
         row += useful
-    manifest = TileArray.from_tiles(
-        paths, (sizes, NX), "float64", ENGINE, attrs={"units": "strain"}
-    )
+    manifest = TileArray.from_tiles(paths, (sizes, NX), "float64", ENGINE)
     # per-tile source origins are view state: assigned through the manifest
     manifest = TileArray(
-        manifest.dataset.assign(starts_0=("tile_0", np.array([1, 1, 1]))),
-        manifest.dtype,
-        manifest.engine,
+        manifest.dataset.assign(starts_0=("tile_0", np.array([1, 1, 1])))
     )
     return manifest, np.concatenate(parts)
 
@@ -99,11 +96,7 @@ def windowed(tmp_path):
     manifest = TileArray.from_tiles(
         paths, (sizes, NX), "float64", {"name": "h5py", "dataset": "data"}
     )
-    manifest = TileArray(
-        manifest.dataset.assign(starts_0=("tile_0", np.array(starts))),
-        manifest.dtype,
-        manifest.engine,
-    )
+    manifest = TileArray(manifest.dataset.assign(starts_0=("tile_0", np.array(starts))))
     return manifest, np.concatenate(parts)
 
 
@@ -146,6 +139,35 @@ def _tile_file(path, data, **kwargs):
         file.create_dataset("data", data=data, **kwargs)
 
 
+def _downgrade(path, manifest):
+    """Rewrite the native file at *path* into the form predating the header.
+
+    The mirror image of what the reader must still accept: the engine
+    on the placeholder, the root, the axis map and the tile counts back
+    in the manifest as variables and variable attributes.
+    """
+    with h5py.File(path, "a") as file:
+        placeholder = file["__values__"]
+        del placeholder.attrs["__tiling__"]
+        placeholder.attrs["__tile_array__"] = json.dumps({"engine": manifest.engine})
+        group = file[TILES_GROUP]
+        header = json.loads(group.attrs["header"])
+        del group.attrs["header"]
+        if "root" in header:
+            group.create_dataset("root", data=np.bytes_(os.fsencode(header["root"])))
+        for k, count in enumerate(header["ntiles"]):
+            if group[f"sizes_{k}"].shape == ():
+                group[f"sizes_{k}"].attrs["ntiles"] = count
+        if "axes" in header:
+            source_ndim = len(header["ntiles"]) - header["axes"].count(None)
+            axes, synthetic = [], source_ndim
+            for g in header["axes"]:
+                axes.append(synthetic if g is None else g)
+                synthetic += g is None
+            group.create_dataset("axes", data=np.asarray(axes, np.int64))
+            group.create_dataset("source_ndim", data=np.int64(source_ndim))
+
+
 def _with_starts(manifest, *starts):
     """Rebuild *manifest* with per-axis tile origins inside their sources.
 
@@ -158,7 +180,7 @@ def _with_starts(manifest, *starts):
         for k, entry in enumerate(starts)
         if entry is not None
     }
-    return TileArray(manifest.dataset.assign(assign), manifest.dtype, manifest.engine)
+    return TileArray(manifest.dataset.assign(assign))
 
 
 def _random_key(rng, shape, max_step=1):
@@ -231,15 +253,16 @@ class TestManifest:
         # a varying column sizes its own axis, and says nothing
         assert tuple(dataset["sizes_0"].dims) == ("tile_0",)
         assert dataset["sizes_0"].attrs == {}
-        # one tile spans the trailing axis: a constant column, folded,
-        # stating the tile count its dimension no longer gives
+        # one tile spans the trailing axis: a constant column, folded;
+        # the header gives the tile count its dimension no longer does
         assert tuple(dataset["sizes_1"].dims) == ()
-        assert dataset["sizes_1"].attrs == {NTILES: 1}
+        assert json.loads(dataset.attrs["header"])["ntiles"] == [3, 1]
         # per-file paths vary along tile_0 only: the trailing axis folds
         assert tuple(dataset["paths"].dims) == ("tile_0",)
-        # the common directory splits off: 0-d root, root-relative paths
-        assert dataset["root"].ndim == 0
-        assert os.fsdecode(dataset["root"].values[()]) == str(tmp_path)
+        # the common directory splits off into the header, the stored
+        # paths staying relative to it
+        assert json.loads(dataset.attrs["header"])["root"] == str(tmp_path)
+        assert "root" not in dataset
         # strings are held as fixed-width bytes, not str objects
         assert dataset["paths"].dtype.kind == "S"
         assert dataset["paths"].values.tolist() == [b"src0.h5", b"src1.h5", b"src2.h5"]
@@ -280,31 +303,22 @@ class TestManifest:
             TileArray.from_tiles("a", (5, NX), "f8", ENGINE, starts_0=[0])
         with pytest.raises(ValueError, match="reserved"):
             TileArray.from_tiles("a", (5, NX), "f8", ENGINE, root=["r"])
-        bad_root = manifest.dataset.copy()
-        bad_root["root"] = (("tile_0",), np.array(["a", "b", "c"], dtype=object))
-        with pytest.raises(ValueError, match="0-d"):
-            TileArray(bad_root, manifest.dtype, manifest.engine)
+        bad_root = _reheader(manifest, root=["a", "b", "c"])
+        with pytest.raises(ValueError, match="`root` must be a string"):
+            TileArray(bad_root)
         dataset = manifest.dataset.copy()
         with pytest.raises(ValueError, match="`sizes_0`"):
-            TileArray(
-                dataset.drop_vars(["sizes_0", "sizes_1"]),
-                manifest.dtype,
-                manifest.engine,
-            )
+            TileArray(dataset.drop_vars(["sizes_0", "sizes_1"]))
         with pytest.raises(ValueError, match="`paths`"):
-            TileArray(dataset.drop_vars("paths"), manifest.dtype, manifest.engine)
+            TileArray(dataset.drop_vars("paths"))
         bad_starts = dataset.assign(starts_0=("tile_0", np.array([-1, 0, 0])))
         with pytest.raises(ValueError, match="non-negative"):
-            TileArray(bad_starts, manifest.dtype, manifest.engine)
+            TileArray(bad_starts)
 
     def test_extra_variables_are_params(self, stack):
         """Any non-geometry manifest variable is a per-tile engine parameter."""
         manifest, _ = stack
-        arr = TileArray(
-            manifest.dataset.assign(record=(("tile_0",), np.arange(3))),
-            manifest.dtype,
-            manifest.engine,
-        )
+        arr = TileArray(manifest.dataset.assign(record=(("tile_0",), np.arange(3))))
         assert arr._params == ("record",)
 
     def test_string_params_decode_to_str(self, tmp_path):
@@ -384,9 +398,47 @@ class TestManifest:
         monkeypatch.chdir(tmp_path.parent)
         npt.assert_array_equal(np.asarray(manifest), data)
 
-    def test_attrs(self, stack):
+    def test_the_manifest_carries_nothing_but_the_header(self, stack):
+        """A tile array is a duck array: user metadata is the DataArray's."""
         manifest, _ = stack
-        assert manifest.attrs == {"units": "strain"}
+        assert set(manifest.dataset.attrs) == {"header"}
+        assert not hasattr(manifest, "attrs")
+        assert all(
+            not variable.attrs for variable in manifest.dataset.variables.values()
+        )
+
+    def test_header_records_the_engine_and_the_dtype(self, stack):
+        """What the columns cannot hold travels in the header, and must agree."""
+        manifest, _ = stack
+        header = json.loads(manifest.dataset.attrs["header"])
+        assert header["engine"] == ENGINE
+        assert header["dtype"] == "float64"
+        # an omitted argument is read off the header
+        assert TileArray(manifest.dataset).equals(manifest)
+        # a given one must say the same thing
+        with pytest.raises(ValueError, match="records the engine"):
+            TileArray(manifest.dataset, engine="h5py")
+        with pytest.raises(ValueError, match="records the dtype"):
+            TileArray(manifest.dataset, dtype="f4")
+        # a manifest without a header (the scan-time assembly) needs both
+        headless = manifest.dataset.drop_attrs()
+        with pytest.raises(ValueError, match="records no engine"):
+            TileArray(headless, dtype="f8")
+        with pytest.raises(ValueError, match="records no dtype"):
+            TileArray(headless, engine=ENGINE)
+
+    def test_an_engine_of_one_name_stores_bare(self):
+        """The header spells a constant-less engine as its name alone."""
+        arr = TileArray.from_tiles("a", (5, NX), "f8", "h5py")
+        assert json.loads(arr.dataset.attrs["header"])["engine"] == "h5py"
+        assert TileArray(arr.dataset).engine == {"name": "h5py"}
+
+
+def _reheader(manifest, **updates):
+    """Return the dataset of *manifest* with its header entries overridden."""
+    header = json.loads(manifest.dataset.attrs["header"])
+    header.update(updates)
+    return manifest.dataset.assign_attrs(header=json.dumps(header))
 
 
 def _is_collapsed(values):
@@ -524,12 +576,11 @@ class TestConstantGeometry:
     def test_every_constant_column_folds(self, uniform):
         manifest, _ = uniform
         # nothing carries `tile_1` any more, and nothing has to: the
-        # folded column states how many tiles its axis holds
+        # header states how many tiles every axis holds
         assert manifest.dataset["sizes_1"].dims == ()
         assert "tile_1" not in manifest.dataset.dims
-        assert manifest.dataset["sizes_1"].attrs[NTILES] == 1
-        # every folded column says it, whether or not a dimension remains
-        assert manifest.dataset["sizes_0"].attrs[NTILES] == 4
+        assert json.loads(manifest.dataset.attrs["header"])["ntiles"] == [4, 1]
+        assert manifest.dataset["sizes_1"].attrs == {}
         assert manifest.shape[1] == NX
         assert manifest.chunks[1] == (NX,)
 
@@ -544,7 +595,7 @@ class TestConstantGeometry:
             starts_0=("tile_0", np.zeros(4, dtype="int64")),
             steps_0=("tile_0", np.ones(4, dtype="int64")),
         )
-        reopened = TileArray(legacy, manifest.dtype, manifest.engine)
+        reopened = TileArray(legacy)
         # the manifest an older xdas wrote folds on the way in
         assert reopened.dataset["sizes_0"].dims == ()
         assert "starts_0" not in reopened.dataset
@@ -572,7 +623,7 @@ class TestConstantGeometry:
         assert not any(
             dim.startswith("tile_") for dim in map(str, doubled.dataset.dims)
         )
-        assert doubled.dataset["sizes_0"].attrs[NTILES] == 2
+        assert json.loads(doubled.dataset.attrs["header"])["ntiles"] == [2, 1]
         path = str(tmp_path / "folded_grid.nc")
         wrap(doubled).to_netcdf(path)
         reopened = xd.open_dataarray(path)
@@ -585,31 +636,52 @@ class TestConstantGeometry:
 
     def test_tile_counts_follow_a_view(self, uniform):
         manifest, _ = uniform
+        counts = lambda arr: json.loads(arr.dataset.attrs["header"])["ntiles"]
         # a tile-aligned slice folds, and restates what it leaves behind
-        assert manifest[6:18].dataset["sizes_0"].attrs[NTILES] == 2
+        assert counts(manifest[6:18]) == [2, 1]
         # a synthetic axis is one tile it never had to be told about
-        assert np.expand_dims(manifest, 0).dataset["sizes_2"].attrs[NTILES] == 1
+        assert counts(np.expand_dims(manifest, 0)) == [4, 1, 1]
 
-    def test_legacy_manifest_without_the_attribute_reopens(self, uniform):
+    def test_legacy_manifest_without_a_header_reopens(self, uniform):
         manifest, reference = uniform
-        legacy = manifest.dataset.assign(
+        legacy = manifest.dataset.drop_attrs().assign(
             sizes_0=("tile_0", np.full(4, 6, dtype="int64")),
-            sizes_1=((), np.int64(NX)),  # folded, but with nothing to say
+            sizes_1=xr.Variable((), np.int64(NX), {"ntiles": 1}),
+            root=((), np.asarray(os.fsencode(manifest.root))),
         )
-        # an older manifest measures itself by the dimensions it declares
+        legacy["paths"] = xr.Variable(
+            manifest.dataset["paths"].dims, manifest.dataset["paths"].values
+        )
+        # the pre-header form spread over variables and variable attrs
         reopened = TileArray(legacy, manifest.dtype, manifest.engine)
-        assert reopened.dataset["sizes_0"].attrs[NTILES] == 4
+        assert json.loads(reopened.dataset.attrs["header"])["ntiles"] == [4, 1]
+        assert "root" not in reopened.dataset
+        assert reopened.root == manifest.root
         assert reopened.equals(manifest)
         npt.assert_array_equal(np.asarray(reopened), reference)
 
     @pytest.mark.parametrize("count", [0, -1, "many", np.array([4, 1])])
-    def test_malformed_tile_count_raises(self, uniform, count):
+    def test_malformed_legacy_tile_count_raises(self, uniform, count):
         manifest, _ = uniform
-        broken = manifest.dataset.assign(
-            sizes_1=xr.Variable((), np.int64(NX), {NTILES: count})
+        broken = manifest.dataset.drop_attrs().assign(
+            sizes_1=xr.Variable((), np.int64(NX), {"ntiles": count})
         )
-        with pytest.raises(ValueError, match=f"invalid `{NTILES}` attribute"):
+        with pytest.raises(ValueError, match="invalid `ntiles` attribute"):
             TileArray(broken, manifest.dtype, manifest.engine)
+
+    @pytest.mark.parametrize(
+        "ntiles, match",
+        [
+            ([4], "one count per geometry axis"),
+            ("many", "one count per geometry axis"),
+            ([4, 0], "positive integers"),
+            ([3, 1], "disagrees with the size of `tile_0`"),
+        ],
+    )
+    def test_malformed_tile_counts_raise(self, uniform, ntiles, match):
+        manifest, _ = uniform
+        with pytest.raises(ValueError, match=match):
+            TileArray(_reheader(manifest, ntiles=ntiles))
 
     def test_hidden_and_synthetic_axes_round_trip(self, uniform, tmp_path):
         manifest, reference = uniform
@@ -634,7 +706,7 @@ class TestSourcePaths:
         return manifest.to_dataset()["paths"].values.ravel().tolist()
 
     def round_trip(self, manifest):
-        return TileArray(manifest.to_dataset(), manifest.dtype, manifest.engine)
+        return TileArray(manifest.to_dataset())
 
     def test_root_splits_off(self, tmp_path):
         manifest = self.make(tmp_path / "sources" / "f.h5")
@@ -661,11 +733,11 @@ class TestSourcePaths:
         data = np.arange(5 * NX, dtype="<f4").reshape(5, NX)
         _tile_file(tmp_path / "f.h5", data)
         manifest = self.make(tmp_path / "f.h5")
-        dataset = manifest.to_dataset().drop_vars("root")
+        dataset = _reheader(manifest, root="")
         dataset["paths"] = xr.Variable(
             (), np.asarray(str(tmp_path / "f.h5"), dtype=object)
         )
-        legacy = TileArray(dataset, manifest.dtype, manifest.engine)
+        legacy = TileArray(dataset)
         assert legacy.root == ""
         npt.assert_array_equal(np.asarray(legacy), data[1:])
         # same files, however split between root and relative paths
@@ -692,7 +764,7 @@ class TestSourcePaths:
                     "root": ((), np.asarray(os.fsencode(root))),
                 }
             )
-            return TileArray(dataset, "float64", ENGINE)
+            return TileArray(dataset, "float64", ENGINE)  # no header: upgraded
 
         fused = TileArray.concat([make("/a/b", "f.h5"), make("rel", "g.h5")])
         assert fused.root == ""
@@ -955,11 +1027,11 @@ class TestConcat:
             _tile_file(path, data)
             parts.append(data)
             manifests.append(TileArray.from_tiles(path, (5, NX), "float64", engine))
-        dataset = manifests[1].to_dataset().drop_vars("root")
+        dataset = _reheader(manifests[1], root="")
         dataset["paths"] = xr.Variable(
             (), np.asarray(str(tmp_path / "r1.h5"), dtype=object)
         )
-        legacy = TileArray(dataset, "float64", engine)
+        legacy = TileArray(dataset)
         fused = TileArray.concat([manifests[0], legacy])
         assert fused.root == ""
         assert all(os.path.isabs(path) for path in fused.dataset["paths"].values)
@@ -1031,11 +1103,11 @@ class TestEngineContract:
                 return np.zeros(widths)
 
         try:
+            # a per-tile variable shadows a same-named spec constant
             arr = TileArray(
-                manifest.dataset.assign(record=(("tile_0",), np.arange(3))),
-                manifest.dtype,
-                # a per-tile variable shadows a same-named spec constant
-                {"name": "probe", "record": -1, "flavor": "spec"},
+                _reheader(
+                    manifest, engine={"name": "probe", "record": -1, "flavor": "spec"}
+                ).assign(record=(("tile_0",), np.arange(3)))
             )
             np.asarray(arr)
             assert [entry[1] for entry in seen] == [0, 1, 2]
@@ -1052,9 +1124,7 @@ class TestEngineContract:
                 return np.zeros((1, 1))
 
         try:
-            bad = TileArray(
-                manifest.dataset.copy(), manifest.dtype, {"name": "badshape"}
-            )
+            bad = TileArray(_reheader(manifest, engine="badshape"))
             with pytest.raises(ValueError, match="shape"):
                 np.asarray(bad[0:5])
         finally:
@@ -1074,9 +1144,7 @@ class TestEngineContract:
                 return np.zeros(widths, dtype="float32")
 
         try:
-            bad = TileArray(
-                manifest.dataset.copy(), manifest.dtype, {"name": "baddtype"}
-            )
+            bad = TileArray(_reheader(manifest, engine="baddtype"))
             with pytest.raises(ValueError, match="float32"):
                 np.asarray(bad[0:5])
         finally:
@@ -1211,9 +1279,11 @@ class TestExpandDims:
         npt.assert_array_equal(
             expanded.dataset["starts_0"].values, manifest.dataset["starts_0"].values
         )
-        npt.assert_array_equal(expanded.dataset["sizes_2"].values, [1])
-        npt.assert_array_equal(expanded.dataset["axes"].values, [2, 0, 1])
-        assert int(expanded.dataset["source_ndim"].values[()]) == 2
+        npt.assert_array_equal(expanded.dataset["sizes_2"].values, 1)
+        header = json.loads(expanded.dataset.attrs["header"])
+        # the inserted axis is a null: the source rank is what is left
+        assert header["axes"] == [None, 0, 1]
+        assert header["ntiles"] == [3, 1, 1]
 
     def test_expanded_slicing_folds(self, stack, engine_calls):
         manifest, reference = stack
@@ -1745,11 +1815,7 @@ class TestAxisMap:
                 return np.zeros(widths)
 
         try:
-            probe = TileArray(
-                manifest.dataset.drop_vars("record", errors="ignore"),
-                manifest.dtype,
-                "selection-probe",
-            )
+            probe = TileArray(_reheader(manifest, engine="selection-probe"))
             np.asarray(np.expand_dims(np.transpose(probe), 1)[:, :, 9:13])
             assert all(len(selection) == 2 for selection in seen)
             # the time trim reaches source axis 0 whatever the virtual order
@@ -1843,45 +1909,70 @@ class TestAxisMap:
     def test_map_validation(self, stack):
         manifest, _ = stack
         with pytest.raises(ValueError, match="distinct geometry axes"):
+            TileArray(_reheader(manifest, axes=[0, 0]))
+        with pytest.raises(ValueError, match="source geometry axes below 2"):
+            TileArray(_reheader(manifest, axes=[0, 2]))
+        with pytest.raises(ValueError, match="must be a list"):
+            TileArray(_reheader(manifest, axes="tile_0"))
+        with pytest.raises(ValueError, match="at least one visible"):
+            TileArray(_reheader(manifest, axes=[]))
+        with pytest.raises(ValueError, match="at least one source axis"):
+            TileArray(_reheader(manifest, axes=[None, None]))
+        # hiding the distance axis: it holds NX samples, not one
+        with pytest.raises(ValueError, match="sizes must be 1"):
+            TileArray(_reheader(manifest, axes=[1]))
+        # declaring it synthetic: same objection, the other way round
+        with pytest.raises(ValueError, match="sizes must be 1"):
+            TileArray(_reheader(manifest, axes=[0, None]))
+        two = manifest[9:11]  # two one-row tiles along the time axis
+        with pytest.raises(ValueError, match="single tile"):
+            TileArray(_reheader(two, axes=[1]))
+
+    def test_legacy_map_variables_upgrade(self, stack, tmp_path):
+        """The pre-header form spelled the map as two variables."""
+        manifest, reference = stack
+        view = np.expand_dims(np.transpose(manifest), 1)  # axes [1, null, 0]
+        legacy = view.dataset.drop_attrs().assign(
+            axes=("axis", np.array([1, 2, 0])),
+            source_ndim=((), np.int64(2)),
+            root=((), np.asarray(os.fsencode(view.root))),
+        )
+        reopened = TileArray(legacy, view.dtype, view.engine)
+        assert json.loads(reopened.dataset.attrs["header"])["axes"] == [1, None, 0]
+        assert not {"axes", "source_ndim", "root"} & set(reopened.dataset.variables)
+        assert reopened.equals(view)
+        npt.assert_array_equal(np.asarray(reopened), reference.T[:, None])
+
+    def test_legacy_map_validation(self, stack):
+        manifest, _ = stack
+        headless = manifest.dataset.drop_attrs()
+        with pytest.raises(ValueError, match="1-D over its own"):
             TileArray(
-                manifest.dataset.assign(axes=("axis", np.array([0, 0]))),
+                headless.assign(axes=("tile_0", np.array([0, 1, 0]))),
                 manifest.dtype,
                 manifest.engine,
             )
-        with pytest.raises(ValueError, match="1-D over its own"):
+        with pytest.raises(ValueError, match="distinct geometry axes below 2"):
             TileArray(
-                manifest.dataset.assign(axes=("tile_0", np.array([0, 1, 0]))),
+                headless.assign(axes=("axis", np.array([0, 2]))),
                 manifest.dtype,
                 manifest.engine,
             )
         with pytest.raises(ValueError, match="between 1 and"):
             TileArray(
-                manifest.dataset.assign(source_ndim=((), np.int64(3))),
+                headless.assign(source_ndim=((), np.int64(3))),
                 manifest.dtype,
                 manifest.engine,
             )
-        with pytest.raises(ValueError, match="sizes must be 1"):
+        with pytest.raises(ValueError, match="0-d"):
             TileArray(
-                manifest.dataset.assign(axes=("axis", np.array([1]))),
+                headless.assign(source_ndim=("axis", np.array([2]))),
                 manifest.dtype,
                 manifest.engine,
             )
-        two = manifest[9:11]  # two one-row tiles along the time axis
-        with pytest.raises(ValueError, match="single tile"):
+        with pytest.raises(ValueError, match="0-d"):
             TileArray(
-                two.dataset.assign(axes=("axis", np.array([1]))),
-                two.dtype,
-                two.engine,
-            )
-        with pytest.raises(ValueError, match="sizes must be 1"):
-            TileArray(
-                manifest.dataset.assign(source_ndim=((), np.int64(1))),
-                manifest.dtype,
-                manifest.engine,
-            )
-        with pytest.raises(ValueError, match="at least one visible"):
-            TileArray(
-                manifest.dataset.assign(axes=("axis", np.array([], dtype=np.int64))),
+                headless.assign(root=("tile_0", np.array([b"a", b"b", b"c"]))),
                 manifest.dtype,
                 manifest.engine,
             )
@@ -1937,12 +2028,6 @@ class TestAxisMap:
             np.squeeze(manifest, axis="bad")
         with pytest.raises(ValueError, match="no axis"):
             manifest.squeeze(axis=5)
-        with pytest.raises(ValueError, match="0-d"):
-            TileArray(
-                manifest.dataset.assign(source_ndim=("axis", np.array([2]))),
-                manifest.dtype,
-                manifest.engine,
-            )
 
     def test_map_dispatch_guards(self, stack):
         """Handlers step aside for calls that are not theirs to rewrite."""
@@ -2058,7 +2143,7 @@ class TestSignedSteps:
                 return np.zeros(widths)
 
         try:
-            probe = TileArray(manifest.dataset, manifest.dtype, "ascending-probe")
+            probe = TileArray(_reheader(manifest, engine="ascending-probe"))
             np.asarray(np.flip(probe[::-2, ::-1]))
             assert seen and all(
                 entry.start <= entry.stop and (entry.step or 1) >= 1
@@ -2393,6 +2478,254 @@ class TestPersistence:
             da.to_netcdf(path, virtual=True)
         reopened = xd.open_dataarray(path)
         npt.assert_array_equal(reopened.values, np.zeros((4, NX)))
+
+
+class TestStoredForm:
+    """What each kind of view spends on disk, and that it comes back whole."""
+
+    def columns(self, manifest):
+        """The manifest variables, as ``{name: dimensions}``."""
+        return {
+            name: tuple(map(str, manifest.dataset[name].dims))
+            for name in map(str, manifest.dataset.data_vars)
+        }
+
+    def header(self, manifest):
+        return json.loads(manifest.dataset.attrs["header"])
+
+    def round_trip(self, manifest, tmp_path, name):
+        """Write *manifest* to the native format and read it back."""
+        path = str(tmp_path / f"{name}.nc")
+        dims = tuple(f"dim_{k}" for k in range(manifest.ndim))
+        xd.DataArray(manifest, dims=dims).to_netcdf(path)
+        reopened = xd.open_dataarray(path)
+        assert isinstance(reopened.data, TileArray)
+        assert reopened.data.equals(manifest)
+        assert self.header(reopened.data) == self.header(manifest)
+        return reopened
+
+    def test_scanned_acquisition(self, uniform, tmp_path):
+        """Equal-length files: every geometry column is one element."""
+        manifest, reference = uniform
+        assert self.columns(manifest) == {
+            "sizes_0": (),
+            "sizes_1": (),
+            "paths": ("tile_0",),
+        }
+        assert self.header(manifest) == {
+            "ntiles": [4, 1],
+            "engine": ENGINE,
+            "dtype": "float64",
+            "root": str(tmp_path),
+        }
+        npt.assert_array_equal(
+            self.round_trip(manifest, tmp_path, "scan").values, reference
+        )
+
+    def test_truncated_last_file(self, uniform, tmp_path):
+        """A short last file is the one thing that keeps a size column varying."""
+        manifest, reference = uniform
+        view = manifest[:21]
+        assert self.columns(view)["sizes_0"] == ("tile_0",)
+        npt.assert_array_equal(view.dataset["sizes_0"].values, [6, 6, 6, 3])
+        assert "starts_0" not in view.dataset and "steps_0" not in view.dataset
+        npt.assert_array_equal(
+            self.round_trip(view, tmp_path, "truncated").values, reference[:21]
+        )
+
+    def test_decimated_window(self, uniform, tmp_path):
+        """A stepped slice: sizes and origins vary, the step is one element."""
+        manifest, reference = uniform
+        view = manifest[3:22:2]
+        assert self.columns(view)["sizes_0"] == ("tile_0",)
+        assert self.columns(view)["starts_0"] == ("tile_0",)
+        assert self.columns(view)["steps_0"] == ()
+        assert int(view.dataset["steps_0"].values[()]) == 2
+        npt.assert_array_equal(
+            self.round_trip(view, tmp_path, "decimated").values, reference[3:22:2]
+        )
+
+    def test_reversal(self, uniform, tmp_path):
+        """Flipping negates one folded step and moves one folded origin."""
+        manifest, reference = uniform
+        view = manifest[::-1]
+        assert self.columns(view)["starts_0"] == ()
+        assert self.columns(view)["steps_0"] == ()
+        assert int(view.dataset["starts_0"].values[()]) == 5
+        assert int(view.dataset["steps_0"].values[()]) == -1
+        npt.assert_array_equal(
+            self.round_trip(view, tmp_path, "reversed").values, reference[::-1]
+        )
+
+    def test_transposed_with_a_new_axis(self, uniform, tmp_path):
+        """The arrangement is one list; the inserted axis is a null in it."""
+        manifest, reference = uniform
+        view = np.transpose(manifest)[:, np.newaxis]
+        assert self.header(view)["ntiles"] == [4, 1, 1]
+        assert self.header(view)["axes"] == [1, None, 0]
+        assert self.columns(view)["sizes_2"] == ()
+        reopened = self.round_trip(view, tmp_path, "transposed")
+        npt.assert_array_equal(reopened.values, reference.T[:, np.newaxis])
+
+    def test_pinned_axis_is_hidden(self, uniform, tmp_path):
+        """Integer indexing a source axis leaves it in the grid, unpresented."""
+        manifest, reference = uniform
+        view = manifest[:, 2]
+        assert self.header(view)["axes"] == [0]
+        assert self.columns(view)["sizes_1"] == ()
+        assert self.columns(view)["starts_1"] == ()
+        assert int(view.dataset["sizes_1"].values[()]) == 1
+        assert int(view.dataset["starts_1"].values[()]) == 2
+        reopened = self.round_trip(view, tmp_path, "pinned")
+        npt.assert_array_equal(reopened.values, reference[:, 2])
+
+    def test_stacked_axis(self, uniform, tmp_path):
+        """A stacked axis is synthetic but a full grid citizen: paths vary along it."""
+        manifest, reference = uniform
+        paths = [os.fsdecode(path) for path in manifest._full_paths().ravel()]
+        other = TileArray.from_tiles(paths[::-1], ([6] * 4, NX), "float64", ENGINE)
+        view = np.stack([manifest, other])
+        assert self.header(view)["ntiles"] == [4, 1, 2]
+        assert self.header(view)["axes"] == [None, 0, 1]
+        assert self.columns(view)["paths"] == ("tile_0", "tile_2")
+        reopened = self.round_trip(view, tmp_path, "stacked")
+        flipped = np.concatenate(np.split(reference, 4)[::-1])
+        npt.assert_array_equal(reopened.values, np.stack([reference, flipped]))
+
+    def test_pinning_a_stacked_axis_deletes_it(self, uniform, tmp_path):
+        """A pinned synthetic axis is contentless: it leaves the grid entirely."""
+        manifest, reference = uniform
+        view = np.stack([manifest, manifest])[1]
+        # back to the plain two-axis grid, identity arrangement
+        assert "axes" not in self.header(view)
+        assert self.header(view)["ntiles"] == [4, 1]
+        assert "sizes_2" not in view.dataset
+        assert view.equals(manifest)
+        npt.assert_array_equal(
+            self.round_trip(view, tmp_path, "unstacked").values, reference
+        )
+
+    def test_two_synthetic_axes_transposed_past_each_other(self, uniform, tmp_path):
+        """Reordering synthetic axes renumbers the grid, not the map."""
+        manifest, reference = uniform
+        paths = [os.fsdecode(path) for path in manifest._full_paths().ravel()]
+        others = [
+            TileArray.from_tiles(
+                paths[k:] + paths[:k], ([6] * 4, NX), "float64", ENGINE
+            )
+            for k in range(1, 4)
+        ]
+        rotate = lambda k: np.concatenate(
+            np.split(reference, 4)[k:] + np.split(reference, 4)[:k]
+        )
+        stacked = np.stack(
+            [np.stack([manifest, others[0]]), np.stack([others[1], others[2]])]
+        )
+        expected = np.stack(
+            [np.stack([reference, rotate(1)]), np.stack([rotate(2), rotate(3)])]
+        )
+        assert stacked.shape == expected.shape
+        view = np.swapaxes(stacked, 0, 1)
+        assert self.header(view)["axes"] == [None, None, 0, 1]
+        reopened = self.round_trip(view, tmp_path, "swapped")
+        npt.assert_array_equal(reopened.values, np.swapaxes(expected, 0, 1))
+
+    def test_engine_parameters(self, uniform, tmp_path):
+        """Per-tile parameters are columns like any other: constants fold."""
+        manifest, reference = uniform
+        paths = [os.fsdecode(path) for path in manifest._full_paths().ravel()]
+
+        class ShiftEngine(Engine, name="shift"):
+            @staticmethod
+            def load_tile(path, selection, *, offset, gain):
+                with h5py.File(path, "r") as file:
+                    return gain * file["data"][selection] + offset
+
+        try:
+            view = TileArray.from_tiles(
+                paths, ([6] * 4, NX), "float64", "shift", offset=[0, 1, 2, 3], gain=1.0
+            )
+            assert self.columns(view)["offset"] == ("tile_0",)
+            assert self.columns(view)["gain"] == ()
+            reopened = self.round_trip(view, tmp_path, "params")
+            expected = reference + np.repeat([0, 1, 2, 3], 6)[:, None]
+            npt.assert_array_equal(reopened.values, expected)
+        finally:
+            del Engine._registry["shift"]
+
+    def test_non_utf8_root_survives_the_header(self, tmp_path):
+        """A root JSON cannot spell verbatim rides on escaped surrogates."""
+        directory = os.fsdecode(os.fsencode(str(tmp_path)) + b"/caf\xe9")
+        os.mkdir(directory)
+        data = np.arange(4.0 * NX).reshape(4, NX)
+        _tile_file(os.path.join(directory, "f.h5"), data)
+        manifest = TileArray.from_tiles(
+            os.path.join(directory, "f.h5"), (4, NX), "float64", ENGINE
+        )
+        assert manifest.root == directory
+        # the JSON document itself stays pure ASCII
+        manifest.dataset.attrs["header"].encode("ascii")
+        reopened = self.round_trip(manifest, tmp_path, "surrogate")
+        assert reopened.data.root == directory
+        npt.assert_array_equal(reopened.values, data)
+
+    def test_the_placeholder_is_a_projection(self, uniform, tmp_path):
+        """It costs nothing, states the shape and the type, and points home."""
+        manifest, _ = uniform
+        path = str(tmp_path / "placeholder.nc")
+        wrap(manifest).to_netcdf(path)
+        with h5py.File(path) as file:
+            placeholder = file["__values__"]
+            assert placeholder.shape == manifest.shape
+            assert placeholder.dtype == manifest.dtype
+            assert placeholder.id.get_storage_size() == 0
+            assert placeholder.attrs["__tiling__"] == TILES_GROUP
+            assert "__tile_array__" not in placeholder.attrs
+            assert file.attrs["Conventions"] == "CF-1.13"
+
+    def test_a_placeholder_of_another_type_is_refused(self, uniform, tmp_path):
+        """The projection must project: a divergent type declares a cast."""
+        manifest, _ = uniform
+        path = str(tmp_path / "mistyped.nc")
+        wrap(manifest).to_netcdf(path)
+        with h5py.File(path, "a") as file:
+            header = json.loads(file[TILES_GROUP].attrs["header"])
+            header["dtype"] = "float32"
+            file[TILES_GROUP].attrs["header"] = json.dumps(header)
+        with pytest.raises(ValueError, match="placeholder is float64"):
+            xd.open_dataarray(path, engine="xdas")
+
+    @pytest.mark.parametrize("view", ["plain", "mapped"])
+    def test_a_file_of_the_earlier_format_opens_the_same(self, uniform, tmp_path, view):
+        """The break is one-way: what earlier versions wrote still reads."""
+        manifest, reference = uniform
+        expected = reference
+        if view == "mapped":
+            manifest = np.transpose(manifest)[:, np.newaxis]
+            expected = reference.T[:, np.newaxis]
+        modern = str(tmp_path / f"modern_{view}.nc")
+        legacy = str(tmp_path / f"legacy_{view}.nc")
+        dims = tuple(f"dim_{k}" for k in range(manifest.ndim))
+        for path in (modern, legacy):
+            xd.DataArray(manifest, dims=dims).to_netcdf(path)
+        _downgrade(legacy, manifest)
+        upgraded = xd.open_dataarray(legacy, engine="xdas")
+        assert isinstance(upgraded.data, TileArray)
+        assert upgraded.data.equals(xd.open_dataarray(modern, engine="xdas").data)
+        # the upgrade is complete: nothing of the old spelling survives
+        assert self.header(upgraded.data) == self.header(manifest)
+        assert set(upgraded.data.dataset.variables) == set(manifest.dataset.variables)
+        npt.assert_array_equal(upgraded.values, expected)
+
+    def test_dunder_attributes_stay_out_of_the_data_array(self, uniform, tmp_path):
+        """The `__*__` namespace is the format's; the rest is the user's."""
+        manifest, _ = uniform
+        da = wrap(manifest)
+        da.attrs = {"instrument": "OptoDAS"}
+        path = str(tmp_path / "attrs.nc")
+        da.to_netcdf(path)
+        reopened = xd.open_dataarray(path)
+        assert reopened.attrs == {"instrument": "OptoDAS"}
 
 
 class TestPermuteTiles:

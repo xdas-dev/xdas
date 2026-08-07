@@ -28,7 +28,7 @@ from ..coordinates import Coordinates
 from ..core import DataArray, DataCollection, DataMapping, DataSequence
 from ..dask import create_variable, loads
 from ..virtual import TileArray, VirtualBackend
-from ..virtual.tiles import TILES_GROUP
+from ..virtual.tiles import TILES_GROUP, TILING
 from .core import Engine
 
 
@@ -170,13 +170,25 @@ def _read_dataarray(node, fname, group=None, vtype=None):
     coords = Coordinates._from_dataset(dataset, name)
 
     # read data
-    if "__tile_array__" in dataset[name].attrs:
-        spec = json.loads(dataset[name].attrs.pop("__tile_array__"))
+    attrs = dataset[name].attrs
+    if TILING in attrs:
+        # the placeholder points at the group describing its tiling and
+        # projects the array it stands for: its type must be that array's
+        manifest = node[attrs[TILING]].to_dataset(inherit=False).load()
+        data = TileArray(manifest)
+        if data.dtype != dataset[name].dtype:
+            raise ValueError(
+                f"the placeholder is {dataset[name].dtype} where its manifest "
+                f"records {data.dtype}"
+            )
+    elif "__tile_array__" in attrs:
+        # the form predating the header: the engine travelled on the
+        # placeholder, which also carried the dtype
+        spec = json.loads(attrs["__tile_array__"])
         manifest = node[TILES_GROUP].to_dataset(inherit=False).load()
-        # the placeholder variable carries the dtype; the spec only the engine
         data = TileArray(manifest, dataset[name].dtype, spec["engine"])
-    elif "__dask_array__" in dataset[name].attrs:
-        data = loads(dataset[name].attrs.pop("__dask_array__"))
+    elif "__dask_array__" in attrs:
+        data = loads(attrs["__dask_array__"])
     else:
         with h5py.File(fname) as file:
             if group:
@@ -186,14 +198,16 @@ def _read_dataarray(node, fname, group=None, vtype=None):
                 variable
             )
 
+    # the file has two reservation registries: CF's plain words, which
+    # the coordinates have consumed, and xdas's dunder-fenced ones
+    attrs = {
+        key: value
+        for key, value in attrs.items()
+        if not (key.startswith("__") and key.endswith("__"))
+    }
+
     # pack everything
-    return DataArray(
-        data,
-        coords,
-        dataset[name].dims,
-        name,
-        None if dataset[name].attrs == {} else dataset[name].attrs,
-    )
+    return DataArray(data, coords, dataset[name].dims, name, attrs or None)
 
 
 def save_dataarray(
@@ -249,7 +263,7 @@ def _save_tree(leaves, fname, mode, virtual, encoding, create_dirs):
                 raise ValueError(
                     "can only use `virtual=True` with a virtual array as data"
                 )
-        dataset = xr.Dataset(attrs={"Conventions": "CF-1.9"})
+        dataset = xr.Dataset(attrs={"Conventions": "CF-1.13"})
         attrs = {} if da.attrs is None else dict(da.attrs)
         for coord in da.coords.values():
             dataset, attrs = coord._to_dataset(dataset, attrs)
@@ -296,9 +310,7 @@ def _save_tree(leaves, fname, mode, virtual, encoding, create_dirs):
                     **({} if encoding is None else encoding),
                 )
             elif isinstance(da.data, VirtualBackend):
-                variable = da.data.create_variable(
-                    target, variable_name, da.dims, da.dtype
-                )
+                variable = da.data.create_variable(target, variable_name, da.dims)
             else:
                 warnings.warn(
                     "writing dask-backed virtual arrays is deprecated; the "

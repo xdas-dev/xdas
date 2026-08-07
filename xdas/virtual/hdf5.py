@@ -48,7 +48,7 @@ class VirtualArray(VirtualBackend, vtype="hdf5"):
         """
         return VirtualSource(variable)
 
-    def create_variable(self, file, name, dims=None, dtype=None):
+    def create_variable(self, file, name, dims=None):
         """
         Write this virtual array into *file* and register it as a named variable.
 
@@ -60,8 +60,6 @@ class VirtualArray(VirtualBackend, vtype="hdf5"):
             Variable name to create inside *file*.
         dims : sequence of str, optional
             Dimension names for the variable.
-        dtype : dtype-like, optional
-            Override data type for the variable.
 
         Returns
         -------

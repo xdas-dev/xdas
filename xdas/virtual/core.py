@@ -110,14 +110,14 @@ class VirtualBackend(ABC):
         """
 
     @abstractmethod
-    def create_variable(self, file, name, dims=None, dtype=None):
+    def create_variable(self, file, name, dims=None):
         """
         Write this array as variable *name* of an open h5netcdf *file*.
 
         The first half of the persistence contract — each backend
         writes its own stored form: an HDF5 virtual dataset for the
-        hdf5 backend, a placeholder variable carrying the engine
-        specification for the tiles backend.
+        hdf5 backend, a placeholder variable pointing at its manifest
+        for the tiles backend. The element type is the array's own.
         """
 
     def sibling_datasets(self):
