@@ -5,9 +5,9 @@
 # xdas.virtual.tiles
 
 Lazy tile-backed virtual arrays: the only backend of the formats that
-HDF5 virtual datasets cannot serve (Silixa TDMS, MiniSEED), the default
-one for Febus, and available on request from every other engine
-(`vtype="tiles"`).
+HDF5 virtual datasets cannot serve (Silixa TDMS, and everything ObsPy
+reads), the default one for Febus, and available on request from every
+other engine (`vtype="tiles"`).
 
 ## TileArray
 
