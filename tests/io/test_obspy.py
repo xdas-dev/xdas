@@ -196,6 +196,54 @@ class TestLoadTile:
         npt.assert_allclose(da.values, data)
         assert ObsPyEngine().open_dataarray(whole).equals(da)
 
+    def test_traces_split_by_data_quality_are_rejoined(self, tmp_path):
+        # libmseed hands back one trace per data quality flag; the two are
+        # sample-exact contiguous, so each pointer must still resolve against
+        # the joined run
+        data = np.arange(200.0)
+        parts = []
+        for index, (values, start, quality) in enumerate(
+            [(data[:120], 0.0, "D"), (data[120:], 1.20, "R")]
+        ):
+            tr = obspy.Trace(values, header(starttime=start))
+            tr.stats.mseed = {"dataquality": quality}
+            path = tmp_path / f"part_{index}.mseed"
+            obspy.Stream([tr]).write(str(path), format="MSEED")
+            parts.append(path)
+        path = tmp_path / "quality.mseed"
+        path.write_bytes(b"".join(part.read_bytes() for part in parts))
+        assert len(obspy.read(str(path))) == 2
+
+        dc = ObsPyEngine().open_datacollection(path)
+        traces = dc["DX"]["CH001"]["00"]["HHZ"]
+        assert [da.sizes["time"] for da in traces] == [120, 80]
+        npt.assert_allclose(traces[0].values, data[:120])
+        npt.assert_allclose(traces[1].values, data[120:])
+
+    def test_legacy_unsynchronized_manifest_trimmed_and_squeezed(self, tmp_path):
+        # the old engine folded a single-channel axis out of the scanned shape
+        # and could drop the last sample of each segment
+        path = tmp_path / "gap.mseed"
+        st = write(
+            path,
+            [
+                (header(), np.arange(50.0)),
+                (header(starttime=1.0), np.arange(100.0, 150.0)),
+            ],
+        )
+        data = TileArray.from_tiles(
+            str(path),
+            (99,),
+            np.dtype("float64"),
+            {
+                "name": "miniseed",
+                "method": "unsynchronized",
+                "ignore_last_sample": True,
+            },
+        )
+        expected = np.concatenate([tr.data for tr in st])
+        npt.assert_allclose(np.asarray(data), np.delete(expected, -1))
+
     def test_same_start_different_length(self, tmp_path):
         path = tmp_path / "twins.mseed"
         short = np.arange(10.0)

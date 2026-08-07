@@ -34,13 +34,20 @@ Xdas support the following DAS formats:
 | SINTELA           | ONYX              | `"sintela"`       | HDF5, tiles       | `hdf5`    |
 | Terra15           | Treble            | `"terra15"`       | HDF5, tiles       | `hdf5`    |
 
-It also implements its own format and support ProdML and miniSEED:
+It also implements its own format, supports ProdML, and reads every format
+ObsPy reads — miniSEED, SAC, GSE2, SEG-2 and the rest — through a single
+engine named after the library rather than after a format:
 
 | Format            | `engine` argument | Virtualization    | Default   |
 |:-----------------:|:-----------------:|:-----------------:|:---------:|
 | Xdas              | `None`            | HDF5, tiles       | `hdf5`    |
 | ProdML            | `"prodml"`        | HDF5, tiles       | `hdf5`    |
-| miniSEED          | `"miniseed"`      | tiles             | `tiles`   |
+| ObsPy formats     | `"obspy"`         | tiles             | `tiles`   |
+
+The `"obspy"` engine is the only one that describes a file as a *collection*
+rather than a single array: it emits one lazy data array per ObsPy `Trace`,
+nested on the SEED hierarchy. See [](obspy.md). `engine="miniseed"` remains a
+registered alias for it.
 
 ```{note}
 A Febus file stores a stack of overlapping blocks rather than one contiguous array. The

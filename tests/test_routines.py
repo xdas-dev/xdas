@@ -509,6 +509,22 @@ class TestOpenEdgeCases:
             xd.open_dataarray(path, engine=42)
 
 
+class TestOpenDatacollection:
+    def test_engine_arguments_need_an_engine(self, tmp_path):
+        da = xd.testing.dummy(shape=(10, 5))
+        path = str(tmp_path / "dc.nc")
+        xd.DataCollection([da, da]).to_netcdf(path)
+        with pytest.raises(ValueError, match="require naming an engine"):
+            xd.open_datacollection(path, vtype="tiles")
+
+    def test_group_is_a_native_parameter(self, tmp_path):
+        da = xd.testing.dummy(shape=(10, 5))
+        path = str(tmp_path / "dc.nc")
+        xd.DataCollection([da, da]).to_netcdf(path)
+        with pytest.raises(ValueError, match="native-format parameter"):
+            xd.open_datacollection(path, group="whatever", engine="xdas")
+
+
 class TestOpenMFDatacollectionEdgeCases:
     def test_nonexistent_path_in_list_raises(self, tmp_path):
         with pytest.raises(FileNotFoundError):
@@ -999,6 +1015,32 @@ class TestTrimOverlaps:
             npt.assert_array_equal(
                 element.values, [0.0, 1.0, 2.0, 100.0, 101.0, 102.0, 103.0, 104.0]
             )
+
+    def test_disjoint_claims(self):
+        # a stored view need not be in start order: here the second part lies
+        # entirely below the first, so the claims cannot merge into one span
+        # and the third part is trimmed against both
+        coord = {
+            "tie_indices": [0, 12, 13, 23, 24, 28],
+            "tie_values": [0.0, 12.0, 10.0, 20.0, 1.0, 5.0],
+        }
+        da = xd.DataArray(
+            np.concatenate(
+                [np.arange(13.0), np.arange(100.0, 111.0), np.arange(200.0, 205.0)]
+            ),
+            {"time": coord},
+        )
+        result = xd.trim_overlaps(da)
+        npt.assert_array_equal(result["time"].values, np.arange(21.0))
+        npt.assert_array_equal(
+            result.values,
+            # 0 from the first part, 1-5 from the last, 6-9 from the first
+            # again, 10-20 from the second
+            [0.0]
+            + list(np.arange(200.0, 205.0))
+            + [6.0, 7.0, 8.0, 9.0]
+            + list(np.arange(100.0, 111.0)),
+        )
 
     def test_invalid_keep_raises(self):
         da = xd.testing.dummy(dims=("time",), shape=(10,), step=0.01)

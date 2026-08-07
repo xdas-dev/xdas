@@ -76,7 +76,7 @@ chunk boundaries automatically when used with {py:func}`~xdas.processing.process
 ## Can I use xdas with seismic data that is not DAS?
 
 Yes. The data model is generic: a {py:class}`~xdas.DataArray` can represent any
-labeled N-dimensional array. The [](io/miniseed.md) page shows a complete example with
+labeled N-dimensional array. The [](io/obspy.md) page shows a complete example with
 a large-N seismic array stored as miniSEED files. All signal processing routines in
 {py:mod}`xdas.signal` and {py:mod}`xdas.fft` work on any DataArray regardless of the
 physical quantity it represents.

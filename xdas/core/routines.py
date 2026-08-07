@@ -1695,8 +1695,6 @@ def _uncovered(coord, claimed):
     runs = []
     cursor = 0
     for first, last in claimed:
-        if cursor >= len(coord):
-            break
         # `to_index` clamps: a bound past either end of the coordinate resolves
         # to the full length or to zero rather than raising
         stop = coord.to_index(slice(None, first), endpoint=False).stop
