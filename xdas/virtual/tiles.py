@@ -433,21 +433,6 @@ def _write_header(dataset, header):
     return dataset.assign_attrs({HEADER: json.dumps(header)})
 
 
-def _bare_header(dataset, ngrid):
-    """Return the header of a manifest that carries none: the columns alone.
-
-    What a hand-assembled dataset says by itself — the tile counts, from
-    the dimensions it declares — for the identity arrangement, with the
-    paths stored whole. The dtype and the engine are the caller's to
-    pass; everything else is the default.
-    """
-    counts = [
-        int(dataset.sizes[dim]) if dim in dataset.dims else 1
-        for dim in (f"{TILE_PREFIX}{k}" for k in range(ngrid))
-    ]
-    return {"ntiles": counts}
-
-
 def _canonical(dataset, header, axes, source_ndim):
     """Bring the grid of *dataset* back to its canonical numbering.
 
@@ -702,10 +687,16 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
         if HEADER in dataset.attrs:
             header = _read_header(dataset)
         else:
-            # a hand-assembled dataset: the columns are all it says, and
-            # the tiles machinery owns the whole manifest, stray
-            # attributes included
-            header = _bare_header(dataset, ngrid)
+            # a hand-assembled dataset: the columns are all it says — the
+            # tile counts come from the dimensions it declares, everything
+            # else is the default — and the tiles machinery owns the whole
+            # manifest, stray attributes included
+            header = {
+                "ntiles": [
+                    int(dataset.sizes[dim]) if dim in dataset.dims else 1
+                    for dim in (f"{TILE_PREFIX}{k}" for k in range(ngrid))
+                ]
+            }
             dataset = dataset.drop_attrs(deep=True)
         self.dataset = dataset
         self._cache = None

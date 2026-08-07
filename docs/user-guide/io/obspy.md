@@ -149,8 +149,7 @@ duplicated samples — never resampling, never filling, always on a sample
 boundary:
 
 ```python
-dc = xd.trim_overlaps(dc)              # the later data wins, as in
-                                       # obspy's merge(method=1)
+dc = xd.trim_overlaps(dc)  # the later data wins, as obspy's merge(method=1)
 dc = xd.trim_overlaps(dc, keep="first")
 ```
 

@@ -10,7 +10,7 @@
 - **Scanning scales to archives of any size.** `open_mfdataarray` fuses scan results every 100 000 files instead of holding one data array per file, so memory no longer grows with the archive, and the file-count ceiling is lifted for the vtypes that consolidate their scan products (`tiles`). Acquisitions interleaved in time now group by compatibility, one array each, instead of splitting at every alternation (@atrabattoni).
 - Constant tile geometry costs one element instead of one per tile: opening a 23-million-tile archive drops from 1.67 GB to 1.11 GB resident, and locating a tile becomes a division instead of a binary search (@atrabattoni).
 - **`xdas.sortby`.** Sort a tile- or stack-backed data array along a dimension by coordinate value, lazily: the blocks are permuted through the manifest without reading any data (@atrabattoni).
-- **The `obspy` engine**, named for the library rather than for a format: decoding is `obspy.read`, so miniSEED, SAC, GSE2, SEG-2 and everything else ObsPy supports goes through it. Each contiguous `Trace` becomes one lazy `DataArray` and the collection mirrors the `Stream`, nested `network / station / location / channel`; files the miniseed engine rejected (two sampling rates, duplicated ids, interleaved acquisitions) are now readable, and the element type comes from the file's encoding, so a STEIM-compressed `int32` file is no longer scanned as `float64` (@atrabattoni).
+- **The `obspy` engine**, named for the library rather than for a format: decoding is `obspy.read`, so miniSEED, SAC, GSE2, SEG-2 and everything else ObsPy supports goes through it. Each contiguous `Trace` becomes one lazy `DataArray` and the collection mirrors the `Stream`, nested `network / station / location / channel`; files the miniseed engine rejected (two sampling rates, duplicated ids, interleaved acquisitions) are now readable, and each tile points at an individual trace instead of the whole file (@atrabattoni).
 - **`xdas.trim_overlaps`.** Resolve the overlaps of a data array or collection by dropping the duplicated samples, keeping the later copy by default (ObsPy's `merge(method=1, interpolation_samples=0)`) or the earlier one with `keep="first"`. Trimming lands on a sample boundary and stays at the manifest level, so a lazy array stays lazy; `xdas.split(da, "overlaps")` still keeps every copy (@atrabattoni).
 - `DataCollection.select` is added as an alias of `query`, and `fields` now reports every level of the subtree rather than only the current one and its children — `obspy.Stream.select` semantics: `dc.select(station="SX00*", channel="HH?")` (@atrabattoni).
 - `xdas.concat` opening a *new* dimension now checks that the inputs agree on their other coordinates and promotes the scalar ones that vary. Stacking the components of a station is `xd.concat(traces, "channel")`, lazily, with `channel` becoming a real coordinate (@atrabattoni).
@@ -22,7 +22,7 @@
 - **Dask virtualization is removed**, reader and writer alike, along with the `xdas.dask` module: a `__dask_array__` graph can no longer be read. A Dask array remains valid `DataArray` data — it is now computed on write like any other eager array, and `virtual=True` rejects it (@atrabattoni).
 - `TileArray` carries no user attributes: `TileArray.attrs` and the `attrs=` argument of `TileArray.from_tiles` are gone. It is a duck array, like the numpy array it stands in for; metadata belongs to the enclosing `DataArray` (@atrabattoni).
 - Interpolated coordinates are stored the way CF-1.13 actually defines them, and files declare `Conventions = "CF-1.13"`: the singular `tie_point_mapping` attribute on an interpolation variable, plus the mandatory `computational_precision`. The earlier spelling — CF-shaped, but not valid against the grammar — is still read (@atrabattoni).
-- Sampled coordinates are stored as a deliberate variation on that same grammar, and the earlier spelling is **not** read: reopen a `ctype="sampled"` file with 0.2.8 still installed and rewrite it with this release (@atrabattoni).
+- Sampled coordinates are stored as a deliberate variation on that same grammar: the sampling variable is a container whose mapping puts the segment length variable in the tie point index variable's slot, and whose interval travels as attributes. The earlier spelling is still read (@atrabattoni).
 - Python 3.10 support is dropped and the numpy requirement is raised to 2.3: the tile manifests use `np.strings` routines introduced there, which itself requires Python 3.11+ (@atrabattoni).
 - Passing a bare read function as `engine` now raises a `TypeError`: subclass `xdas.io.Engine` instead (see the data-formats documentation) (@atrabattoni).
 - Misspelled or unsupported keyword arguments passed next to an engine name now raise a `TypeError` instead of being silently ignored, and combining `vtype`, `ctype` or engine keywords with an already configured engine instance raises a `ValueError` (@atrabattoni).
@@ -32,9 +32,11 @@
 - A blank SEED location code is stored as `"--"`, the FDSN convention, since `""` cannot be a netCDF group name (@atrabattoni).
 
 ### Bug Fixes
+- Fix the element type of a compressed miniSEED file being read from the empty array `headonly=True` returns, which is always `float64`: a STEIM-compressed `int32` file was scanned as `float64`. It now comes from the file's encoding (@atrabattoni).
 - Fix the miniseed `ctype` argument being ignored: it routed to an unused attribute and the reader always built interpolated time coordinates. The default is unchanged (@atrabattoni).
 - Fix a data collection keyed by zero-padded codes — a SEED location such as `"00"`, say — reading back from netCDF as a sequence with its keys lost (@atrabattoni).
 - Fix miniSEED scans being forced to a single process (@atrabattoni).
+- When no engine can open a file, the error now lists what each engine that recognised it said, instead of only reporting that none succeeded (@atrabattoni).
 
 ## 0.2.8
 
