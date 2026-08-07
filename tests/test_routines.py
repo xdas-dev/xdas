@@ -875,9 +875,7 @@ class TestTrimOverlaps:
 
     def test_keep_first_is_the_mirror(self):
         # the later segment's head goes instead of the earlier one's tail
-        _, da = self.segments(
-            [(0.0, np.arange(5.0)), (0.03, np.arange(100.0, 105.0))]
-        )
+        _, da = self.segments([(0.0, np.arange(5.0)), (0.03, np.arange(100.0, 105.0))])
         npt.assert_array_equal(
             xd.trim_overlaps(da, keep="first").values,
             [0.0, 1.0, 2.0, 3.0, 4.0, 102.0, 103.0, 104.0],
@@ -890,9 +888,7 @@ class TestTrimOverlaps:
     def test_replaces_ignore_last_sample(self):
         # the old flag dropped the last sample of every segment; the shared
         # sample only, and only where it is genuinely shared, is enough
-        _, da = self.segments(
-            [(0.0, np.arange(5.0)), (0.04, np.arange(100.0, 105.0))]
-        )
+        _, da = self.segments([(0.0, np.arange(5.0)), (0.04, np.arange(100.0, 105.0))])
         result = xd.trim_overlaps(da)
         npt.assert_array_equal(
             result.values, [0.0, 1.0, 2.0, 3.0, 100.0, 101.0, 102.0, 103.0, 104.0]
@@ -932,9 +928,7 @@ class TestTrimOverlaps:
     def test_enveloped_part_keeps_both_sides(self):
         # a short high-precedence segment inside a long one: the long one must
         # keep a run on each side of it, not lose everything past the overlap
-        _, da = self.segments(
-            [(0.0, np.arange(20.0)), (0.05, np.arange(100.0, 103.0))]
-        )
+        _, da = self.segments([(0.0, np.arange(20.0)), (0.05, np.arange(100.0, 103.0))])
         result = xd.trim_overlaps(da)
         expected = np.concatenate(
             [np.arange(5.0), np.arange(100.0, 103.0), np.arange(8.0, 20.0)]
@@ -993,9 +987,7 @@ class TestTrimOverlaps:
         assert result["time"].get_split_indices("overlaps").size == 0
 
     def test_recurses_over_a_collection(self):
-        _, da = self.segments(
-            [(0.0, np.arange(5.0)), (0.03, np.arange(100.0, 105.0))]
-        )
+        _, da = self.segments([(0.0, np.arange(5.0)), (0.03, np.arange(100.0, 105.0))])
         dc = xd.DataCollection(
             {"CH001": xd.DataCollection([da, da], "acquisition")}, "station"
         )

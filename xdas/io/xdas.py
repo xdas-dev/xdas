@@ -371,13 +371,15 @@ def _read_datamapping(node, fname):
 
 
 def _read_datacollection(node, fname):
-    """Read the collection at *node*, auto-detecting sequence vs. mapping."""
+    """Read the collection at *node*, auto-detecting sequence vs. mapping.
+
+    A sequence is written under the canonical decimal spelling of its
+    positions, so that is what is compared: parsing the keys as integers
+    instead would read a mapping keyed by a zero-padded code — a SEED
+    location, say — back as a sequence, losing the keys.
+    """
     dm = _read_datamapping(node, fname)
-    try:
-        keys = [int(key) for key in dm]
-    except ValueError:
-        return dm
-    if keys == list(range(len(keys))):
+    if list(dm) == [str(index) for index in range(len(dm))]:
         return DataSequence.from_mapping(dm)
     else:
         return dm

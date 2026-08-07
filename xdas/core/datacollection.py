@@ -156,46 +156,48 @@ class DataCollection:
         return self.query(indexers, **indexers_kwargs)
 
     def _query(self, indexers):
-        """Recursive half of `query`, with the indexers already validated."""
-        if self.name in indexers:
-            key = indexers[self.name]
-            if self.issequence():
+        """Recursive half of `query`, with the indexers already validated.
+
+        Every level is walked, whether or not it is named in *indexers*: an
+        indexer applies wherever its level sits in the tree, not only at the
+        root.
+        """
+        key = indexers.get(self.name, None) if self.name in indexers else None
+        if self.issequence():
+            data = list(self)
+            if self.name in indexers:
                 if isinstance(key, int):
-                    data = [self[key]]
+                    data = [data[key]]
                 elif isinstance(key, slice):
-                    data = self[key]
+                    data = data[key]
                 else:
                     raise ValueError(f"{self.name} query must be a string")
-                data = [
-                    (
-                        value._query(indexers)
-                        if isinstance(value, DataCollection)
-                        else value
-                    )
-                    for value in data
-                ]
-            elif self.ismapping():
+            data = [
+                (value._query(indexers) if isinstance(value, DataCollection) else value)
+                for value in data
+            ]
+        elif self.ismapping():
+            data = dict(self)
+            if self.name in indexers:
                 if isinstance(key, str):
                     data = {
                         name: value
-                        for name, value in self.items()
+                        for name, value in data.items()
                         if fnmatch(name, key)
                     }
                 else:
                     raise ValueError(f"{self.name} query must be a string")
-                data = {
-                    name: (
-                        value._query(indexers)
-                        if isinstance(value, DataCollection)
-                        else value
-                    )
-                    for name, value in data.items()
-                }
-            else:  # pragma: no cover
-                raise TypeError("unknown type of data collection")
-            return DataCollection(data, self.name)
-        else:
-            return self
+            data = {
+                name: (
+                    value._query(indexers)
+                    if isinstance(value, DataCollection)
+                    else value
+                )
+                for name, value in data.items()
+            }
+        else:  # pragma: no cover
+            raise TypeError("unknown type of data collection")
+        return DataCollection(data, self.name)
 
     def issequence(self):
         """Return ``True`` if this is a :class:`DataSequence`."""
@@ -226,13 +228,11 @@ class DataCollection:
         if isinstance(fname, Path):
             fname = str(fname)
         self = DataMapping.from_netcdf(fname, group)
-        try:
-            keys = [int(key) for key in self.keys()]
-            if keys == list(range(len(keys))):
-                return DataSequence.from_mapping(self)
-            else:
-                return self
-        except ValueError:
+        # a sequence is written under the canonical decimal spelling of its
+        # positions; a zero-padded key is a mapping key, not a position
+        if list(self) == [str(index) for index in range(len(self))]:
+            return DataSequence.from_mapping(self)
+        else:
             return self
 
 

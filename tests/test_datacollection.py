@@ -125,8 +125,11 @@ class TestDataCollection:
         assert result.equals(expected)
         result = dc.query(instrument="das*")
         assert result.equals(dc)
+        # an indexer applies wherever its level sits, not only at the root:
+        # das2 holds three acquisitions and keeps the first two
         result = dc.query(acquisition=slice(0, 2))
-        assert result.equals(dc)
+        assert [len(result[key]) for key in result] == [2, 2]
+        assert result["das1"].equals(dc["das1"])
 
     def test_fields(self):
         da = xd.testing.dummy()

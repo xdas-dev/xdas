@@ -167,6 +167,23 @@ def open(
                     return open_datacollection(paths)
                 except Exception:  # noqa: BLE001, S110 - fall back to dataarray
                     pass
+            try:
+                dc = _resolve_engine(
+                    engine, vtype, ctype, engine_kwargs
+                ).open_datacollection(paths)
+            except NotImplementedError:
+                pass  # the engine describes a file as one array
+            else:
+                # combine whether one file was opened or many, so the returned
+                # shape never depends on the file count
+                return combine_by_field(
+                    [dc],
+                    dim,
+                    tolerance,
+                    False if squeeze is None else squeeze,
+                    None,
+                    verbose,
+                )
             return open_dataarray(
                 paths, engine=engine, vtype=vtype, ctype=ctype, **engine_kwargs
             )
@@ -181,8 +198,20 @@ def open(
                         parallel=parallel,
                         verbose=verbose,
                     )
-                except Exception:  # noqa: BLE001, S110 - fall back to mfdataarray
+                except Exception:  # noqa: BLE001, S110 - not native collections
                     pass
+            try:
+                return open_mfdatacollection(
+                    paths,
+                    dim,
+                    tolerance,
+                    squeeze=False if squeeze is None else squeeze,
+                    parallel=parallel,
+                    verbose=verbose,
+                    engine=_resolve_engine(engine, vtype, ctype, engine_kwargs),
+                )
+            except NotImplementedError:
+                pass  # the engine describes a file as one array
             return open_mfdataarray(
                 paths,
                 dim,
@@ -211,7 +240,16 @@ def open(
 
 
 def open_mfdatacollection(
-    paths, dim="first", tolerance=None, squeeze=False, verbose=False, parallel=None
+    paths,
+    dim="first",
+    tolerance=None,
+    squeeze=False,
+    verbose=False,
+    parallel=None,
+    engine=None,
+    vtype=None,
+    ctype=None,
+    **engine_kwargs,
 ):
     """
     Open a multiple file DataCollection.
@@ -244,6 +282,18 @@ def open_mfdatacollection(
         global xdas configuration. Default to None.
     verbose: bool
         Whether to display a progress bar. Default to False.
+    engine: str or Engine, optional
+        The file format engine to use, given by name or as a configured
+        :class:`~xdas.io.Engine` instance. Default to the native format.
+    vtype : str, optional
+        The virtualization type to use. If None, the engine default is used.
+        Only valid when `engine` is given by name.
+    ctype : str or dict, optional
+        The coordinate type(s) to use. If None, the engine defaults are used.
+        Only valid when `engine` is given by name.
+    **engine_kwargs
+        Format-specific engine parameters forwarded to the engine constructor.
+        Only valid when `engine` is given by name.
 
     Returns
     -------
@@ -252,6 +302,8 @@ def open_mfdatacollection(
 
     """
     paths = _ensure_str_paths(paths)
+    if engine is not None:
+        engine = _resolve_engine(engine, vtype, ctype, engine_kwargs)
 
     if isinstance(paths, str):
         paths = sorted(glob(paths))
@@ -277,10 +329,12 @@ def open_mfdatacollection(
             iterator = tqdm(paths, desc="Fetching metadata from files")
         else:
             iterator = paths
-        objs = [open_datacollection(path) for path in iterator]
+        objs = [open_datacollection(path, engine=engine) for path in iterator]
     else:
         executor = get_reusable_executor(max_workers)
-        futures = [executor.submit(open_datacollection, path) for path in paths]
+        futures = [
+            executor.submit(open_datacollection, path, engine=engine) for path in paths
+        ]
         if verbose:
             iterator = tqdm(
                 as_completed(futures),
@@ -290,7 +344,10 @@ def open_mfdatacollection(
         else:
             iterator = as_completed(futures)
         objs = [future.result() for future in iterator]
-    return combine_by_field(objs, dim, tolerance, squeeze, True, verbose)
+    # the native format stacks hdf5 sources; the engines that describe a file
+    # as a collection are tile-backed, and let `concat` pick
+    virtual = True if engine is None else None
+    return combine_by_field(objs, dim, tolerance, squeeze, virtual, verbose)
 
 
 def open_mfdatatree(
@@ -668,7 +725,7 @@ def open_mfdataarray(
             runs.extend(combine_by_coords(objs, dim, False, False))
             objs.clear()
 
-    if (max_workers == 1) or (engine.name == "miniseed"):  # TODO: dirty miniseed fix
+    if max_workers == 1:
         iterator = (
             tqdm(paths, desc="Fetching metadata from files") if verbose else paths
         )
@@ -761,7 +818,7 @@ def _combine_runs(runs, dim, tolerance, squeeze):
                 else da[dim].values
             )
         )
-    collection = DataCollection(results)
+    collection = DataCollection(results, "acquisition")
     if squeeze and len(collection) == 1:
         return collection[0]
     return collection
@@ -814,7 +871,9 @@ def open_dataarray(fname, engine=None, vtype=None, ctype=None, **engine_kwargs):
     return engine.open_dataarray(fname)
 
 
-def open_datacollection(fname, group=None):
+def open_datacollection(
+    fname, group=None, engine=None, vtype=None, ctype=None, **engine_kwargs
+):
     """
     Open a DataCollection from a file.
 
@@ -822,6 +881,21 @@ def open_datacollection(fname, group=None):
     ----------
     fname : str
         The path of the DataCollection.
+    group : str, optional
+        The location of the data collection within the file. Root by default.
+        Only meaningful for the native format.
+    engine: str or Engine, optional
+        The file format engine to use, given by name or as a configured
+        :class:`~xdas.io.Engine` instance. Default to the native format.
+    vtype : str, optional
+        The virtualization type to use. If None, the engine default is used.
+        Only valid when `engine` is given by name.
+    ctype : str or dict, optional
+        The coordinate type(s) to use. If None, the engine defaults are used.
+        Only valid when `engine` is given by name.
+    **engine_kwargs
+        Format-specific engine parameters forwarded to the engine constructor.
+        Only valid when `engine` is given by name.
 
     Returns
     -------
@@ -832,11 +906,27 @@ def open_datacollection(fname, group=None):
     ------
     FileNotFound
         If no file can be found.
+    NotImplementedError
+        If the engine does not describe a file as a collection.
     """
     fname = _ensure_str_paths(fname)
     if not os.path.exists(fname):
         raise FileNotFoundError("no file to open")
-    return DataCollection.from_netcdf(fname, group)
+    if engine is None:
+        if vtype is not None or ctype is not None or engine_kwargs:
+            raise ValueError(
+                "`vtype`, `ctype` and engine keyword arguments require naming an "
+                "engine; the native format reads a collection as it was written"
+            )
+        return DataCollection.from_netcdf(fname, group)
+    if group is not None:
+        raise ValueError(
+            "`group` is a native-format parameter; pass it as an engine keyword "
+            "argument instead"
+        )
+    return _resolve_engine(engine, vtype, ctype, engine_kwargs).open_datacollection(
+        fname
+    )
 
 
 def asdataarray(obj, tolerance=None):
@@ -914,9 +1004,10 @@ def combine_by_field(
     nodes = [dc for dc in objs if isinstance(dc, dict)]
     if leaves and not nodes:
         objs = [da for dc in leaves for da in dc]
-        dc = combine_by_coords(objs, dim, tolerance, squeeze, virtual, verbose)
-        dc.name = leaves[0].name
-        return dc
+        # the level is named for what its elements are, and combining changes
+        # that: whatever the inputs held, each output element is one
+        # acquisition epoch. `combine_by_coords` names it.
+        return combine_by_coords(objs, dim, tolerance, squeeze, virtual, verbose)
     elif nodes and not leaves:
         (name,) = {dc.name for dc in nodes}
         keys = sorted(set.union(*[set(dc.keys()) for dc in nodes]))
@@ -1002,9 +1093,12 @@ def combine_by_coords(
             bag.append(da)
     bags.append(bag)
 
-    # concatenate each bag
+    # concatenate each bag. `Bag` splits on sampling rate, dtype and non-concat
+    # coordinates, and gaps land inside the coordinate, so every element of the
+    # result is one acquisition epoch — which is what the level is named for.
     collection = DataCollection(
-        [concatenate(bag, dim, tolerance, virtual, verbose) for bag in bags]
+        [concatenate(bag, dim, tolerance, virtual, verbose) for bag in bags],
+        "acquisition",
     )
 
     # squeeze if possible

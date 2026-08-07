@@ -17,7 +17,7 @@ class Engine:
 
     The Engine class provides a plugin architecture for reading and writing various
     file formats. Each Engine subclass corresponds to a specific file format (e.g.,
-    "xdas", "asn", "miniseed") and implements methods to open and save DataArray or
+    "xdas", "asn", "obspy") and implements methods to open and save DataArray or
     DataCollection objects.
 
     Engines are registered in a class-level registry using the `__init_subclass__` hook,
@@ -241,12 +241,35 @@ class AutoEngine(Engine):
                 return out
             except Exception:  # noqa: BLE001, S112 - try the next engine
                 continue
+        raise ValueError(self._failure_message(fname))
+
+    def open_datacollection(self, fname):
+        """Try each registered engine in order and return the first collection.
+
+        Raises :exc:`NotImplementedError` when no engine describes *fname* as a
+        collection, so that callers fall back to opening it as a data array the
+        same way they do for a named engine.
+        """
+        for engine in self._ordered_engines():
+            try:
+                out = Engine[engine](
+                    vtype=self.vtype, ctype=self.ctype
+                ).open_datacollection(fname)
+                AutoEngine._last_successful_engine = engine
+                return out
+            except Exception:  # noqa: BLE001, S112 - try the next engine
+                continue
+        raise NotImplementedError(
+            self._failure_message(fname) + " as a data collection"
+        )
+
+    def _failure_message(self, fname):
         message = f"no engine could open the file '{fname}'"
         if self.ctype is not None:
             message += f" with ctype '{self.ctype}'"
         if self.vtype is not None:
             message += f" with vtype '{self.vtype}'"
-        raise ValueError(message)
+        return message
 
     def _ordered_engines(self):
         return [self._last_successful_engine] + [

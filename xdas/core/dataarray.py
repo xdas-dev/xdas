@@ -842,7 +842,7 @@ class DataArray(NDArrayOperatorsMixin):
             the obspy stream version of the data array.
 
         """
-        from ..io.miniseed import to_stream
+        from ..io.obspy import to_stream
 
         return to_stream(self, network, station, location, channel, dim)
 
@@ -868,7 +868,7 @@ class DataArray(NDArrayOperatorsMixin):
         DataArray:
             The consolidated data array.
         """
-        from ..io.miniseed import from_stream
+        from ..io.obspy import from_stream
 
         return from_stream(st, dims)
 
