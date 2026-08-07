@@ -354,6 +354,20 @@ class TestDataCollection:
         # Keys 0 and 2 are not a sequential range → returns as-is DataMapping
         assert isinstance(result, xd.DataCollection)
 
+    def test_zero_padded_keys_survive_every_read_path(self, tmp_path):
+        # a SEED location such as "00" is a mapping key, not a position: every
+        # way in must compare the canonical decimal spelling, not parse ints
+        da = xd.testing.dummy()
+        dc = xd.DataCollection({"00": da, "01": da}, "location")
+        path = tmp_path / "padded.nc"
+        dc.to_netcdf(path)
+        for result in (
+            xd.open_datacollection(path),
+            xd.DataCollection.from_netcdf(path),
+            xd.open_datacollection(path, engine="xdas"),
+        ):
+            assert list(result) == ["00", "01"]
+
     def test_sequence_from_netcdf_direct(self, tmp_path):
         from xdas.core.datacollection import DataSequence
 

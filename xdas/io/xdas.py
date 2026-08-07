@@ -23,6 +23,7 @@ import xarray as xr
 
 from ..coordinates import Coordinates
 from ..core import DataArray, DataCollection, DataMapping, DataSequence
+from ..core.datacollection import as_sequence_if_positional
 from ..virtual import TileArray, VirtualBackend
 from ..virtual.tiles import TILING
 from .core import Engine
@@ -305,15 +306,7 @@ def _save_tree(leaves, fname, mode, virtual, encoding, create_dirs):
 
 def open_datacollection(fname, group=None):
     """Read a :class:`DataCollection` from *fname*, auto-detecting sequence vs. mapping."""
-    dc = open_datamapping(fname, group)
-    try:
-        keys = [int(key) for key in dc]
-    except ValueError:
-        return dc
-    if set(keys) == set(range(len(keys))):
-        return DataSequence([dc[str(key)] for key in range(len(keys))], dc.name)
-    else:
-        return dc
+    return as_sequence_if_positional(open_datamapping(fname, group))
 
 
 def save_datacollection(
@@ -366,23 +359,8 @@ def _read_datamapping(node, fname):
             dm[key] = _read_dataarray(child, fname, group=child.path)
         else:
             subnode = next(iter(child.children.values()))
-            dm[key] = _read_datacollection(subnode, fname)
+            dm[key] = as_sequence_if_positional(_read_datamapping(subnode, fname))
     return dm
-
-
-def _read_datacollection(node, fname):
-    """Read the collection at *node*, auto-detecting sequence vs. mapping.
-
-    A sequence is written under the canonical decimal spelling of its
-    positions, so that is what is compared: parsing the keys as integers
-    instead would read a mapping keyed by a zero-padded code — a SEED
-    location, say — back as a sequence, losing the keys.
-    """
-    dm = _read_datamapping(node, fname)
-    if list(dm) == [str(index) for index in range(len(dm))]:
-        return DataSequence.from_mapping(dm)
-    else:
-        return dm
 
 
 def save_datamapping(

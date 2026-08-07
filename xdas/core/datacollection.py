@@ -227,13 +227,7 @@ class DataCollection:
         """
         if isinstance(fname, Path):
             fname = str(fname)
-        self = DataMapping.from_netcdf(fname, group)
-        # a sequence is written under the canonical decimal spelling of its
-        # positions; a zero-padded key is a mapping key, not a position
-        if list(self) == [str(index) for index in range(len(self))]:
-            return DataSequence.from_mapping(self)
-        else:
-            return self
+        return as_sequence_if_positional(DataMapping.from_netcdf(fname, group))
 
 
 class DataMapping(DataCollection, dict):
@@ -648,6 +642,19 @@ def parse(data, name=None):
     if isinstance(data, DataCollection) and name is None:
         name = data.name
     return data, name
+
+
+def as_sequence_if_positional(dm):
+    """Return :class:`DataMapping` *dm* as a sequence if its keys are its positions.
+
+    A sequence is written under the canonical decimal spelling of its
+    positions, so that is what is compared: parsing the keys as integers
+    instead would read a mapping keyed by a zero-padded code — a SEED
+    location, say — back as a sequence, losing the keys.
+    """
+    if list(dm) == [str(index) for index in range(len(dm))]:
+        return DataSequence.from_mapping(dm)
+    return dm
 
 
 def get_depth(group):
