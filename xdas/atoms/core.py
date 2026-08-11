@@ -521,6 +521,10 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
                 return concat(chunks, dim)
             except (TypeError, ValueError):
                 return DataCollection(chunks)
+        if chunks and all(isinstance(c, pd.DataFrame) for c in chunks):
+            # A pick table is a chunk type of its own: an atom emitting one per
+            # run, plus one at flush, still answers with a single table.
+            return pd.concat(chunks, ignore_index=True)
         return DataCollection(chunks)
 
     def flush(self):

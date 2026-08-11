@@ -43,10 +43,11 @@ __all__ = [
     "as_function",
     "atomized",
     "compose",
+    "trigger",
 ]
 
-from ..trigger import Trigger
 from .core import Atom, Partial, Sequential, State, as_function, atomized, compose
+from .detect import Trigger, trigger
 from .kernel import DownSample, LFilter, Polyphase, Rechunk, SOSFilter, UpSample
 from .ml import Annotate, MLPicker
 from .signal import FIRFilter, IIRFilter, ResamplePoly
