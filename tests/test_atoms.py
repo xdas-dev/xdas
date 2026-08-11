@@ -12,7 +12,6 @@ from xdas.atoms import (
     FIRFilter,
     IIRFilter,
     LFilter,
-    MLPicker,
     Partial,
     Polyphase,
     ResamplePoly,
@@ -22,7 +21,6 @@ from xdas.atoms import (
 )
 from xdas.atoms.core import _whole_record
 from xdas.signal import lfilter
-from xdas.synthetics import randn_wavefronts
 
 
 class TestAbstractAtom:
@@ -357,66 +355,6 @@ class TestPolyphase:
         assert result.sizes["time"] == 3
 
 
-class TestMLPicker:
-    @pytest.mark.slow
-    def test_picker(self):
-        from seisbench.models import PhaseNet
-
-        model = PhaseNet.from_pretrained("diting")
-        picker = MLPicker(model, "time", device="cpu", component_strategy="Z")
-        da = randn_wavefronts()
-        # da = da.isel(time=slice(0, 5000)) TODO: why not faster ?
-        expected = picker(da)
-        chunks = xd.split(da, 4, "time")
-        result = xd.concat([picker(chunk, chunk_dim="time") for chunk in chunks])
-        assert result.equals(expected)
-
-    @pytest.mark.slow
-    def test_compare_with_seisbench(self):
-        import obspy
-        from seisbench.models import PhaseNet
-
-        model = PhaseNet.from_pretrained("original")  # works at 100 Hz
-        model.to_preferred_device()
-        picker = MLPicker(model, "time", component_strategy="clone")
-
-        # generate one trace
-        da = randn_wavefronts()  # 100 Hz
-        da = da.isel(distance=slice(0, 1))
-
-        # xdas
-        result = picker(da)
-
-        # convert to one stream with clonning
-        st = da.to_stream()
-        tr = st[0]
-        st = obspy.Stream()
-        for component in model.component_order:
-            _tr = tr.copy()
-            _tr.stats.component = component
-            st.append(_tr)
-
-        # seisbench
-        expected = model.annotate(st)
-        expected = xd.DataArray.from_stream(expected)
-
-        # align because of different overlap managment
-        _result = result.sel(time=slice(expected["time"][0].values, None))
-        _result = _result.isel(distance=0)
-        _expected = expected.sel(time=slice(None, result["time"][-1].values))
-        _expected = _expected.transpose("time", "channel")
-
-        # remove unfinished end part
-        _result = _result[:-1000]
-        _expected = _expected[:-1000]
-
-        # check equal by removing the
-        np.testing.assert_allclose(
-            _result.values, _expected.values, rtol=1e-5, atol=1e-7
-        )
-        np.testing.assert_array_max_ulp(_result.values, _expected.values, maxulp=300)
-
-
 class TestAtomCoreMissingBranches:
     def test_repr_with_nested_atoms(self):
 
@@ -610,20 +548,13 @@ class TestSequentialReset:
         np.testing.assert_array_equal(first.values, second.values)
 
 
-class TestMLPickerMissingBranches:
+class TestLazyModule:
     def test_lazy_module_import_error(self):
         from xdas.atoms.ml import LazyModule
 
         mod = LazyModule("nonexistent_module_xdas_test")
         with pytest.raises(ImportError, match="is not installed by default"):
             _ = mod.something
-
-    def test_mlpicker_invalid_component_strategy(self):
-        import seisbench.models as sbm
-
-        model = sbm.PhaseNet.from_pretrained("geofon")
-        with pytest.raises(ValueError, match="component_strategy must be one of"):
-            MLPicker(model, dim="time", component_strategy="invalid")
 
 
 class TestCompose:

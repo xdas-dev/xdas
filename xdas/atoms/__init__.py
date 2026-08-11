@@ -14,11 +14,12 @@ Three layers:
   ...), each with a function form exported at the top level of :mod:`xdas`.
 
 Plus the signal-processing atoms of :mod:`xdas.atoms.signal` and the ML-based
-:class:`MLPicker`.
+:class:`Annotate`.
 """
 
 __all__ = [
     "STFT",
+    "Annotate",
     "Atom",
     "Decimate",
     "Differentiate",
@@ -47,6 +48,6 @@ __all__ = [
 from ..trigger import Trigger
 from .core import Atom, Partial, Sequential, State, as_function, atomized, compose
 from .kernel import DownSample, LFilter, Polyphase, Rechunk, SOSFilter, UpSample
-from .ml import MLPicker
+from .ml import Annotate, MLPicker
 from .signal import FIRFilter, IIRFilter, ResamplePoly
 from .tasks import STFT, Decimate, Differentiate, Filter, Integrate, Resample

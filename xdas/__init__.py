@@ -60,6 +60,7 @@ __all__ = [  # noqa: RUF022 - grouped by kind, not alphabetically
     "stack",
     "trim_overlaps",
     # task atoms (function forms)
+    "annotate",
     "decimate",
     "detrend",
     "differentiate",
@@ -67,6 +68,7 @@ __all__ = [  # noqa: RUF022 - grouped by kind, not alphabetically
     "hilbert",
     "integrate",
     "medfilt",
+    "mlpicker",
     "rechunk",
     "resample",
     "sliding_mean_removal",
@@ -90,6 +92,7 @@ from . import (
     virtual,
 )
 from .atoms.kernel import rechunk
+from .atoms.ml import annotate, mlpicker
 from .atoms.tasks import (
     decimate,
     detrend,
