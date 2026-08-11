@@ -344,6 +344,18 @@ class TestPolyphase:
         with pytest.raises(ValueError, match="at least 5 taps"):
             atom(da)
 
+    def test_empty_input_emits_nothing(self):
+        da = xd.testing.dummy(shape=(101, 5))
+        atom = Polyphase(sp.firwin(21, 0.2), 1, 2, "time")
+        assert atom(da.isel(time=slice(0, 0))) == xd.DataCollection([])
+
+    def test_upsample_single_sample(self):
+        # a one-sample chunk has a single tie: the upsampled block still
+        # spans `factor` samples, which takes a second tie to say.
+        da = xd.testing.dummy(shape=(101, 5))
+        result = UpSample(3, dim="time")(da.isel(time=slice(0, 1)))
+        assert result.sizes["time"] == 3
+
 
 class TestMLPicker:
     @pytest.mark.slow
@@ -723,6 +735,30 @@ class TestTracing:
         assert atom1 != atom2
         assert len({atom1, atom2}) == 2
 
+    def test_inplace_operator_traces_out_of_place(self):
+        da = xd.testing.dummy()
+        atom = xs.detrend(...)
+        atom *= 2.0
+        assert isinstance(atom, Sequential)
+        assert np.allclose(atom(da).values, 2.0 * xs.detrend(da).values)
+
+    def test_out_to_another_atom_raises(self):
+        atom1 = xs.detrend(...)
+        atom2 = xs.detrend(...)
+        with pytest.raises(TypeError):
+            np.multiply(atom1, 2.0, out=atom2)
+
+    def test_non_call_ufunc_method_raises(self):
+        atom = xs.detrend(...)
+        with pytest.raises(TypeError):
+            np.add.reduce(atom)
+
+    def test_right_shift_as_data_traces(self):
+        # np.right_shift with the atom on the *left* is an ordinary traced
+        # ufunc, not the `da >> atom` application path.
+        traced = np.right_shift(xs.detrend(...) >> Partial(np.abs), 1)
+        assert isinstance(traced, Sequential)
+
 
 class TestWholeRecordRefusal:
     """Whole-record functions carry their own guard at the definition site."""
@@ -801,6 +837,35 @@ class TestFresh:
         assert len(clone) == len(seq)
         assert clone[0] is not seq[0]
         assert clone[0].func is seq[0].func
+
+
+class TestFreshNested:
+    def test_fresh_recurses_into_nested_class_atoms(self):
+        da = xd.testing.dummy()
+        atom = xd.atoms.Filter((1.0, 10.0))
+        atom(da, chunk_dim="time")
+        clone = atom.fresh()
+        assert not clone.initialized
+        assert clone.filter is not atom.filter
+        assert atom.initialized
+
+
+class TestRefusalHelper:
+    def test_alias_without_data_is_conservative(self):
+        atom = Partial(np.square)
+        atom._refuse_chunked_along("distance", "time", None)  # distinct: passes
+        with pytest.raises(ValueError, match="whole record"):
+            atom._refuse_chunked_along("last", "time", None)
+
+    def test_no_chunking_passes(self):
+        Partial(np.square)._refuse_chunked_along("time", None, None)
+
+    def test_kernel_dict_checks_its_keys(self):
+        da = xd.testing.dummy()
+        atom = Partial(np.square)
+        atom._refuse_chunked_along({"distance": 5}, "time", da)
+        with pytest.raises(ValueError, match="whole record"):
+            atom._refuse_chunked_along({"time": 5}, "time", da)
 
 
 class TestInitializedRecurses:

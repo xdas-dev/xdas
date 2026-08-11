@@ -242,6 +242,14 @@ class TestDataArrayWriter:
         with pytest.raises(TypeError):
             dw.submit(None)
 
+    def test_empty_chunks_are_dropped(self, tmp_path):
+        expected = xd.testing.dummy(shape=(1000, 100))
+        dw = xp.DataArrayWriter(tmp_path, dim="time")
+        dw.submit(expected.isel(time=slice(0, 0)))
+        for chunk in xd.split(expected, 10, dim="time"):
+            dw.submit(chunk)
+        assert dw.result().equals(expected)
+
     def test_the_chunked_dimension_need_not_lead(self, tmp_path):
         # joining on the first dimension stacks the chunks along the wrong
         # axis whenever the chunked dimension does not lead the output.

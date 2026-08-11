@@ -165,6 +165,18 @@ class TestAssertChunkInvariant:
         with pytest.raises(ValueError, match="less than two pieces"):
             xd.testing.inject_gaps(da, "time", [0])
 
+    def test_cuttings_stop_when_no_new_size_exists(self):
+        from xdas.testing import _cuttings
+
+        # size 2 derives 2 // 2 + 1 == 2 again: nothing new to cut with.
+        assert _cuttings(3, "time", 2) == []
+
+    def test_a_dim_without_coordinate_is_skipped(self):
+        left = xd.DataArray(
+            np.zeros((3, 2)), {"time": [0.0, 1.0, 2.0]}, dims=("time", "distance")
+        )
+        _assert_same(left, left.copy(), 1e-7, 0.0, 0, "result")
+
     def test_a_bare_callable_is_not_a_pipeline(self):
         # It cannot be streamed at all — the chunked path hands each chunk a
         # `chunk_dim` keyword, which a plain function does not accept.

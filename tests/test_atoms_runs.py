@@ -215,6 +215,77 @@ class TestEagerRuns:
             assert out.equals(exp)
 
 
+class TestSeamEdgeCases:
+    def test_empty_chunk_is_skipped(self, da):
+        atom = Integrate()
+        atom(da.isel(time=slice(0, 50)), chunk_dim="time")
+        assert _aschunks(atom(da.isel(time=slice(0, 0)), chunk_dim="time")) == []
+
+    def test_single_sample_chunk_adopts_the_stream_rate(self, da):
+        # a one-sample chunk of a sampled coordinate declares no rate of its
+        # own: continuous with the stream, it inherits the seam's delta
+        # rather than forgetting it.
+        import scipy.signal as sp
+
+        from xdas.atoms import Partial
+        from xdas.signal import sosfilt
+
+        sampled = dummy(shape=(52, 5), ctype="sampled")
+        sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
+        atom = Partial(sosfilt, sos, ..., dim="time", zi=...)
+        expected = Partial(sosfilt, sos, ..., dim="time", zi=...)(sampled)
+        outs = collect(atom, xd.split(sampled, [50, 51], "time"))
+        result = xd.concat(outs, "time")
+        assert np.allclose(result.values, expected.values)
+
+    def test_stream_of_single_samples_has_nothing_to_judge(self):
+        sampled = dummy(shape=(3, 5), ctype="sampled")
+        atom = DownSample(2, dim="time")
+        outs = collect(atom, xd.split(sampled, [1, 2], "time"))
+        expected = DownSample(2, dim="time")(sampled)
+        assert np.allclose(xd.concat(outs, "time").values, expected.values)
+
+    def test_first_alias_resolves_on_eager_calls(self, da):
+        result = DownSample(2, dim="first")(da)
+        expected = DownSample(2, dim="time")(da)
+        assert result.equals(expected)
+
+    def test_scalar_coordinate_is_not_judged(self, da):
+        # chunked along a dimension the chunk only knows as a scalar
+        # coordinate: there is no axis to judge a seam on.
+        chunk = da.isel(time=slice(0, 10)).mean("time")
+        chunk = chunk.assign_coords(time=da["time"][0].values)
+        atom = Integrate(dim="distance")
+        atom(chunk, chunk_dim="time")
+        atom(chunk, chunk_dim="time")  # no seam judgement, no raise
+
+
+class TestFoldEdgeCases:
+    def test_dimensionless_atom_maps_eagerly(self, da):
+        from xdas.atoms import Partial
+
+        collection = xd.DataCollection([da, da])
+        result = Partial(np.square)(collection)
+        assert len(result) == 2
+        for out in result:
+            assert np.allclose(out.values, np.square(da.values))
+
+    def test_chunked_sequence_folds_through(self, da):
+        atom = Integrate()
+        elements = xd.DataCollection(xd.split(da, 3, "time"))
+        outs = _aschunks(atom(elements, chunk_dim="time"))
+        outs += atom.flush()
+        expected = Integrate()(da)
+        assert np.allclose(xd.concat(outs, "time").values, expected.values)
+
+    def test_join_falls_back_on_unconcatenatable_chunks(self, da):
+        from xdas.atoms import Atom
+
+        other = dummy(shape=(10, 3))
+        result = Atom()._join([da, other], "time")
+        assert isinstance(result, xd.DataSequence)
+
+
 class TestSplitAnnouncement:
     def test_eager_call_announces_the_split_count(self, da):
         left = da.isel(time=slice(0, 30))
