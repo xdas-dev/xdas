@@ -6,12 +6,13 @@ Torch and SeisBench are loaded lazily so they remain optional dependencies.
 
 import importlib
 import warnings
-from typing import ClassVar
+from fnmatch import fnmatch
 
 import numpy as np
 
 from ..core import DataArray, concat
-from .core import Atom, State, atomized
+from .core import Atom, Sequential, State, atomized
+from .tasks import Filter
 
 
 class LazyModule:
@@ -39,6 +40,236 @@ torch = LazyModule("torch")
 #: ``flexible_horizontal_components`` argument is set (which is its default),
 #: so that ``Z12H`` weights accept ``ZNE`` data and vice versa.
 FLEXIBLE_HORIZONTALS = {"1": "N", "N": "1", "2": "E", "E": "2"}
+
+#: Fallbacks for the annotate arguments these atoms read. SeisBench's own
+#: ``_argdict_get_with_default`` falls back to the model's ``_annotate_args``,
+#: but ``blinding`` is not in the ``WaveformModel`` base and a model need not
+#: declare one at all, so the accessor needs a default of its own rather than a
+#: subscript of ``None``.
+ANNOTATE_DEFAULTS = {
+    "overlap": 0,
+    "stacking": "avg",
+    "flexible_horizontal_components": True,
+}
+
+#: Number of corners ``obspy``'s ``Stream.filter`` uses when the weight set
+#: does not say, and the order :class:`~xdas.atoms.Filter` defaults to. The two
+#: agree, which is what makes a model-declared filter reproducible exactly.
+OBSPY_CORNERS = 4
+
+
+def annotate_arg(model, argdict, key):
+    """
+    Read one annotate argument, SeisBench-style but crash-free.
+
+    Mirrors ``WaveformModel._argdict_get_with_default``: what the call site
+    passes wins, else what the weight set declares, else the model's
+    ``_annotate_args`` documentation default. The last step is where SeisBench
+    raises on a key its base class does not declare, so this falls back to
+    :data:`ANNOTATE_DEFAULTS` instead. The two SeisBench internals this module
+    relies on are isolated here and nowhere else.
+
+    Parameters
+    ----------
+    model : seisbench.models.WaveformModel
+        The model whose ``_annotate_args`` documents the fallbacks.
+    argdict : dict
+        The weight set's ``default_args`` merged with the call's kwargs.
+    key : str
+        Name of the annotate argument.
+
+    Returns
+    -------
+    value : object
+        The value of *key*, from the argdict, the model or the fallbacks.
+    """
+    if key in argdict:
+        return argdict[key]
+    entry = getattr(model, "_annotate_args", {}).get(key)
+    if entry is None:
+        return ANNOTATE_DEFAULTS[key]
+    return entry[1]
+
+
+def resolve_sample_dim(da, dim):
+    """
+    Resolve *dim* against *da*, accepting the ``first``/``last`` aliases.
+
+    Parameters
+    ----------
+    da : DataArray
+        The input whose dimensions *dim* is resolved against.
+    dim : str
+        A dimension name, or ``"first"`` or ``"last"``.
+
+    Returns
+    -------
+    str
+        The name of the resolved dimension.
+    """
+    if dim == "first":
+        return da.dims[0]
+    if dim == "last":
+        return da.dims[-1]
+    if dim not in da.dims:
+        raise ValueError(f"{dim!r} is not a dimension of the input (got {da.dims})")
+    return dim
+
+
+def component_labels(da, dim):
+    """
+    Return the string labels of *dim*, or ``None`` if it carries none.
+
+    Labels are read as text only: a numeric coordinate is excluded by dtype
+    rather than by failing to match, without which an integer identifier axis
+    of ``[1, 2]`` would resolve cleanly against ``Z12H`` weights.
+
+    Parameters
+    ----------
+    da : DataArray
+        The input carrying the coordinate.
+    dim : str
+        Name of the dimension to read.
+
+    Returns
+    -------
+    list of str or None
+        The labels, or ``None`` when *dim* has no string coordinate.
+    """
+    if dim not in da.coords:
+        return None
+    coord = da.coords[dim]
+    if coord.dtype.kind not in "SU":
+        return None
+    return [
+        value.decode() if isinstance(value, bytes) else str(value)
+        for value in coord.values
+    ]
+
+
+def match_components(labels, order, flexible=True):
+    """
+    Map *labels* onto model input slots, or ``None`` if they are not components.
+
+    Parameters
+    ----------
+    labels : list of str
+        The labels to match, each ending with a component letter.
+    order : str
+        The model's ``component_order``, e.g. ``"ENZ"`` or ``"Z12H"``.
+    flexible : bool, optional
+        Whether ``1``/``N`` and ``2``/``E`` are interchangeable, as SeisBench's
+        ``flexible_horizontal_components`` makes them by default.
+
+    Returns
+    -------
+    list of int or None
+        One slot index per label, or ``None`` if any label names no component.
+    """
+    order = list(order)
+    slots = []
+    for label in labels:
+        letter = label[-1:]
+        if letter not in order and flexible:
+            letter = FLEXIBLE_HORIZONTALS.get(letter, letter)
+        if letter not in order:
+            return None
+        slots.append(order.index(letter))
+    return slots
+
+
+def component_slots(da, dim, order, flexible=True):
+    """
+    Resolve the labels of *dim* into distinct model slots, or ``None``.
+
+    Parameters
+    ----------
+    da : DataArray
+        The input carrying the coordinate.
+    dim : str
+        Name of the candidate component dimension.
+    order : str
+        The model's ``component_order``.
+    flexible : bool, optional
+        Whether horizontal components are matched flexibly.
+
+    Returns
+    -------
+    list of int or None
+        One slot index per label, or ``None`` when *dim* is not a component
+        dimension.
+    """
+    labels = component_labels(da, dim)
+    if labels is None:
+        return None
+    slots = match_components(labels, order, flexible)
+    if slots is None:
+        return None
+    if len(set(slots)) != len(slots):
+        raise ValueError(
+            f"the {dim!r} dimension repeats component orientations "
+            f"({labels}): it mixes several instruments, split them first"
+        )
+    return slots
+
+
+def resolve_component_dim(da, sample_dim, order, components=None, flexible=True):
+    """
+    Find the component dimension of *da* and the slots its labels name.
+
+    Detection is by labels, never by name: the component dimension is the one
+    whose labels each end with a distinct letter of *order*.
+
+    Parameters
+    ----------
+    da : DataArray
+        The input to inspect.
+    sample_dim : str
+        The already-resolved sample dimension, never a component candidate.
+    order : str
+        The model's ``component_order``.
+    components : str, False or None, optional
+        Name of the component dimension, ``False`` to disable detection, or
+        ``None`` (default) to detect it.
+    flexible : bool, optional
+        Whether horizontal components are matched flexibly.
+
+    Returns
+    -------
+    dim : str or None
+        The component dimension, or ``None`` when the data has none.
+    slots : list of int or None
+        The model input slots its labels name, or ``None`` with *dim*.
+    """
+    if components is False:
+        return None, None
+    if components is not None:
+        if components not in da.dims:
+            raise ValueError(
+                f"{components!r} is not a dimension of the input (got {da.dims})"
+            )
+        slots = component_slots(da, components, order, flexible)
+        if slots is None:
+            raise ValueError(
+                f"the {components!r} dimension is not labelled by components: "
+                f"expected labels ending with distinct letters of {order!r}"
+            )
+        return components, slots
+    found = {}
+    for dim in da.dims:
+        if dim == sample_dim:
+            continue
+        slots = component_slots(da, dim, order, flexible)
+        if slots is not None:
+            found[dim] = slots
+    if not found:
+        return None, None
+    if len(found) > 1:
+        raise ValueError(
+            f"several dimensions could be the component dimension "
+            f"({sorted(found)}): name it explicitly with `components=`"
+        )
+    return found.popitem()
 
 
 class Annotate(Atom):
@@ -140,17 +371,6 @@ class Annotate(Atom):
     True
     """
 
-    #: Fallbacks for the annotate arguments this atom reads. SeisBench's own
-    #: ``_argdict_get_with_default`` falls back to the model's
-    #: ``_annotate_args``, but ``blinding`` is not in the ``WaveformModel``
-    #: base and a model need not declare one at all, so the accessor needs a
-    #: default of its own rather than a subscript of ``None``.
-    _annotate_defaults: ClassVar[dict] = {
-        "overlap": 0,
-        "stacking": "avg",
-        "flexible_horizontal_components": True,
-    }
-
     def __init__(
         self,
         model,
@@ -197,22 +417,8 @@ class Annotate(Atom):
         self.circular_counts = State(...)
 
     def _annotate_arg(self, key):
-        """
-        Read one annotate argument, SeisBench-style but crash-free.
-
-        Mirrors ``WaveformModel._argdict_get_with_default``: what the call site
-        passes wins, else what the weight set declares, else the model's
-        ``_annotate_args`` documentation default. The last step is where
-        SeisBench raises on a key its base class does not declare, so this
-        falls back to :attr:`_annotate_defaults` instead. The two SeisBench
-        internals this atom relies on are isolated here and nowhere else.
-        """
-        if key in self.argdict:
-            return self.argdict[key]
-        entry = getattr(self.model, "_annotate_args", {}).get(key)
-        if entry is None:
-            return self._annotate_defaults[key]
-        return entry[1]
+        """Read one annotate argument through :func:`annotate_arg`."""
+        return annotate_arg(self.model, self.argdict, key)
 
     @property
     def nperseg(self):
@@ -257,8 +463,14 @@ class Annotate(Atom):
 
     def initialize(self, da, chunk_dim=None, **flags):
         """Resolve the dimensions and allocate the sliding-window buffers."""
-        dim = self._resolve_sample_dim(da)
-        component_dim, slots = self._resolve_component_dim(da, dim)
+        dim = resolve_sample_dim(da, self.dim)
+        component_dim, slots = resolve_component_dim(
+            da,
+            dim,
+            self.model.component_order,
+            self.components,
+            self._annotate_arg("flexible_horizontal_components"),
+        )
         self.sample_dim = State(dim)
         self.component_dim = State(component_dim)
         self.slots = State(self._resolve_slots(slots))
@@ -531,93 +743,6 @@ class Annotate(Atom):
             da.attrs,
         )
 
-    def _resolve_sample_dim(self, da):
-        """Resolve *dim* against the input, accepting the ``first``/``last`` aliases."""
-        if self.dim == "first":
-            return da.dims[0]
-        if self.dim == "last":
-            return da.dims[-1]
-        if self.dim not in da.dims:
-            raise ValueError(
-                f"{self.dim!r} is not a dimension of the input (got {da.dims})"
-            )
-        return self.dim
-
-    def _labels(self, da, dim):
-        """Return the string labels of *dim*, or ``None`` if it carries none."""
-        if dim not in da.coords:
-            return None
-        coord = da.coords[dim]
-        if coord.dtype.kind not in "SU":
-            return None
-        return [
-            value.decode() if isinstance(value, bytes) else str(value)
-            for value in coord.values
-        ]
-
-    def _match_components(self, labels):
-        """Map *labels* onto model input slots, or ``None`` if they are not components."""
-        order = list(self.model.component_order)
-        flexible = self._annotate_arg("flexible_horizontal_components")
-        slots = []
-        for label in labels:
-            letter = label[-1:]
-            if letter not in order and flexible:
-                letter = FLEXIBLE_HORIZONTALS.get(letter, letter)
-            if letter not in order:
-                return None
-            slots.append(order.index(letter))
-        return slots
-
-    def _component_slots(self, da, dim):
-        """Resolve the labels of *dim* into distinct model slots, or ``None``."""
-        labels = self._labels(da, dim)
-        if labels is None:
-            return None
-        slots = self._match_components(labels)
-        if slots is None:
-            return None
-        if len(set(slots)) != len(slots):
-            raise ValueError(
-                f"the {dim!r} dimension repeats component orientations "
-                f"({labels}): it mixes several instruments, split them first"
-            )
-        return slots
-
-    def _resolve_component_dim(self, da, sample_dim):
-        """Find the component dimension of *da* and the slots its labels name."""
-        if self.components is False:
-            return None, None
-        if self.components is not None:
-            if self.components not in da.dims:
-                raise ValueError(
-                    f"{self.components!r} is not a dimension of the input "
-                    f"(got {da.dims})"
-                )
-            slots = self._component_slots(da, self.components)
-            if slots is None:
-                raise ValueError(
-                    f"the {self.components!r} dimension is not labelled by "
-                    f"components: expected labels ending with distinct letters "
-                    f"of {self.model.component_order!r}"
-                )
-            return self.components, slots
-        found = {}
-        for dim in da.dims:
-            if dim == sample_dim:
-                continue
-            slots = self._component_slots(da, dim)
-            if slots is not None:
-                found[dim] = slots
-        if not found:
-            return None, None
-        if len(found) > 1:
-            raise ValueError(
-                f"several dimensions could be the component dimension "
-                f"({sorted(found)}): name it explicitly with `components=`"
-            )
-        return found.popitem()
-
     def _resolve_slots(self, slots):
         """Turn ``component_strategy`` into the input slots the data fills."""
         order = list(self.model.component_order)
@@ -644,6 +769,264 @@ class Annotate(Atom):
                 )
             return None if strategy == "clone" else [order.index(strategy)]
         return slots
+
+
+class _ChannelFilter(Filter):
+    """
+    Filter only the channels whose labels match a glob pattern.
+
+    The subset form of :class:`~xdas.atoms.Filter`, whose parameters it takes,
+    for the per-channel preprocessing filters some SeisBench weight sets ship:
+    ``obs`` declares a 0.5 Hz highpass on ``"??H"``, i.e. on its hydrophone
+    alone. The channels the pattern does not match pass through untouched, and a
+    pattern matching none of them makes the whole atom a no-op — which is what
+    SeisBench's ``stream.select(channel=...)`` does with a pattern no trace
+    answers.
+
+    The channel dimension is found exactly as :class:`Annotate` finds it: by
+    its labels, each ending with a distinct letter of the model's
+    ``component_order``, never by its name.
+
+    Parameters
+    ----------
+    pattern : str
+        Channel glob, matched against the whole label with :mod:`fnmatch`.
+    freq : tuple of float or None
+        Corner frequencies ``(low, high)`` in Hz, as :class:`~xdas.atoms.Filter`
+        takes them: ``(0.5, None)`` is a highpass.
+    components : str, False or None, optional
+        Name of the channel dimension. ``None`` (default) detects it by its
+        labels, ``False`` disables detection, which makes the atom a no-op.
+    component_order : str, optional
+        The model's ``component_order``, against which the channel dimension is
+        recognised. Defaults to ``"ZNE"``.
+    flexible : bool, optional
+        Whether ``1``/``N`` and ``2``/``E`` are interchangeable while
+        recognising the channel dimension, as SeisBench's
+        ``flexible_horizontal_components`` makes them by default.
+    **kwargs
+        Passed to :class:`~xdas.atoms.Filter`: ``order``, ``zerophase`` and
+        ``dim``. The default order of 4 is also ``obspy``'s ``corners``
+        default, which is what makes a model-declared filter reproducible
+        exactly. ``ftype="fir"`` is refused: the FIR form compensates its group
+        delay by shifting the coordinate, which would leave the channels this
+        atom does *not* filter on somebody else's samples.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import xdas as xd
+    >>> from xdas.atoms.ml import _ChannelFilter
+
+    A four-channel OBS station, with the hydrophone last:
+
+    >>> da = xd.testing.dummy(dims=("time", "channel"), shape=(1000, 4))
+    >>> da["channel"] = np.array(["BHZ", "BH1", "BH2", "BDH"])
+    >>> atom = _ChannelFilter("??H", (0.5, None), component_order="Z12H")
+    >>> result = atom(da)
+
+    The three seismometer channels are untouched, the hydrophone is not:
+
+    >>> np.allclose(result.isel(channel=slice(0, 3)).values, da.values[:, :3])
+    True
+    >>> np.allclose(result.isel(channel=3).values, da.values[:, 3])
+    False
+    """
+
+    def __init__(
+        self,
+        pattern,
+        freq,
+        components=None,
+        component_order="ZNE",
+        flexible=True,
+        **kwargs,
+    ):
+        super().__init__(freq, **kwargs)
+        if self.ftype == "fir":
+            raise ValueError(
+                "`ftype='fir'` cannot filter a subset of the channels: it "
+                "compensates its group delay by shifting the coordinate, and "
+                "the untouched channels would then sit on the wrong samples"
+            )
+        self.pattern = pattern
+        self.components = components
+        self.component_order = component_order
+        self.flexible = flexible
+        self.mask = State(...)
+
+    def initialize(self, da, **flags):
+        """Find the channel dimension and build the mask the pattern selects."""
+        super().initialize(da, **flags)
+        channel_dim, _ = resolve_component_dim(
+            da,
+            resolve_sample_dim(da, self.dim),
+            self.component_order,
+            self.components,
+            self.flexible,
+        )
+        labels = () if channel_dim is None else component_labels(da, channel_dim)
+        selected = [fnmatch(label, self.pattern) for label in labels]
+        shape = [-1 if dim == channel_dim else 1 for dim in da.dims]
+        self.mask = State(np.reshape(selected, shape) if any(selected) else None)
+
+    def call(self, da, **flags):
+        """Filter every channel, then restore the ones the pattern left out."""
+        if self.mask is None:
+            return da
+        # Filtering all of them and dropping what is not wanted keeps the
+        # inherited filter state one shape and costs a handful of channels.
+        filtered = super().call(da, **flags)
+        values = np.where(self.mask, filtered.values, da.values)
+        return DataArray(values, da.coords, da.dims, da.name, da.attrs)
+
+
+def _model_filter(model, dim="time", components=None, **annotate_kwargs):
+    """
+    Build the preprocessing filter stage a weight set declares, if any.
+
+    SeisBench's ``annotate_stream_pre`` filters the waveforms *before*
+    resampling them, with whatever the weight set puts in ``filter_args`` and
+    ``filter_kwargs``; skipping it feeds the network something it was not
+    trained on. This is not a user-facing bandpass — compose
+    :class:`~xdas.atoms.Filter` yourself for that — and most weight sets
+    declare none, which is why the stage is optional.
+
+    Two declarations are understood, both spelled as ``obspy``'s
+    ``Stream.filter`` arguments:
+
+    - *flat*, e.g. ``filter_args=("highpass",)`` with
+      ``filter_kwargs={"freq": 1}``, applied to everything;
+    - *per channel*, a dict from channel glob to arguments with
+      ``filter_kwargs`` keyed identically, e.g. ``{"??H": ("highpass",)}``,
+      which becomes one :class:`_ChannelFilter` per pattern, applied in
+      declaration order. SeisBench's own DAS wrapper refuses this form; here it
+      works, through the label matching :class:`Annotate` already does.
+
+    The translation is exact rather than approximate: ``obspy`` filters with
+    ``corners=4``, ``zerophase=False`` and a Butterworth in second-order
+    sections, which is what :class:`~xdas.atoms.Filter` defaults to. Two
+    concessions are copied from SeisBench's ``_get_filter_args``: a zero-phase
+    declaration warns and doubles the order instead, since exact zero-phase IIR
+    filtering has no causal streaming form, and no corner is allowed above half
+    the Nyquist of the model's own sampling rate.
+
+    Parameters
+    ----------
+    model : seisbench.models.WaveformModel
+        The model whose weight set is read.
+    dim : str, optional
+        Dimension the filter runs along. Defaults to ``"time"``.
+    components : str, False or None, optional
+        Name of the channel dimension, for the per-channel form. ``None``
+        (default) detects it by its labels.
+    **annotate_kwargs
+        SeisBench annotate arguments overriding the weight set's, of which only
+        ``flexible_horizontal_components`` is read here.
+
+    Returns
+    -------
+    Atom or None
+        The stage to run before resampling, or ``None`` when the weight set
+        declares no filter — in which case the pipeline is one stage shorter.
+
+    Examples
+    --------
+    >>> from xdas.atoms.ml import _model_filter
+
+    A weight set declaring nothing gets no stage:
+
+    >>> class Plain:
+    ...     component_order, sampling_rate = "ZNE", 100
+    ...     default_args, filter_args, filter_kwargs = {}, None, None
+    >>> _model_filter(Plain()) is None
+    True
+
+    The per-channel form of the ``obs`` weight set:
+
+    >>> class OBS(Plain):
+    ...     component_order = "Z12H"
+    ...     filter_args = {"??H": ("highpass",)}
+    ...     filter_kwargs = {"??H": {"freq": 0.5}}
+    >>> stage = _model_filter(OBS())
+    >>> stage.pattern, stage.freq, stage.order
+    ('??H', (0.5, None), 4)
+    """
+    filter_args = getattr(model, "filter_args", None)
+    if filter_args is None:
+        return None
+    filter_kwargs = getattr(model, "filter_kwargs", None)
+    sampling_rate = getattr(model, "sampling_rate", None)
+    if not isinstance(filter_args, dict):
+        freq, order = _translate_filter(filter_args, filter_kwargs, sampling_rate)
+        return Filter(freq, order=order, dim=dim)
+    argdict = dict(model.default_args) | annotate_kwargs
+    flexible = annotate_arg(model, argdict, "flexible_horizontal_components")
+    stages = []
+    for pattern, args in filter_args.items():
+        if not isinstance(filter_kwargs, dict) or pattern not in filter_kwargs:
+            raise ValueError(
+                f"the weight set declares a filter for the channels matching "
+                f"{pattern!r} in `filter_args` but not in `filter_kwargs`"
+            )
+        freq, order = _translate_filter(args, filter_kwargs[pattern], sampling_rate)
+        stages.append(
+            _ChannelFilter(
+                pattern,
+                freq,
+                order=order,
+                dim=dim,
+                components=components,
+                component_order=model.component_order,
+                flexible=flexible,
+            )
+        )
+    if not stages:
+        return None
+    return stages[0] if len(stages) == 1 else Sequential(stages)
+
+
+def _translate_filter(args, kwargs, sampling_rate=None):
+    """
+    Translate one ``obspy`` filter declaration into `Filter` parameters.
+
+    Returns the ``(low, high)`` corner pair and the filter order, applying
+    SeisBench's two concessions: zero-phase becomes a doubled order, and no
+    corner sits above half the Nyquist of *sampling_rate*.
+    """
+    args = tuple(args)
+    if len(args) != 1:
+        raise ValueError(
+            "a weight set's filter declaration must name exactly one obspy "
+            f"filter type, got {args!r}"
+        )
+    name = args[0]
+    kwargs = dict(kwargs or {})
+    order = kwargs.get("corners", OBSPY_CORNERS)
+    if kwargs.get("zerophase", False):
+        warnings.warn(
+            f"the weight set declares a zero-phase {name} filter, which has no "
+            f"causal streaming form: filtering forward only with the order "
+            f"doubled ({order} -> {2 * order}), as SeisBench does",
+            UserWarning,
+            stacklevel=3,
+        )
+        order *= 2
+    # As SeisBench does: no corner frequency may sit above half the Nyquist,
+    # so that the filter stays valid on data at a legal but lower rate.
+    top = np.inf if not sampling_rate else 0.999999 * 0.25 * sampling_rate
+    match name:
+        case "highpass":
+            return (min(kwargs["freq"], top), None), order
+        case "lowpass":
+            return (None, min(kwargs["freq"], top)), order
+        case "bandpass":
+            return (kwargs["freqmin"], min(kwargs["freqmax"], top)), order
+        case _:
+            raise ValueError(
+                f"the weight set declares a {name!r} filter, which has no "
+                "`Filter` equivalent: pass the stage yourself, or drop it"
+            )
 
 
 class MLPicker(Annotate):

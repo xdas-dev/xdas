@@ -36,13 +36,15 @@ purpose, so the pin is split in two, and the split is the point:
 """
 
 import numpy as np
+import obspy
 import pytest
 import torch
 from seisbench.models import WaveformModel
 
 import xdas as xd
 from tests.fakemodel import WEIGHT_SETS, FakeModel, fake_model
-from xdas.atoms import Annotate, MLPicker
+from xdas.atoms import Annotate, Filter, MLPicker, Resample, Sequential
+from xdas.atoms.ml import _ChannelFilter, _model_filter
 
 #: A short, exactly representable signal: two lanes that are neither equal nor
 #: proportional, so a bug that mixes lanes shows up in the golden.
@@ -982,3 +984,305 @@ class TestAnnotateAssumesNoName:
         picker = Annotate(annotate_model(), dim="nope", device="cpu")
         with pytest.raises(ValueError, match="is not a dimension of the input"):
             picker(pin_array(("time", "distance")))
+
+
+# ---------------------------------------------------------------------------
+# W3 — the filter the weight set ships
+# ---------------------------------------------------------------------------
+
+#: Long enough for a 0.5 Hz highpass at 100 Hz to be a filter rather than an
+#: edge effect, and random so that no channel is a multiple of another.
+FILTER_SIGNAL = np.random.default_rng(0).standard_normal(2000).cumsum()
+
+
+def waveform(labels=("BHZ", "BH1", "BH2", "BDH"), dim="channel", step=0.01):
+    """A record of *labels* channels, each a differently rolled random walk."""
+    values = np.stack(
+        [np.roll(FILTER_SIGNAL, 137 * index) for index in range(len(labels))], axis=-1
+    )
+    template = xd.testing.dummy(
+        dims=("time", dim),
+        shape=values.shape,
+        step=(step, 1.0),
+        ctype="interpolated",
+    )
+    coords = dict(template.coords)
+    coords[dim] = np.array(labels)
+    return xd.DataArray(values, coords, ("time", dim))
+
+
+def obspy_filtered(da, name, dim="channel", **kwargs):
+    """The same record filtered by obspy, the reference W3 has to reproduce."""
+    fs = 1.0 / xd.get_sampling_interval(da, "time")
+    traces = []
+    for index in range(da.sizes[dim]):
+        trace = obspy.Trace(np.asarray(da.isel({dim: index}).values).copy())
+        trace.stats.sampling_rate = fs
+        traces.append(trace)
+    obspy.Stream(traces).filter(name, **kwargs)
+    return np.stack([trace.data for trace in traces], axis=-1)
+
+
+class TestChannelFilter:
+    """W3: the per-channel form, which SeisBench's own DAS wrapper refuses."""
+
+    def test_only_the_matching_channels_are_filtered(self):
+        da = waveform()
+        result = _ChannelFilter("??H", (0.5, None), component_order="Z12H")(da)
+        assert result.dims == da.dims
+        untouched = result.isel(channel=slice(0, 3)).values
+        assert np.array_equal(untouched, np.asarray(da.values)[:, :3])
+        assert not np.allclose(result.isel(channel=3).values, da.values[:, 3])
+
+    def test_the_matching_channel_is_filtered_exactly_as_obspy_does(self):
+        da = waveform()
+        result = _ChannelFilter("??H", (0.5, None), component_order="Z12H")(da)
+        expected = obspy_filtered(da, "highpass", freq=0.5)
+        assert np.max(np.abs(result.isel(channel=3).values - expected[:, 3])) == 0.0
+
+    def test_a_pattern_matching_nothing_is_a_no_operation(self):
+        # SeisBench's `stream.select(channel=...)` on a pattern no trace
+        # answers filters an empty stream, which is not an error.
+        da = waveform()
+        result = _ChannelFilter("??Q", (0.5, None), component_order="Z12H")(da)
+        assert result.equals(da)
+
+    def test_data_without_a_channel_dimension_is_left_alone(self):
+        da = pin_array(("time", "distance"))
+        result = _ChannelFilter("??H", (0.5, None), component_order="Z12H")(da)
+        assert result.equals(da)
+
+    def test_components_false_disables_the_stage(self):
+        da = waveform()
+        atom = _ChannelFilter(
+            "??H", (0.5, None), component_order="Z12H", components=False
+        )
+        assert atom(da).equals(da)
+
+    def test_the_channel_dimension_is_found_by_its_labels_not_its_name(self):
+        result = _ChannelFilter("??H", (0.5, None), component_order="Z12H")(
+            waveform(dim="sensor")
+        )
+        expected = _ChannelFilter("??H", (0.5, None), component_order="Z12H")(
+            waveform()
+        )
+        assert np.allclose(result.values, expected.values)
+
+    def test_the_channel_dimension_can_be_named_explicitly(self):
+        da = waveform(dim="sensor")
+        atom = _ChannelFilter(
+            "??H", (0.5, None), component_order="Z12H", components="sensor"
+        )
+        assert not np.allclose(atom(da).values[:, 3], da.values[:, 3])
+
+    def test_horizontal_components_are_matched_flexibly_when_detecting(self):
+        # `ZNE` labels against `Z12H` weights: N -> 1 and E -> 2, so the
+        # dimension is still recognised and the hydrophone still filtered.
+        da = waveform(("BHZ", "BHN", "BHE", "BDH"))
+        result = _ChannelFilter("??H", (0.5, None), component_order="Z12H")(da)
+        assert not np.allclose(result.values[:, 3], da.values[:, 3])
+
+    @pytest.mark.parametrize("indices", [(500,), (137, 900, 1500)])
+    def test_chunked_processing_equals_eager_processing(self, indices):
+        da = waveform()
+        atom = _ChannelFilter("??H", (0.5, None), component_order="Z12H")
+        expected = _ChannelFilter("??H", (0.5, None), component_order="Z12H")(da)
+        chunked = xd.concat(
+            [atom(chunk, chunk_dim="time") for chunk in xd.split(da, indices, "time")],
+            "time",
+        )
+        assert np.allclose(chunked.values, expected.values)
+
+    def test_integer_data_is_promoted_rather_than_truncated(self):
+        da = waveform()
+        da = xd.DataArray(np.asarray(da.values).astype(np.int32), da.coords, da.dims)
+        result = _ChannelFilter("??H", (0.5, None), component_order="Z12H")(da)
+        assert result.dtype == np.float64
+        assert np.array_equal(result.values[:, :3], np.asarray(da.values)[:, :3])
+
+    def test_the_parameters_of_filter_are_inherited(self):
+        # Being a `Filter`, it takes `zerophase` — which the wrapper this
+        # replaced could not express — and the subset still holds.
+        da = waveform()
+        atom = _ChannelFilter(
+            "??H", (0.5, None), component_order="Z12H", zerophase=True
+        )
+        result = atom(da)
+        causal = _ChannelFilter("??H", (0.5, None), component_order="Z12H")(da)
+        assert np.array_equal(result.values[:, :3], np.asarray(da.values)[:, :3])
+        assert not np.allclose(result.values[:, 3], causal.values[:, 3])
+
+    def test_a_fir_filter_is_refused(self):
+        # It shifts the coordinate to compensate its group delay, which would
+        # leave the channels the pattern does not match on the wrong samples.
+        with pytest.raises(ValueError, match="cannot filter a subset"):
+            _ChannelFilter("??H", (0.5, None), ftype="fir")
+
+
+class TestModelFilter:
+    """W3: the stage is built from the weight set, and only when it declares one."""
+
+    @pytest.mark.parametrize("name", ["original", "diting", "geofon"])
+    def test_a_weight_set_declaring_none_gets_no_stage(self, name):
+        assert _model_filter(fake_model(name)) is None
+
+    def test_the_flat_form_filters_everything(self):
+        # `volpick`'s flat filter is invented (no cached weight set ships one),
+        # but the form has to work: a 1 Hz highpass on every channel.
+        stage = _model_filter(fake_model("volpick"))
+        assert isinstance(stage, Filter)
+        assert (stage.freq, stage.order, stage.ftype) == ((1.0, None), 4, "iir")
+        da = waveform(("BHZ", "BHN", "BHE"))
+        expected = obspy_filtered(da, "highpass", freq=1.0)
+        assert np.max(np.abs(stage(da).values - expected)) == 0.0
+
+    def test_the_per_channel_form_filters_the_hydrophone_alone(self):
+        stage = _model_filter(fake_model("obs"))
+        assert isinstance(stage, _ChannelFilter)
+        assert stage.pattern == "??H"
+        assert stage.freq == (0.5, None)
+        assert stage.component_order == "Z12H"
+        da = waveform()
+        result = stage(da)
+        expected = obspy_filtered(da, "highpass", freq=0.5)
+        assert np.array_equal(result.values[:, :3], np.asarray(da.values)[:, :3])
+        assert np.max(np.abs(result.values[:, 3] - expected[:, 3])) == 0.0
+
+    def test_the_corner_count_defaults_to_the_obspy_one(self):
+        # `obs` declares only `freq`, so 4 corners is what obspy would have used
+        # — and it is `Filter`'s own default, which is why the match is exact.
+        assert _model_filter(fake_model("obs")).order == 4
+
+    def test_a_declared_corner_count_is_honoured(self):
+        model = fake_model(
+            filter_args=("highpass",), filter_kwargs={"freq": 1.0, "corners": 2}
+        )
+        assert _model_filter(model).order == 2
+
+    @pytest.mark.parametrize(
+        "args, kwargs, freq",
+        [
+            (("highpass",), {"freq": 2.0}, (2.0, None)),
+            (("lowpass",), {"freq": 20.0}, (None, 20.0)),
+            (("bandpass",), {"freqmin": 1.0, "freqmax": 20.0}, (1.0, 20.0)),
+        ],
+    )
+    def test_every_obspy_band_that_has_a_filter_equivalent(self, args, kwargs, freq):
+        stage = _model_filter(fake_model(filter_args=args, filter_kwargs=kwargs))
+        assert stage.freq == freq
+        da = waveform(("BHZ", "BHN", "BHE"))
+        expected = obspy_filtered(da, args[0], **kwargs)
+        assert np.max(np.abs(stage(da).values - expected)) == 0.0
+
+    def test_zerophase_warns_and_doubles_the_order(self):
+        # SeisBench's concession, and ours for the same reason: `filtfilt` has
+        # no causal streaming form.
+        model = fake_model(
+            filter_args=("highpass",),
+            filter_kwargs={"freq": 1.0, "zerophase": True},
+        )
+        with pytest.warns(UserWarning, match="no causal streaming form"):
+            stage = _model_filter(model)
+        assert stage.order == 8
+
+    def test_a_corner_above_half_the_nyquist_is_clamped(self):
+        # At 100 Hz the Nyquist is 50 and half of it 25, so a 40 Hz lowpass
+        # comes back clamped — the filter stays valid on data at a lower rate.
+        model = fake_model(filter_args=("lowpass",), filter_kwargs={"freq": 40.0})
+        assert _model_filter(model).freq == (None, pytest.approx(25.0, rel=1e-5))
+
+    def test_the_clamp_follows_the_weight_sets_own_rate(self):
+        model = fake_model(
+            "diting", filter_args=("lowpass",), filter_kwargs={"freq": 40.0}
+        )
+        assert _model_filter(model).freq == (None, pytest.approx(12.5, rel=1e-5))
+
+    def test_a_model_without_a_rate_is_not_clamped(self):
+        model = fake_model(
+            sampling_rate=None, filter_args=("lowpass",), filter_kwargs={"freq": 40.0}
+        )
+        assert _model_filter(model).freq == (None, 40.0)
+
+    def test_several_patterns_become_a_sequence_applied_in_order(self):
+        model = fake_model(
+            "obs",
+            filter_args={"??Z": ("highpass",), "??H": ("highpass",)},
+            filter_kwargs={"??Z": {"freq": 1.0}, "??H": {"freq": 0.5}},
+        )
+        stage = _model_filter(model)
+        assert isinstance(stage, Sequential)
+        assert [atom.pattern for atom in stage] == ["??Z", "??H"]
+        da = waveform()
+        result = stage(da)
+        expected = obspy_filtered(da, "highpass", freq=1.0)
+        assert np.max(np.abs(result.values[:, 0] - expected[:, 0])) == 0.0
+        assert np.array_equal(result.values[:, 1:3], np.asarray(da.values)[:, 1:3])
+
+    def test_overlapping_patterns_filter_a_channel_twice_as_obspy_would(self):
+        # Two `stream.select` calls hitting the same trace filter it twice, in
+        # declaration order; nothing deduplicates them, here or in SeisBench.
+        model = fake_model(
+            "obs",
+            filter_args={"??H": ("highpass",), "BD?": ("highpass",)},
+            filter_kwargs={"??H": {"freq": 0.5}, "BD?": {"freq": 0.5}},
+        )
+        da = waveform()
+        once = _ChannelFilter("??H", (0.5, None), component_order="Z12H")
+        twice = _model_filter(model)(da)
+        assert not np.allclose(twice.values[:, 3], once(da).values[:, 3])
+        assert np.allclose(twice.values[:, 3], once(once(da)).values[:, 3])
+
+    def test_an_empty_declaration_gets_no_stage(self):
+        assert _model_filter(fake_model(filter_args={}, filter_kwargs={})) is None
+
+    def test_a_pattern_missing_from_the_kwargs_raises(self):
+        model = fake_model(filter_args={"??H": ("highpass",)}, filter_kwargs={})
+        with pytest.raises(ValueError, match="in `filter_args` but not in"):
+            _model_filter(model)
+
+    def test_a_declaration_naming_no_single_filter_type_raises(self):
+        model = fake_model(filter_args=("highpass", "lowpass"), filter_kwargs={})
+        with pytest.raises(ValueError, match="exactly one obspy filter type"):
+            _model_filter(model)
+
+    def test_a_band_with_no_filter_equivalent_raises(self):
+        # `Filter` has no bandstop, and silently skipping the filter would feed
+        # the network what it was not trained on — the very bug W3 fixes.
+        model = fake_model(
+            filter_args=("bandstop",), filter_kwargs={"freqmin": 1.0, "freqmax": 2.0}
+        )
+        with pytest.raises(ValueError, match="'bandstop' filter, which has no"):
+            _model_filter(model)
+
+    def test_the_stage_reads_the_dimension_names_it_is_given(self):
+        da = waveform(dim="sensor").rename({"time": "samples"})
+        stage = _model_filter(fake_model("obs"), dim="samples", components="sensor")
+        assert not np.allclose(stage(da).values[:, 3], da.values[:, 3])
+
+
+class TestFilterStageOrder:
+    """W3: the model's filter runs *before* the resampling, as SeisBench does."""
+
+    def test_filtering_before_resampling_is_not_the_same_operation(self):
+        da = waveform(("BHZ", "BHN", "BHE"), step=0.02)  # 50 Hz, model wants 100
+        before = (_model_filter(fake_model("volpick")) >> Resample(100.0))(da)
+        after = (Resample(100.0) >> _model_filter(fake_model("volpick")))(da)
+        assert before.shape == after.shape
+        assert not np.allclose(before.values, after.values)
+
+    def test_the_stage_composes_ahead_of_resample_and_annotate(self):
+        da = waveform(("BHZ", "BHN", "BHE"), step=0.02)
+        model = fake_model("volpick", default_args={"overlap": 0.5})
+        pipeline = (
+            _model_filter(model)
+            >> Resample(model.sampling_rate)
+            >> Annotate(model, "time", device="cpu")
+        )
+        assert [type(stage).__name__ for stage in pipeline] == [
+            "Filter",
+            "Resample",
+            "Annotate",
+        ]
+        result = pipeline(da)
+        assert result.dims == ("phase", "time")
+        assert np.isfinite(result.values).any()
