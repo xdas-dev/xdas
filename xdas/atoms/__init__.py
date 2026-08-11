@@ -1,7 +1,7 @@
 """
 Stateful processing units (atoms) for building chunked data pipelines.
 
-Two layers so far:
+Three layers:
 
 - :mod:`xdas.atoms.core`: the machinery — :class:`Atom`, :class:`State`,
   :class:`Sequential`, :class:`Partial`, :func:`atomized`,
@@ -9,6 +9,9 @@ Two layers so far:
 - :mod:`xdas.atoms.kernel`: the expert layer — exact stateful primitives with
   machine parameters (:class:`LFilter`, :class:`SOSFilter`,
   :class:`DownSample`, :class:`UpSample`, :class:`Polyphase`).
+- :mod:`xdas.atoms.tasks`: the public layer — task atoms with physical
+  parameters only (:class:`Filter`, :class:`Decimate`, :class:`Resample`,
+  ...), each with a function form exported at the top level of :mod:`xdas`.
 
 Plus the signal-processing atoms of :mod:`xdas.atoms.signal` and the ML-based
 :class:`MLPicker`.
@@ -16,13 +19,18 @@ Plus the signal-processing atoms of :mod:`xdas.atoms.signal` and the ML-based
 
 __all__ = [
     "Atom",
+    "Decimate",
+    "Differentiate",
     "DownSample",
     "FIRFilter",
+    "Filter",
     "IIRFilter",
+    "Integrate",
     "LFilter",
     "MLPicker",
     "Partial",
     "Polyphase",
+    "Resample",
     "ResamplePoly",
     "SOSFilter",
     "Sequential",
@@ -39,3 +47,4 @@ from .core import Atom, Partial, Sequential, State, as_function, atomized, compo
 from .kernel import DownSample, LFilter, Polyphase, SOSFilter, UpSample
 from .ml import MLPicker
 from .signal import FIRFilter, IIRFilter, ResamplePoly
+from .tasks import Decimate, Differentiate, Filter, Integrate, Resample

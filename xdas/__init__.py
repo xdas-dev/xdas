@@ -59,6 +59,17 @@ __all__ = [  # noqa: RUF022 - grouped by kind, not alphabetically
     "split",
     "stack",
     "trim_overlaps",
+    # task atoms (function forms)
+    "decimate",
+    "detrend",
+    "differentiate",
+    "filter",
+    "hilbert",
+    "integrate",
+    "medfilt",
+    "resample",
+    "sliding_mean_removal",
+    "taper",
 ]
 
 from . import (
@@ -73,6 +84,18 @@ from . import (
     synthetics,
     testing,
     virtual,
+)
+from .atoms.tasks import (
+    decimate,
+    detrend,
+    differentiate,
+    filter,
+    hilbert,
+    integrate,
+    medfilt,
+    resample,
+    sliding_mean_removal,
+    taper,
 )
 from .coordinates import (
     Coordinate,

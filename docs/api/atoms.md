@@ -86,6 +86,47 @@ Methods
    compose
 ```
 
+## Task atoms
+
+Public processing vocabulary with physical parameters only. Each task atom has
+a function form exported at the top level of `xdas` (e.g. `xdas.filter`,
+`xdas.decimate`).
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   Decimate
+   Differentiate
+   Filter
+   Integrate
+   Resample
+```
+
+```{eval-rst}
+.. currentmodule:: xdas
+```
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   decimate
+   detrend
+   differentiate
+   filter
+   hilbert
+   integrate
+   medfilt
+   resample
+   sliding_mean_removal
+   taper
+```
+
+```{eval-rst}
+.. currentmodule:: xdas.atoms
+```
+
 ## Signal processing
 
 ```{eval-rst}

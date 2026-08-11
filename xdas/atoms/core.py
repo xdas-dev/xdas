@@ -198,18 +198,20 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
         The guard for atoms that need the whole record along the dimension
         they work on: call it from :meth:`initialize` (or a
         :meth:`_check_chunk_dim` override) with the dimension the atom works
-        along and the dimension the stream is chunked along. ``"first"`` and
-        ``"last"`` aliases are resolved against *x* when given, so the
-        comparison is never made on an unresolved alias.
+        along and the dimension the stream is chunked along. *dim* may also
+        be a mapping whose keys are the working dimensions (a kernel dict).
+        ``"first"`` and ``"last"`` aliases are resolved against *x* when
+        given, so the comparison is never made on an unresolved alias.
         """
         if chunk_dim is None:
             return
+        dims = list(dim.keys()) if isinstance(dim, dict) else [dim]
         if x is not None and hasattr(x, "dims"):
-            if dim == "first":
-                dim = x.dims[0]
-            elif dim == "last":
-                dim = x.dims[-1]
-        if dim is None or dim in ("first", "last") or dim == chunk_dim:
+            dims = [
+                x.dims[0] if d == "first" else x.dims[-1] if d == "last" else d
+                for d in dims
+            ]
+        if any(d is None or d in ("first", "last") or d == chunk_dim for d in dims):
             name = (
                 getattr(self, "name", None)
                 or getattr(getattr(self, "func", None), "__name__", None)
