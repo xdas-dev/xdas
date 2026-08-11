@@ -1,6 +1,7 @@
 import inspect
 
 import numpy as np
+import numpy.testing as npt
 import pytest
 
 import xdas as xd
@@ -413,3 +414,63 @@ class TestSTFT:
         xd.testing.assert_chunk_invariant(
             pipeline, da, {"time": 100}, cuts=2, gaps=2, atol=1e-12
         )
+
+
+class TestLabelsFollowTheSamples:
+    """
+    A resampled dimension carries its other coordinates onto the output grid.
+
+    A DAS channel is named by a non-dimensional ``station`` coordinate
+    attached to ``distance``, and picking answers with those names: a stage
+    that changes the number of samples has to say what became of them, or the
+    output is labelled with the wrong lanes. They follow the *samples* —
+    output ``k`` is drawn from input ``k * down / up`` — so unlike the
+    dimension coordinate they carry no group-delay shift, and the mapping
+    cannot depend on the chunking.
+    """
+
+    def labelled(self, n=120, dim="distance", step=(0.01, 10.0)):
+        da = dummy(dims=("time", "distance"), shape=(200, n), step=step)
+        labels = np.array([f"S{index:04d}" for index in range(da.sizes[dim])])
+        return da.assign_coords(station=(dim, labels))
+
+    def test_decimation_subsamples_them(self):
+        da = self.labelled()
+        result = xd.decimate(da, target=1 / 20.0, dim="distance")
+        assert result.sizes["distance"] == 60
+        npt.assert_array_equal(result["station"].values, da["station"].values[::2])
+
+    def test_rational_resampling_lands_on_the_output_grid(self):
+        da = self.labelled(n=8)
+        result = xd.resample(da, 1 / 25.0, dim="distance")  # up=2, down=5
+        assert result.sizes["distance"] == len(result["station"].values)
+        npt.assert_array_equal(
+            result["station"].values, ["S0000", "S0002", "S0005", "S0007"]
+        )
+
+    def test_upsampling_repeats_them(self):
+        from xdas.atoms import UpSample
+
+        da = self.labelled(n=4)
+        result = UpSample(3, dim="distance")(da)
+        assert result.sizes["distance"] == 12
+        npt.assert_array_equal(
+            result["station"].values[:6], ["S0000"] * 3 + ["S0001"] * 3
+        )
+
+    def test_the_labels_do_not_depend_on_the_chunking(self):
+        # chunked along the very dimension being decimated: every chunk must
+        # label its output with the same input samples the eager call does.
+        da = dummy(dims=("time", "distance"), shape=(120, 3))
+        labels = np.array([f"T{index:04d}" for index in range(120)])
+        da = da.assign_coords(label=("time", labels))
+        eager = xd.decimate(..., target=25.0, dim="time")(da)
+        atom = xd.decimate(..., target=25.0, dim="time")
+        chunks = list(atom.iter_chunks(xd.split(da, 7, "time"), "time"))
+        streamed = np.concatenate([chunk["label"].values for chunk in chunks])
+        npt.assert_array_equal(streamed, eager["label"].values)
+
+    def test_an_untouched_dimension_keeps_its_labels(self):
+        da = self.labelled()
+        result = xd.decimate(da, target=25.0, dim="time")
+        npt.assert_array_equal(result["station"].values, da["station"].values)

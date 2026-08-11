@@ -28,6 +28,40 @@ def _along(axis, ndim, slc):
     return tuple(slc if index == axis else slice(None) for index in range(ndim))
 
 
+def _carry_labels(coords, name, positions):
+    """
+    Re-index the non-dimensional coordinates attached to *name*.
+
+    An atom that changes the number of samples along a dimension has to say
+    what became of the *other* coordinates attached to it — the station code
+    of a channel, the latitude of a sensor — or they keep their input length
+    and silently label the output with the wrong lanes. They are carried by
+    taking, for each output sample, the input sample it is drawn from
+    (*positions*): a label names a source sample rather than a position, so
+    unlike the dimension coordinate it is not shifted by a filter's group
+    delay. Depending on the sampling grid alone, that mapping is the same
+    however the stream was chunked.
+
+    Parameters
+    ----------
+    coords : Coordinates
+        The output coordinates, modified in place.
+    name : str
+        The resampled dimension.
+    positions : ndarray of int
+        One input index per output sample, into this chunk.
+
+    Returns
+    -------
+    Coordinates
+        The same mapping, for chaining.
+    """
+    for key, coord in list(coords.items()):
+        if key != name and coord.dim == name:
+            coords[key] = coord[positions]
+    return coords
+
+
 class LFilter(Atom):
     """
     Stateful direct-form IIR/FIR filter using :func:`scipy.signal.lfilter`.
@@ -259,6 +293,9 @@ class UpSample(Atom):
         # derive one from, so the result stays irregular rather than claiming a
         # precision the source never declared.
         coords[name] = Coordinate(data_coord, name)
+        # Each inserted sample is drawn from the input sample it follows.
+        positions = np.arange(shape[da.get_axis_num(name)]) // self.factor
+        _carry_labels(coords, name, positions)
         return DataArray(data, coords, da.dims, da.name, da.attrs)
 
 
@@ -457,7 +494,11 @@ class Polyphase(Atom):
             data["tolerance"] = base + drift
         coords = da.coords.copy()
         coords[name] = Coordinate(data, name)
-        return coords
+        # Output `index` is drawn from input sample `index * down / up`, which
+        # `first`/`stop` keep inside this chunk by construction.
+        positions = np.rint(np.arange(first, stop) * self.down / self.up)
+        positions = np.clip(positions.astype(int) - start, 0, da.sizes[name] - 1)
+        return _carry_labels(coords, name, positions)
 
     def _upsampled(self, count, delta):
         """Return the span of *count* upsampled samples, at coordinate resolution."""

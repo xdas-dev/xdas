@@ -275,12 +275,6 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
             Seam policy for chunked processing: ``"reset"`` (default) flushes
             and starts a new run at every gap or rate change, ``"raise"``
             refuses discontinuous input. Overlaps always raise.
-        merge: callable or None
-            The optional hook folding the per-leaf results of a collection
-            walk into one object. ``None`` (the default) means the atom has
-            none and the tree is rebuilt as it always was. See
-            :meth:`~xdas.atoms.Trigger.merge` for an implementation.
-
     Methods
     -------
         gather(mapping)
@@ -299,7 +293,9 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
             Resets the atom to its initial state.
         merge(results)
             Optional. Folds the leaf results of a collection walk into one
-            object; undefined by default.
+            object. ``None`` by default, meaning the atom declares none and
+            the walked tree is rebuilt as it always was; see
+            :meth:`~xdas.atoms.Trigger.merge` for an implementation.
         fresh()
             Returns a stateless clone sharing the configuration.
         iter_chunks(source)
