@@ -1,4 +1,5 @@
 import h5py
+import pandas as pd
 import pytest
 
 import xdas as xd
@@ -511,3 +512,22 @@ class TestDataCollection:
         dc = xd.DataCollection([da_near, da_far], "instrument")
         result = dc.sel(distance=slice(-100, -1))
         assert len(result) == 0
+
+
+class TestDataFrameLeaves:
+    def test_a_dataframe_stays_a_dataframe(self):
+        # the rebuild used to wrap every non-DataArray leaf in DataArray(...),
+        # silently destroying a table.
+        df = pd.DataFrame({"time": [1.0, 2.0], "value": [0.5, 0.9]})
+        dc = xd.DataCollection({"ST01": df, "ST02": df.copy()}, "station")
+        assert isinstance(dc["ST01"], pd.DataFrame)
+        pd.testing.assert_frame_equal(dc["ST01"], df)
+
+    def test_repr_shows_the_table(self):
+        df = pd.DataFrame({"time": [1.0, 2.0], "value": [0.5, 0.9]})
+        dc = xd.DataCollection(
+            {"das": xd.DataCollection({"ST01": df}, "station")}, "instrument"
+        )
+        text = repr(dc)
+        assert "ST01" in text
+        assert "das" in text
