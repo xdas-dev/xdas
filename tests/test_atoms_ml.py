@@ -1960,3 +1960,66 @@ class TestPickerPicks:
         )
         picks = Picker(picker_model("original"), device="cpu")(gappy)
         assert len(picks) == 4  # one P and one S per run
+
+
+DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
+
+
+class TestAnnotateAsyncOutputs:
+    """
+    The in-flight output queue changes *when* outputs appear, never what
+    they hold: max_buffers=0 is the fully synchronous reference, and the
+    default queue must answer identically, eagerly and chunked, on the CPU
+    (where transfers complete on arrival) and on CUDA (where they are
+    genuinely in flight).
+    """
+
+    @pytest.mark.parametrize("device", DEVICES)
+    def test_async_and_sync_agree_eagerly(self, device):
+        da = pin_array(("time", "distance"))
+        sync = Annotate(annotate_model(), "time", device=device, max_buffers=0)
+        queued = Annotate(annotate_model(), "time", device=device)
+        assert queued(da).equals(sync(da))
+
+    @pytest.mark.parametrize("device", DEVICES)
+    @pytest.mark.parametrize("indices", [[13], [4, 8, 12, 16, 20]])
+    def test_async_and_sync_agree_chunked(self, device, indices):
+        da = pin_array(("time", "distance"))
+        sync = Annotate(annotate_model(), "time", device=device, max_buffers=0)
+        queued = Annotate(annotate_model(), "time", device=device)
+        expected = xd.concat(
+            list(sync.iter_chunks(xd.split(da, indices, "time"), "time")), "time"
+        )
+        result = xd.concat(
+            list(queued.iter_chunks(xd.split(da, indices, "time"), "time")), "time"
+        )
+        assert result.equals(expected)
+
+    def test_chunk_invariance_holds_with_the_queue(self):
+        da = xd.testing.dummy(dims=("time", "distance"), shape=(64, 3))
+        atom = Annotate(annotate_model(), "time", device="cpu")
+        xd.testing.assert_chunk_invariant(atom, da, {"time": 13})
+
+    @pytest.mark.parametrize("device", DEVICES)
+    def test_picks_are_identical_through_picker(self, device):
+        da = component_array(["SHZ", "SHN", "SHE"], n=64)
+        model = picker_model("original")
+        picks = Picker(model, resample=False, device=device)(da)
+        sync = Annotate(model, "time", device=device, max_buffers=0)
+        from xdas.atoms import Trigger
+
+        expected = Trigger(_model_thresholds(model), dim="time")(sync(da))
+        assert picks.equals(expected)
+
+    def test_flush_drains_the_queue(self):
+        da = pin_array(("time", "distance"))
+        atom = Annotate(annotate_model(), "time", device="cpu")
+        chunks = [
+            out
+            for chunk in xd.split(da, [13], "time")
+            for out in xd.atoms.core._aschunks(atom(chunk, chunk_dim="time"))
+        ]
+        chunks += atom.flush()
+        assert len(atom.inflight) == 0
+        expected = Annotate(annotate_model(), "time", device="cpu", max_buffers=0)(da)
+        assert xd.concat(chunks, "time").equals(expected)

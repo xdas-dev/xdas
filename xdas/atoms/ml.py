@@ -6,6 +6,7 @@ Torch and SeisBench are loaded lazily so they remain optional dependencies.
 
 import importlib
 import warnings
+from collections import deque
 from fnmatch import fnmatch
 
 import numpy as np
@@ -653,6 +654,17 @@ class Annotate(Atom):
         hundredth of a sample, which is what lets three components whose start
         times were rounded a nanosecond apart stack; ``False`` restores strict
         equality.
+    max_buffers : int, optional
+        Depth of the in-flight output queue on a CUDA device, the same
+        bounded-staging pattern :class:`~xdas.processing.DataArrayLoader`
+        uses. Each completed window's device-to-host transfer is issued
+        asynchronously (pinned, non-blocking) and :meth:`call` emits only
+        the outputs whose transfer has completed — the 0..n contract already
+        allows late emission — so the CPU keeps feeding the model while
+        results cross back; :meth:`flush` drains whatever is still in
+        flight. At most `max_buffers` transfers are left pending (default
+        2); ``0`` restores fully synchronous emission. On the CPU the
+        transfers complete immediately and the queue changes nothing.
     **annotate_kwargs
         SeisBench annotate arguments (``overlap``, ``stacking``, ``blinding``,
         ...) overriding what the weight set declares in ``default_args``.
@@ -714,6 +726,7 @@ class Annotate(Atom):
         component_strategy="auto",
         device=None,
         tolerance=None,
+        max_buffers=2,
         **annotate_kwargs,
     ):
         super().__init__()
@@ -733,6 +746,7 @@ class Annotate(Atom):
         self.components = components
         self.component_strategy = component_strategy
         self.tolerance = tolerance
+        self.max_buffers = max_buffers
         self.argdict = dict(model.default_args) | annotate_kwargs
         if self.stacking not in ("avg", "max"):
             raise ValueError(f"stacking must be 'avg' or 'max', got {self.stacking!r}")
@@ -752,6 +766,7 @@ class Annotate(Atom):
         self.model_input = State(...)
         self.circular_output = State(...)
         self.circular_counts = State(...)
+        self.inflight = State(...)
 
     def _annotate_arg(self, key):
         """Read one annotate argument through :func:`annotate_arg`."""
@@ -917,6 +932,7 @@ class Annotate(Atom):
         )
         self.started = State(False)
         self.buffer = State(da.isel({dim: slice(0, 0)}) if chunk_dim == dim else None)
+        self.inflight = State(deque())
 
     def _zeros(self, *shape):
         """Allocate a zeroed float32 tensor on the atom's device."""
@@ -930,7 +946,11 @@ class Annotate(Atom):
         only emitted once the *following* window has been annotated: the
         end-aligned last window of a record may reach back into them, and
         :meth:`flush` is where that is settled. A chunk that completes no new
-        window therefore produces no output at all.
+        window therefore produces no output at all. On a CUDA device the
+        emission is one step later still: each output's device-to-host
+        transfer is issued asynchronously and only the completed ones are
+        returned (see `max_buffers`), the rest following on later calls or
+        at :meth:`flush`.
 
         Chunked along a dimension other than `dim`, that carry-over would be
         a leak: the next chunk holds *other* lanes, so nothing of this one —
@@ -949,12 +969,14 @@ class Annotate(Atom):
                     f"({da.sizes[dim]} samples) than one model window "
                     f"({self.nperseg} samples)"
                 )
+            self._process(da)
         else:
             da = concat([self.buffer, da], dim)
             if da.sizes[dim] < self.nperseg:
                 self.buffer = State(da)
-                return None
-        return self._process(da)
+            else:
+                self._process(da)
+        return self._harvest() or None
 
     def _call_independent(self, da, **flags):
         """Annotate one whole record, settled on the spot, leaving no state behind."""
@@ -976,8 +998,8 @@ class Annotate(Atom):
                 "model and cannot be chunked: the components of one window "
                 "are read together"
             )
-        chunk = self._process(da)
-        chunks = ([] if chunk is None else [chunk]) + self.flush()
+        self._process(da)
+        chunks = self._harvest() + self.flush()
         # One record in, one record out: the pieces are consecutive along
         # `dim`, and downstream is joining along the *chunked* dimension.
         return concat(chunks, dim) if len(chunks) > 1 else chunks[0]
@@ -988,21 +1010,22 @@ class Annotate(Atom):
 
         SeisBench appends one last window ending on the record's last sample
         whenever the stride leaves a remainder, so the output spans the input.
-        Firing once per run, this stays chunk-invariant.
+        Firing once per run, this stays chunk-invariant. The in-flight
+        output queue is drained here, so nothing survives the end of a run.
         """
         if self.started is not True:
-            return []
+            return self._harvest(block=True)
         dim = self.sample_dim
         buffer = self.buffer
         remainder = buffer.sizes[dim] - self.nperseg
         if remainder > 0:
             self._advance(buffer.isel({dim: slice(-remainder, None)}), remainder)
-        chunk = self._emit(buffer, 0, self.step - remainder, self.nperseg + remainder)
+        self._emit(buffer, 0, self.step - remainder, self.nperseg + remainder)
         self.buffer = State(buffer.isel({dim: slice(0, 0)}))
         self.started = State(False)
         self.circular_output.fill_(self.fill)
         self.circular_counts.fill_(0)
-        return [chunk]
+        return self._harvest(block=True)
 
     def _process(self, da):
         """Annotate every window of *da* that the buffered state can complete."""
@@ -1013,20 +1036,18 @@ class Annotate(Atom):
         else:
             self._prime(da)
             first = 0
-        chunks = []
         last = None
         for idx in range(first, da.sizes[dim] - nperseg + 1, step):
             tail = da.isel({dim: slice(idx + nperseg - step, idx + nperseg)})
             self._advance(tail, step)
             if idx > 0:  # the first window of a run completes nothing yet
-                chunks.append(self._emit(da, idx - step, 0, step))
+                self._emit(da, idx - step, 0, step)
             last = idx
         if last is None:
             self.buffer = State(da)
-            return None
+            return
         self.started = State(True)
         self.buffer = State(da.isel({dim: slice(last, None)}))
-        return concat(chunks, dim) if chunks else None
 
     def _prime(self, da):
         """Stage the head of the first window so that the first slide completes it."""
@@ -1117,14 +1138,18 @@ class Annotate(Atom):
         counts += finite.to(counts.dtype)
 
     def _pull(self, start, length):
-        """Reduce *length* stacked samples from *start* into a numpy array."""
+        """
+        Reduce *length* stacked samples from *start* into a fresh tensor.
+
+        Fresh so that the device-to-host transfer of the result can stay in
+        flight while the circular buffers slide on: the reduction allocates,
+        it never views the stack.
+        """
         values = self.circular_output.narrow(-1, start, length)
         counts = self.circular_counts.narrow(-1, start, length)
         if self.stacking == "max":
-            data = torch.where(counts > 0, values, float("nan"))
-        else:
-            data = values / counts  # samples no window covered come out NaN
-        return data.cpu().numpy()
+            return torch.where(counts > 0, values, float("nan"))
+        return values / counts  # samples no window covered come out NaN
 
     def _to_device(self, chunk):
         """Stage *chunk* as a float32 tensor on the device, async on CUDA."""
@@ -1142,7 +1167,7 @@ class Annotate(Atom):
         return data
 
     def _emit(self, da, offset, start, length):
-        """Build the output chunk of *length* samples found at *start* in the stack."""
+        """Queue the output chunk of *length* samples found at *start* in the stack."""
         dim = self.sample_dim
         data = self._pull(start, length)
         coords = da.coords.copy()
@@ -1151,13 +1176,58 @@ class Annotate(Atom):
         coords[dim] = coords[dim][offset : offset + length]
         coords["phase"] = self.phases
         shape = tuple(da.sizes[other] for other in self.batch_dims)
-        return DataArray(
-            data.reshape(*shape, self.classes, length),
-            coords,
-            self.out_dims,
-            da.name,
-            da.attrs,
-        )
+        shape = (*shape, self.classes, length)
+        self._submit(data, (shape, coords, self.out_dims, da.name, da.attrs))
+
+    def _submit(self, data, meta):
+        """
+        Queue one emitted output, its device-to-host transfer in flight.
+
+        On CUDA the transfer is issued into a pinned staging buffer,
+        non-blocking, with an event marking its completion; the source
+        tensor rides along in the queue so it outlives the copy. At most
+        `max_buffers` transfers are left pending — the older ones are
+        synchronized — which is what bounds the staging memory. On the CPU
+        there is nothing to wait for and the item is complete on arrival.
+        """
+        if self.device.type == "cuda":  # pragma: no cover
+            values = torch.empty(data.shape, dtype=data.dtype, pin_memory=True)
+            values.copy_(data, non_blocking=True)
+            event = torch.cuda.Event()
+            event.record()
+        else:
+            values, event = data, None
+        self.inflight.append((event, values, data, meta))
+        excess = len(self.inflight) - self.max_buffers
+        if excess > 0:
+            event = self.inflight[excess - 1][0]
+            if event is not None:  # pragma: no cover
+                event.synchronize()
+
+    def _harvest(self, block=False):
+        """
+        Emit the queued outputs whose transfer has completed, in order.
+
+        The queue is strictly ordered, so the harvest stops at the first
+        transfer still in flight; *block* waits every transfer out instead,
+        which is what :meth:`flush` does to drain the run.
+        """
+        if self.inflight is ...:
+            return []
+        chunks = []
+        while self.inflight:
+            event = self.inflight[0][0]
+            if event is not None and not block and not event.query():
+                break  # pragma: no cover
+            chunks.append(self._realize(self.inflight.popleft()))
+        return chunks
+
+    def _realize(self, item):
+        """Build the output chunk of one completed transfer."""
+        event, values, _, (shape, coords, dims, name, attrs) = item
+        if event is not None:  # pragma: no cover
+            event.synchronize()
+        return DataArray(values.numpy().reshape(shape), coords, dims, name, attrs)
 
     def _resolve_slots(self, slots):
         """Turn ``component_strategy`` into the input slots the data fills."""
