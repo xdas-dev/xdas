@@ -34,6 +34,7 @@ Methods
    Atom.call
    Atom.flush
    Atom.reset
+   Atom.process
    Atom.iter_chunks
    Atom.save_state
    Atom.set_state

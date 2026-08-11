@@ -72,6 +72,8 @@ __all__ = [  # noqa: RUF022 - grouped by kind, not alphabetically
     "sliding_mean_removal",
     "stft",
     "taper",
+    # streaming
+    "watch",
 ]
 
 from . import (
@@ -142,3 +144,4 @@ from .core import (
     trim_overlaps,
 )
 from .core.methods import *
+from .processing.core import watch

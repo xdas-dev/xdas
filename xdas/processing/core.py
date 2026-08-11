@@ -3,10 +3,14 @@ Core processing infrastructure for chunked pipeline execution.
 
 Includes :class:`DataArrayLoader`, :class:`DataArrayWriter`,
 :class:`DataFrameWriter`, :class:`StreamWriter`, :class:`ZMQPublisher`,
-:class:`ZMQSubscriber`, :class:`RealTimeLoader`, and :func:`process`.
+:class:`ZMQSubscriber`, :class:`RealTimeLoader`, :func:`watch`, and the
+:func:`process` dispatch boundary with its :func:`get_source` /
+:func:`get_writer` resolution machinery.
 """
 
 import os
+import re
+import warnings
 from collections import deque
 from concurrent.futures import CancelledError, ThreadPoolExecutor
 from glob import glob
@@ -21,9 +25,16 @@ import zmq
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from ..atoms.core import _aschunks
-from ..core import DataArray, concat, open_dataarray
+from .. import config
+from ..atoms.core import _announce_splits, _aschunks, _join_chunks
+from ..coordinates import AxisCoordinate
+from ..coordinates.core import parse_scalar_delta
+from ..core import DataArray, DataSequence, concat, open_dataarray, open_mfdataarray
+from ..virtual import TileArray, VirtualBackend, VirtualStack
 from .monitor import Monitor
+
+AUTO_CHUNK_NBYTES = 256 * 2**20
+"""Target in-memory chunk size (in bytes) for ``chunks="auto"``."""
 
 
 class _RayFuture:
@@ -207,57 +218,452 @@ def _dump(chunk, path, encoding):
     return open_dataarray(path)
 
 
-def process(atom, data_loader, data_writer):
+def process(atom, source, out=None, chunks=None, until=None):
     """
-    Execute a chunked processing pipeline.
+    Execute a processing pipeline over any chunk source, into any sink.
+
+    The dispatch boundary of chunked processing: the input is resolved into a
+    chunk source with :func:`get_source` and the output into a writer with
+    :func:`get_writer` (deferred to the first output chunk, so the writer can
+    match what the pipeline actually emits). Explicit loader and writer
+    instances pass through untouched, so the historical
+    ``process(atom, data_loader, data_writer)`` form keeps working.
 
     Parameters
     ----------
-    atom : callable
-        The atomic operation to execute on each chunk of data.
-    data_loader : DataArrayLoader
-        The data loader object that provides the chunks of data.
-    data_writer : DataArrayWriter
-        The data writer object that writes the processed data.
+    atom : Atom or callable
+        The operation to execute on each chunk of data. It may emit zero or
+        more output chunks per input chunk (seam tails, rechunking,
+        reductions); at the end of the stream it is flushed so buffering
+        atoms emit their remainder. :meth:`Atom.process` is this function
+        with the atom bound.
+    source : DataArray, str, Path, iterable or loader
+        What to process. An in-memory :class:`DataArray` is processed in one
+        eager call (or chunk by chunk if `chunks` is given); a virtual
+        DataArray streams through a :class:`DataArrayLoader`; a path,
+        directory or glob pattern is opened with :func:`open_mfdataarray`
+        first; a ``"tcp://..."`` address subscribes to a
+        :class:`ZMQSubscriber`; any iterable of chunks (including
+        :func:`watch` and generators) is consumed as is.
+    out : str, Path, writer or None, optional
+        Where to write the output. ``None`` (default) accumulates the output
+        chunks in memory and returns the joined result, guarded by the
+        ``"memory_limit"`` configuration entry. A path is matched with the
+        first output chunk: a directory for DataArray (netcdf chunks) or
+        Stream (SDS) chunks, a ``*.csv`` file for DataFrame chunks, a
+        ``"tcp://..."`` address publishes DataArrays. Non-inferable
+        configuration (miniseed data quality, encodings) is passed as a
+        ready writer instance.
+    chunks : dict or "auto", optional
+        Chunk sizes for DataArray sources, e.g. ``{"time": 1000}``.
+        ``"auto"`` (the default for virtual sources) aligns chunk boundaries
+        to the storage tiling, merged up to ``AUTO_CHUNK_NBYTES``.
+    until : str, datetime64 or float, optional
+        Stop processing at this coordinate value along the chunked dimension.
+        The chunk containing it is truncated; the pipeline is then flushed
+        normally. This is the clean way to bound an unbounded source.
 
     Returns
     -------
     result : object
-        The result of the processing pipeline.
+        The writer result: the joined output for ``out=None``, whatever the
+        resolved writer's ``result()`` returns otherwise, or ``None`` when
+        the pipeline emitted no output (no empty outputs are created).
 
     Notes
     -----
-    This function executes a chunked processing pipeline by ingesting the data from
-    the `data_loader` and flushing the processed data through the `data_writer`.
-    It iterates over the chunks of data provided by the `data_loader`, applies the
-    `atom` function to each chunk, and writes the processed data using the
-    `data_writer`. An atom may emit zero or more output chunks per input chunk
-    (seam tails, rechunking, reductions); at the end of the stream the atom is
-    flushed so buffering atoms emit their remainder. The progress of the
-    processing is monitored using a `Monitor` object.
-
+    Unbounded sources (:func:`watch`, ZMQ subscriptions — anything exposing
+    ``unbounded = True``) get streaming semantics: no byte total on the
+    progress monitor, and a clean :exc:`KeyboardInterrupt` stops the loop,
+    flushes the pipeline and returns the writer result instead of raising.
     """
+    source = get_source(source, chunks)
+    if isinstance(source, DataArray):
+        # In-memory, unchunked: direct eager call, then sink dispatch on the
+        # result so `process(da, out=...)` and `pipeline(da)` stay twins.
+        result = atom(source)
+        if out is None:
+            return result
+        outputs = _aschunks(result)
+        if not outputs:
+            return None
+        # Nothing was chunked, so there is no chunk dimension to name: the
+        # chunks one eager call returns are joined the way `concat` defaults to.
+        writer = get_writer(out, outputs[0], "first")
+        for chunk in outputs:
+            writer.write(chunk)
+        return writer.result()
     if hasattr(atom, "reset"):
         atom.reset()
-    if hasattr(data_loader, "nbytes"):
-        total = data_loader.nbytes
-    else:
-        total = None
+    chunk_dim = getattr(source, "chunk_dim", "time")
+    unbounded = bool(getattr(source, "unbounded", False))
+    total = None if unbounded else getattr(source, "nbytes", None)
+    if isinstance(until, str):
+        until = np.datetime64(until)
+    # Writer instances pass through upfront; inferred writers are deferred to
+    # the first output chunk (the correct writer depends on what the pipeline
+    # emits, and deferral avoids creating empty outputs).
+    writer = out if hasattr(out, "write") and hasattr(out, "result") else None
+
+    def write(chunk):
+        nonlocal writer
+        if writer is None:
+            writer = get_writer(out, chunk, chunk_dim)
+        writer.write(chunk)
+
+    if not unbounded and isinstance(getattr(source, "da", None), DataArray):
+        # Free to know upfront: the source coordinate says where the runs
+        # split, before any data is read.
+        coord = source.da.coords.get(chunk_dim, None)
+        if isinstance(coord, AxisCoordinate) and coord.isregular():
+            indices = coord.get_split_indices(
+                "discontinuities", getattr(coord, "tolerance", None)
+            )
+            if indices.size:
+                _announce_splits(source.da, chunk_dim, int(indices.size))
+    previous = None
     monitor = Monitor(total=total)
     monitor.tic("read")
-    for chunk in data_loader:
-        monitor.tic("proc")
-        result = atom(chunk, chunk_dim=data_loader.chunk_dim)
-        monitor.tic("write")
-        for out in _aschunks(result):
-            data_writer.write(out)
-        monitor.toc(chunk.nbytes)
-        monitor.tic("read")
+    try:
+        for chunk in source:
+            last = False
+            if until is not None and isinstance(chunk, DataArray):
+                coord = chunk.coords.get(chunk_dim, None)
+                if isinstance(coord, AxisCoordinate) and not coord.empty:
+                    if coord.start > until:
+                        break
+                    if coord.end >= until:
+                        # `until` is inclusive, like `sel(slice(None, until))`.
+                        chunk = chunk.sel({chunk_dim: slice(None, until)})
+                        last = True
+            if unbounded and isinstance(chunk, DataArray):
+                # A realtime source cannot be inspected upfront: announce
+                # each seam as it arrives instead.
+                previous = _announce_realtime_seam(previous, chunk, chunk_dim)
+            monitor.tic("proc")
+            result = atom(chunk, chunk_dim=chunk_dim)
+            monitor.tic("write")
+            for chunk_out in _aschunks(result):
+                write(chunk_out)
+            monitor.toc(getattr(chunk, "nbytes", 0))
+            monitor.tic("read")
+            if last:
+                break
+    except KeyboardInterrupt:
+        if not unbounded:
+            raise
+    finally:
+        if unbounded and hasattr(source, "stop"):
+            source.stop()
     if hasattr(atom, "flush"):
-        for out in atom.flush():
-            data_writer.write(out)
+        for chunk_out in atom.flush():
+            write(chunk_out)
     monitor.close()
-    return data_writer.result()
+    return writer.result() if writer is not None else None
+
+
+def _announce_realtime_seam(previous, chunk, chunk_dim):
+    """
+    Warn when a realtime chunk arrives discontinuous with the previous one.
+
+    Returns the seam information of *chunk*, to pass back on the next call.
+    """
+    coord = chunk.coords.get(chunk_dim, None)
+    if not isinstance(coord, AxisCoordinate) or coord.empty:
+        return previous
+    info = {
+        "start": coord.start,
+        "end": coord.end,
+        "delta": coord.get_sampling_interval(cast=False),
+        "tolerance": parse_scalar_delta(
+            getattr(coord, "tolerance", None), coord.dtype, default_zero=True
+        ),
+    }
+    if previous is not None and previous["delta"] is not None:
+        tolerance = max(previous["tolerance"], info["tolerance"])
+        jump = info["start"] - (previous["end"] + previous["delta"])
+        if jump > tolerance:
+            warnings.warn(
+                f"realtime source has a discontinuity along {chunk_dim!r} at "
+                f"{info['start']}; state is flushed and reset",
+                UserWarning,
+                stacklevel=2,
+            )
+    if info["delta"] is None and previous is not None:
+        info["delta"] = previous["delta"]
+    return info
+
+
+def watch(path, engine="xdas"):
+    """
+    Watch a directory for new files, as an unbounded chunk source.
+
+    Sugar over :class:`RealTimeLoader`: every file closed under `path` is
+    opened with `engine`, loaded, and yielded as a chunk. Realtime is always
+    *named* — a bare directory path passed to :func:`process` means "process
+    what is there", never "block forever".
+
+    Parameters
+    ----------
+    path : str or Path
+        Directory to watch.
+    engine : str or Engine, optional
+        Engine used to open arriving files. Defaults to ``"xdas"``.
+
+    Returns
+    -------
+    RealTimeLoader
+        An unbounded source for :func:`process` / :meth:`Atom.process`.
+
+    Examples
+    --------
+    >>> pipeline.process(xd.watch("/incoming"), out="sds/")  # doctest: +SKIP
+    """
+    return RealTimeLoader(path, engine)
+
+
+def get_source(source, chunks=None):
+    """
+    Resolve a :func:`process` input into a chunk source.
+
+    The source contract is a duck-typed protocol: an iterable yielding
+    chunks, optionally exposing ``chunk_dim``, ``nbytes`` and ``unbounded``.
+    Anything already satisfying it (loaders, generators, collections) passes
+    through. An in-memory :class:`DataArray` with no `chunks` is returned as
+    is, meaning "process eagerly in one call".
+
+    Parameters
+    ----------
+    source : DataArray, str, Path or iterable
+        See :func:`process`.
+    chunks : dict or "auto", optional
+        Chunk sizes for DataArray sources. Defaults to ``"auto"`` for
+        virtual DataArrays.
+
+    Returns
+    -------
+    DataArray or iterable
+        The chunk source, or a bare in-memory DataArray for the eager path.
+    """
+    if isinstance(source, (str, Path)):
+        spec = str(source)
+        match = re.match(r"(?P<scheme>[a-z0-9+.-]+)://", spec)
+        if match:
+            scheme = match["scheme"]
+            if scheme not in SOURCE_SCHEMES:
+                raise ValueError(
+                    f"no source registered for the {scheme!r} URL scheme; "
+                    f"available: {sorted(SOURCE_SCHEMES)}"
+                )
+            return SOURCE_SCHEMES[scheme](spec)
+        if os.path.isdir(spec):
+            spec = os.path.join(spec, "*")
+        source = open_mfdataarray(spec)
+    if isinstance(source, DataSequence) and all(
+        isinstance(element, DataArray) and isinstance(element.data, VirtualBackend)
+        for element in source
+    ):
+        # A virtual multi-acquisition collection: stream each run through its
+        # own loader instead of materializing whole runs as single chunks.
+        return _ChainSource(source, chunks)
+    if isinstance(source, DataArray):
+        if isinstance(source.data, VirtualBackend):
+            return DataArrayLoader(source, "auto" if chunks is None else chunks)
+        if chunks is None:
+            return source
+        return DataArrayLoader(source, chunks)
+    if hasattr(source, "__iter__") or hasattr(source, "__next__"):
+        return source
+    raise TypeError(
+        f"cannot use a {type(source).__name__} object as a source: expected a "
+        "DataArray, a path, directory or glob, a URL, or an iterable of chunks"
+    )
+
+
+def get_writer(out, chunk, chunk_dim="time"):
+    """
+    Resolve a :func:`process` output spec into a writer.
+
+    Dispatch happens on *(out spec × first-chunk type)*: the same directory
+    path means a netcdf chunk store for DataArray chunks and an SDS archive
+    for Stream chunks. Writer instances (anything with ``write`` and
+    ``result``) pass through.
+
+    Parameters
+    ----------
+    out : str, Path, dict, writer or None
+        See :func:`process`.
+    chunk : object
+        The first output chunk of the pipeline.
+    chunk_dim : str, optional
+        Dimension along which DataArray chunks follow each other; used to
+        join them, in memory when `out` is ``None`` and virtually when it is
+        a directory. It is the dimension the *source* was chunked along,
+        which need not lead the output.
+
+    Returns
+    -------
+    writer
+        An object with ``write(chunk)`` and ``result()``.
+    """
+    if hasattr(out, "write") and hasattr(out, "result"):
+        return out
+    if out is None:
+        return ResultWriter(chunk_dim)
+    if not isinstance(out, (str, Path)):
+        raise TypeError(f"cannot infer a writer from `out` of type {type(out)}")
+    spec = str(out)
+    match = re.match(r"(?P<scheme>[a-z0-9+.-]+)://", spec)
+    if match:
+        scheme = match["scheme"]
+        if scheme not in SINK_SCHEMES:
+            raise ValueError(
+                f"no writer registered for the {scheme!r} URL scheme; "
+                f"available: {sorted(SINK_SCHEMES)}"
+            )
+        return SINK_SCHEMES[scheme](spec)
+    if isinstance(chunk, DataArray):
+        if Path(spec).suffix:
+            raise ValueError(
+                f"cannot write DataArray chunks to {spec!r}: pass a directory "
+                "(chunks are stored as netcdf files and virtually "
+                "concatenated), or a configured writer instance"
+            )
+        return DataArrayWriter(spec, create_dirs=True, dim=chunk_dim)
+    if isinstance(chunk, pd.DataFrame):
+        if not spec.endswith(".csv"):
+            raise ValueError(
+                f"cannot write DataFrame chunks to {spec!r}: pass a `*.csv` "
+                "path or a configured writer instance"
+            )
+        return DataFrameWriter(spec, create_dirs=True)
+    if isinstance(chunk, obspy.Stream):
+        return StreamWriter(spec, "D")
+    raise TypeError(
+        f"no writer known for output chunks of type {type(chunk).__name__}; "
+        "pass a configured writer instance as `out`"
+    )
+
+
+class ResultWriter:
+    """
+    Accumulate output chunks in memory and join them at the end.
+
+    The writer behind ``out=None``: chunks are collected as they arrive and
+    ``result()`` returns them joined (gap-aware concatenation for DataArrays,
+    :func:`pandas.concat` for DataFrames, merged :class:`obspy.Stream`).
+    Accumulation is guarded by the ``"memory_limit"`` configuration entry.
+
+    Parameters
+    ----------
+    chunk_dim : str, optional
+        Dimension along which DataArray chunks are concatenated.
+    """
+
+    def __init__(self, chunk_dim="time"):
+        self.chunk_dim = chunk_dim
+        self.chunks = []
+        self.nbytes = 0
+
+    def write(self, chunk):
+        """Accumulate one chunk, enforcing the in-memory size guard."""
+        self.chunks.append(chunk)
+        self.nbytes += getattr(chunk, "nbytes", 0)
+        limit = config.get("memory_limit")
+        if self.nbytes > limit:
+            raise ValueError(
+                f"the accumulated in-memory result exceeds {_to_human(limit)} "
+                "(the 'memory_limit' configuration entry): write the output "
+                "to disk with `out=...`, or raise the limit with "
+                "`xdas.config.set('memory_limit', ...)`"
+            )
+
+    def result(self):
+        """Return the joined result, or ``None`` if nothing was written."""
+        if self.chunks and all(isinstance(c, obspy.Stream) for c in self.chunks):
+            out = obspy.Stream()
+            for st in self.chunks:
+                out += st
+            return out
+        return _join_chunks(self.chunks, self.chunk_dim)
+
+
+class _ChainSource:
+    """Chain per-run loaders over a virtual multi-acquisition collection."""
+
+    def __init__(self, collection, chunks):
+        self.loaders = []
+        for element in collection:
+            if isinstance(chunks, dict):
+                ((dim, size),) = chunks.items()
+                element_chunks = {dim: min(size, element.sizes[dim])}
+            else:
+                element_chunks = "auto" if chunks is None else chunks
+            self.loaders.append(DataArrayLoader(element, element_chunks))
+
+    @property
+    def chunk_dim(self):
+        """Chunked dimension, taken from the first per-run loader."""
+        return self.loaders[0].chunk_dim
+
+    @property
+    def nbytes(self):
+        """Total bytes over all runs."""
+        return sum(loader.nbytes for loader in self.loaders)
+
+    def __iter__(self):
+        for loader in self.loaders:
+            yield from loader
+
+
+def _to_human(nbytes):
+    """Format a byte count as a human-readable string."""
+    for unit in ("B", "KB", "MB", "GB"):
+        if nbytes < 1024:
+            return f"{nbytes:.1f} {unit}" if unit != "B" else f"{nbytes} B"
+        nbytes /= 1024
+    return f"{nbytes:.1f} TB"
+
+
+def _auto_chunks(da):
+    """
+    Derive tile-aligned chunk boundaries from the storage blocking of *da*.
+
+    Returns the chunked dimension and the list of chunk boundaries along it.
+    The storage blocking is authoritative when there is one (tile extents for
+    the tiles vtype, per-source extents for stacked HDF5 virtual datasets);
+    consecutive blocks are merged up to the ``AUTO_CHUNK_NBYTES`` budget.
+    Sources with no blocking (single files, in-memory arrays) fall back to
+    fixed-size chunks from the same byte budget.
+    """
+    data = da.data
+    if isinstance(data, TileArray):
+        tiling = data.chunks
+        axis = int(np.argmax([len(extents) for extents in tiling]))
+        extents = list(tiling[axis])
+    elif isinstance(data, VirtualStack):
+        axis = data.axis
+        extents = [source.shape[axis] for source in data.sources]
+    else:
+        axis, extents = 0, None
+    dim = da.dims[axis]
+    size = da.sizes[dim]
+    nbytes_per_slice = max(da.nbytes // max(size, 1), 1)
+    target = max(AUTO_CHUNK_NBYTES // nbytes_per_slice, 1)
+    if extents is None:
+        step = int(min(target, size))
+        divs = list(range(0, size, step)) + [size]
+        return dim, divs
+    divs = [0]
+    accumulated = 0
+    for extent in extents:
+        if accumulated and accumulated + extent > target:
+            divs.append(divs[-1] + accumulated)
+            accumulated = 0
+        accumulated += extent
+    # The loop always leaves the last block(s) in the accumulator.
+    divs.append(divs[-1] + accumulated)
+    return dim, divs
 
 
 class DataArrayLoader:
@@ -271,11 +677,13 @@ class DataArrayLoader:
     ----------
     da : ``DataArray``
         The (virtual) DataArray that contains the data to be chunked
-    chunks : dict
+    chunks : dict or "auto"
         The sizes of the chunks along each dimension. Needs to be of the form:
         ``{"dim": int}``. The key correspond with the dimension (usually "time"),
         and the value is an integer indicating the size of the chunk (in samples)
-        along that dimension.
+        along that dimension. ``"auto"`` aligns chunk boundaries to the storage
+        blocking of the array (tile extents, per-file extents), merged up to
+        the ``AUTO_CHUNK_NBYTES`` byte budget.
     max_buffers : int, default=1
         The maximum number of chunks to load into memory at the same time.
     max_workers : int, default=1
@@ -315,38 +723,45 @@ class DataArrayLoader:
     def __init__(self, da, chunks, max_buffers=1, max_workers=1, pool="threads"):
         if not isinstance(da, DataArray):
             raise TypeError(f"`da` must by a DataArray object, not a {type(da)}")
-        if not (isinstance(chunks, dict) and len(chunks) == 1):
+        if isinstance(chunks, str) and chunks == "auto":
+            chunk_dim, divs = _auto_chunks(da)
+            chunk_size = None
+        elif isinstance(chunks, dict) and len(chunks) == 1:
+            ((chunk_dim, chunk_size),) = chunks.items()
+            chunk_dim = str(chunk_dim)
+            chunk_size = int(chunk_size)
+            if chunk_dim not in da.dims:
+                raise ValueError(
+                    f"chunking dimension {chunk_dim} not found in `da` "
+                    f"dimensions {da.dims}"
+                )
+            if chunk_size > da.sizes[chunk_dim]:
+                raise ValueError(
+                    f"chunking size {chunk_size} is greater than `da` "
+                    f"size {da.sizes[chunk_dim]} along dim {chunk_dim}"
+                )
+            size = da.sizes[chunk_dim]
+            divs = list(range(0, size, chunk_size)) + [size]
+        else:
             raise TypeError(
                 "`chunks` must be a dict that maps a unique "
-                "dimension to a unique size: {'dim': int}"
-            )
-        ((chunk_dim, chunk_size),) = chunks.items()
-        chunk_dim = str(chunk_dim)
-        chunk_size = int(chunk_size)
-        if chunk_dim not in da.dims:
-            raise ValueError(
-                f"chunking dimension {chunk_dim} not found in `da` dimensions {da.dims}"
-            )
-        if chunk_size > da.sizes[chunk_dim]:
-            raise ValueError(
-                f"chunking size {chunk_size} is greater than `da` "
-                f"size {da.sizes[chunk_dim]} along dim {chunk_dim}"
+                "dimension to a unique size ({'dim': int}) or 'auto'"
             )
         self.da = da
         self.chunk_dim = chunk_dim
         self.chunk_size = chunk_size
+        self._divs = divs
         self.max_buffers = max_buffers
         self.max_workers = max_workers
         self.pool = pool
 
     def __len__(self):
-        div, mod = divmod(self.da.sizes[self.chunk_dim], self.chunk_size)
-        return div if mod == 0 else div + 1
+        return len(self._divs) - 1
 
     def _select(self, idx):
         """Return chunk *idx* as a lazy selection: the manifest, not the data."""
-        start = idx * self.chunk_size
-        end = (idx + 1) * self.chunk_size
+        start = self._divs[idx]
+        end = self._divs[idx + 1]
         query = {
             dim: slice(start, end) if dim == self.chunk_dim else slice(None)
             for dim in self.da.dims
@@ -398,6 +813,9 @@ class RealTimeLoader(Observer):
         Engine used to open arriving files, given by name or as a configured
         :class:`~xdas.io.Engine` instance.  Defaults to ``"xdas"``.
     """
+
+    chunk_dim = "time"
+    unbounded = True
 
     def __init__(self, path, engine="xdas"):
         super().__init__()
@@ -931,6 +1349,9 @@ class ZMQSubscriber:
     >>> assert da.equals(da)
     """
 
+    chunk_dim = "time"
+    unbounded = True
+
     def __init__(self, address):
         self.address = address
         self._context = zmq.Context()
@@ -986,3 +1407,10 @@ def frombuffer(da):
         with open(path, "wb") as file:
             file.write(da)
         return open_dataarray(path).load()
+
+
+SOURCE_SCHEMES = {"tcp": ZMQSubscriber}
+"""Registry of URL schemes accepted as sources, scheme → source factory."""
+
+SINK_SCHEMES = {"tcp": ZMQPublisher}
+"""Registry of URL schemes accepted as sinks, scheme → writer factory."""

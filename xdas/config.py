@@ -11,7 +11,10 @@ from typing import ClassVar
 class Config:
     """Global configuration store backed by a plain dict."""
 
-    config: ClassVar[dict] = {"n_workers": os.cpu_count()}
+    config: ClassVar[dict] = {
+        "n_workers": os.cpu_count(),
+        "memory_limit": 8 * 2**30,
+    }
 
 
 def get(key):

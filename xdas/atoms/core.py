@@ -16,7 +16,9 @@ from functools import wraps
 from typing import Any
 
 import numpy as np
+import pandas as pd
 
+from .. import config
 from ..coordinates import AxisCoordinate
 from ..coordinates.core import parse_scalar_delta
 from ..core import (
@@ -28,6 +30,7 @@ from ..core import (
     open_datacollection,
     split,
 )
+from ..virtual import VirtualBackend
 
 
 def _announce_splits(x, dim, count):
@@ -66,6 +69,32 @@ def _aschunks(value):
     return [
         chunk for chunk in value if not (isinstance(chunk, DataArray) and chunk.empty)
     ]
+
+
+def _join_chunks(chunks, dim=None):
+    """
+    Join heterogeneous output chunks into a single result.
+
+    DataArrays are concatenated along *dim* with the gaps kept in the
+    coordinates, falling back to a :class:`DataSequence` when concatenation
+    cannot represent the result in one array; DataFrames are concatenated
+    with a fresh index. Anything else is returned as a plain list. Zero
+    chunks give ``None`` and a single chunk is returned bare.
+    """
+    if not chunks:
+        return None
+    if len(chunks) == 1:
+        return chunks[0]
+    if all(isinstance(chunk, DataArray) for chunk in chunks):
+        if dim is not None:
+            try:
+                return concat(chunks, dim)
+            except (TypeError, ValueError, KeyError):
+                pass
+        return DataCollection(chunks)
+    if all(isinstance(chunk, pd.DataFrame) for chunk in chunks):
+        return pd.concat(chunks, ignore_index=True)
+    return list(chunks)
 
 
 def _flush_through(atoms, **flags):
@@ -281,6 +310,19 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
         """
         chunk_dim = flags.get("chunk_dim", None)
         self._check_chunk_dim(x, chunk_dim)
+        if (
+            chunk_dim is None
+            and isinstance(x, DataArray)
+            and isinstance(x.data, VirtualBackend)
+            and x.nbytes > config.get("memory_limit")
+        ):
+            raise ValueError(
+                f"this eager call would load the full virtual array "
+                f"(~{x.nbytes / 2**30:.1f} GiB, above the 'memory_limit' "
+                "configuration entry) in memory: stream it chunk by chunk "
+                "with `.process(da, out=...)` instead, or raise the limit "
+                "with `xdas.config.set('memory_limit', ...)`"
+            )
         if isinstance(x, DataMapping):
             if chunk_dim is not None:
                 raise NotImplementedError(
@@ -520,6 +562,56 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
             yield from _aschunks(self(chunk, chunk_dim=chunk_dim))
         yield from self.flush()
         self.reset()
+
+    def process(self, source, out=None, chunks=None, until=None):
+        """
+        Process any chunk source through this atom, writing to any sink.
+
+        The one-call form of chunked execution: the input is resolved into a
+        chunk source and the output into a writer automatically (see
+        :func:`xdas.processing.process`, which this method binds to the
+        atom). The same pipeline that runs eagerly with ``pipeline(da)``
+        streams a massive archive with ``pipeline.process(da, out=...)``.
+
+        Parameters
+        ----------
+        source : DataArray, str, Path, iterable or loader
+            What to process: an in-memory or virtual :class:`DataArray`, a
+            file path, directory or glob pattern, a ``"tcp://..."`` address,
+            :func:`xdas.watch` for realtime, or any iterable of chunks.
+        out : str, Path, writer or None, optional
+            Where to write the output: ``None`` accumulates in memory and
+            returns the joined result (size-guarded); a path is matched with
+            the first output chunk (directory for DataArray or Stream
+            chunks, ``*.csv`` for DataFrames, ``"tcp://..."`` to publish); a
+            writer instance passes through.
+        chunks : dict or "auto", optional
+            Chunk sizes for DataArray sources, e.g. ``{"time": 1000}``.
+            Virtual arrays default to ``"auto"``: chunk boundaries aligned
+            to the storage tiling.
+        until : str, datetime64 or float, optional
+            Stop at this coordinate value along the chunked dimension; the
+            clean way to bound an unbounded source.
+
+        Returns
+        -------
+        result : object
+            The writer result: the joined output for ``out=None``, whatever
+            the resolved writer returns otherwise, or ``None`` when the
+            pipeline emitted no output.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> import xdas as xd
+        >>> pipeline = xd.decimate(..., target=50.0) >> np.square
+        >>> pipeline.process(da_virtual, out="results/")  # doctest: +SKIP
+        >>> pipeline.process("archive/*.h5", out="results/")  # doctest: +SKIP
+        >>> pipeline.process(xd.watch("/incoming"), out="sds/")  # doctest: +SKIP
+        """
+        from ..processing.core import process
+
+        return process(self, source, out=out, chunks=chunks, until=until)
 
     def _check_chunk_dim(self, x, chunk_dim):
         """Raise if this atom cannot process *x* chunked along *chunk_dim*."""

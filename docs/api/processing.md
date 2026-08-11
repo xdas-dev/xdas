@@ -11,6 +11,9 @@
    :toctree: ../_autosummary
 
    process
+   watch
+   get_source
+   get_writer
 ```
 
 ## Loaders
@@ -43,6 +46,7 @@
    StreamWriter
    ZMQPublisher
    ZMQSubscriber
+   ResultWriter
 ```
 
 ### DataArrayWriter
