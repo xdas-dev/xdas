@@ -1,4 +1,7 @@
+import warnings
+
 import h5py
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -531,3 +534,184 @@ class TestDataFrameLeaves:
         text = repr(dc)
         assert "ST01" in text
         assert "das" in text
+
+
+class TestMergeCollectionResults:
+    """
+    W8: the walk labels each leaf's result with its own tree path as the
+    result is produced, then folds the results through the atom's `merge`
+    hook on the way back up.
+    """
+
+    thresh = {"P": 0.5, "S": 0.5}
+
+    def cft(self, t0=0.0, quiet=False, **scalars):
+        """A characteristic function peaking on P and S at ``t0 + 1``."""
+        lane = [0.0, 0.0, 0.0] if quiet else [0.0, 0.8, 0.0]
+        da = xd.DataArray(
+            data=[[0.0, 0.0, 0.0], lane, lane],
+            coords={
+                "phase": ["N", "P", "S"],
+                "time": {
+                    "tie_indices": [0, 2],
+                    "tie_values": [t0, t0 + 2.0],
+                    "sampling_interval": 1.0,
+                },
+            },
+        )
+        for name, value in scalars.items():
+            da = da.assign_coords(**{name: value})
+        return da
+
+    def tree(self):
+        """A ``network / station / location`` collection of pick-able leaves."""
+        return xd.DataCollection(
+            {
+                "IA": xd.DataCollection(
+                    {
+                        "DBNFM": xd.DataCollection({"--": self.cft()}, "location"),
+                        "LBFI": xd.DataCollection({"00": self.cft(10.0)}, "location"),
+                    },
+                    "station",
+                )
+            },
+            "network",
+        )
+
+    def test_leaves_carry_their_tree_path_and_merge_into_one_table(self):
+        result = xd.trigger(self.tree(), thresh=self.thresh)
+        assert isinstance(result, pd.DataFrame)
+        # identity leads, then the dimension coordinates, then the value
+        assert list(result.columns) == [
+            "network",
+            "station",
+            "location",
+            "phase",
+            "time",
+            "value",
+        ]
+        assert list(result["network"]) == ["IA"] * 4
+        assert list(result["station"]) == ["DBNFM", "DBNFM", "LBFI", "LBFI"]
+        assert list(result["location"]) == ["--", "--", "00", "00"]
+        assert list(result["time"]) == [1.0, 1.0, 11.0, 11.0]
+        assert list(result.index) == [0, 1, 2, 3]
+
+    def test_annotation_happens_at_production_time(self):
+        # every leaf of the un-merged tree already carries the full path, so a
+        # streaming walk can hand a leaf straight to a sink and keep its
+        # identity
+        tree = xd.trigger(..., thresh=self.thresh)(self.tree(), merge=False)
+        leaf = tree["IA"]["DBNFM"]["--"]
+        assert isinstance(leaf, pd.DataFrame)
+        assert list(leaf.columns)[:3] == ["network", "station", "location"]
+        assert set(leaf["location"]) == {"--"}
+
+    def test_merge_false_keeps_the_tree(self):
+        tree = xd.trigger(..., thresh=self.thresh)(self.tree(), merge=False)
+        assert isinstance(tree, xd.DataCollection)
+        assert tree.name == "network"
+        assert tree["IA"].name == "station"
+        assert list(tree["IA"]) == ["DBNFM", "LBFI"]
+
+    def test_an_atom_without_a_merge_hook_rebuilds_the_tree(self):
+        da = xd.testing.dummy()
+        dc = xd.DataCollection({"das1": da, "das2": da}, "instrument")
+        atom = xd.atoms.Partial(np.square)
+        assert atom.merge is None
+        result = atom(dc)
+        assert isinstance(result, xd.DataCollection)
+        assert list(result) == ["das1", "das2"]
+
+    def test_sequence_levels_contribute_their_position(self):
+        dc = xd.DataCollection(
+            {"node": xd.DataCollection([self.cft(0.0), self.cft(10.0)], "acquisition")},
+            "cable",
+        )
+        result = xd.trigger(dc, thresh=self.thresh)
+        assert list(result.columns)[:2] == ["cable", "acquisition"]
+        assert list(result["cable"]) == ["node"] * 4
+        assert list(result["acquisition"]) == [0, 0, 1, 1]
+
+    def test_an_unnamed_level_contributes_no_column(self):
+        dc = xd.DataCollection({"a": self.cft(), "b": self.cft()})
+        result = xd.trigger(dc, thresh=self.thresh)
+        assert list(result.columns) == ["phase", "time", "value"]
+        assert len(result) == 4
+
+    def test_a_single_leaf_collection_still_merges(self):
+        dc = xd.DataCollection({"DBNFM": self.cft()}, "station")
+        result = xd.trigger(dc, thresh=self.thresh)
+        assert isinstance(result, pd.DataFrame)
+        assert list(result["station"]) == ["DBNFM"] * 2
+
+    def test_a_leaf_without_a_pick_contributes_no_row(self):
+        dc = xd.DataCollection(
+            {"DBNFM": self.cft(), "QUIET": self.cft(quiet=True)}, "station"
+        )
+        result = xd.trigger(dc, thresh=self.thresh)
+        assert set(result["station"]) == {"DBNFM"}
+
+    def test_a_collection_without_any_pick_gives_an_empty_table(self):
+        dc = xd.DataCollection(
+            {"A": self.cft(quiet=True), "B": self.cft(quiet=True)}, "station"
+        )
+        result = xd.trigger(dc, thresh=self.thresh)
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) == 0
+
+    def test_an_empty_collection_gives_an_empty_table(self):
+        result = xd.trigger(xd.DataCollection({}, "station"), thresh=self.thresh)
+        assert isinstance(result, pd.DataFrame)
+        assert result.empty
+
+    def test_an_agreeing_scalar_coordinate_dedupes_silently(self):
+        # what the obspy engine produces: every leaf carries its four SEED
+        # identifiers as scalar coordinates, and the tree keys hold the very
+        # same values
+        dc = xd.DataCollection(
+            {
+                "DBNFM": self.cft(station="DBNFM"),
+                "LBFI": self.cft(station="LBFI"),
+            },
+            "station",
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = xd.trigger(dc, thresh=self.thresh)
+        assert list(result.columns) == ["station", "phase", "time", "value"]
+        assert list(result["station"]) == ["DBNFM", "DBNFM", "LBFI", "LBFI"]
+
+    def test_a_disagreeing_scalar_coordinate_warns_and_the_tree_path_wins(self):
+        dc = xd.DataCollection({"DBNFM": self.cft(station="ST01")}, "station")
+        with pytest.warns(UserWarning, match="disagrees with the tree path"):
+            result = xd.trigger(dc, thresh=self.thresh)
+        assert list(result.columns) == ["station", "phase", "time", "value"]
+        assert list(result["station"]) == ["DBNFM", "DBNFM"]
+
+    def test_sequential_delegates_to_its_last_merging_stage(self):
+        pipeline = xd.atoms.Partial(np.abs) >> xd.trigger(..., thresh=self.thresh)
+        assert pipeline.merge is not None
+        result = pipeline(self.tree())
+        assert isinstance(result, pd.DataFrame)
+        assert list(result.columns)[:3] == ["network", "station", "location"]
+
+    def test_sequential_without_a_merging_stage_has_none(self):
+        pipeline = xd.atoms.Partial(np.abs) >> xd.atoms.Partial(np.square)
+        assert pipeline.merge is None
+
+    def test_unjoinable_leaf_chunks_are_annotated_one_by_one(self):
+        class TableAndArray(xd.atoms.Atom):
+            """Emits two chunks of different types, which cannot be joined."""
+
+            def initialize(self, x, **flags):
+                pass
+
+            def call(self, x, **flags):
+                return [x, pd.DataFrame({"value": [1.0]})]
+
+        dc = xd.DataCollection({"DBNFM": self.cft()}, "station")
+        leaf = TableAndArray()(dc)["DBNFM"]
+        assert isinstance(leaf, xd.DataCollection)
+        assert isinstance(leaf[0], xd.DataArray)
+        assert list(leaf[1].columns) == ["station", "value"]
+        assert list(leaf[1]["station"]) == ["DBNFM"]

@@ -97,6 +97,76 @@ def _join_chunks(chunks, dim=None):
     return list(chunks)
 
 
+def _extend_path(path, name, key):
+    """Extend the tree path with the *key* a *name*d collection level was entered by."""
+    return path if name is None else path | {name: key}
+
+
+def _annotate_path(result, path):
+    """
+    Tag the tables in *result* with the tree path they were produced under.
+
+    A leaf reached through ``IA / DBNFM / --`` gets a ``network``, a
+    ``station`` and a ``location`` column, filled with those keys, *as its
+    result is produced* rather than reconstructed afterwards — which is what
+    lets a streaming walk hand a leaf straight to a sink and still carry its
+    identity. Only tables are annotated: an atom returning arrays sees
+    nothing change, and its tree is rebuilt as before.
+
+    The columns lead, in tree order, so the identity of a pick comes first
+    whatever the atom put in the table. A column the table already carries —
+    a `network` scalar coordinate on the leaf, say, which the ObsPy engine
+    attaches — is *the same column*, not a second one: it is moved into its
+    leading position and the tree path wins, warning if the two disagree.
+
+    *result* is what one leaf produced, so it is a table, an array, or one of
+    the containers a leaf can answer with: a :class:`DataSequence` of chunks
+    the atom could not join, or a plain list of chunks. It is never a mapping
+    level — those the walk recurses into itself.
+    """
+    if not path:
+        return result
+    if isinstance(result, pd.DataFrame):
+        return _annotate_frame(result, path)
+    if isinstance(result, DataSequence):
+        return DataCollection(
+            [_annotate_path(value, path) for value in result], result.name
+        )
+    if isinstance(result, list):
+        return [_annotate_path(value, path) for value in result]
+    return result
+
+
+def _annotate_frame(frame, path):
+    """Prepend the *path* identity columns to the table *frame*."""
+    frame = frame.copy()
+    for name, key in path.items():
+        if name in frame.columns and not (frame[name] == key).all():
+            warnings.warn(
+                f"the {name!r} column of a table disagrees with the tree path "
+                f"the leaf was reached by ({key!r}): the tree path wins. The "
+                "column comes from a coordinate of the leaf; rename it or "
+                "drop it from `coords` to keep both.",
+                UserWarning,
+                stacklevel=2,
+            )
+        frame[name] = key
+    rest = [name for name in frame.columns if name not in path]
+    return frame[list(path) + rest]
+
+
+def _iter_results(tree):
+    """Yield the leaf results of a walked collection, in walk order."""
+    if isinstance(tree, DataMapping):
+        for value in tree.values():
+            yield from _iter_results(value)
+    elif isinstance(tree, DataSequence):
+        for value in tree:
+            yield from _iter_results(value)
+    else:
+        yield tree
+
+
 def _flush_through(atoms, **flags):
     """
     Codec-drain a linear chain of atoms.
@@ -205,9 +275,17 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
             Seam policy for chunked processing: ``"reset"`` (default) flushes
             and starts a new run at every gap or rate change, ``"raise"``
             refuses discontinuous input. Overlaps always raise.
+        merge: callable or None
+            The optional hook folding the per-leaf results of a collection
+            walk into one object. ``None`` (the default) means the atom has
+            none and the tree is rebuilt as it always was. See
+            :meth:`~xdas.atoms.Trigger.merge` for an implementation.
 
     Methods
     -------
+        gather(mapping)
+            Optionally collapse a mapping level into an array before the
+            walk descends into it. See :meth:`gather`.
         initialize(x, **flags)
             Initializes the atom with the given input.
         initialize_from_state()
@@ -219,6 +297,9 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
             Drains buffered samples at the end of a run.
         reset()
             Resets the atom to its initial state.
+        merge(results)
+            Optional. Folds the leaf results of a collection walk into one
+            object; undefined by default.
         fresh()
             Returns a stateless clone sharing the configuration.
         iter_chunks(source)
@@ -227,6 +308,9 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
     """
 
     on_discontinuity = "reset"
+    #: Undefined by default: an atom that does not fold its collection
+    #: results leaves the walked tree as it is.
+    merge = None
 
     def __init__(self):
         object.__setattr__(self, "_config", {})
@@ -290,6 +374,34 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
         """Process a chunk of data."""
         return NotImplemented
 
+    def gather(self, mapping):
+        """
+        Return *mapping* collapsed to an array, or ``None`` to map over it.
+
+        Consulted on every mapping level of a collection *before* the walk
+        descends into it, so an atom that knows a level is really an axis of
+        its input can take it as one. :class:`~xdas.atoms.Annotate` is the
+        implementation: it knows the model's ``component_order``, so it knows
+        that a ``channel`` level keyed ``SHZ``/``SHN``/``SHE`` is the
+        component dimension of one instrument rather than three
+        independent leaves, and collapses it with :func:`xdas.stack`.
+
+        Returning ``None`` — the default, and what every other atom does —
+        leaves the walk exactly as it was.
+
+        Parameters
+        ----------
+        mapping : DataMapping
+            The collection level about to be walked.
+
+        Returns
+        -------
+        DataArray, DataCollection or None
+            The collapsed input, which the walk continues on in place of the
+            level, or ``None`` to map over the level's leaves.
+        """
+        return
+
     def __call__(self, x, **flags):
         """
         Process input data, returning zero or more output chunks.
@@ -305,9 +417,20 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
         resets emerge from the coordinates; mapping collections map over their
         leaves.
 
+        Walking a collection, each leaf's result is annotated with the tree
+        path it was produced under — one column per level, leading, filled
+        with the key the level was entered by — and the annotated results are
+        then folded by the atom's `merge` hook if it declares one, so a
+        table-valued atom answers a whole collection with one table rather
+        than with a tree of them. ``merge=False`` opts out and returns the
+        walked tree, annotations included. Mapping levels are first offered
+        to `gather`, which may collapse a level into an axis of the input
+        (see :meth:`gather`).
+
         A single output chunk is returned bare; otherwise a
         :class:`DataSequence` of chunks is returned.
         """
+        merge = flags.pop("merge", True)
         chunk_dim = flags.get("chunk_dim", None)
         self._check_chunk_dim(x, chunk_dim)
         if (
@@ -323,18 +446,14 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
                 "with `.process(da, out=...)` instead, or raise the limit "
                 "with `xdas.config.set('memory_limit', ...)`"
             )
-        if isinstance(x, DataMapping):
-            if chunk_dim is not None:
-                raise NotImplementedError(
-                    "chunked processing of mapping collections is not supported: "
-                    "process each leaf with its own atom instance"
-                )
-            return DataCollection(
-                {key: self(value, **flags) for key, value in x.items()},
-                getattr(x, "name", None),
-            )
-        if isinstance(x, DataSequence):
-            return self._fold(x, flags)
+        if isinstance(x, (DataMapping, DataSequence)):
+            if isinstance(x, DataMapping):
+                result = self._walk(x, flags, {})
+            else:
+                result = self._fold(x, flags, {})
+            if merge and self.merge is not None:
+                return self.merge(list(_iter_results(result)))
+            return result
         if chunk_dim is None:
             dim = self._resolve_dim(x)
             runs = self._split_runs(x, dim)
@@ -485,31 +604,89 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
             return "continuous"
         return "gap" if jump > 0 else "overlap"
 
-    def _fold(self, x, flags):
+    def _walk(self, x, flags, path):
+        """
+        Walk a collection leaf by leaf, carrying the tree path down.
+
+        Mapping levels are first offered to `gather`, which may take the whole
+        level as an axis of the input rather than as leaves to map over; the
+        level is then consumed and contributes no path column. Otherwise
+        mapping levels recurse under their key, sequence levels fold (see
+        `_fold`), and every leaf result is annotated with the path it was
+        produced under before it goes anywhere else. Carrying the path *down*
+        rather than rebuilding it on the way up is what a streaming walk
+        needs: a leaf is complete the moment it is produced.
+
+        One atom instance walks the leaves sequentially — the eager path
+        already resets it at the end of each run — because an atom holding a
+        model either saturates the CPU or holds a lot of device memory, so
+        only one should be live per node.
+        """
+        if isinstance(x, DataMapping):
+            gathered = self.gather(x)
+            if gathered is not None:
+                return self._walk(gathered, flags, path)
+            if flags.get("chunk_dim", None) is not None:
+                raise NotImplementedError(
+                    "chunked processing of mapping collections is not supported: "
+                    "process each leaf with its own atom instance"
+                )
+            name = getattr(x, "name", None)
+            return DataCollection(
+                {
+                    key: self._walk(value, flags, _extend_path(path, name, key))
+                    for key, value in x.items()
+                },
+                name,
+            )
+        if isinstance(x, DataSequence):
+            return self._fold(x, flags, path)
+        return _annotate_path(self(x, **flags), path)
+
+    def _fold(self, x, flags, path=None):
         """
         Fold a sequence collection through the same seam-aware call.
 
         A collection is multiple chunks delivered at once: each element goes
         through the chunked path along the atom's dimension, so state carries
         across continuous elements and resets emerge from the coordinates.
+
+        The level contributes its positional keys as a column, each output
+        chunk taking the index of the element that produced it. The flushed
+        tail is attributed to the last element, which is where it came out;
+        no finer answer exists, since a folded element's buffered samples are
+        released by the element that follows it.
         """
         name = getattr(x, "name", None)
+        path = {} if path is None else path
         chunk_dim = flags.get("chunk_dim", None)
         if chunk_dim is None:
             first = next((el for el in x if isinstance(el, DataArray)), None)
             dim = self._resolve_dim(first)
             if dim is None:
-                return DataCollection([self(el, **flags) for el in x], name)
+                return DataCollection(
+                    [
+                        self._walk(el, flags, _extend_path(path, name, index))
+                        for index, el in enumerate(x)
+                    ],
+                    name,
+                )
             flags = flags | {"chunk_dim": dim}
             chunks = []
-            for el in x:
-                chunks += _aschunks(self(el, **flags))
-            chunks += self.flush()
+            for index, el in enumerate(x):
+                chunks += _annotate_path(
+                    _aschunks(self(el, **flags)), _extend_path(path, name, index)
+                )
+            chunks += _annotate_path(
+                self.flush(), _extend_path(path, name, max(len(x) - 1, 0))
+            )
             self.reset()
             return DataCollection(chunks, name)
         chunks = []
-        for el in x:
-            chunks += _aschunks(self(el, **flags))
+        for index, el in enumerate(x):
+            chunks += _annotate_path(
+                _aschunks(self(el, **flags)), _extend_path(path, name, index)
+            )
         return DataCollection(chunks, name)
 
     def _join(self, chunks, dim):
@@ -882,6 +1059,47 @@ class Sequential(Atom, list):
             dim = atom._resolve_dim(x)
             if dim is not None:
                 return dim
+        return None
+
+    def gather(self, mapping):
+        """
+        Collapse *mapping* through the first stage that claims it.
+
+        The gather happens once, before the *first* stage runs, whichever
+        stage claimed it — a pipeline is one transformation of one input, and
+        a level a later stage needs as an axis has to be an axis by the time
+        the input enters the pipeline. That is what a picking pipeline relies
+        on: the component level is recognised by the stage that knows the
+        model, and the earlier filter and resampling stages see the
+        components as a dimension, which is the only form in which a
+        per-channel filter can select one of them.
+
+        First claim wins. Claiming is a structural statement about the level
+        — that it is one axis of the input — so two stages that both claim it
+        agree on what it is, and can differ only in how they would collapse
+        it; the first stage in the pipeline is then as good an arbiter as any,
+        and the only one that keeps the answer independent of the stages
+        downstream.
+        """
+        for atom in self:
+            gathered = atom.gather(mapping)
+            if gathered is not None:
+                return gathered
+        return None
+
+    @property
+    def merge(self):
+        """
+        The `merge` hook of the last stage declaring one, else ``None``.
+
+        The last stage is the one whose output leaves the pipeline, so it is
+        the one that knows what folding its results means — a pipeline
+        ending on a :class:`~xdas.atoms.Trigger` merges pick tables without
+        having to say so.
+        """
+        for atom in reversed(self):
+            if atom.merge is not None:
+                return atom.merge
         return None
 
     def fresh(self):

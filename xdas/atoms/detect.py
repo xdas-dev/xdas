@@ -143,6 +143,34 @@ class Trigger(Atom):
     0    ST01     P   1.0    0.8
     1    ST01     S   1.0    0.9
 
+    Picking a whole collection gives one table for the whole network. Each
+    leaf's picks are labelled with the tree path they were found under, as
+    they are found, and `merge` folds the tables on the way back up. Here the
+    ``station`` column has two sources — the tree key and the leaf's own
+    scalar coordinate — which agree, so it stays one column, leading:
+
+    >>> dc = xd.DataCollection(
+    ...     {
+    ...         "DBNFM": cft.assign_coords(station="DBNFM"),
+    ...         "LBFI": cft.assign_coords(station="LBFI"),
+    ...     },
+    ...     "station",
+    ... )
+    >>> xd.trigger(dc, thresh={"P": 0.5, "S": 0.5})
+      station phase  time  value
+    0   DBNFM     P   1.0    0.8
+    1   DBNFM     S   1.0    0.9
+    2    LBFI     P   1.0    0.8
+    3    LBFI     S   1.0    0.9
+
+    `merge=False` keeps the tree, each leaf already annotated:
+
+    >>> tree = xd.trigger(..., thresh={"P": 0.5, "S": 0.5})(dc, merge=False)
+    >>> tree["DBNFM"]
+      station phase  time  value
+    0   DBNFM     P   1.0    0.8
+    1   DBNFM     S   1.0    0.9
+
     """
 
     def __init__(self, thresh, dim="time", coords="auto"):
@@ -260,6 +288,33 @@ class Trigger(Atom):
         if independent:
             return [picks] + self.flush()
         return picks
+
+    def merge(self, results):
+        """
+        Fold the pick tables of a collection walk into one.
+
+        A plain concatenation is all this takes: the walk already gave each
+        table the columns of the tree path its leaf was reached by, so the
+        rows carry their identity and nothing has to be reconstructed here.
+
+        Parameters
+        ----------
+        results : sequence of DataFrame
+            The per-leaf pick tables, in walk order. Leaves that produced no
+            pick at all contribute nothing rather than an empty table.
+
+        Returns
+        -------
+        DataFrame
+            The concatenated table, reindexed from zero. Leaves disagreeing
+            on their columns — one carrying a scalar coordinate another does
+            not — union them, the missing cells left empty. A collection
+            without a single pick gives an empty table.
+
+        """
+        if not results:
+            return pd.DataFrame()
+        return pd.concat(results, ignore_index=True)
 
     def flush(self):
         """

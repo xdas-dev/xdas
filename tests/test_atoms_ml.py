@@ -36,6 +36,7 @@ purpose, so the pin is split in two, and the split is the point:
 """
 
 import numpy as np
+import numpy.testing as npt
 import obspy
 import pytest
 import torch
@@ -1286,3 +1287,286 @@ class TestFilterStageOrder:
         result = pipeline(da)
         assert result.dims == ("phase", "time")
         assert np.isfinite(result.values).any()
+
+
+def component_trace(index, start=0.0, n=24, step=0.01, sample_dim="time"):
+    """
+    One component's trace on a grid that declares its own sampling interval.
+
+    The leaf shape a collection of single-channel traces has, and what
+    :meth:`~xdas.atoms.Annotate.gather` collapses back into a component
+    dimension. *start* offsets the grid, which is how the sub-sample rounding
+    differences of real data are reproduced.
+    """
+    return xd.DataArray(
+        spikes(index + 1, n)[:, index],
+        {
+            sample_dim: {
+                "tie_indices": [0, n - 1],
+                "tie_values": [start, start + step * (n - 1)],
+                "sampling_interval": step,
+            }
+        },
+        (sample_dim,),
+    )
+
+
+def das_array(start=0.0, n=24, step=0.01, nchannels=3):
+    """One DAS acquisition: a section with a numeric spatial axis."""
+    return xd.DataArray(
+        np.tile(spikes(1, n), (1, nchannels)),
+        {
+            "time": {
+                "tie_indices": [0, n - 1],
+                "tie_values": [start, start + step * (n - 1)],
+                "sampling_interval": step,
+            },
+            "distance": 10.0 * np.arange(nchannels),
+        },
+        ("time", "distance"),
+    )
+
+
+def component_collection(keys, level="channel", starts=None, **kwargs):
+    """A collection level holding one single-component trace per key."""
+    starts = [0.0] * len(keys) if starts is None else starts
+    return xd.DataCollection(
+        {
+            key: component_trace(index, start=start, **kwargs)
+            for index, (key, start) in enumerate(zip(keys, starts))
+        },
+        level,
+    )
+
+
+def leaves(obj):
+    """Every data array of a walked collection, in walk order."""
+    if isinstance(obj, xd.DataArray):
+        return [obj]
+    values = obj.values() if obj.ismapping() else obj
+    return [leaf for value in values for leaf in leaves(value)]
+
+
+def assert_same_result(left, right):
+    """Assert two walked results hold the same arrays, dimension names included."""
+    left, right = leaves(left), leaves(right)
+    assert len(left) == len(right)
+    for one, other in zip(left, right):
+        assert one.dims == other.dims
+        npt.assert_allclose(one.values, other.values)
+
+
+class TestAnnotateGathersItsComponentLevel:
+    """
+    W5: a collection keeping one leaf per channel is one input, not three.
+
+    `xd.pick(dc, model)` must not require a prior `xd.stack`, so `Annotate`
+    implements the `gather` hook: the atom that knows the model's
+    `component_order` is the one that knows which leaves group together.
+    """
+
+    def test_a_channel_level_becomes_the_component_dimension(self):
+        dc = component_collection(["SHZ", "SHN", "SHE"])
+        result = Annotate(annotate_model("original"), device="cpu")(dc)
+        assert isinstance(result, xd.DataArray)
+        assert result.dims == ("phase", "time")
+        assert [slot_of(result, index) for index in range(3)] == [2, 1, 0]
+
+    @pytest.mark.parametrize("level", ["channel", "component"])
+    def test_every_default_candidate_name_is_gathered(self, level):
+        dc = component_collection(["SHZ", "SHN", "SHE"], level=level)
+        result = Annotate(annotate_model(), device="cpu")(dc)
+        assert result.dims == ("phase", "time")
+
+    def test_an_obs_station_gathers_despite_its_hydrophone(self):
+        # `BDH` is a pressure instrument, so the four keys share their band
+        # code and nothing more: requiring a common two-character stem would
+        # refuse exactly the layout the `Z12H` weights exist for.
+        dc = component_collection(["BHZ", "BH1", "BH2", "BDH"])
+        result = Annotate(annotate_model("obs"), device="cpu")(dc)
+        assert result.dims == ("phase", "time")
+        assert [slot_of(result, index) for index in range(4)] == [0, 1, 2, 3]
+
+    def test_a_level_named_otherwise_is_left_alone(self):
+        # the keys resolve, the name is not a candidate: three stations whose
+        # codes happen to end in a component letter stay three stations
+        dc = component_collection(["ABZ", "ABN", "ABE"], level="station")
+        result = Annotate(annotate_model(), device="cpu")(dc)
+        assert isinstance(result, xd.DataCollection)
+        assert list(result) == ["ABZ", "ABN", "ABE"]
+        assert all(leaf.dims == ("phase", "time") for leaf in leaves(result))
+
+    def test_keys_naming_no_component_map_over_the_leaves(self):
+        # several DAS formats call their spatial axis `channel`; such a level
+        # must walk straight past the gather rather than trip over it
+        dc = component_collection(["0", "1", "2"])
+        result = Annotate(annotate_model(), device="cpu")(dc)
+        assert isinstance(result, xd.DataCollection)
+        assert len(leaves(result)) == 3
+
+    def test_station_codes_ending_in_a_horizontal_letter_do_not_resolve(self):
+        # the whole reason the key rule is not W2's last-letter matcher: the
+        # `1` <-> `N` and `2` <-> `E` flexibility makes `STA1`/`STA2` a clean
+        # pair of horizontals, and folding two stations into one instrument
+        # would be silent
+        dc = component_collection(["STA1", "STA2"])
+        result = Annotate(annotate_model("diting"), device="cpu")(dc)
+        assert isinstance(result, xd.DataCollection)
+        assert len(leaves(result)) == 2
+
+    def test_partially_resolving_keys_raise(self):
+        dc = component_collection(["SHZ", "SHN", "foo"])
+        with pytest.raises(ValueError, match="and other things"):
+            Annotate(annotate_model(), device="cpu")(dc)
+
+    def test_repeated_orientations_raise(self):
+        dc = component_collection(["SHZ", "SHE", "HHZ"])
+        with pytest.raises(ValueError, match="repeats component orientations"):
+            Annotate(annotate_model(), device="cpu")(dc)
+
+    def test_keys_differing_by_more_than_their_orientation_raise(self):
+        dc = component_collection(["SHZ", "HHN", "HHE"])
+        with pytest.raises(ValueError, match="does not name one instrument"):
+            Annotate(annotate_model(), device="cpu")(dc)
+
+    def test_a_lone_orientation_letter_is_a_channel_code(self):
+        dc = component_collection(["Z", "N", "E"])
+        result = Annotate(annotate_model("original"), device="cpu")(dc)
+        assert [slot_of(result, index) for index in range(3)] == [2, 1, 0]
+
+    def test_mixing_lone_letters_with_full_codes_raises(self):
+        dc = component_collection(["Z", "SHN", "SHE"])
+        with pytest.raises(ValueError, match="does not name one instrument"):
+            Annotate(annotate_model(), device="cpu")(dc)
+
+    def test_an_empty_level_maps_over_its_nothing(self):
+        # `query` and `sel` can leave a level with no keys behind; there is
+        # nothing to identify as components, so it is not a component level
+        result = Annotate(annotate_model(), device="cpu")(
+            xd.DataCollection({}, "channel")
+        )
+        assert isinstance(result, xd.DataCollection)
+        assert leaves(result) == []
+
+    def test_components_false_restores_the_leaf_by_leaf_walk(self):
+        dc = component_collection(["SHZ", "SHN", "SHE"])
+        result = Annotate(annotate_model(), components=False, device="cpu")(dc)
+        assert isinstance(result, xd.DataCollection)
+        assert len(leaves(result)) == 3
+
+    def test_the_candidate_names_are_a_default_not_a_rule(self):
+        dc = component_collection(["SHZ", "SHN", "SHE"], level="orientation")
+        atom = Annotate(annotate_model(), components="orientation", device="cpu")
+        assert atom(dc).dims == ("phase", "time")
+
+    def test_an_explicitly_named_level_naming_no_component_raises(self):
+        # asking for a level by name and getting nothing back is an error,
+        # where the same keys under a *default* candidate name merely map
+        dc = component_collection(["0", "1", "2"], level="orientation")
+        atom = Annotate(annotate_model(), components="orientation", device="cpu")
+        with pytest.raises(ValueError, match="could not identify the component level"):
+            atom(dc)
+
+    def test_the_snapping_tolerance_reaches_stack(self):
+        # a thousandth of a sample apart: one grid, two roundings of it
+        dc = component_collection(["SHZ", "SHN", "SHE"], starts=[0.0, 1e-5, 0.0])
+        assert Annotate(annotate_model(), device="cpu")(dc).dims == ("phase", "time")
+        strict = Annotate(annotate_model(), tolerance=False, device="cpu")
+        with pytest.raises(ValueError, match="coordinate 'time' differs"):
+            strict(dc)
+
+    def test_a_das_collection_walks_past_the_gather_untouched(self):
+        acquisitions = [das_array(start) for start in (0.0, 100.0)]
+        dc = xd.DataCollection(
+            {
+                "N1": xd.DataCollection(
+                    {"C1": xd.DataCollection(acquisitions, "acquisition")}, "cable"
+                )
+            },
+            "node",
+        )
+        result = Annotate(annotate_model(), device="cpu")(dc)
+        assert result.name == "node"
+        assert result["N1"].name == "cable"
+        assert all(
+            leaf.dims == ("distance", "phase", "time") for leaf in leaves(result)
+        )
+
+    def test_a_das_cable_whose_spatial_level_is_named_channel_maps(self):
+        trace = trace_array(n=24)
+        dc = xd.DataCollection(
+            {"C1": xd.DataCollection({str(i): trace for i in range(3)}, "channel")},
+            "cable",
+        )
+        result = Annotate(annotate_model(), device="cpu")(dc)
+        assert result["C1"].name == "channel"
+        assert len(leaves(result)) == 3
+
+
+class TestGatherIsAHookOnTheWalk:
+    """W5: `gather` is consulted by the walk, and pipelines delegate it."""
+
+    def test_an_atom_that_declares_no_gather_maps_over_the_leaves(self):
+        dc = component_collection(["SHZ", "SHN", "SHE"])
+        result = Filter((0.5, None), dim="time")(dc)
+        assert isinstance(result, xd.DataCollection)
+        assert list(result) == ["SHZ", "SHN", "SHE"]
+
+    def test_a_pipeline_delegates_to_the_stage_that_knows_the_model(self):
+        dc = component_collection(["SHZ", "SHN", "SHE"])
+        pipeline = Filter((0.5, None), dim="time") >> Annotate(
+            annotate_model(), device="cpu"
+        )
+        assert pipeline(dc).dims == ("phase", "time")
+
+    def test_a_pipeline_of_unclaiming_stages_gathers_nothing(self):
+        dc = component_collection(["SHZ", "SHN", "SHE"])
+        pipeline = Filter((0.5, None), dim="time") >> Filter((None, 10.0), dim="time")
+        assert len(leaves(pipeline(dc))) == 3
+
+    def test_the_gather_happens_before_the_first_stage(self):
+        # W3's per-channel filter selects `??H` out of `Z12H`, which it can
+        # only do once the channels are a dimension: if the gather ran stage
+        # by stage the filter would see three separate one-channel leaves and
+        # match nothing at all
+        model = annotate_model("obs")
+        dc = component_collection(["BHZ", "BH1", "BH2", "BDH"], n=64)
+        filtered = (_model_filter(model) >> Annotate(model, device="cpu"))(dc)
+        plain = Annotate(model, device="cpu")(dc)
+        assert filtered.dims == plain.dims == ("phase", "time")
+        assert not np.allclose(filtered.values, plain.values)
+
+
+class TestPreStackingAgrees:
+    """
+    W5: both input shapes are accepted, and they agree.
+
+    `annotate(dc)` equals `annotate(xd.stack(dc, "channel"))` equals
+    `annotate(xd.stack(dc, "channel", dim="component"))`: the gather turns a
+    channel *level* into a channel *dimension* and does nothing more, so a
+    pre-stacked input simply enters the pipeline one step further along.
+    """
+
+    def station(self):
+        return component_collection(["SHZ", "SHN", "SHE"])
+
+    def tree(self):
+        return xd.DataCollection(
+            {"IA": xd.DataCollection({"ABC": self.station()}, "station")}, "network"
+        )
+
+    @pytest.mark.parametrize("shape", ["station", "tree"])
+    @pytest.mark.parametrize("dim", [None, "component"])
+    def test_stacking_first_gives_the_same_answer(self, shape, dim):
+        dc = getattr(self, shape)()
+        gathered = Annotate(annotate_model("original"), device="cpu")(dc)
+        stacked = Annotate(annotate_model("original"), device="cpu")(
+            xd.stack(dc, "channel", dim=dim)
+        )
+        assert_same_result(gathered, stacked)
+
+    def test_the_gather_is_a_no_op_on_a_collection_of_stacked_arrays(self):
+        dc = xd.DataCollection({"ABC": xd.stack(self.station(), "channel")}, "station")
+        result = Annotate(annotate_model(), device="cpu")(dc)
+        assert list(result) == ["ABC"]
+        assert result["ABC"].dims == ("phase", "time")

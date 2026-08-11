@@ -10,7 +10,7 @@ from fnmatch import fnmatch
 
 import numpy as np
 
-from ..core import DataArray, concat
+from ..core import DataArray, concat, stack
 from .core import Atom, Sequential, State, atomized
 from .tasks import Filter
 
@@ -56,6 +56,20 @@ ANNOTATE_DEFAULTS = {
 #: does not say, and the order :class:`~xdas.atoms.Filter` defaults to. The two
 #: agree, which is what makes a model-declared filter reproducible exactly.
 OBSPY_CORNERS = 4
+
+#: Collection level names :meth:`Annotate.gather` will consider collapsing into
+#: a component dimension. A *default*, not a rule: ``components="whatever"``
+#: replaces the list, exactly as SeisBench's ``guess_channel_coord_name`` walks
+#: a candidate list on the input side. Our engines name the level ``channel``,
+#: but nothing in the implementation may assume the literal.
+COMPONENT_LEVELS = ("channel", "component")
+
+#: Lengths a collection key may have and still be read as a channel code: three
+#: for a SEED code (band, instrument, orientation) and one for a bare
+#: orientation letter. This is what keeps the gather off a station level, since
+#: the last-letter matcher alone resolves ``STA1``/``STA2`` cleanly against
+#: ``ZNE`` weights — see :func:`component_keys`.
+CHANNEL_CODE_LENGTHS = (1, 3)
 
 
 def annotate_arg(model, argdict, key):
@@ -213,6 +227,137 @@ def component_slots(da, dim, order, flexible=True):
     return slots
 
 
+def is_channel_code(key):
+    """
+    Whether *key* has the shape of a channel code.
+
+    True for a three-character SEED code (band, instrument, orientation) and
+    for a bare orientation letter, false for anything longer, for a purely
+    numeric key, and for a non-string one.
+
+    Parameters
+    ----------
+    key : object
+        A key of a collection level.
+
+    Returns
+    -------
+    bool
+        Whether *key* may be read as a channel code.
+
+    Examples
+    --------
+    >>> from xdas.atoms.ml import is_channel_code
+    >>> [is_channel_code(key) for key in ("SHZ", "Z", "STA1", "S-Z", "2", 2)]
+    [True, True, False, False, False, False]
+    """
+    return (
+        isinstance(key, str)
+        and len(key) in CHANNEL_CODE_LENGTHS
+        and key.isalnum()
+        and not key.isdigit()
+    )
+
+
+def component_keys(keys, order, flexible=True, level=None):
+    """
+    Resolve the keys of a collection level into distinct model input slots.
+
+    The key rule of :meth:`Annotate.gather`, and deliberately stricter than
+    :func:`match_components`, which is what recognises a component
+    *dimension*. The flexible horizontal matching makes any label ending in
+    ``1`` or ``2`` a horizontal, so a station level keyed ``STA1``/``STA2``
+    resolves cleanly against ``ZNE`` weights. On a dimension that is harmless,
+    since the duplicate and count checks catch it; on a tree *level* it would
+    silently fold two stations into one instrument. So a key must look like a
+    whole channel code — :func:`is_channel_code` — and the keys must agree on
+    their length and on their band code, which is the character before the
+    instrument code. Only the instrument code may vary, because it does: an
+    OBS station is ``BHZ``/``BH1``/``BH2``/``BDH``, whose hydrophone is a
+    pressure instrument and whose stem is therefore *not* common.
+
+    Three outcomes, and the distinction between the last two is the point:
+
+    - every key resolves to a distinct slot: the level is the component
+      dimension, and the slots are returned;
+    - no key resolves: the level is not a component level despite its name,
+      and ``None`` is returned so the caller walks its leaves — several DAS
+      formats call their spatial axis ``channel``;
+    - some keys resolve: someone meant components and the data disagrees, so
+      this raises, naming the conflict.
+
+    Parameters
+    ----------
+    keys : iterable
+        The keys of the collection level.
+    order : str
+        The model's ``component_order``, e.g. ``"ENZ"`` or ``"Z12H"``.
+    flexible : bool, optional
+        Whether ``1``/``N`` and ``2``/``E`` are interchangeable, as SeisBench's
+        ``flexible_horizontal_components`` makes them by default.
+    level : str, optional
+        Name of the level, used in the error messages only.
+
+    Returns
+    -------
+    list of int or None
+        One slot index per key, or ``None`` when no key names a component.
+
+    Raises
+    ------
+    ValueError
+        If only some of the keys name a component, if two of them name the
+        same one, or if they do not agree on their length and band code.
+
+    Examples
+    --------
+    >>> from xdas.atoms.ml import component_keys
+
+    A station's three components resolve, in the model's own order:
+
+    >>> component_keys(["SHZ", "SHN", "SHE"], "ENZ")
+    [2, 1, 0]
+
+    A DAS cable whose spatial level happens to be called ``channel`` does not,
+    which is what sends the caller back to walking the leaves:
+
+    >>> component_keys(["0", "1", "2"], "ZNE") is None
+    True
+    """
+    keys = list(keys)
+    resolved = {}
+    unresolved = []
+    for key in keys:
+        slots = (
+            match_components([key], order, flexible) if is_channel_code(key) else None
+        )
+        if slots is None:
+            unresolved.append(key)
+        else:
+            resolved[key] = slots[0]
+    where = "the level" if level is None else f"the {level!r} level"
+    if not resolved:
+        return None
+    if unresolved:
+        raise ValueError(
+            f"{where} names components ({sorted(resolved)}) and other things "
+            f"({unresolved}) at once: it cannot be collapsed into a component "
+            f"dimension of {order!r}, split it or rename it"
+        )
+    slots = list(resolved.values())
+    if len(set(slots)) != len(slots):
+        raise ValueError(
+            f"{where} repeats component orientations ({keys}): it holds "
+            "several instruments, split them first"
+        )
+    if len({len(key) for key in keys}) > 1 or len({key[:-1][:1] for key in keys}) > 1:
+        raise ValueError(
+            f"{where} does not name one instrument ({keys}): its keys differ "
+            "by more than their orientation, split them first"
+        )
+    return slots
+
+
 def resolve_component_dim(da, sample_dim, order, components=None, flexible=True):
     """
     Find the component dimension of *da* and the slots its labels name.
@@ -305,6 +450,10 @@ class Annotate(Atom):
         the model's ``component_order``. ``False`` disables detection, which is
         the escape hatch when an identifier axis carries labels that could
         collide with component letters.
+
+        On a collection, this also names the *level* to gather (see
+        :meth:`gather`), overriding the :data:`COMPONENT_LEVELS` candidates;
+        ``False`` disables the gather along with the detection.
     component_strategy : str, optional
         How the model's input slots are filled from the data:
 
@@ -326,6 +475,12 @@ class Annotate(Atom):
         their label names and the remaining slots are zeroed.
     device : str or torch.device, optional
         Torch device. Defaults to CUDA if available, else CPU.
+    tolerance : scalar, None or False, optional
+        Grid-snapping budget forwarded to :func:`xdas.stack` when a component
+        level is gathered (see :meth:`gather`). ``None`` (default) spends a
+        hundredth of a sample, which is what lets three components whose start
+        times were rounded a nanosecond apart stack; ``False`` restores strict
+        equality.
     **annotate_kwargs
         SeisBench annotate arguments (``overlap``, ``stacking``, ``blinding``,
         ...) overriding what the weight set declares in ``default_args``.
@@ -369,6 +524,14 @@ class Annotate(Atom):
     array(['P', 'S'], dtype='<U1')
     >>> result.sizes["time"] == da.sizes["time"]
     True
+
+    Given a collection whose ``channel`` level holds one component per key,
+    the atom takes that level as its component dimension rather than
+    annotating each component on its own (see :meth:`gather`):
+
+    >>> traces = {code: da.isel(distance=0) for code in ("SHZ", "SHN", "SHE")}
+    >>> atom(xd.DataCollection(traces, "channel")).dims
+    ('phase', 'time')
     """
 
     def __init__(
@@ -378,6 +541,7 @@ class Annotate(Atom):
         components=None,
         component_strategy="auto",
         device=None,
+        tolerance=None,
         **annotate_kwargs,
     ):
         super().__init__()
@@ -396,6 +560,7 @@ class Annotate(Atom):
         self.dim = dim
         self.components = components
         self.component_strategy = component_strategy
+        self.tolerance = tolerance
         self.argdict = dict(model.default_args) | annotate_kwargs
         if self.stacking not in ("avg", "max"):
             raise ValueError(f"stacking must be 'avg' or 'max', got {self.stacking!r}")
@@ -460,6 +625,72 @@ class Annotate(Atom):
     def fill(self):
         """Neutral element of the stacking rule, used to reset freed samples."""
         return 0.0 if self.stacking == "avg" else -np.inf
+
+    def gather(self, mapping):
+        """
+        Collapse a component level of a collection into a component dimension.
+
+        So that annotating a collection needs no prior :func:`xdas.stack`: an
+        ObsPy-style tree keeps one leaf per channel, but three channels of one
+        instrument are one input to the model, not three. What counts as a
+        component is a property of the *model* — ``Z12H`` and ``ENZ`` disagree
+        about which channels group together — which is why the reader cannot
+        do this and this atom can.
+
+        The gather is deliberately conservative, because folding a station
+        level into a component axis would silently destroy the distinction
+        between stations. It fires only when **both** the level's name is one
+        that *components* accepts (:data:`COMPONENT_LEVELS` by default) and
+        its keys resolve to distinct components under
+        :func:`component_keys`. A level whose keys resolve but whose name is
+        not a candidate is left alone; a level whose name is a candidate but
+        whose keys resolve to nothing is left alone too, which is what lets a
+        DAS collection whose spatial level is called ``channel`` walk
+        straight past. Only a level that is clearly component-ish and
+        malformed raises.
+
+        This is the one place a *name* is consulted: detection on the array
+        side is purely label-based. The asymmetry is deliberate — a
+        mis-detected dimension is caught at once by the count and letter
+        checks, a mis-collapsed level is not.
+
+        Parameters
+        ----------
+        mapping : DataMapping
+            The collection level about to be walked.
+
+        Returns
+        -------
+        DataArray, DataCollection or None
+            The level collapsed onto a dimension named after it, or ``None``
+            to walk its leaves.
+        """
+        if self.components is False:
+            return None
+        explicit = isinstance(self.components, str)
+        candidates = (self.components,) if explicit else COMPONENT_LEVELS
+        level = getattr(mapping, "name", None)
+        if level not in candidates:
+            return None
+        keys = list(mapping)
+        slots = component_keys(
+            keys,
+            self.model.component_order,
+            self._annotate_arg("flexible_horizontal_components"),
+            level,
+        )
+        if slots is None:
+            if explicit:
+                raise ValueError(
+                    f"could not identify the component level of the collection: "
+                    f"tried {list(candidates)}, and the keys of {level!r} "
+                    f"({keys}) name no component of "
+                    f"{self.model.component_order!r}. Please provide it "
+                    "explicitly with `components=`, or pass `components=False` "
+                    "to walk the collection leaf by leaf"
+                )
+            return None
+        return stack(mapping, level, tolerance=self.tolerance)
 
     def initialize(self, da, chunk_dim=None, **flags):
         """Resolve the dimensions and allocate the sliding-window buffers."""
