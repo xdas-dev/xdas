@@ -30,6 +30,7 @@ __all__ = [
     "MLPicker",
     "Partial",
     "Polyphase",
+    "Rechunk",
     "Resample",
     "ResamplePoly",
     "SOSFilter",
@@ -44,7 +45,7 @@ __all__ = [
 
 from ..trigger import Trigger
 from .core import Atom, Partial, Sequential, State, as_function, atomized, compose
-from .kernel import DownSample, LFilter, Polyphase, SOSFilter, UpSample
+from .kernel import DownSample, LFilter, Polyphase, Rechunk, SOSFilter, UpSample
 from .ml import MLPicker
 from .signal import FIRFilter, IIRFilter, ResamplePoly
 from .tasks import Decimate, Differentiate, Filter, Integrate, Resample

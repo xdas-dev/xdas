@@ -327,12 +327,14 @@ class TestDataFrameWriter:
         assert result.equals(expected)
 
     def test_write_empty_dataframe(self, tmp_path):
+        # Empty chunks are accepted and silently dropped (many flushes
+        # produce nothing): no file is created for them.
         dw = xp.DataFrameWriter(tmp_path / "output.csv")
         expected = pd.DataFrame()
         dw.submit(expected)
         result = dw.result()
         assert result.equals(expected)
-        assert Path(dw.path).exists()
+        assert not Path(dw.path).exists()
 
     def test_with_existing_file(self, tmp_path):
         dw1 = xp.DataFrameWriter(tmp_path / "output.csv")

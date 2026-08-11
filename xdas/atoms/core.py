@@ -10,13 +10,85 @@ function form of an atom class, and the :func:`compose` primitive behind the
 import importlib
 import inspect
 import re
+import warnings
 from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
 import numpy as np
 
-from ..core import DataArray, DataCollection, open_datacollection
+from ..coordinates import AxisCoordinate
+from ..coordinates.core import parse_scalar_delta
+from ..core import (
+    DataArray,
+    DataCollection,
+    DataMapping,
+    DataSequence,
+    concat,
+    open_datacollection,
+    split,
+)
+
+
+def _announce_splits(x, dim, count):
+    """
+    Warn that a source will be processed as several runs.
+
+    Splitting on discontinuities must not be silent: each reset restarts the
+    warm-up of every stateful stage, so the user should know how often it
+    happens. The message names the source by its start so a collection walk
+    reports every leaf rather than being deduplicated to the first.
+    """
+    start = x.coords[dim].start if dim in getattr(x, "coords", {}) else "?"
+    plural = "discontinuities" if count > 1 else "discontinuity"
+    warnings.warn(
+        f"source starting at {start} has {count} {plural} along {dim!r}; "
+        "state is flushed and reset at each",
+        UserWarning,
+        stacklevel=3,
+    )
+
+
+def _aschunks(value):
+    """
+    Normalize an atom output into a list of chunks.
+
+    Atoms follow the transducer contract: ``call()`` maps one input chunk to
+    zero or more output chunks. A bare object is one chunk, ``None`` is zero
+    chunks, and a list or :class:`DataSequence` is taken chunk by chunk. Empty
+    chunks are dropped: they carry no information and their degenerate
+    coordinates would poison the initialization of downstream atoms.
+    """
+    if value is None:
+        return []
+    if not isinstance(value, (list, DataSequence)):
+        value = [value]
+    return [
+        chunk for chunk in value if not (isinstance(chunk, DataArray) and chunk.empty)
+    ]
+
+
+def _flush_through(atoms, **flags):
+    """
+    Codec-drain a linear chain of atoms.
+
+    Flush the first atom and push its tail through the remaining atoms, then
+    flush the second one, and so on. Tails flow downstream as ordinary data:
+    each downstream atom folds them into its own state before being flushed
+    itself.
+    """
+    atoms = list(atoms)
+    chunks = []
+    for index, atom in enumerate(atoms):
+        tail = atom.flush()
+        for downstream in atoms[index + 1 :]:
+            tail = [
+                chunk
+                for out in (downstream(x, **flags) for x in tail)
+                for chunk in _aschunks(out)
+            ]
+        chunks.extend(tail)
+    return chunks
 
 
 class State:
@@ -100,6 +172,10 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
             the state of nested atoms.
         initialized: bool
             Wether the atom has been initialized or not.
+        on_discontinuity: str
+            Seam policy for chunked processing: ``"reset"`` (default) flushes
+            and starts a new run at every gap or rate change, ``"raise"``
+            refuses discontinuous input. Overlaps always raise.
 
     Methods
     -------
@@ -108,18 +184,26 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
         initialize_from_state()
             Initializes the atom from its minimal state.
         call(x, **flags)
-            Performs the main processing logic of the atom.
+            Performs the main processing logic of the atom. May return zero
+            or more output chunks (the transducer contract).
+        flush()
+            Drains buffered samples at the end of a run.
         reset()
             Resets the atom to its initial state.
         fresh()
             Returns a stateless clone sharing the configuration.
+        iter_chunks(source)
+            Streams a chunk source through the atom, seams and flush included.
 
     """
+
+    on_discontinuity = "reset"
 
     def __init__(self):
         object.__setattr__(self, "_config", {})
         object.__setattr__(self, "_state", {})
         object.__setattr__(self, "_atoms", {})
+        object.__setattr__(self, "_seam", None)
 
     def __eq__(self, other):
         return self is other
@@ -178,15 +262,264 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
         return NotImplemented
 
     def __call__(self, x, **flags):
-        """Process input data, initializing state if needed and resetting after final chunk."""
+        """
+        Process input data, returning zero or more output chunks.
+
+        Eager calls (no ``chunk_dim`` flag) auto-split gappy input into runs,
+        process each run with a fresh state, flush the tails and re-join the
+        outputs into a single object with gap-aware coordinates when possible
+        (falling back to a :class:`DataSequence`). Chunked calls (``chunk_dim``
+        given) carry state across continuous chunks and handle seams: on a gap
+        or a rate change the atom flushes, resets and starts a new run (see
+        `on_discontinuity`); on an overlap it raises. Sequence collections are
+        folded element by element through the same seam-aware machinery, so
+        resets emerge from the coordinates; mapping collections map over their
+        leaves.
+
+        A single output chunk is returned bare; otherwise a
+        :class:`DataSequence` of chunks is returned.
+        """
         chunk_dim = flags.get("chunk_dim", None)
         self._check_chunk_dim(x, chunk_dim)
-        if not self.initialized or chunk_dim is None:
-            self.initialize(x, **flags)
-        y = self.call(x, **flags)
-        if not chunk_dim:
+        if isinstance(x, DataMapping):
+            if chunk_dim is not None:
+                raise NotImplementedError(
+                    "chunked processing of mapping collections is not supported: "
+                    "process each leaf with its own atom instance"
+                )
+            return DataCollection(
+                {key: self(value, **flags) for key, value in x.items()},
+                getattr(x, "name", None),
+            )
+        if isinstance(x, DataSequence):
+            return self._fold(x, flags)
+        if chunk_dim is None:
+            dim = self._resolve_dim(x)
+            runs = self._split_runs(x, dim)
+            if len(runs) > 1:
+                _announce_splits(x, dim, len(runs) - 1)
+            chunks = []
+            for run in runs:
+                self.initialize(run, **flags)
+                chunks += _aschunks(self.call(run, **flags))
+                chunks += self.flush()
             self.reset()
-        return y
+            return self._join(chunks, dim)
+        else:
+            chunks = []
+            for run in self._split_runs(x, chunk_dim):
+                chunks += self._call_run(run, flags)
+            return self._join(chunks, None)
+
+    def _call_run(self, x, flags):
+        """Seam-aware chunked call on one internally-regular chunk."""
+        if isinstance(x, DataArray) and x.empty:
+            return []
+        chunk_dim = flags["chunk_dim"]
+        chunks = []
+        stateful = self._live_state()
+        if stateful:
+            info = self._seam_info(x, chunk_dim)
+            verdict = self._judge_seam(info)
+            if verdict in ("gap", "rate"):
+                match self.on_discontinuity:
+                    case "reset":
+                        chunks += self.flush()
+                        self.reset()
+                    case "raise":
+                        raise ValueError(
+                            f"the incoming chunk is discontinuous with the "
+                            f"stream processed so far ({verdict} detected "
+                            f"along {chunk_dim!r}) and `on_discontinuity` is "
+                            "set to 'raise'"
+                        )
+                    case other:
+                        raise ValueError(
+                            "`on_discontinuity` must be 'reset' or 'raise', "
+                            f"got {other!r}"
+                        )
+            elif verdict == "overlap":
+                raise ValueError(
+                    f"the incoming chunk overlaps the stream processed so far "
+                    f"(the {chunk_dim!r} coordinate goes backward across the "
+                    "seam); sort or deduplicate the input, or call `reset()` "
+                    "to explicitly start a new run"
+                )
+        if not self.initialized:
+            self.initialize(x, **flags)
+        chunks += _aschunks(self.call(x, **flags))
+        if stateful and info is not None:
+            if info["delta"] is None and verdict == "continuous":
+                info["delta"] = self._seam["delta"]
+            object.__setattr__(self, "_seam", info)
+        return chunks
+
+    def _live_state(self):
+        """Return ``True`` if any state entry (own or nested) holds a live value."""
+
+        def live(state):
+            return any(
+                live(value) if isinstance(value, dict) else value is not None
+                for value in state.values()
+            )
+
+        return live(self.state)
+
+    def _resolve_dim(self, x):
+        """Resolve the dimension this atom operates along on *x*, or ``None``."""
+        dim = getattr(self, "dim", None)
+        if not isinstance(x, DataArray) or not isinstance(dim, str):
+            return None
+        if dim == "first":
+            dim = x.dims[0]
+        elif dim == "last":
+            dim = x.dims[-1]
+        return dim if dim in x.coords else None
+
+    def _split_runs(self, x, dim):
+        """Split *x* at the discontinuities of its *dim* coordinate."""
+        if not isinstance(x, DataArray) or dim not in getattr(x, "coords", {}):
+            return [x]
+        coord = x.coords[dim]
+        if not isinstance(coord, AxisCoordinate) or not coord.isregular():
+            return [x]
+        indices = coord.get_split_indices(
+            "discontinuities", getattr(coord, "tolerance", None)
+        )
+        if not indices.size:
+            return [x]
+        return list(split(x, indices, dim))
+
+    def _seam_info(self, x, chunk_dim):
+        """Extract the seam-judgment metadata of a chunk, or ``None``."""
+        if not isinstance(x, DataArray) or chunk_dim not in x.coords:
+            return None
+        coord = x.coords[chunk_dim]
+        if not isinstance(coord, AxisCoordinate) or coord.empty:
+            return None
+        return {
+            "chunk_dim": chunk_dim,
+            "start": coord.start,
+            "end": coord.end,
+            "delta": coord.get_sampling_interval(cast=False),
+            "tolerance": parse_scalar_delta(
+                getattr(coord, "tolerance", None), coord.dtype, default_zero=True
+            ),
+            "size": len(coord),
+        }
+
+    def _judge_seam(self, info):
+        """
+        Compare an incoming chunk with the expected continuation of the stream.
+
+        Returns ``None`` when there is nothing to judge against (first chunk,
+        non-array chunk), else one of ``"continuous"``, ``"gap"``, ``"rate"``
+        or ``"overlap"``. Both O(1) checks of the regularity contract happen
+        here: the sampling interval must match within tolerance, and the chunk
+        must start one interval after the previous end within the jitter
+        budget.
+        """
+        seam = self._seam
+        if info is None or seam is None or seam["chunk_dim"] != info["chunk_dim"]:
+            return None
+        for entry in (seam, info):
+            if entry["delta"] is None and entry["size"] > 1:
+                dim = info["chunk_dim"]
+                raise ValueError(
+                    f"chunked processing along {dim!r} requires a regular "
+                    "coordinate (one that declares its `sampling_interval`); "
+                    "regularize it first, e.g. `da[dim] = da[dim].to_regular()` "
+                    "or open the files with a tolerance"
+                )
+        if seam["delta"] is None:
+            return None
+        tolerance = max(seam["tolerance"], info["tolerance"])
+        if info["delta"] is not None and np.abs(info["delta"] - seam["delta"]) > (
+            tolerance
+        ):
+            return "rate"
+        jump = info["start"] - (seam["end"] + seam["delta"])
+        if np.abs(jump) <= tolerance:
+            return "continuous"
+        return "gap" if jump > 0 else "overlap"
+
+    def _fold(self, x, flags):
+        """
+        Fold a sequence collection through the same seam-aware call.
+
+        A collection is multiple chunks delivered at once: each element goes
+        through the chunked path along the atom's dimension, so state carries
+        across continuous elements and resets emerge from the coordinates.
+        """
+        name = getattr(x, "name", None)
+        chunk_dim = flags.get("chunk_dim", None)
+        if chunk_dim is None:
+            first = next((el for el in x if isinstance(el, DataArray)), None)
+            dim = self._resolve_dim(first)
+            if dim is None:
+                return DataCollection([self(el, **flags) for el in x], name)
+            flags = flags | {"chunk_dim": dim}
+            chunks = []
+            for el in x:
+                chunks += _aschunks(self(el, **flags))
+            chunks += self.flush()
+            self.reset()
+            return DataCollection(chunks, name)
+        chunks = []
+        for el in x:
+            chunks += _aschunks(self(el, **flags))
+        return DataCollection(chunks, name)
+
+    def _join(self, chunks, dim):
+        """Re-join output chunks: one chunk bare, else gap-aware concat or sequence."""
+        if len(chunks) == 1:
+            return chunks[0]
+        if dim is not None and chunks and all(isinstance(c, DataArray) for c in chunks):
+            try:
+                return concat(chunks, dim)
+            except (TypeError, ValueError):
+                return DataCollection(chunks)
+        return DataCollection(chunks)
+
+    def flush(self):
+        """
+        Drain buffered samples, returning zero or more output chunks.
+
+        Stateful atoms that hold samples back waiting for the next chunk
+        override this to emit what remains computable at the end of a run.
+        Called at the end of the stream, at every seam, and at the end of
+        every eager call. Default is a no-op.
+        """
+        return []
+
+    def iter_chunks(self, source, chunk_dim=None):
+        """
+        Iterate over the output chunks of this atom applied to a chunk source.
+
+        The manual chunk-loop surface: wraps seam handling, buffering and the
+        final flush into a plain generator, so
+        ``for out in atom.iter_chunks(source): ...`` is a complete streaming
+        loop. The serial executor is literally this generator plus a writer.
+
+        Parameters
+        ----------
+        source : iterable of DataArray
+            The chunks to process. Any iterable works; a loader exposing a
+            ``chunk_dim`` attribute provides the chunked dimension.
+        chunk_dim : str, optional
+            The dimension along which chunks follow each other. Defaults to
+            the source's ``chunk_dim`` attribute, else ``"time"``.
+
+        Yields
+        ------
+        Zero or more output chunks per input chunk, then the flushed tail.
+        """
+        if chunk_dim is None:
+            chunk_dim = getattr(source, "chunk_dim", "time")
+        for chunk in source:
+            yield from _aschunks(self(chunk, chunk_dim=chunk_dim))
+        yield from self.flush()
+        self.reset()
 
     def _check_chunk_dim(self, x, chunk_dim):
         """Raise if this atom cannot process *x* chunked along *chunk_dim*."""
@@ -269,6 +602,7 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
 
     def reset(self):
         """Reset all state entries to ``...`` (uninitialised sentinel)."""
+        object.__setattr__(self, "_seam", None)
         for key in self._state:
             setattr(self, key, State(...))
         for filter in self._atoms.values():
@@ -287,7 +621,7 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
         clone = type(self).__new__(type(self))
         Atom.__init__(clone)
         for name, value in vars(self).items():
-            if name in ("_config", "_state", "_atoms"):
+            if name in ("_config", "_state", "_atoms", "_seam"):
                 continue
             if name in self._atoms:
                 setattr(clone, name, self._atoms[name].fresh())
@@ -420,10 +754,39 @@ class Sequential(Atom, list):
         self.name = name
 
     def call(self, x: Any, **flags) -> Any:
-        """Pass *x* through each atom in order and return the final result."""
+        """
+        Pass *x* through each atom in order and return the output chunks.
+
+        Each stage may emit zero or more chunks per input chunk (seam tails,
+        rechunking, reductions); the streams are folded stage by stage, so
+        cadence mismatches are absorbed inside the pipeline.
+        """
+        chunks = [x]
         for atom in self:
-            x = atom(x, **flags)
-        return x
+            chunks = [
+                chunk
+                for out in (atom(x, **flags) for x in chunks)
+                for chunk in _aschunks(out)
+            ]
+        return chunks
+
+    def flush(self):
+        """
+        Cascade-flush the pipeline, codec-drain style.
+
+        Flush the first stage and push its tail through the following stages,
+        then flush the second stage, and so on. Returns the drained chunks.
+        """
+        flags = {"chunk_dim": self._seam["chunk_dim"]} if self._seam else {}
+        return _flush_through(self, **flags)
+
+    def _resolve_dim(self, x):
+        """Resolve the operating dimension from the first stage that has one."""
+        for atom in self:
+            dim = atom._resolve_dim(x)
+            if dim is not None:
+                return dim
+        return None
 
     def fresh(self):
         """Return a stateless clone: each stage cloned, config shared."""
@@ -524,23 +887,26 @@ class Partial(Atom):
                 setattr(self, key, value)
             else:
                 self.kwargs[key] = value
-        # A whole-record function marked with `_whole_record` refuses chunked
-        # execution along its working dimension; that dimension is resolved
-        # from the call arguments so the guard can compare it with the
-        # chunked one.
+        # The operating dimension is resolved from the call arguments so the
+        # whole-record guard can compare it with the chunked one and so eager
+        # calls split gappy input into runs along it. A `_whole_record`-marked
+        # function may name a different argument (a kernel dict, say) as the
+        # one carrying its working dimensions.
         dim_arg = getattr(func, "_whole_record_dim_arg", None)
-        if dim_arg is not None:
-            try:
-                bound = inspect.signature(func).bind_partial(*self.args, **self.kwargs)
-                bound.apply_defaults()
-                self.dim = bound.arguments.get(dim_arg)
-            except (TypeError, ValueError):
-                self.dim = None
+        try:
+            bound = inspect.signature(func).bind_partial(*self.args, **self.kwargs)
+            bound.apply_defaults()
+            self.dim = bound.arguments.get("dim")
+            refuse_dim = bound.arguments.get(dim_arg) if dim_arg else None
+        except (TypeError, ValueError):
+            self.dim = None
+            refuse_dim = None
+        object.__setattr__(self, "_refuse_dim", refuse_dim)
 
     def _check_chunk_dim(self, x, chunk_dim):
         """Refuse chunking along the working dim of a whole-record function."""
         if getattr(self.func, "_whole_record_dim_arg", None) is not None:
-            self._refuse_chunked_along(self.dim, chunk_dim, x)
+            self._refuse_chunked_along(self._refuse_dim, chunk_dim, x)
 
     @property
     def stateful(self):

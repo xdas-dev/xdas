@@ -21,6 +21,7 @@ import zmq
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+from ..atoms.core import _aschunks
 from ..core import DataArray, concat, open_dataarray
 from .monitor import Monitor
 
@@ -229,8 +230,11 @@ def process(atom, data_loader, data_writer):
     This function executes a chunked processing pipeline by ingesting the data from
     the `data_loader` and flushing the processed data through the `data_writer`.
     It iterates over the chunks of data provided by the `data_loader`, applies the
-    `atom` function to each chunk, and writes the processed data using the `data_writer`.
-    The progress of the processing is monitored using a `Monitor` object.
+    `atom` function to each chunk, and writes the processed data using the
+    `data_writer`. An atom may emit zero or more output chunks per input chunk
+    (seam tails, rechunking, reductions); at the end of the stream the atom is
+    flushed so buffering atoms emit their remainder. The progress of the
+    processing is monitored using a `Monitor` object.
 
     """
     if hasattr(atom, "reset"):
@@ -245,9 +249,13 @@ def process(atom, data_loader, data_writer):
         monitor.tic("proc")
         result = atom(chunk, chunk_dim=data_loader.chunk_dim)
         monitor.tic("write")
-        data_writer.write(result)
+        for out in _aschunks(result):
+            data_writer.write(out)
         monitor.toc(chunk.nbytes)
         monitor.tic("read")
+    if hasattr(atom, "flush"):
+        for out in atom.flush():
+            data_writer.write(out)
     monitor.close()
     return data_writer.result()
 
@@ -502,10 +510,13 @@ class DataArrayWriter:
         Parameters
         ----------
         chunk : DataArray
-            Processed data chunk to persist.
+            Processed data chunk to persist. Empty chunks are silently
+            dropped (many flushes produce nothing).
         """
         if not isinstance(chunk, DataArray):
             raise TypeError(f"`chunk` must by a DataArray object, not a {type(chunk)}")
+        if chunk.empty:
+            return
         if not len(self._futures) < self.max_buffers:
             future = self._futures.pop(0)
             result = future.result()
@@ -578,10 +589,12 @@ class DataFrameWriter:
         Parameters
         ----------
         df : pandas.DataFrame
-            DataFrame chunk to write.
+            DataFrame chunk to write. Empty frames are silently dropped.
         """
         if not isinstance(df, pd.DataFrame):
             raise TypeError(f"`df` must by a DataFrame object, not a {type(df)}")
+        if df.empty:
+            return
         if self._future is not None:
             self._future.result()
         self._future = self._executor.submit(self._write, df)
@@ -603,11 +616,12 @@ class DataFrameWriter:
 
     def result(self):
         """Flush pending writes and return the full CSV as a :class:`pandas.DataFrame`."""
-        self._future.result()
+        if self._future is not None:
+            self._future.result()
         self.shutdown()
         try:
             return pd.read_csv(self.path, parse_dates=self.parse_dates)
-        except pd.errors.EmptyDataError:
+        except (FileNotFoundError, pd.errors.EmptyDataError):
             return pd.DataFrame()
 
 

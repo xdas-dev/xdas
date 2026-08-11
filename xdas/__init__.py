@@ -67,6 +67,7 @@ __all__ = [  # noqa: RUF022 - grouped by kind, not alphabetically
     "hilbert",
     "integrate",
     "medfilt",
+    "rechunk",
     "resample",
     "sliding_mean_removal",
     "taper",
@@ -85,6 +86,7 @@ from . import (
     testing,
     virtual,
 )
+from .atoms.kernel import rechunk
 from .atoms.tasks import (
     decimate,
     detrend,

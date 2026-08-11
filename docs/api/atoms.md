@@ -32,7 +32,9 @@ Methods
    Atom.initialize
    Atom.initialize_from_state
    Atom.call
+   Atom.flush
    Atom.reset
+   Atom.iter_chunks
    Atom.save_state
    Atom.set_state
    Atom.load_state
@@ -118,6 +120,7 @@ a function form exported at the top level of `xdas` (e.g. `xdas.filter`,
    hilbert
    integrate
    medfilt
+   rechunk
    resample
    sliding_mean_removal
    taper
@@ -152,6 +155,7 @@ parameters, designed by the task atoms from the data at the first call.
    DownSample
    LFilter
    Polyphase
+   Rechunk
    SOSFilter
    UpSample
 ```
