@@ -2023,3 +2023,10 @@ class TestAnnotateAsyncOutputs:
         assert len(atom.inflight) == 0
         expected = Annotate(annotate_model(), "time", device="cpu", max_buffers=0)(da)
         assert xd.concat(chunks, "time").equals(expected)
+
+
+class TestAnnotateDeviceDefault:
+    def test_the_device_defaults_to_what_is_available(self):
+        atom = Annotate(annotate_model())
+        expected = "cuda" if torch.cuda.is_available() else "cpu"
+        assert atom.device.type == expected
