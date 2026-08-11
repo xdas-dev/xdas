@@ -459,6 +459,45 @@ class TestUnbounded:
         with pytest.warns(UserWarning, match="1 discontinuity along 'time'"):
             pipeline.process(gappy(da), chunks={"time": 30})
 
+    def test_upfront_scan_skips_non_axis_coordinates(self):
+        # A dense coordinate has no free discontinuity scan: the source is
+        # processed without any upfront announcement.
+        import warnings
+
+        dense = xd.testing.dummy(shape=(52, 5), ctype="dense")
+        atom = Partial(np.square)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = atom.process(dense, chunks={"time": 20})
+        assert np.allclose(result.values, np.square(dense).values)
+
+    def test_realtime_chunks_without_the_dim_are_not_judged(self, da):
+        # A realtime chunk that does not carry the chunked dimension leaves
+        # the seam information untouched rather than resetting it.
+        import warnings
+
+        aside = xd.testing.dummy(dims=("distance",), shape=(5,), step=(10.0,))
+        left, right = xd.split(da, 2, "time")
+        source = self.Source([left, aside, right])
+        atom = Partial(np.square)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            atom.process(source)
+
+    def test_realtime_one_sample_chunk_adopts_the_stream_rate(self):
+        # A one-sample chunk of a sampled coordinate declares no rate of its
+        # own: continuous with the stream, it inherits the previous chunk's
+        # delta so the seam after it is still judged correctly.
+        import warnings
+
+        sampled = xd.testing.dummy(shape=(52, 5), ctype="sampled")
+        chunks = list(xd.split(sampled, [50, 51], "time"))
+        source = self.Source(chunks)
+        atom = Partial(np.square)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            atom.process(source)
+
     def test_watch_is_a_realtime_loader(self, da, tmp_path):
         loader = xd.watch(tmp_path)
         try:
