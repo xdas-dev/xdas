@@ -22,6 +22,7 @@ from loky import get_reusable_executor
 from tqdm import tqdm
 
 from ..coordinates import AxisCoordinate, Coordinates
+from ..coordinates.core import parse_scalar_delta
 from ..parallel import get_workers_count
 from ..virtual import TileArray, VirtualBackend, VirtualSource, VirtualStack
 from .dataarray import DataArray
@@ -1310,9 +1311,6 @@ def concat(
         return objs[0] if objs else DataArray([])
     objs = non_empty
 
-    if virtual is None:
-        virtual = all(isinstance(da.data, (VirtualSource, VirtualStack)) for da in objs)
-
     if dim in objs[0].dims + ("first", "last"):
         axis = objs[0].get_axis_num(dim)
         dim = objs[0].dims[axis]  # ensure not "first" or "last"
@@ -1323,6 +1321,13 @@ def concat(
         dims = (dim, *objs[0].dims)
         promoted = _get_promoted_coords(objs, dim)
         objs = [da.expand_dims(dim) for da in objs]
+
+    # inferred on what will actually be concatenated: opening a new dimension
+    # goes through `expand_dims`, which a `VirtualSource` cannot follow (a
+    # stack of sources is a longer axis, never an extra one) and so loads.
+    # Inferring beforehand would promise a `VirtualStack` of dense arrays.
+    if virtual is None:
+        virtual = all(isinstance(da.data, (VirtualSource, VirtualStack)) for da in objs)
 
     coords = objs[0].coords.drop_dims(dim)
     name = objs[0].name
@@ -1364,6 +1369,575 @@ def concat(
 
 
 concatenate = concat  # TODO: deprecate it
+
+
+#: The alignment strategies :func:`stack` accepts. Deliberately an open
+#: enumeration rather than a boolean: SeisBench answers the same mismatch by
+#: *splitting the record* into maximal stretches of constant member coverage
+#: (``GroupingHelper._get_intervals``), which is the right shape for ragged
+#: station deployments and would join this tuple as a further mode rather than
+#: replace it.
+JOIN_METHODS = (None, "inner", "outer")
+
+#: Default agreement tolerance of :func:`stack`, as a fraction of the nominal
+#: sampling interval. One percent of a sample is far above the sub-nanosecond
+#: rounding real acquisitions differ by (a reference three-component station
+#: was measured 1 ns apart at 40 Hz, i.e. 4e-8 of a sample) and far below any
+#: misalignment worth reporting: it takes a hundred times the budget to hide a
+#: one-sample shift, and fifty to hide the half-sample one that would already
+#: change which sample a value lands on.
+SNAP_FRACTION = 1e-2
+
+
+def stack(dc, level, dim=None, join=None, tolerance=None):
+    """
+    Collapse a level of a data collection into an array dimension.
+
+    The inverse of :func:`combine_by_coords`, which concatenates *along* an
+    existing dimension: here the keys of one collection level become the
+    coordinate of a *new* dimension, and everything below that level is merged
+    in lock-step. Stacking the ``channel`` level of a seismological collection
+    turns each station's three traces into one ``(channel, time)`` array.
+
+    The new dimension is named after the level it collapsed, so nothing is
+    renamed behind your back; pass *dim* to choose another name.
+
+    Parameters
+    ----------
+    dc : DataCollection
+        The collection to stack.
+    level : str
+        The name of the level to collapse. Must name one of ``dc.fields``.
+        Only the outermost occurrence of that name on each branch is
+        collapsed.
+    dim : str, optional
+        The name of the new dimension. Defaults to *level*. It must not
+        already name a dimension of the leaves.
+    join : None or str, optional
+        How to reconcile leaves that do not share their coordinates. ``None``
+        (default) raises, naming what disagreed. ``"inner"`` keeps the
+        coordinate values every leaf has, ``"outer"`` keeps the values any
+        leaf has and fills the missing samples with NaN. Aligning materialises
+        the joined coordinates and, for ``"outer"``, the data.
+    tolerance : scalar, None, or ``False``, optional
+        How far apart two leaves may describe the same sampling grid and still
+        count as agreeing (see the notes). ``None`` (default) spends
+        :data:`SNAP_FRACTION` of the nominal sampling interval, and only on
+        coordinates that declare one. ``False`` disables snapping, restoring
+        strict equality. A scalar is an absolute budget in coordinate units
+        (seconds for a datetime axis) and applies to every axis coordinate,
+        declared spacing or not.
+
+    Returns
+    -------
+    DataCollection or DataArray
+        The collection with the level collapsed. When *level* is the outermost
+        level and the leaves sit directly below it, the result is a single
+        data array.
+
+    Raises
+    ------
+    KeyError
+        If *level* names no level of the collection.
+    ValueError
+        If the sub-trees below the collapsed level do not agree structurally,
+        or if their leaves do not agree on their other coordinates and *join*
+        does not resolve it.
+
+    Notes
+    -----
+    Stacking is a :func:`concat` over the leaves, so it inherits its
+    behaviour: the stacked coordinate is sorted, and scalar coordinates that
+    vary from leaf to leaf are promoted onto the new dimension.
+
+    **Agreement is judged on the sampling grid, not on tie points.** Two
+    acquisitions of one instrument routinely round their start time
+    differently by a fraction of a sample; those are the same coordinate, and
+    comparing them exactly would raise on data that is perfectly aligned — or,
+    worse, send it to ``join="outer"``, which would interleave the two grids
+    into an array twice as long. So before any mismatch is reported, leaves
+    whose axis coordinates have the same length and stay within *tolerance*
+    of each other everywhere are snapped onto **the first leaf's coordinate**,
+    in the collection's own key order; the sub-sample offset of the others is
+    dropped. Only leaves that then still disagree are reported or joined.
+
+    Snapping is deliberately narrow. It never changes a length, it never moves
+    a value by as much as a sample, and by default it only applies to
+    coordinates that declare a nominal sampling interval — without one there
+    is no grid to snap to, and structurally different descriptions of the same
+    values stay a *join*'s business rather than an equality's.
+
+    Tile-backed leaves stay tile-backed, so stacking a collection of virtual
+    arrays reads nothing. Alignment is where that can stop: ``"inner"`` slices
+    the leaves to a shared span, which stays virtual only while the resulting
+    tile geometries still agree, and ``"outer"`` has to write the NaNs and so
+    always materialises.
+
+    See Also
+    --------
+    concat : the primitive this is built on, over one list of arrays.
+    combine_by_coords : concatenate along an existing dimension instead.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import xdas as xd
+
+    >>> def trace(channel):
+    ...     return xd.DataArray(
+    ...         np.arange(4.0),
+    ...         {"channel": (None, channel), "time": [0.0, 1.0, 2.0, 3.0]},
+    ...     )
+
+    >>> dc = xd.DataCollection(
+    ...     {
+    ...         "SX01": ("channel", {code: trace(code) for code in ["SHZ", "SHN"]}),
+    ...         "SX02": ("channel", {code: trace(code) for code in ["SHZ", "SHN"]}),
+    ...     },
+    ...     "station",
+    ... )
+    >>> dc
+    Station:
+      SX01:
+        Channel:
+          SHZ: <xdas.DataArray (time: 4)>
+          SHN: <xdas.DataArray (time: 4)>
+      SX02:
+        Channel:
+          SHZ: <xdas.DataArray (time: 4)>
+          SHN: <xdas.DataArray (time: 4)>
+
+    >>> stacked = xd.stack(dc, "channel")
+    >>> stacked
+    Station:
+      SX01: <xdas.DataArray (channel: 2, time: 4)>
+      SX02: <xdas.DataArray (channel: 2, time: 4)>
+
+    >>> stacked["SX01"]["channel"].values
+    array(['SHN', 'SHZ'], dtype='<U3')
+
+    """
+    if join not in JOIN_METHODS:
+        raise ValueError(
+            f"unknown join method {join!r}; expected one of "
+            + ", ".join(repr(method) for method in JOIN_METHODS)
+        )
+    if not isinstance(dc, DataCollection):
+        raise TypeError(
+            f"can only stack a level of a data collection, got {type(dc).__name__}"
+        )
+    if level not in dc.fields:
+        raise KeyError(
+            f"{level!r} does not name any level of the collection; "
+            f"available: {list(dc.fields)}"
+        )
+    if dim is None:
+        dim = level
+    return _stack_level(dc, level, dim, join, tolerance)
+
+
+def _stack_level(obj, level, dim, join, tolerance):
+    """Return *obj* with the outermost node named *level* of each branch collapsed."""
+    if isinstance(obj, DataArray):
+        return obj
+    if obj.name == level:
+        keys, values = _entries(obj)
+        if not values:
+            raise ValueError(f"level {level!r} is empty; there is nothing to stack")
+        return _stack_entries(values, keys, level, dim, join, tolerance, ())
+    if obj.ismapping():
+        data = {
+            key: _stack_level(value, level, dim, join, tolerance)
+            for key, value in obj.items()
+        }
+    else:
+        data = [_stack_level(value, level, dim, join, tolerance) for value in obj]
+    return DataCollection(data, obj.name)
+
+
+def _entries(node):
+    """Return the ``(keys, values)`` of a collection node, keying a sequence by position."""
+    if node.ismapping():
+        return list(node.keys()), list(node.values())
+    return list(range(len(node))), list(node)
+
+
+def _kind(obj):
+    """Return a human-readable description of what *obj* is, as structure only."""
+    if isinstance(obj, DataArray):
+        return "a data array"
+    what = "mapping" if obj.ismapping() else "sequence"
+    return f"a {obj.name!r} {what}"
+
+
+def _at(path):
+    """Render a tree *path* as a locating suffix, empty at the root."""
+    return f" at {'/'.join(path)}" if path else ""
+
+
+def _stack_entries(objs, keys, level, dim, join, tolerance, path):
+    """Merge the sub-trees of one collapsed node, in lock-step, down to the leaves."""
+    kinds = [_kind(obj) for obj in objs]
+    if len(set(kinds)) > 1:
+        raise ValueError(
+            f"the sub-trees{_at(path)} of level {level!r} do not agree: "
+            + ", ".join(f"{key!r} is {kind}" for key, kind in zip(keys, kinds))
+        )
+    if isinstance(objs[0], DataArray):
+        return _stack_arrays(objs, keys, level, dim, join, tolerance, path)
+    name = objs[0].name
+    if name == level:
+        raise ValueError(
+            f"level {level!r} is nested under itself{_at(path)}; stacking two "
+            "levels sharing a name is not supported"
+        )
+    if objs[0].ismapping():
+        subkeys = list(objs[0])
+        for key, obj in zip(keys[1:], objs[1:]):
+            if set(obj) != set(subkeys):
+                raise ValueError(
+                    f"the {name!r} level{_at(path)} does not hold the same keys "
+                    f"under every {level!r}: {keys[0]!r} has {sorted(subkeys)} "
+                    f"and {key!r} has {sorted(obj)}"
+                )
+        data = {
+            subkey: _stack_entries(
+                [obj[subkey] for obj in objs],
+                keys,
+                level,
+                dim,
+                join,
+                tolerance,
+                (*path, f"{name}={subkey}"),
+            )
+            for subkey in subkeys
+        }
+    else:
+        length = len(objs[0])
+        for key, obj in zip(keys[1:], objs[1:]):
+            if len(obj) != length:
+                raise ValueError(
+                    f"the {name!r} level{_at(path)} does not hold the same number "
+                    f"of elements under every {level!r}: {keys[0]!r} has {length} "
+                    f"and {key!r} has {len(obj)}"
+                )
+        data = [
+            _stack_entries(
+                [obj[index] for obj in objs],
+                keys,
+                level,
+                dim,
+                join,
+                tolerance,
+                (*path, f"{name}={index}"),
+            )
+            for index in range(length)
+        ]
+    return DataCollection(data, name)
+
+
+def _stack_arrays(objs, keys, level, dim, join, tolerance, path):
+    """Concatenate one lock-step group of leaves onto the new dimension *dim*."""
+    for key, obj in zip(keys, objs):
+        if dim in obj.dims:
+            raise ValueError(
+                f"cannot stack level {level!r} onto {dim!r}: the leaf {key!r}"
+                f"{_at(path)} already has a {dim!r} dimension; pass `dim=` to "
+                "name the new dimension otherwise"
+            )
+    objs = _snap_leaves(objs, tolerance)
+    messages, joinable = _leaf_mismatches(objs, keys)
+    if messages and join is not None and joinable:
+        objs = _join_leaves(objs, keys, joinable, join)
+        messages, joinable = _leaf_mismatches(objs, keys)
+        joinable = []  # already spent
+    if messages:
+        hint = (
+            " (pass join='inner' or join='outer' to align them first)"
+            if joinable and join is None
+            else ""
+        )
+        raise ValueError(
+            f"the leaves{_at(path)} of level {level!r} do not agree: "
+            + "; ".join(messages)
+            + hint
+        )
+    objs = [_with_key(obj, dim, key) for obj, key in zip(objs, keys)]
+    return concat(objs, dim)
+
+
+def _snap_leaves(objs, tolerance):
+    """Put the leaves on one representation of every grid they share within *tolerance*.
+
+    The first leaf is the reference; any other whose axis coordinate has the
+    same length and stays within *tolerance* of the reference everywhere
+    adopts it verbatim, so the strict equality that follows sees one
+    coordinate instead of two roundings of it. ``tolerance=False`` disables
+    the whole pass.
+    """
+    if tolerance is False or len(objs) < 2:
+        return objs
+    reference = objs[0]
+    out = [reference]
+    for obj in objs[1:]:
+        snapped = {
+            name: reference.coords[name]
+            for name, coord in obj.coords.items()
+            if name in reference.coords
+            and _same_grid(reference.coords[name], coord, tolerance)
+        }
+        if snapped:
+            obj = obj.copy(deep=False)
+            for name, coord in snapped.items():
+                obj.coords[name] = coord.copy()
+        out.append(obj)
+    return out
+
+
+def _same_grid(reference, coord, tolerance):
+    """Whether *coord* describes *reference*'s grid to within *tolerance*.
+
+    Both must be axis coordinates of the same dimension, same length and same
+    kind of values; the deviation is then measured exactly. Coordinates are
+    piecewise linear in their index, so comparing them at the union of their
+    breakpoints bounds their distance everywhere in between.
+    """
+    if not (
+        isinstance(reference, AxisCoordinate)
+        and isinstance(coord, AxisCoordinate)
+        and reference.dim == coord.dim
+        and len(reference) == len(coord)
+        and len(coord) > 0
+    ):
+        return False
+    if any(
+        not (np.issubdtype(dtype, np.number) or np.issubdtype(dtype, np.datetime64))
+        for dtype in (reference.dtype, coord.dtype)
+    ):
+        return False
+    if np.issubdtype(reference.dtype, np.datetime64) != np.issubdtype(
+        coord.dtype, np.datetime64
+    ):
+        return False
+    tolerance = _snap_tolerance(reference, coord, tolerance)
+    if tolerance is None:
+        return False
+    indices = np.union1d(_breakpoints(reference), _breakpoints(coord))
+    deviation = np.abs(reference._get_value(indices) - coord._get_value(indices))
+    return bool(np.all(deviation <= tolerance))
+
+
+def _snap_tolerance(reference, coord, tolerance):
+    """Return the absolute budget to compare two coordinates with, or ``None``.
+
+    An explicit *tolerance* is taken as given, in the coordinate's own units.
+    The default is :data:`SNAP_FRACTION` of the nominal sampling interval, and
+    ``None`` — do not snap at all — when neither coordinate declares one: a
+    fraction of a sample means nothing on an axis that has no samples.
+    """
+    if tolerance is not None:
+        return parse_scalar_delta(tolerance, reference.dtype)
+    for candidate in (reference, coord):
+        sampling_interval = candidate.get_sampling_interval(cast=False)
+        if sampling_interval is not None:
+            return np.abs(sampling_interval) * SNAP_FRACTION
+    return None
+
+
+def _breakpoints(coord):
+    """Return the indices at which *coord*'s value curve may bend.
+
+    Between two of them the values are affine in the index, which is what lets
+    a comparison sampled there bound the deviation everywhere. A coordinate
+    that ties values to indices bends at its tie points (plus the end of each
+    segment when they carry lengths); one that stores every value is its own
+    worst case and bends anywhere.
+    """
+    indices = getattr(coord, "tie_indices", None)
+    if indices is None:
+        return coord.indices
+    lengths = getattr(coord, "tie_lengths", None)
+    if lengths is None:
+        return np.asarray(indices)
+    return np.union1d(indices, np.asarray(indices) + np.asarray(lengths) - 1)
+
+
+def _leaf_mismatches(objs, keys):
+    """Report what the leaves disagree on, and which dimensions a join could fix.
+
+    Returns a list of human-readable messages — empty when the leaves are
+    stackable as they are — and the names of the dimension coordinates that
+    differ but could be aligned.
+    """
+    messages = []
+    dims = objs[0].dims
+    for key, obj in zip(keys[1:], objs[1:]):
+        if obj.dims != dims:
+            messages.append(
+                f"{keys[0]!r} has dimensions {dims} and {key!r} has {obj.dims}"
+            )
+    if messages:
+        return messages, []
+    names = list(objs[0].coords)
+    for key, obj in zip(keys[1:], objs[1:]):
+        missing = [name for name in names if name not in obj.coords]
+        extra = [name for name in obj.coords if name not in names]
+        if missing or extra:
+            messages.append(
+                f"{key!r} lacks the coordinates {missing} of {keys[0]!r} and "
+                f"carries {extra} it does not"
+            )
+    if messages:
+        return messages, []
+    joinable = []
+    for dim in dims:
+        sizes = sorted({obj.sizes[dim] for obj in objs})
+        if len(sizes) > 1 and dim not in objs[0].coords:
+            messages.append(
+                f"dimension {dim!r} has sizes {sizes} and no coordinate to align on"
+            )
+    for name in names:
+        coords = [obj.coords[name] for obj in objs]
+        if all(coord.equals(coords[0]) for coord in coords[1:]):
+            continue
+        if all(coord.dim is None for coord in coords):
+            continue  # varying scalars are promoted onto the new dimension
+        if name in dims and all(isinstance(coord, AxisCoordinate) for coord in coords):
+            joinable.append(name)
+        messages.append(f"coordinate {name!r} differs from one leaf to another")
+    return messages, joinable
+
+
+def _join_leaves(objs, keys, dims, join):
+    """Reindex the leaves onto a shared index along each of *dims*."""
+    for dim in dims:
+        indices = [pd.Index(obj.coords[dim].values) for obj in objs]
+        for key, index in zip(keys, indices):
+            if not index.is_unique:
+                raise ValueError(
+                    f"cannot align on {dim!r}: the leaf {key!r} repeats coordinate "
+                    "values; resolve its overlaps first (see `trim_overlaps`)"
+                )
+        target = indices[0]
+        for index in indices[1:]:
+            if join == "inner":
+                target = target.intersection(index, sort=False)
+            else:
+                target = target.union(index, sort=None)
+        if len(target) == 0:
+            raise ValueError(
+                f"cannot align on {dim!r}: the leaves share no coordinate value"
+            )
+        _refuse_interleaving(objs, dim, target)
+        objs = [_reindex(obj, dim, target, index) for obj, index in zip(objs, indices)]
+        objs = _unify_coord(objs, dim)
+    return objs
+
+
+def _refuse_interleaving(objs, dim, target):
+    """Raise when the joined index holds more samples than its span can carry.
+
+    An outer join over leaves that are on the same grid spans it once. Over
+    leaves that are a fraction of a sample apart it spans it as many times as
+    there are offsets, interleaving grids into an array that looks plausible
+    and is mostly missing samples. The finest declared sampling interval says
+    how many samples the joined span may hold; anything beyond that is
+    interleaving, and silence would be the worst answer.
+    """
+    intervals = [
+        obj.coords[dim].get_sampling_interval(cast=False)
+        for obj in objs
+        if obj.coords[dim].isregular()
+    ]
+    if len(intervals) < len(objs):
+        return  # an irregular leaf declares no grid to violate
+    sampling_interval = min(np.abs(interval) for interval in intervals)
+    # rounded, not truncated: a float span is worth a sample either way, while
+    # interleaving overshoots by a factor, never by one.
+    expected = round((target.max() - target.min()) / sampling_interval) + 1
+    if len(target) > expected:
+        raise ValueError(
+            f"cannot align on {dim!r}: the leaves are not on a common sampling "
+            f"grid, and joining them would interleave {len(target)} samples "
+            f"where the span holds {expected}; snap them together first with a "
+            "larger `tolerance`"
+        )
+
+
+def _reindex(obj, dim, target, index):
+    """Return *obj* with its *dim* axis put on *target*, staying lazy when it can."""
+    positions = index.get_indexer(target)
+    if len(index) == len(target) and np.array_equal(positions, np.arange(len(index))):
+        return obj
+    if (positions >= 0).all():
+        start = int(positions[0])
+        # a contiguous run is a slice, and slicing a virtual array reads nothing
+        if np.array_equal(positions, np.arange(start, start + len(positions))):
+            return obj.isel({dim: slice(start, start + len(positions))})
+        return obj.isel({dim: positions})
+    return _pad(obj, dim, target, positions)
+
+
+def _pad(obj, dim, target, positions):
+    """Return *obj* on *target*, filling the samples it does not have with NaN."""
+    others = [
+        name for name, coord in obj.coords.items() if coord.dim == dim and name != dim
+    ]
+    if others:
+        raise ValueError(
+            f"cannot pad along {dim!r}: the leaves carry the coordinates {others} "
+            "along it, which have no value where the data is missing"
+        )
+    axis = obj.get_axis_num(dim)
+    present = positions >= 0
+    dtype = (
+        obj.dtype
+        if np.issubdtype(obj.dtype, np.inexact)
+        else np.result_type(obj.dtype, np.float32)
+    )
+    shape = list(obj.shape)
+    shape[axis] = len(target)
+    data = np.full(tuple(shape), np.nan, dtype)
+    key = [slice(None)] * obj.ndim
+    key[axis] = np.nonzero(present)[0]
+    data[tuple(key)] = np.asarray(obj.isel({dim: positions[present]}).data)
+    coords = obj.coords.copy()
+    coords[dim] = target.values
+    return DataArray(data, coords, obj.dims, obj.name, obj.attrs)
+
+
+def _unify_coord(objs, dim):
+    """Give every leaf the same *dim* coordinate object once they agree on its values.
+
+    Reindexing puts every leaf on the same values, but not necessarily on the
+    same *representation*: two interpolated coordinates sliced out of
+    differently tied inputs describe one grid with different tie points, and
+    :meth:`Coordinate.equals` is structural. Normalising here is what lets the
+    equality check that follows stay strict.
+    """
+    reference = objs[0].coords[dim]
+    out = [objs[0]]
+    for obj in objs[1:]:
+        coord = obj.coords[dim]
+        if not coord.equals(reference) and np.array_equal(
+            coord.values, reference.values
+        ):
+            obj = obj.copy(deep=False)
+            obj.coords[dim] = reference.copy()
+        out.append(obj)
+    return out
+
+
+def _with_key(obj, dim, key):
+    """Return *obj* carrying its level key as a scalar coordinate named *dim*.
+
+    That is all it takes for :func:`concat` to open the new dimension with the
+    keys as its coordinate: ``expand_dims`` promotes the scalar and
+    ``concat_coords`` concatenates the promoted length-one coordinates.
+    """
+    obj = obj.copy(deep=False)
+    obj.coords[dim] = key
+    return obj
 
 
 def sortby(da, dim="first", tolerance=None):

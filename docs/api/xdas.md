@@ -34,6 +34,7 @@
    get_sampling_interval
    sortby
    split
+   stack
    plot_availability
 ```
 

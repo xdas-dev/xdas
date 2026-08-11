@@ -57,6 +57,7 @@ __all__ = [  # noqa: RUF022 - grouped by kind, not alphabetically
     "plot_availability",
     "sortby",
     "split",
+    "stack",
     "trim_overlaps",
 ]
 
@@ -110,6 +111,7 @@ from .core import (
     routines,
     sortby,
     split,
+    stack,
     trim_overlaps,
 )
 from .core.methods import *

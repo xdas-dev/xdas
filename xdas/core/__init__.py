@@ -28,6 +28,7 @@ __all__ = [
     "plot_availability",
     "sortby",
     "split",
+    "stack",
     "trim_overlaps",
 ]
 
@@ -52,5 +53,6 @@ from .routines import (
     plot_availability,
     sortby,
     split,
+    stack,
     trim_overlaps,
 )
