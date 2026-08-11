@@ -103,6 +103,7 @@ a function form exported at the top level of `xdas` (e.g. `xdas.filter`,
    Filter
    Integrate
    Resample
+   STFT
 ```
 
 ```{eval-rst}
@@ -123,6 +124,7 @@ a function form exported at the top level of `xdas` (e.g. `xdas.filter`,
    rechunk
    resample
    sliding_mean_removal
+   stft
    taper
 ```
 

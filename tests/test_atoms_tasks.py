@@ -5,7 +5,9 @@ import pytest
 
 import xdas as xd
 import xdas.signal as xs
+import xdas.spectral
 from xdas.atoms import (
+    STFT,
     Decimate,
     Differentiate,
     Filter,
@@ -15,6 +17,7 @@ from xdas.atoms import (
     Sequential,
 )
 from xdas.synthetics import wavelet_wavefronts
+from xdas.testing import dummy
 
 
 def through_chunks(atom, da, nchunk=6, dim="time"):
@@ -293,3 +296,120 @@ class TestWholeRecordFunctions:
         expected = atom(da)
         result = through_chunks(atom, da, dim="distance")
         assert result.equals(expected)
+
+
+class TestSTFT:
+    # dummy is sampled at 100 Hz: 0.32 s windows are 32 samples (a fast FFT
+    # size, so the target is not snapped) and 0.16 s hops are 16 samples.
+
+    def test_matches_legacy_spectral(self):
+        da = dummy(shape=(200, 5))
+        result = xd.stft(da, 0.32, hop=0.16)
+        expected = xdas.spectral.stft(
+            da, window="hann", nperseg=32, noverlap=16, dim={"time": "frequency"}
+        )
+        assert np.allclose(result.values, expected.values)
+        assert np.array_equal(result["time"].values, expected["time"].values)
+        assert np.allclose(result["frequency"].values, expected["frequency"].values)
+        assert result["distance"].equals(expected["distance"])
+
+    def test_default_hop_is_half_window(self):
+        da = dummy(shape=(200, 5))
+        result = xd.stft(da, 0.32)
+        expected = xd.stft(da, 0.32, hop=0.16)
+        assert np.allclose(result.values, expected.values)
+
+    def test_wlen_snaps_to_fast_length(self):
+        # 1.27 s at 100 Hz is 127 samples, a prime: the next fast size is 128.
+        da = dummy(shape=(400, 5))
+        result = xd.stft(da, 1.27)
+        assert result.sizes["frequency"] == 128 // 2 + 1
+
+    def test_psd_scaling_matches_legacy(self):
+        da = dummy(shape=(200, 5))
+        result = xd.stft(da, 0.32, hop=0.16, scaling="psd")
+        expected = xdas.spectral.stft(
+            da,
+            window="hann",
+            nperseg=32,
+            noverlap=16,
+            scaling="psd",
+            dim={"time": "frequency"},
+        )
+        assert np.allclose(result.values, expected.values)
+
+    def test_nfft_zero_padding(self):
+        da = dummy(shape=(200, 5))
+        result = xd.stft(da, 0.32, hop=0.16, nfft=64)
+        expected = xdas.spectral.stft(
+            da,
+            window="hann",
+            nperseg=32,
+            noverlap=16,
+            nfft=64,
+            dim={"time": "frequency"},
+        )
+        assert result.sizes["frequency"] == 64 // 2 + 1
+        assert np.allclose(result.values, expected.values)
+        assert np.allclose(result["frequency"].values, expected["frequency"].values)
+
+    def test_nfft_smaller_than_window_raises(self):
+        da = dummy(shape=(200, 5))
+        with pytest.raises(ValueError, match="nfft"):
+            xd.stft(da, 0.32, nfft=16)
+
+    def test_complex_input_two_sided(self):
+        da = dummy(shape=(200, 5), dtype=complex)
+        result = xd.stft(da, 0.32, hop=0.16)
+        expected = xdas.spectral.stft(
+            da,
+            window="hann",
+            nperseg=32,
+            noverlap=16,
+            return_onesided=False,
+            dim={"time": "frequency"},
+        )
+        assert result.sizes["frequency"] == 32
+        assert np.allclose(result.values, expected.values)
+        assert np.allclose(result["frequency"].values, expected["frequency"].values)
+
+    def test_invalid_parameters(self):
+        with pytest.raises(ValueError, match="wlen"):
+            STFT(0.0)
+        with pytest.raises(ValueError, match="hop"):
+            STFT(1.0, hop=2.0)
+        with pytest.raises(ValueError, match="scaling"):
+            STFT(1.0, scaling="power")
+
+    def test_record_shorter_than_window_raises(self):
+        da = dummy(shape=(50, 5))
+        with pytest.raises(ValueError, match="shorter"):
+            xd.stft(da, 1.0)
+
+    def test_chunked_along_other_dim(self):
+        da = dummy(shape=(200, 5))
+        expected = xd.stft(da, 0.32, hop=0.16)
+        result = through_chunks(STFT(0.32, hop=0.16), da, 2, "distance")
+        assert np.allclose(result.values, expected.values)
+
+    def test_non_dimensional_coords(self):
+        da = dummy(shape=(200, 5))
+        da["latitude"] = ("distance", np.arange(5.0))
+        da["quality"] = ("time", np.arange(200.0))
+        result = xd.stft(da, 0.32, hop=0.16)
+        # coords along other dimensions are kept; those along the transformed
+        # dimension are dropped (TODO in STFT._transform, as in spectral.stft)
+        assert result["latitude"].equals(da["latitude"])
+        assert "quality" not in result.coords
+
+    def test_function_form_seed(self):
+        atom = xd.stft(..., 1.0)
+        assert isinstance(atom, STFT)
+        assert atom.dim == "time"
+
+    def test_pipeline_chunk_invariant_over_cuts_and_gaps(self):
+        da = dummy(shape=(400, 5))
+        pipeline = xd.filter(..., (None, 20.0)) >> xd.stft(..., 0.32, hop=0.16)
+        xd.testing.assert_chunk_invariant(
+            pipeline, da, {"time": 100}, cuts=2, gaps=2, atol=1e-12
+        )

@@ -15,13 +15,17 @@ identically; the split between functions and classes is invisible to users.
 """
 
 import numpy as np
+import scipy.fft
+from scipy.signal import ShortTimeFFT, get_window
 
 from ..coordinates import get_sampling_interval
-from ..core import concat
+from ..core import DataArray, concat
+from ..parallel import parallelize
 from .core import Atom, State, _whole_record, atomized
 from .signal import FIRFilter, IIRFilter, ResamplePoly
 
 __all__ = [
+    "STFT",
     "Decimate",
     "Differentiate",
     "Filter",
@@ -36,6 +40,7 @@ __all__ = [
     "medfilt",
     "resample",
     "sliding_mean_removal",
+    "stft",
     "taper",
 ]
 
@@ -514,8 +519,187 @@ def medfilt(da, kernel):
     return medfilt(da, kernel_dim)
 
 
+class STFT(Atom):
+    """
+    Short-Time Fourier Transform with window length and hop in physical units.
+
+    The window length is a target in the units of the `dim` coordinate
+    (seconds along time): the actual length is the next fast FFT size of the
+    corresponding number of samples, so transforms stay efficient whatever the
+    sampling rate. Frames start at the first sample and advance by `hop`; only
+    fully computable frames are ever emitted, so when processing chunk by
+    chunk the unconsumed tail is buffered across chunks (and dropped at gaps
+    and at the end of the stream), and chunked processing emits exactly the
+    frames of the eager transform. The output gains a "frequency" dimension
+    (one-sided for real data, centered two-sided for complex data) and the
+    `dim` coordinate moves to the frame centers.
+
+    Parameters
+    ----------
+    wlen : float
+        Target window length, in the units of the `dim` coordinate (seconds
+        along time). The actual length is ``scipy.fft.next_fast_len`` of the
+        equivalent number of samples.
+    hop : float, optional
+        Step between frame starts, in the same units. Must be positive and at
+        most `wlen`. Like the window length, it is snapped: to the nearest
+        whole number of samples (at least one, at most the actual window
+        length), so the frame grid can differ from the request. Default is
+        half the actual window length.
+    window : str or tuple
+        The tapering window, compatible with ``scipy.signal.get_window``.
+        Default is "hann".
+    scaling : {"spectrum", "psd"}
+        The scaling of the complex frames: "spectrum" preserves peak
+        amplitudes ("magnitude" scaling of `scipy.signal.ShortTimeFFT`),
+        "psd" makes the squared modulus a power spectral density. Default is
+        "spectrum".
+    nfft : int, optional
+        Expert mode: the FFT length in samples, to zero pad the windowed
+        frames. Must be at least the actual window length; a common choice is
+        twice that length, and fast FFT sizes matter. Default is the actual
+        window length (no padding).
+    dim : str
+        The dimension along which to transform. Default is "time".
+    parallel : bool or int, optional
+        Number of threads to use.
+
+    Examples
+    --------
+    >>> import xdas as xd
+    >>> from xdas.synthetics import wavelet_wavefronts
+    >>> da = wavelet_wavefronts()  # 50 Hz
+    >>> xd.stft(da, 2.0, hop=1.0).sizes
+    {'time': 5, 'distance': 401, 'frequency': 51}
+
+    """
+
+    def __init__(
+        self,
+        wlen,
+        hop=None,
+        window="hann",
+        scaling="spectrum",
+        nfft=None,
+        dim="time",
+        parallel=None,
+    ):
+        super().__init__()
+        if not wlen > 0:
+            raise ValueError("`wlen` must be positive")
+        if hop is not None and not 0 < hop <= wlen:
+            raise ValueError("`hop` must be positive and at most `wlen`")
+        if scaling not in ("spectrum", "psd"):
+            raise ValueError("`scaling` must be 'spectrum' or 'psd'")
+        self.wlen = wlen
+        self.hop = hop
+        self.window = window
+        self.scaling = scaling
+        self.nfft = nfft
+        self.dim = dim
+        self.parallel = parallel
+        self.sft = State(...)
+        self.buffer = State(...)
+
+    def initialize(self, da, chunk_dim=None, **flags):
+        """Design the transform from the measured sampling rate."""
+        fs = 1.0 / get_sampling_interval(da, self.dim)
+        nperseg = scipy.fft.next_fast_len(max(round(self.wlen * fs), 1))
+        if chunk_dim != self.dim and da.sizes[self.dim] < nperseg:
+            raise ValueError(
+                f"the record is shorter along {self.dim!r} "
+                f"({da.sizes[self.dim]} samples) than the window "
+                f"({nperseg} samples)"
+            )
+        if self.hop is None:
+            hop = max(nperseg // 2, 1)
+        else:
+            hop = min(max(round(self.hop * fs), 1), nperseg)
+        nfft = nperseg if self.nfft is None else self.nfft
+        if nfft < nperseg:
+            raise ValueError(
+                f"`nfft` ({nfft}) must be at least the window length in "
+                f"samples ({nperseg})"
+            )
+        self.sft = State(
+            ShortTimeFFT(
+                get_window(self.window, nperseg),
+                hop=hop,
+                fs=fs,
+                fft_mode="onesided" if np.isrealobj(da.values) else "centered",
+                mfft=nfft,
+                scale_to="magnitude" if self.scaling == "spectrum" else "psd",
+                phase_shift=None,
+            )
+        )
+        if chunk_dim == self.dim:
+            self.buffer = State(da.isel({self.dim: slice(0, 0)}))
+        else:
+            self.buffer = State(None)
+
+    def call(self, da, **flags):
+        """Emit every fully computable frame, buffering the unconsumed tail."""
+        nperseg = self.sft.m_num
+        hop = self.sft.hop
+        if self.buffer is None:
+            return self._transform(da)
+        da = concat([self.buffer, da], self.dim)
+        n = da.sizes[self.dim]
+        if n < nperseg:
+            self.buffer = State(da)
+            return None
+        nframes = (n - nperseg) // hop + 1
+        consumed = nframes * hop
+        out = da.isel({self.dim: slice(0, consumed - hop + nperseg)})
+        self.buffer = State(da.isel({self.dim: slice(consumed, None)}))
+        return self._transform(out)
+
+    def flush(self):
+        """Discard the buffered tail: only fully computable frames are emitted."""
+        if isinstance(self.buffer, DataArray):
+            self.buffer = State(self.buffer.isel({self.dim: slice(0, 0)}))
+        return []
+
+    def _transform(self, da):
+        """Compute the windowed FFT of every full frame in *da*."""
+        sft = self.sft
+        axis = da.get_axis_num(self.dim)
+
+        def func(x):
+            frames = np.lib.stride_tricks.sliding_window_view(x, sft.m_num, axis=axis)
+            slc = [slice(None)] * frames.ndim
+            slc[axis] = slice(None, None, sft.hop)
+            frames = sft.win * frames[tuple(slc)]
+            if sft.onesided_fft:
+                return scipy.fft.rfft(frames, n=sft.mfft, axis=-1)
+            return scipy.fft.fftshift(
+                scipy.fft.fft(frames, n=sft.mfft, axis=-1), axes=-1
+            )
+
+        across = int(axis == 0)
+        func = parallelize(across, across, self.parallel)(func)
+        data = func(da.values)
+
+        coord_cls = type(da.coords[self.dim])
+        dt = get_sampling_interval(da, self.dim, cast=False)
+        t0 = da.coords[self.dim].values[0]
+        time = coord_cls.from_block(
+            t0 + (sft.m_num // 2) * dt, data.shape[axis], sft.hop * dt
+        )
+        freqs = coord_cls.from_block(sft.f[0], len(sft.f), sft.delta_f)
+        coords = {}
+        for name in da.coords:
+            if name == self.dim:
+                coords[self.dim] = time
+            elif da[name].dim != self.dim:  # TODO: keep non-dimensional coordinates
+                coords[name] = da.coords[name]
+        coords["frequency"] = freqs
+        return DataArray(data, coords, da.dims + ("frequency",), da.name, da.attrs)
+
+
 filter = atomized(Filter)
 decimate = atomized(Decimate)
 resample = atomized(Resample)
 integrate = atomized(Integrate)
 differentiate = atomized(Differentiate)
+stft = atomized(STFT)

@@ -896,7 +896,12 @@ class Partial(Atom):
         try:
             bound = inspect.signature(func).bind_partial(*self.args, **self.kwargs)
             bound.apply_defaults()
-            self.dim = bound.arguments.get("dim")
+            dim = bound.arguments.get("dim")
+            if isinstance(dim, dict) and len(dim) == 1:
+                # {input_dim: output_dim} mapping (e.g. the fft functions):
+                # the operating dimension is the input one.
+                ((dim, _),) = dim.items()
+            self.dim = dim
             refuse_dim = bound.arguments.get(dim_arg) if dim_arg else None
         except (TypeError, ValueError):
             self.dim = None

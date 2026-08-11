@@ -17,6 +17,7 @@ import pytest
 
 import xdas as xd
 from xdas.atoms import (
+    STFT,
     Atom,
     Decimate,
     DownSample,
@@ -63,6 +64,7 @@ class TestCommutation:
         lambda: Filter((1.0, 10.0)),
         lambda: Filter((None, 10.0), ftype="fir"),
         lambda: Decimate(25.0),
+        lambda: STFT(0.16),  # expander: 16-sample windows, 8-sample hops
         lambda: Integrate(),
         lambda: Sequential([Decimate(25.0), Filter((1.0, 10.0)), np.square]),
     ]
@@ -320,6 +322,30 @@ class StreamMean(Atom):
         self.numerator = State(0.0 * self.numerator)
         self.denominator = State(0)
         return [out]
+
+
+class TestSTFTRuns:
+    def test_frames_never_span_gaps(self, da):
+        left, right, both = gappy(da)
+        streamed = collect(STFT(0.16), [left, right])
+        expected = [STFT(0.16)(left), STFT(0.16)(right)]
+        assert len(streamed) == 2
+        for out, exp in zip(streamed, expected):
+            assert out.coords.equals(exp.coords)
+            assert np.allclose(out.values, exp.values)
+        # eager on the gappy record splits into the same per-run frames
+        eager = STFT(0.16)(both)
+        assert np.allclose(xd.concat(streamed, "time").values, eager.values)
+
+    def test_short_run_emits_nothing_when_streaming(self, da):
+        # 64-sample windows never fit in a 50-sample run: the buffered tail
+        # is dropped at flush, nothing is emitted and nothing raises.
+        outs = collect(STFT(0.64), [da.isel(time=slice(0, 50))])
+        assert outs == []
+
+    def test_eager_short_record_raises(self, da):
+        with pytest.raises(ValueError, match="shorter"):
+            STFT(1.28)(da)
 
 
 class TestReduction:

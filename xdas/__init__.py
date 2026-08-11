@@ -70,6 +70,7 @@ __all__ = [  # noqa: RUF022 - grouped by kind, not alphabetically
     "rechunk",
     "resample",
     "sliding_mean_removal",
+    "stft",
     "taper",
 ]
 
@@ -97,6 +98,7 @@ from .atoms.tasks import (
     medfilt,
     resample,
     sliding_mean_removal,
+    stft,
     taper,
 )
 from .coordinates import (

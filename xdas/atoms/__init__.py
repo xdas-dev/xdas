@@ -18,6 +18,7 @@ Plus the signal-processing atoms of :mod:`xdas.atoms.signal` and the ML-based
 """
 
 __all__ = [
+    "STFT",
     "Atom",
     "Decimate",
     "Differentiate",
@@ -48,4 +49,4 @@ from .core import Atom, Partial, Sequential, State, as_function, atomized, compo
 from .kernel import DownSample, LFilter, Polyphase, Rechunk, SOSFilter, UpSample
 from .ml import MLPicker
 from .signal import FIRFilter, IIRFilter, ResamplePoly
-from .tasks import Decimate, Differentiate, Filter, Integrate, Resample
+from .tasks import STFT, Decimate, Differentiate, Filter, Integrate, Resample

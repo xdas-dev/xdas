@@ -8,12 +8,14 @@ Includes :func:`fft`, :func:`ifft`, :func:`rfft`, :func:`irfft`,
 import numpy as np
 
 from .atoms import atomized
+from .atoms.core import _whole_record
 from .coordinates import get_sampling_interval
 from .core import DataArray
 from .parallel import parallelize
 
 
 @atomized
+@_whole_record()
 def fft(da, n=None, dim=None, norm=None, parallel=None):
     """
     Compute the discrete Fourier Transform along a given dimension.
@@ -88,6 +90,7 @@ def fft(da, n=None, dim=None, norm=None, parallel=None):
 
 
 @atomized
+@_whole_record()
 def rfft(da, n=None, dim=None, norm=None, parallel=None):
     """
     Compute the discrete Fourier Transform  for real inputs along a given dimension.
@@ -158,6 +161,7 @@ def rfft(da, n=None, dim=None, norm=None, parallel=None):
 
 
 @atomized
+@_whole_record()
 def ifft(da, n=None, dim=None, norm=None, parallel=None):
     """
     Compute the inverse of `fft`.
@@ -228,6 +232,7 @@ def ifft(da, n=None, dim=None, norm=None, parallel=None):
 
 
 @atomized
+@_whole_record()
 def irfft(da, n=None, dim=None, norm=None, parallel=None):
     """
     Compute the inverse of `rfft`.

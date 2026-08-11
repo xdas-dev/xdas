@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 import xdas as xd
 import xdas.fft as xfft
@@ -82,3 +83,30 @@ class TestDefaultDim:
     def test_irfft(self):
         da = xd.testing.dummy()
         assert xfft.irfft(da).equals(xfft.irfft(da, dim={"distance": "signal"}))
+
+
+class TestChunkGuard:
+    """FFTs need the whole record along their dimension: they refuse chunked
+    execution along it but stay usable in pipelines chunked along another."""
+
+    def test_chunked_along_transform_dim_raises(self):
+        da = xd.testing.dummy()
+        chunk = da.isel(time=slice(0, 50))
+        for func in (xfft.fft, xfft.rfft, xfft.ifft, xfft.irfft):
+            atom = func(..., dim={"time": "frequency"})
+            with pytest.raises(ValueError, match="whole record"):
+                atom(chunk, chunk_dim="time")
+
+    def test_default_dim_is_conservative(self):
+        da = xd.testing.dummy()
+        atom = xfft.fft(...)
+        with pytest.raises(ValueError, match="whole record"):
+            atom(da.isel(time=slice(0, 50)), chunk_dim="time")
+
+    def test_chunked_along_other_dim_commutes(self):
+        da = xd.testing.dummy()
+        atom = xfft.rfft(..., dim={"distance": "wavenumber"})
+        chunks = [atom(chunk, chunk_dim="time") for chunk in xd.split(da, 4, "time")]
+        result = xd.concat(chunks, "time")
+        expected = xfft.rfft(da, dim={"distance": "wavenumber"})
+        assert result.equals(expected)
