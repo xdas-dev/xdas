@@ -75,13 +75,15 @@ Methods
    Partial.get_state
 ```
 
-## Decorators
+## Decorators and composition
 
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
 
+   as_function
    atomized
+   compose
 ```
 
 ## Signal processing
@@ -90,13 +92,25 @@ Methods
 .. autosummary::
    :toctree: ../_autosummary
 
-   DownSample
    FIRFilter
    IIRFilter
-   LFilter
    MLPicker
    ResamplePoly
-   SOSFilter
    Trigger
+```
+
+## Kernel atoms
+
+Expert layer (`xdas.atoms.kernel`): exact stateful primitives with machine
+parameters, designed by the task atoms from the data at the first call.
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   DownSample
+   LFilter
+   Polyphase
+   SOSFilter
    UpSample
 ```

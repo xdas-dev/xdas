@@ -11,8 +11,10 @@ from xdas.atoms import (
     DownSample,
     FIRFilter,
     IIRFilter,
+    LFilter,
     MLPicker,
     Partial,
+    Polyphase,
     ResamplePoly,
     Sequential,
     UpSample,
@@ -207,6 +209,8 @@ class TestFilters:
         result = xd.concat([atom(chunk, chunk_dim="time") for chunk in chunks], "time")
         assert result.equals(expected)
 
+        assert UpSample(1, dim="time")(da).equals(da)
+
     def test_firfilter(self):
         da = xd.testing.dummy()
         chunks = xd.split(da, 6, "time")
@@ -215,7 +219,10 @@ class TestFilters:
         expected["time"] -= np.timedelta64(10, "ms") * 5
         atom = FIRFilter(11, 10.0, "lowpass", dim="time")
         result = atom(da)
-        assert result.equals(expected)
+        # The polyphase form accumulates the taps in a different order than
+        # `lfilter`, so the two agree to rounding rather than exactly.
+        assert np.allclose(result.values, expected.values, atol=1e-16, rtol=1e-11)
+        assert result.coords.equals(expected.coords)
 
         result = xd.concat([atom(chunk, chunk_dim="time") for chunk in chunks], "time")
         assert np.allclose(result.values, expected.values, atol=1e-16, rtol=1e-11)
@@ -256,6 +263,86 @@ class TestResamplePoly:
         atom = ResamplePoly(fs, maxfactor=10, dim="time")
         result = atom(da)
         assert result.equals(da)
+
+
+class TestPolyphase:
+    """The fused kernel against the upsample/filter/downsample chain it replaces."""
+
+    @staticmethod
+    def chain(taps, up, down, dim="time"):
+        """The unfused formulation, kept here as the reference."""
+
+        def apply(da):
+            # UpSample already carries the `up` energy scaling of the taps.
+            da = UpSample(up, dim=dim)(da) if up > 1 else da
+            da = LFilter(taps, [1.0], dim)(da)
+            da[dim] -= xd.get_sampling_interval(da, dim, cast=False) * (
+                (len(taps) - 1) // 2
+            )
+            return DownSample(down, dim)(da) if down > 1 else da
+
+        return apply
+
+    @pytest.mark.parametrize("up, down", [(1, 1), (1, 2), (1, 5), (2, 1), (2, 5)])
+    def test_equals_the_explicit_chain(self, up, down):
+        da = xd.testing.dummy(shape=(101, 5))
+        taps = sp.firwin(20 * max(up, down) + 1, 0.4 / max(up, down))
+        expected = self.chain(taps, up, down)(da)
+        result = Polyphase(up * taps, up, down, "time")(da)
+        assert result.sizes["time"] == expected.sizes["time"]
+        np.testing.assert_allclose(result.values, expected.values, atol=1e-15)
+        assert result.coords.equals(expected.coords)
+
+    @pytest.mark.parametrize("up, down", [(1, 2), (2, 5), (3, 10)])
+    def test_pinned_against_upfirdn(self, up, down):
+        # An eager call emits ceil(size * up / down) samples, the leading ones
+        # of scipy's own upfirdn output; the group delay moves the coordinate,
+        # never the values.
+        da = xd.testing.dummy(shape=(101, 5))
+        taps = sp.firwin(21, 0.4 / max(up, down))
+        result = Polyphase(taps, up, down, "time")(da)
+        full = sp.upfirdn(taps, da.values, up, down, axis=0)
+        assert result.sizes["time"] == -(-101 * up // down)
+        np.testing.assert_allclose(
+            result.values, full[: result.sizes["time"]], atol=1e-15
+        )
+
+    @pytest.mark.parametrize("up, down", [(1, 2), (2, 5), (2, 3)])
+    @pytest.mark.parametrize("nchunk", [3, 7])
+    def test_chunked_equals_eager(self, up, down, nchunk):
+        da = xd.testing.dummy(shape=(101, 5))
+        taps = sp.firwin(21, 0.4 / max(up, down))
+        eager = Polyphase(taps, up, down, "time")(da)
+        atom = Polyphase(taps, up, down, "time")
+        outs = [atom(chunk, chunk_dim="time") for chunk in xd.split(da, nchunk, "time")]
+        chunked = xd.concat(outs, "time")
+        np.testing.assert_allclose(chunked.values, eager.values, atol=1e-15)
+        assert chunked.coords.equals(eager.coords)
+
+    def test_keeps_the_data_precision(self):
+        da = xd.testing.dummy(shape=(101, 5), dtype="float32")
+        taps = sp.firwin(21, 0.2)
+        assert taps.dtype == np.float64
+        result = Polyphase(taps, 1, 2, "time")(da)
+        assert result.dtype == np.float32
+        expected = Polyphase(taps, 1, 2, "time")(da.copy(data=da.values.astype(float)))
+        np.testing.assert_allclose(result.values, expected.values, rtol=1e-6)
+
+    def test_rate_the_coordinate_cannot_represent_exactly(self):
+        # 100 Hz resampled by 3/10 is 10/3 nanoseconds per output sample: the
+        # truncated step must be declared as jitter, not silently drift.
+        da = xd.testing.dummy(shape=(101, 5))
+        taps = sp.firwin(31, 0.4 / 10)
+        result = Polyphase(3 * taps, 3, 10, "time")(da)
+        coord = result.coords["time"]
+        assert coord.isregular()
+        assert coord.tolerance > np.timedelta64(0, "ns")
+
+    def test_too_few_taps(self):
+        da = xd.testing.dummy(shape=(20, 5))
+        atom = Polyphase(sp.firwin(3, 0.4), 5, 1, "time")
+        with pytest.raises(ValueError, match="at least 5 taps"):
+            atom(da)
 
 
 class TestMLPicker:
