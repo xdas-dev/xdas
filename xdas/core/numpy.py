@@ -45,8 +45,12 @@ def handled(reduce=False, drop_coords=False, **defaults):
         def wrapper(*args, **kwargs):
             """Forward *func* call while preserving or reducing DataArray coordinates."""
             ba = sig.bind(*args, **kwargs)
+            # `defaults` overrides numpy's own defaults, never the caller's
+            # arguments: bind first, fill what was not given, only then apply
+            # numpy's remaining defaults.
+            for name, value in defaults.items():
+                ba.arguments.setdefault(name, value)
             ba.apply_defaults()
-            ba.arguments.update(defaults)
             key = next(iter(ba.arguments))
             da = ba.arguments.get(key)
             axis = ba.arguments.get("axis")
