@@ -30,6 +30,8 @@
 - Fix the miniseed `ctype` argument being ignored: the reader always built interpolated time coordinates. The default is unchanged (@atrabattoni).
 - Fix a data collection keyed by zero-padded codes — a SEED location such as `"00"`, say — reading back from netCDF as a sequence with its keys lost (@atrabattoni).
 - Fix miniSEED scans being forced to a single process (@atrabattoni).
+- Fix `sel` raising on a string-labelled coordinate: the overlap guard differenced the coordinate values, which numpy cannot do on strings, so `da.sel(phase="P")` failed before any selection happened. Label selection — scalar, list, reordering list and slice — now works, and `isel` with hard-coded positions is no longer the only option (@atrabattoni).
+- Fix `sel` refusing an exact label look-up on a coordinate whose values are not sorted, such as a categorical axis like `["P", "S", "N"]`. The overlap guard covered every kind of selection, but only ordered look-ups — a slice, or `method="nearest"` and friends — need a sorted axis; naming a label does not. Those stay guarded, `da.sel(phase=["S", "P"])` now works and returns the labels in the requested order (@atrabattoni).
 
 ## 0.2.8
 

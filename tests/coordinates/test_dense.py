@@ -3,6 +3,7 @@ import pandas as pd
 import pytest
 import xarray as xr
 
+import xdas as xd
 from xdas.coordinates import DenseCoordinate, ScalarCoordinate
 
 
@@ -195,6 +196,38 @@ class TestDenseCoordinate:
         )
         assert not DenseCoordinate(times_bad)._is_monotonic_increasing()
 
+    def test_is_monotonic_increasing_duplicates(self):
+        # the check is strict: repeated values are not monotonic increasing.
+        assert not DenseCoordinate([1, 2, 2, 3])._is_monotonic_increasing()
+
+    def test_is_monotonic_increasing_strings(self):
+        # string dtypes have no `subtract` loop, so the check cannot be
+        # arithmetic; it must still work on labels.
+        assert DenseCoordinate(["N", "P", "S"])._is_monotonic_increasing()
+        assert not DenseCoordinate(["P", "N", "S"])._is_monotonic_increasing()
+        assert not DenseCoordinate(["N", "P", "P"])._is_monotonic_increasing()
+
+    @pytest.mark.parametrize(
+        "values",
+        [
+            [1, 2, 3],
+            [1, 2, 2, 3],
+            [3, 2, 1],
+            [1],
+            [],
+            np.array([0, 1, 2], dtype="datetime64[s]"),
+            np.array([0, 1, 1, 2], dtype="datetime64[s]"),
+            np.array([2, 1, 0], dtype="datetime64[s]"),
+        ],
+    )
+    def test_is_monotonic_increasing_matches_arithmetic(self, values):
+        # the pandas-based check must agree with the arithmetic one it replaced
+        # wherever the latter was defined.
+        coord = DenseCoordinate(values)
+        zero = np.timedelta64(0) if np.issubdtype(coord.dtype, np.datetime64) else 0
+        expected = bool(np.all(np.diff(coord.values) > zero))
+        assert coord._is_monotonic_increasing() == expected
+
     def test_add(self):
         coord = DenseCoordinate([1.0, 2.0, 3.0], "x")
         result = coord + 1.0
@@ -230,6 +263,151 @@ class TestDenseCoordinate:
         dataset["x"] = dataset["x"].astype(object)
         result = DenseCoordinate._collect_from_dataset(dataset, "x")
         assert "x" in result
+
+
+class TestDenseCoordinateStringSelection:
+    @staticmethod
+    def dataarray():
+        return xd.DataArray(
+            np.arange(12).reshape(4, 3),
+            {"time": [0.0, 1.0, 2.0, 3.0], "phase": ["N", "P", "S"]},
+        )
+
+    def test_sel_scalar(self):
+        result = self.dataarray().sel(phase="P")
+        assert np.array_equal(result.values, [1, 4, 7, 10])
+        assert result.coords["phase"].values == "P"
+
+    def test_sel_list(self):
+        result = self.dataarray().sel(phase=["P", "S"])
+        assert np.array_equal(result.values, [[1, 2], [4, 5], [7, 8], [10, 11]])
+        assert np.array_equal(result.coords["phase"].values, ["P", "S"])
+
+    def test_sel_list_reorders(self):
+        result = self.dataarray().sel(phase=["S", "P"])
+        assert np.array_equal(result.values, [[2, 1], [5, 4], [8, 7], [11, 10]])
+        assert np.array_equal(result.coords["phase"].values, ["S", "P"])
+
+    def test_sel_slice(self):
+        result = self.dataarray().sel(phase=slice("N", "P"))
+        assert np.array_equal(result.values, [[0, 1], [3, 4], [6, 7], [9, 10]])
+        assert np.array_equal(result.coords["phase"].values, ["N", "P"])
+
+    def test_sel_missing_label(self):
+        with pytest.raises(KeyError):
+            self.dataarray().sel(phase="Q")
+
+
+class TestDenseCoordinateUnsortedSelection:
+    """
+    Label selection on an axis whose labels are not in sorted order.
+
+    A categorical axis is unordered by nature — a SeisBench phase axis is
+    ``"PSN"`` on 14 of the 17 cached ``PhaseNet`` weight sets and ``"NPS"`` on
+    the other three — yet every label still designates exactly one position, so
+    an exact look-up is well defined. Ordered look-ups (a slice, or ``method``)
+    are not, and stay guarded.
+    """
+
+    @staticmethod
+    def dataarray():
+        return xd.DataArray(
+            np.arange(12).reshape(4, 3),
+            {"time": [0.0, 1.0, 2.0, 3.0], "phase": ["P", "S", "N"]},
+        )
+
+    def test_the_axis_is_not_monotonic_increasing(self):
+        assert not self.dataarray()["phase"]._is_monotonic_increasing()
+
+    def test_sel_scalar(self):
+        result = self.dataarray().sel(phase="P")
+        assert np.array_equal(result.values, [0, 3, 6, 9])
+        assert result.coords["phase"].values == "P"
+
+    def test_sel_list(self):
+        result = self.dataarray().sel(phase=["P", "S"])
+        assert np.array_equal(result.values, [[0, 1], [3, 4], [6, 7], [9, 10]])
+        assert np.array_equal(result.coords["phase"].values, ["P", "S"])
+
+    def test_sel_list_preserves_the_requested_order(self):
+        result = self.dataarray().sel(phase=["S", "P"])
+        assert np.array_equal(result.values, [[1, 0], [4, 3], [7, 6], [10, 9]])
+        assert np.array_equal(result.coords["phase"].values, ["S", "P"])
+
+    def test_sel_missing_label(self):
+        with pytest.raises(KeyError):
+            self.dataarray().sel(phase="Q")
+
+    def test_sel_slice_is_still_refused(self):
+        # a slice resolves its bounds by searching, so the guard still catches
+        # it and sends it down the split-on-overlaps path, which cannot order
+        # these labels either: the selection fails rather than returning
+        # something arbitrary. The `TypeError` is numpy's, from differencing
+        # strings while looking for the overlaps.
+        with (
+            pytest.raises(TypeError),
+            pytest.warns(match="not monotonic increasing"),
+        ):
+            self.dataarray().sel(phase=slice("P", "S"))
+
+    def test_sel_with_method_is_still_refused(self):
+        # a neighbour search is an ordered look-up too.
+        with pytest.raises(NotImplementedError, match="overlaps"):
+            self.dataarray().sel(phase="P", method="nearest")
+
+
+class TestDenseCoordinateUnsortedNumericSelection:
+    """Exact selection needs no order on numeric axes either."""
+
+    @staticmethod
+    def dataarray():
+        return xd.DataArray(np.arange(4), {"x": [30.0, 10.0, 40.0, 20.0]})
+
+    def test_sel_scalar(self):
+        assert self.dataarray().sel(x=40.0).values == 2
+
+    def test_sel_list_preserves_the_requested_order(self):
+        result = self.dataarray().sel(x=[40.0, 10.0])
+        assert np.array_equal(result.values, [2, 1])
+        assert np.array_equal(result.coords["x"].values, [40.0, 10.0])
+
+    def test_sel_datetime_scalar(self):
+        da = xd.DataArray(
+            np.arange(3),
+            {"time": np.array(["2000-01-03", "2000-01-01", "2000-01-02"], "M8[s]")},
+        )
+        assert da.sel(time="2000-01-01").values == 1
+
+    def test_sorted_axes_are_untouched(self):
+        da = xd.DataArray(np.arange(4), {"x": [10.0, 20.0, 30.0, 40.0]})
+        assert da.sel(x=30.0).values == 2
+        assert np.array_equal(da.sel(x=slice(20.0, 30.0)).values, [1, 2])
+        assert da.sel(x=24.0, method="nearest").values == 1
+
+
+class TestDenseCoordinateDuplicatedSelection:
+    """
+    Duplicated labels are ambiguous, whatever the guard does.
+
+    The ``is_unique`` half of the monotonicity check keeps routing slices
+    through the split-on-overlaps path, and an exact look-up is refused by
+    ``pandas`` because it cannot name a single position.
+    """
+
+    @staticmethod
+    def dataarray():
+        return xd.DataArray(np.arange(4), {"x": [10.0, 20.0, 20.0, 30.0]})
+
+    def test_the_axis_is_not_monotonic_increasing(self):
+        assert not self.dataarray()["x"]._is_monotonic_increasing()
+
+    def test_sel_slice_still_takes_the_guarded_path(self):
+        with pytest.warns(match="not monotonic increasing"):
+            self.dataarray().sel(x=slice(10.0, 30.0))
+
+    def test_sel_scalar_is_refused(self):
+        with pytest.raises(pd.errors.InvalidIndexError):
+            self.dataarray().sel(x=20.0)
 
 
 class TestDenseCoordinateToRegular:

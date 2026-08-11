@@ -68,11 +68,11 @@ class DenseCoordinate(AxisCoordinate, ctype="dense"):
 
     @override
     def _is_monotonic_increasing(self):
-        if np.issubdtype(self.dtype, np.datetime64):
-            zero = np.timedelta64(0)
-        else:
-            zero = 0
-        return np.all(np.diff(self.values) > zero)
+        # `pandas` is used rather than differencing the values: `np.diff` has no
+        # `subtract` loop for string dtypes, which would make any label-based
+        # selection fail. `is_unique` restores the strict increase, since
+        # `pandas` considers repeated values monotonic increasing.
+        return self.index.is_monotonic_increasing and self.index.is_unique
 
     @override
     def _get_value(self, index):
