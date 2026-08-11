@@ -12,7 +12,8 @@ import numpy as np
 
 from ..core import DataArray, concat, stack
 from .core import Atom, Sequential, State, atomized
-from .tasks import Filter
+from .detect import Trigger
+from .tasks import Filter, Resample
 
 
 class LazyModule:
@@ -71,6 +72,18 @@ COMPONENT_LEVELS = ("channel", "component")
 #: ``ZNE`` weights — see :func:`component_keys`.
 CHANNEL_CODE_LENGTHS = (1, 3)
 
+#: Label of the noise class, which is never picked. SeisBench identifies it by
+#: this exact name — ``classify_aggregate`` skips ``phase == "N"`` — and so do
+#: we, rather than by position: the label *order* is a property of the weight
+#: set and flips between them (``NPS`` for PhaseNet's ``original``, ``PSN`` for
+#: most others), so a positional rule would silently pick noise.
+NOISE_LABEL = "N"
+
+#: Detection threshold used when neither the weight set's ``default_args`` nor
+#: the model's ``_annotate_args`` declares one. SeisBench's ``PhaseNet``
+#: documents the same value under the ``*_threshold`` key.
+DEFAULT_THRESHOLD = 0.3
+
 
 def annotate_arg(model, argdict, key):
     """
@@ -103,6 +116,165 @@ def annotate_arg(model, argdict, key):
     if entry is None:
         return ANNOTATE_DEFAULTS[key]
     return entry[1]
+
+
+def model_phases(model):
+    """
+    Return the labels a model's output classes carry, in order.
+
+    ``labels`` is per-weight-set and SeisBench lets a weight set leave it unset
+    or make it a callable, resolving both only when it builds its output
+    stream. ``None`` falls back to positional labels ``0, 1, ... classes - 1``,
+    exactly as ``WaveformModel._predictions_to_stream`` does. A callable is
+    refused: SeisBench feeds it the identity of the trace being annotated,
+    which these atoms do not carry, and a silently wrong ``phase`` coordinate
+    would key :class:`~xdas.atoms.Trigger`'s thresholds onto the wrong class.
+
+    Parameters
+    ----------
+    model : seisbench.models.WaveformModel
+        The model whose weight set is read.
+
+    Returns
+    -------
+    list
+        One label per output class.
+    """
+    labels = model.labels
+    if labels is None:
+        classes = getattr(model, "classes", None)
+        if classes is None:
+            raise ValueError(
+                "the model declares neither `labels` nor `classes`, so "
+                "neither the number nor the names of its outputs can be "
+                "known: set `model.labels` on the weight set"
+            )
+        return list(range(classes))
+    if callable(labels):
+        raise TypeError(
+            "the model's `labels` is a callable, which SeisBench resolves "
+            "from the identity of the trace it annotates; this atom "
+            "annotates arrays, so set `model.labels` to the list of "
+            "output names instead"
+        )
+    return list(labels)
+
+
+def model_pick_labels(model):
+    """
+    List the labels of *model* that are picked, as SeisBench picks them.
+
+    A model may declare which of its outputs are phases in a ``phases``
+    attribute — beware the name, SeisBench's ``model.phases`` is this *subset*
+    while :attr:`Annotate.phases` is the full label list. ``classify_aggregate``
+    walks exactly that attribute, so ``EQTransformer``'s detection trace and
+    ``EQTP``'s polarities are left out of the picking the way noise is: still
+    emitted in the characteristic function, never triggered on. A model
+    declaring no subset gets all its labels but :data:`NOISE_LABEL`.
+
+    Parameters
+    ----------
+    model : seisbench.models.WaveformModel
+        The model whose weight set is read.
+
+    Returns
+    -------
+    list
+        One label per picked class.
+
+    Examples
+    --------
+    >>> from xdas.atoms.ml import model_pick_labels
+
+    >>> class PhaseNet:
+    ...     labels = "NPS"
+    >>> model_pick_labels(PhaseNet())
+    ['P', 'S']
+
+    >>> class EQTransformer(PhaseNet):
+    ...     labels, phases = ("Detection", "P", "S"), "PS"
+    >>> model_pick_labels(EQTransformer())
+    ['P', 'S']
+    """
+    phases = getattr(model, "phases", None)
+    if phases is None:
+        return [label for label in model_phases(model) if label != NOISE_LABEL]
+    return list(phases)
+
+
+def _model_thresholds(model, **annotate_kwargs):
+    """
+    Build the per-phase detection thresholds a weight set declares.
+
+    One entry per picked label, as :func:`model_pick_labels` resolves them —
+    SeisBench's ``classify_aggregate`` picks no others, and leaving them out of
+    the mapping is what stops :class:`~xdas.atoms.Trigger` triggering on them
+    while :class:`Annotate` keeps emitting them. Each threshold is looked up as
+    SeisBench does: what the call passes wins, else what the weight set
+    declares in ``default_args[f"{label}_threshold"]``, else the model's own
+    documented default for that key, else the ``*_threshold`` catch-all, else
+    :data:`DEFAULT_THRESHOLD`.
+
+    Values are passed through faithfully, including thresholds above one —
+    PhaseNet's ``iquique`` declares ``P_threshold = 1.12``, which simply never
+    fires. That is the weight set's own metadata, not ours to clamp.
+
+    Parameters
+    ----------
+    model : seisbench.models.WaveformModel
+        The model whose weight set is read.
+    **annotate_kwargs
+        SeisBench annotate arguments overriding the weight set's, including
+        the ``f"{label}_threshold"`` keys themselves.
+
+    Returns
+    -------
+    dict
+        One threshold per picked label, keyed on the label.
+
+    Examples
+    --------
+    >>> from xdas.atoms.ml import _model_thresholds
+
+    A weight set declaring nothing falls back to 0.3 per phase, and the noise
+    class gets no entry however the labels are ordered:
+
+    >>> class Plain:
+    ...     labels, default_args = "NPS", {}
+    >>> _model_thresholds(Plain())
+    {'P': 0.3, 'S': 0.3}
+
+    What the weight set declares wins, and what the call passes wins over that:
+
+    >>> class Geofon(Plain):
+    ...     labels = "PSN"
+    ...     default_args = {"P_threshold": 0.57, "S_threshold": 0.073}
+    >>> _model_thresholds(Geofon())
+    {'P': 0.57, 'S': 0.073}
+    >>> _model_thresholds(Geofon(), S_threshold=0.5)
+    {'P': 0.57, 'S': 0.5}
+
+    A detection trace is no more picked than noise is:
+
+    >>> class EQTransformer(Plain):
+    ...     labels, phases = ("Detection", "P", "S"), "PS"
+    >>> _model_thresholds(EQTransformer())
+    {'P': 0.3, 'S': 0.3}
+    """
+    argdict = dict(model.default_args) | annotate_kwargs
+    annotate_args = getattr(model, "_annotate_args", {})
+    fallback = annotate_args.get("*_threshold", (None, DEFAULT_THRESHOLD))[1]
+    thresholds = {}
+    for label in model_pick_labels(model):
+        key = f"{label}_threshold"
+        if key in argdict:
+            value = argdict[key]
+        elif key in annotate_args:
+            value = annotate_args[key][1]
+        else:
+            value = fallback
+        thresholds[label] = float(value)
+    return thresholds
 
 
 def resolve_sample_dim(da, dim):
@@ -608,8 +780,14 @@ class Annotate(Atom):
 
     @property
     def phases(self):
-        """List of phase label strings produced by the model."""
-        return list(self.model.labels)
+        """
+        List of the phase labels produced by the model.
+
+        Read off the weight set through :func:`model_phases`, which is also
+        what :func:`_model_thresholds` keys on, so the ``phase`` coordinate and
+        the thresholds of a pipeline agree by construction.
+        """
+        return model_phases(self.model)
 
     @property
     def in_channels(self):
@@ -618,8 +796,15 @@ class Annotate(Atom):
 
     @property
     def classes(self):
-        """Number of output classes (phases) the model produces."""
-        return getattr(self.model, "classes", len(self.phases))
+        """
+        Number of output classes the model produces.
+
+        Read off the labels rather than ``model.classes``, which counts only
+        what the architecture's *picking* head emits: ``EQTransformer`` sets it
+        to 2 while labelling three outputs, the third being its detection
+        trace.
+        """
+        return len(self.phases)
 
     @property
     def fill(self):
@@ -1260,6 +1445,200 @@ def _translate_filter(args, kwargs, sampling_rate=None):
             )
 
 
+class Picker(Sequential):
+    """
+    Pick phases with a SeisBench model: waveforms in, one pick table out.
+
+    The whole pipeline SeisBench's ``model.classify(stream)`` runs, assembled
+    from the weight set and nothing else::
+
+        model-declared filter  ->  Resample  ->  Annotate  ->  Trigger
+
+    Every stage is configured from the *weight set*, so two pickers built on
+    one model class can differ in stage count, sampling rate and thresholds::
+
+        Picker(PhaseNet("original"))       Picker(PhaseNet("obs"))
+          Resample(100.0)                    _ChannelFilter('??H', 0.5 Hz)
+          Annotate                           Resample(100.0)
+          Trigger({'P': 0.3, 'S': 0.3})      Annotate
+                                             Trigger({'P': 0.2, 'S': 0.1})
+
+    Being a :class:`Sequential` rather than a factory function, a picker keeps
+    everything a pipeline can do: ``>>`` composes it, ``repr`` shows its
+    stages, it pickles, and ``picker.process(source, out=...)`` streams it. It
+    also inherits the two collection hooks from the stages that define them —
+    :meth:`Annotate.gather` collapses a ``channel`` level into the component
+    dimension before the first stage runs, and :meth:`Trigger.merge` folds the
+    per-leaf tables — so picking a whole network is one call answering with
+    one table.
+
+    Parameters
+    ----------
+    model : seisbench.models.WaveformModel
+        The model to pick with, weights loaded.
+    thresh : float, mapping or None, optional
+        Trigger-on thresholds, as :class:`~xdas.atoms.Trigger` takes them.
+        ``None`` (default) reads them off the weight set: one per non-noise
+        label, so the noise class is never picked.
+    resample : bool, optional
+        Whether to resample to the model's own ``sampling_rate`` — which is
+        not always 100 Hz, PhaseNet's ``diting`` running at 50. ``True`` by
+        default; the stage is a no-op on data already at that rate, so it
+        costs nothing to leave in. ``False`` drops it, which is what to pass
+        when the data is already there or when the polyphase resampling is
+        not wanted. It is the one stage that does not match SeisBench, and by
+        a difference of passband rather than of accuracy: SeisBench resamples
+        with obspy's ``Trace.resample``, whose default ``window="hann"`` is
+        applied in the frequency domain and halves the amplitude at half the
+        input Nyquist, where the polyphase filter used here is flat.
+    filter : bool, optional
+        Whether to apply the preprocessing filter the weight set ships, if it
+        ships one. ``True`` by default. Of the 17 cached PhaseNet weight sets
+        only ``obs`` declares one, which is why most pipelines are three
+        stages.
+    dim : str, optional
+        The sample dimension. Defaults to ``"time"``. Unlike
+        :class:`Annotate`, the ``"first"``/``"last"`` aliases are refused: the
+        pick table names its columns after coordinates, so the dimension has
+        to be nameable before any data is seen.
+    components : str, False or None, optional
+        Name of the component dimension, and of the collection level to
+        gather. ``None`` (default) detects both, ``False`` disables both. See
+        :class:`Annotate`.
+    component_strategy : str, optional
+        How the model's input slots are filled, see :class:`Annotate`.
+    device : str or torch.device, optional
+        Torch device. Defaults to CUDA if available, else CPU.
+    tolerance : scalar, None or False, optional
+        Grid-snapping budget forwarded to :func:`xdas.stack` when a component
+        level is gathered, see :meth:`Annotate.gather`.
+    coords : sequence of str, "auto" or None, optional
+        The coordinates annotating the picks, as
+        :class:`~xdas.atoms.Trigger` takes them. Defaults to ``"auto"``: the
+        scalar coordinates lead, so a pick carries the identity its array
+        carries.
+    **annotate_kwargs
+        SeisBench annotate arguments (``overlap``, ``stacking``, ``blinding``,
+        ``P_threshold``, ...) overriding what the weight set declares.
+
+    Warnings
+    --------
+    A weight set whose filter is declared *per channel* — ``obs``'s 0.5 Hz
+    highpass on ``??H`` — can only select the channels it names once they are
+    labelled. On unlabelled data (a DAS section, a bare trace) the glob
+    matches nothing and the stage is a silent no-op, exactly as
+    ``stream.select`` is, while ``component_strategy="clone"`` still clones
+    the signal into the hydrophone slot. Label the channels, or do not run OBS
+    weights on unlabelled data.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import torch
+    >>> import xdas as xd
+    >>> from xdas.atoms import Picker
+
+    A stand-in for a real weight set, small enough to inline: an eight-sample
+    window, three components, three classes and one declared threshold.
+
+    >>> class Model(torch.nn.Module):
+    ...     in_samples, in_channels, classes = 8, 3, 3
+    ...     labels, component_order = "PSN", "ZNE"
+    ...     sampling_rate = 100.0
+    ...     default_args = {"overlap": 0, "P_threshold": 0.5}
+    ...     def annotate_batch_pre(self, batch, argdict):
+    ...         return batch
+    ...     def annotate_batch_post(self, batch, piggyback, argdict):
+    ...         return torch.transpose(batch, -1, -2)
+    ...     def forward(self, batch):
+    ...         return batch
+
+    The stages come from the weight set. This one declares no filter, so the
+    pipeline is three stages, and only the phases it can pick get a threshold
+    — the noise class never does:
+
+    >>> picker = Picker(Model(), device="cpu")
+    >>> [type(stage).__name__ for stage in picker]
+    ['Resample', 'Annotate', 'Trigger']
+    >>> picker[-1].thresh
+    {'P': 0.5, 'S': 0.3}
+
+    Picking a three-component record. The model here returns its input, so
+    the vertical channel is the ``P`` class:
+
+    >>> values = np.zeros((64, 3))
+    >>> values[20, 0] = 0.9
+    >>> da = xd.DataArray(
+    ...     values,
+    ...     {
+    ...         "time": {
+    ...             "tie_indices": [0, 63],
+    ...             "tie_values": [0.0, 0.63],
+    ...             "sampling_interval": 0.01,
+    ...         },
+    ...         "channel": ["SHZ", "SHN", "SHE"],
+    ...     },
+    ...     ("time", "channel"),
+    ... )
+    >>> da = da.assign_coords(network="IA", station="DBNFM")
+    >>> xd.pick(da, Model(), device="cpu")
+      network station phase  time  value
+    0      IA   DBNFM     P   0.2    0.9
+
+    """
+
+    def __init__(
+        self,
+        model,
+        thresh=None,
+        resample=True,
+        filter=True,
+        dim="time",
+        components=None,
+        component_strategy="auto",
+        device=None,
+        tolerance=None,
+        coords="auto",
+        **annotate_kwargs,
+    ):
+        if dim in ("first", "last"):
+            raise ValueError(
+                f"a picker needs its sample dimension by name, not as {dim!r}: "
+                "the picks are annotated with coordinates, which are named"
+            )
+        stages = []
+        if filter:
+            stage = _model_filter(
+                model, dim=dim, components=components, **annotate_kwargs
+            )
+            if stage is not None:
+                stages.append(stage)
+        if resample:
+            rate = getattr(model, "sampling_rate", None)
+            if not rate:
+                raise ValueError(
+                    "the weight set declares no `sampling_rate`, so there is "
+                    "nothing to resample to: pass `resample=False` to pick at "
+                    "the data's own rate"
+                )
+            stages.append(Resample(rate, dim=dim))
+        stages.append(
+            Annotate(
+                model,
+                dim=dim,
+                components=components,
+                component_strategy=component_strategy,
+                device=device,
+                tolerance=tolerance,
+                **annotate_kwargs,
+            )
+        )
+        if thresh is None:
+            thresh = _model_thresholds(model, **annotate_kwargs)
+        stages.append(Trigger(thresh, dim=dim, coords=coords))
+        super().__init__(stages, name="picker")
+
+
 class MLPicker(Annotate):
     """
     Deprecated alias of :class:`Annotate`, removed in 0.4.
@@ -1278,4 +1657,5 @@ class MLPicker(Annotate):
 
 
 annotate = atomized(Annotate)
+pick = atomized(Picker)
 mlpicker = atomized(MLPicker)

@@ -69,6 +69,7 @@ __all__ = [  # noqa: RUF022 - grouped by kind, not alphabetically
     "integrate",
     "medfilt",
     "mlpicker",
+    "pick",
     "rechunk",
     "resample",
     "sliding_mean_removal",
@@ -99,7 +100,7 @@ from . import (
 from . import trigger as _trigger_module  # noqa: F401  isort: skip
 from .atoms.detect import trigger
 from .atoms.kernel import rechunk
-from .atoms.ml import annotate, mlpicker
+from .atoms.ml import annotate, mlpicker, pick
 from .atoms.tasks import (
     decimate,
     detrend,

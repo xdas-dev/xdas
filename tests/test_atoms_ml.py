@@ -35,17 +35,20 @@ purpose, so the pin is split in two, and the split is the point:
       the two agree on, so it survives that too.
 """
 
+import pickle
+
 import numpy as np
 import numpy.testing as npt
 import obspy
+import pandas as pd
 import pytest
 import torch
 from seisbench.models import WaveformModel
 
 import xdas as xd
 from tests.fakemodel import WEIGHT_SETS, FakeModel, fake_model
-from xdas.atoms import Annotate, Filter, MLPicker, Resample, Sequential
-from xdas.atoms.ml import _ChannelFilter, _model_filter
+from xdas.atoms import Annotate, Filter, MLPicker, Picker, Resample, Sequential
+from xdas.atoms.ml import _ChannelFilter, _model_filter, _model_thresholds
 
 #: A short, exactly representable signal: two lanes that are neither equal nor
 #: proportional, so a bug that mixes lanes shows up in the golden.
@@ -1570,3 +1573,390 @@ class TestPreStackingAgrees:
         result = Annotate(annotate_model(), device="cpu")(dc)
         assert list(result) == ["ABC"]
         assert result["ABC"].dims == ("phase", "time")
+
+
+class DetectionModel(FakeModel):
+    """
+    A :class:`FakeModel` shaped like the ``EQTransformer`` family.
+
+    Three of them, on both counts that matter: ``classes`` counts only the
+    picking heads, so it disagrees with the number of labels, and ``forward``
+    returns one tensor per head rather than one stacked batch. The values are
+    the ones :class:`FakeModel` would produce for the same three labels, so the
+    two can be compared directly.
+    """
+
+    #: SeisBench's name for the *picked* subset of the labels — not the label
+    #: list, which is what `Annotate.phases` holds.
+    phases = "PS"
+
+    def __init__(self, **kwargs):
+        super().__init__(labels=("Detection", "P", "S"), classes=2, **kwargs)
+
+    def forward(self, x):
+        """Return one ``(batch, samples)`` tensor per label, as its heads do."""
+        weights = torch.arange(
+            1, self.in_channels + 1, dtype=x.dtype, device=x.device
+        ).reshape(1, -1, 1)
+        pooled = (x * weights).sum(dim=-2)
+        return tuple(pooled + index for index in range(len(self.labels)))
+
+    def annotate_batch_post(self, batch, piggyback, argdict):
+        """Stack the heads before blinding them, as ``EQTransformer`` does."""
+        batch = torch.stack(batch, dim=1)
+        return super().annotate_batch_post(batch, piggyback, argdict)
+
+
+def detection_model(**overrides):
+    """:func:`annotate_model`'s counterpart for the detection-trace family."""
+    overrides.setdefault("default_args", {"overlap": 0.5})
+    return DetectionModel(**overrides).eval()
+
+
+class TestAnnotateLabelsAreOptional:
+    """
+    W6: `model.labels` is per-weights, and SeisBench lets it be absent.
+
+    It lands with the label-keyed thresholds because the `phase` coordinate is
+    what those thresholds key on: a wrong or missing label there silently
+    thresholds the wrong class.
+    """
+
+    def test_absent_labels_fall_back_to_positional_ones(self):
+        # What `WaveformModel._predictions_to_stream` does with `labels=None`.
+        model = annotate_model("original", labels=None, classes=3)
+        picker = Annotate(model, "time", device="cpu")
+        assert picker.phases == [0, 1, 2]
+        result = picker(pin_array(("time", "distance")))
+        assert list(result.coords["phase"].values) == [0, 1, 2]
+
+    def test_callable_labels_are_refused_by_name(self):
+        model = annotate_model("original", labels=lambda stations: "P", classes=3)
+        picker = Annotate(model, "time", device="cpu")
+        with pytest.raises(TypeError, match="`labels` is a callable"):
+            _ = picker.phases
+
+    def test_a_model_declaring_neither_labels_nor_classes_raises(self):
+        model = annotate_model("original", labels=None, classes=3)
+        del model.classes
+        picker = Annotate(model, "time", device="cpu")
+        with pytest.raises(ValueError, match="neither `labels` nor `classes`"):
+            picker(pin_array(("time", "distance")))
+
+
+class TestAnnotateDetectionModels:
+    """
+    The `EQTransformer` family, whose `classes` counts fewer than its labels.
+
+    Its detection trace is an output like any other but not a phase, so the
+    architecture leaves it out of `classes` and the weight set out of `phases`.
+    Sizing the buffers on `classes` used to make the whole family unrunnable.
+    """
+
+    def test_the_class_count_comes_from_the_labels(self):
+        atom = Annotate(detection_model(), "time", device="cpu")
+        assert atom.model.classes == 2
+        assert atom.classes == 3
+
+    def test_every_label_is_annotated(self):
+        result = Annotate(detection_model(), "time", device="cpu")(trace_array())
+        assert result.dims == ("phase", "time")
+        assert list(result.coords["phase"].values) == ["Detection", "P", "S"]
+
+    def test_the_heads_agree_with_a_model_stacking_them_itself(self):
+        da = component_array(["SHZ", "SHN", "SHE"])
+        reference = annotate_model(None, labels=("Detection", "P", "S"))
+        assert_same_result(
+            Annotate(detection_model(), "time", device="cpu")(da),
+            Annotate(reference, "time", device="cpu")(da),
+        )
+
+    def test_the_detection_trace_is_no_more_picked_than_noise(self):
+        assert _model_thresholds(detection_model()) == {"P": 0.3, "S": 0.3}
+        picks = Picker(detection_model(), device="cpu")(
+            component_array(["SHZ", "SHN", "SHE"])
+        )
+        assert set(picks["phase"]) == {"P", "S"}
+
+
+# ---------------------------------------------------------------------------
+# W7 — `Picker`
+# ---------------------------------------------------------------------------
+
+
+def picker_model(name="original", **overrides):
+    """A preset windowed like :func:`annotate_model`, for the picker tests."""
+    default_args = dict(WEIGHT_SETS[name]["default_args"])
+    default_args.setdefault("overlap", 0.5)
+    overrides.setdefault("default_args", default_args)
+    return fake_model(name, **overrides)
+
+
+def station_tree(keys=("SHZ", "SHN", "SHE"), stations=("DBNFM", "LBFI")):
+    """A ``network / station / location / channel`` tree, one trace per channel."""
+    return xd.DataCollection(
+        {
+            "IA": xd.DataCollection(
+                {
+                    station: xd.DataCollection(
+                        {"--": component_collection(list(keys))}, "location"
+                    )
+                    for station in stations
+                },
+                "station",
+            )
+        },
+        "network",
+    )
+
+
+def stage_names(pipeline):
+    """The class names of a pipeline's stages, in order."""
+    return [type(stage).__name__ for stage in pipeline]
+
+
+class TestPickerStages:
+    """
+    W7: every stage is built from the weight set, and each one is droppable.
+
+    Three stages for `original` and four for `obs`, from one model class: that
+    is §3's point made executable.
+    """
+
+    def test_a_weight_set_declaring_no_filter_is_three_stages(self):
+        picker = Picker(picker_model("original"), device="cpu")
+        assert stage_names(picker) == ["Resample", "Annotate", "Trigger"]
+
+    def test_the_obs_weight_set_is_one_stage_longer(self):
+        picker = Picker(picker_model("obs"), device="cpu")
+        assert stage_names(picker) == [
+            "_ChannelFilter",
+            "Resample",
+            "Annotate",
+            "Trigger",
+        ]
+        assert picker[0].pattern == "??H"
+        assert picker[0].freq == (0.5, None)
+
+    def test_a_flat_filter_is_a_stage_too(self):
+        picker = Picker(picker_model("volpick"), device="cpu")
+        assert stage_names(picker) == ["Filter", "Resample", "Annotate", "Trigger"]
+
+    def test_the_filter_leads_the_resampling(self):
+        # W3: `annotate_stream_pre` filters *before* resampling, and filtering
+        # after is a different operation.
+        names = stage_names(Picker(picker_model("obs"), device="cpu"))
+        assert names.index("_ChannelFilter") < names.index("Resample")
+
+    @pytest.mark.parametrize("name, rate", [("original", 100), ("diting", 50)])
+    def test_the_resampling_targets_the_weight_sets_own_rate(self, name, rate):
+        # It is not always 100: `diting` runs at 50.
+        picker = Picker(picker_model(name), device="cpu")
+        assert picker[0].target == rate
+
+    def test_the_resampling_is_a_no_op_on_data_already_at_that_rate(self):
+        da = component_array(["SHZ", "SHN", "SHE"])  # 100 Hz, as the model wants
+        resample = Picker(picker_model("original"), device="cpu")[0]
+        npt.assert_array_equal(resample(da).values, da.values)
+
+    def test_resample_false_drops_the_stage(self):
+        picker = Picker(picker_model("original"), resample=False, device="cpu")
+        assert stage_names(picker) == ["Annotate", "Trigger"]
+
+    def test_filter_false_drops_the_declared_filter(self):
+        picker = Picker(picker_model("obs"), filter=False, device="cpu")
+        assert stage_names(picker) == ["Resample", "Annotate", "Trigger"]
+
+    def test_a_weight_set_without_a_rate_needs_resample_false(self):
+        model = picker_model("original", sampling_rate=None)
+        with pytest.raises(ValueError, match="declares no `sampling_rate`"):
+            Picker(model, device="cpu")
+        assert stage_names(Picker(model, resample=False, device="cpu")) == [
+            "Annotate",
+            "Trigger",
+        ]
+
+    def test_the_sample_dimension_reaches_every_stage(self):
+        picker = Picker(picker_model("obs"), dim="t", device="cpu")
+        assert [stage.dim for stage in picker] == ["t"] * 4
+
+    @pytest.mark.parametrize("alias", ["first", "last"])
+    def test_the_positional_dimension_aliases_are_refused(self, alias):
+        # The picks are annotated with coordinates, which are named, so the
+        # sample dimension must be nameable before any data is seen.
+        with pytest.raises(ValueError, match="needs its sample dimension by name"):
+            Picker(picker_model(), dim=alias, device="cpu")
+
+    def test_the_annotate_kwargs_reach_the_model(self):
+        picker = Picker(picker_model("original"), overlap=0, device="cpu")
+        assert picker[1].noverlap == 0
+
+    def test_it_is_a_pipeline_like_any_other(self):
+        picker = Picker(picker_model(), device="cpu")
+        assert isinstance(picker, Sequential)
+        assert isinstance(picker, xd.atoms.Atom)
+        assert repr(picker).startswith("Picker:")
+
+    def test_it_pickles(self):
+        picker = Picker(picker_model(), device="cpu")
+        assert stage_names(pickle.loads(pickle.dumps(picker))) == stage_names(picker)
+
+    def test_it_composes(self):
+        pipeline = xd.filter(..., (1.0, None), dim="time") >> Picker(
+            picker_model(), device="cpu"
+        )
+        assert isinstance(pipeline, Sequential)
+        assert stage_names(pipeline) == ["Filter", "Picker"]
+
+    def test_it_inherits_the_collection_hooks_of_its_stages(self):
+        picker = Picker(picker_model(), device="cpu")
+        assert picker.merge is not None  # from the trigger, the last stage
+        assert picker.gather(component_collection(["SHZ", "SHN", "SHE"])) is not None
+
+
+class TestPickerThresholds:
+    """W7: the thresholds are the weight set's own, one per non-noise label."""
+
+    @pytest.mark.parametrize("name", list(WEIGHT_SETS))
+    def test_the_noise_label_never_gets_an_entry(self, name):
+        model = fake_model(name)
+        assert "N" in model.labels  # every preset carries a noise class
+        assert set(_model_thresholds(model)) == {"P", "S"}
+
+    def test_the_thresholds_are_read_off_the_weight_set(self):
+        assert _model_thresholds(fake_model("geofon")) == {
+            "P": 0.5704745853696115,
+            "S": 0.07349645833964447,
+        }
+
+    def test_an_undeclared_threshold_falls_back_to_the_documented_default(self):
+        assert _model_thresholds(fake_model("original")) == {"P": 0.3, "S": 0.3}
+
+    def test_the_fallback_is_the_models_own_documentation(self):
+        model = fake_model("original", annotate_args={"*_threshold": 0.7})
+        assert _model_thresholds(model) == {"P": 0.7, "S": 0.7}
+
+    def test_a_model_documenting_one_phase_apart_is_honoured(self):
+        # `eqcct` documents an `S_threshold` of its own next to the catch-all.
+        model = fake_model("original", annotate_args={"S_threshold": 0.42})
+        assert _model_thresholds(model) == {"P": 0.3, "S": 0.42}
+
+    def test_a_model_documenting_nothing_at_all_falls_back_to_the_constant(self):
+        class Plain:
+            labels, default_args = "PSN", {}
+
+        assert _model_thresholds(Plain()) == {"P": 0.3, "S": 0.3}
+
+    def test_the_call_wins_over_the_weight_set(self):
+        model = picker_model("geofon")
+        assert _model_thresholds(model, S_threshold=0.5)["S"] == 0.5
+        assert Picker(model, S_threshold=0.5, device="cpu")[-1].thresh["S"] == 0.5
+
+    def test_a_threshold_above_one_is_passed_through_faithfully(self):
+        # `iquique` declares P = 1.12, which simply never fires: that is the
+        # weight set's own metadata, not ours to clamp.
+        model = fake_model("original", default_args={"P_threshold": 1.12})
+        assert _model_thresholds(model)["P"] == 1.12
+
+    def test_positional_labels_get_positional_thresholds(self):
+        model = fake_model("original", labels=None, classes=3)
+        assert _model_thresholds(model) == {0: 0.3, 1: 0.3, 2: 0.3}
+
+    def test_the_label_order_of_the_weight_set_is_irrelevant(self):
+        # `original` labels `NPS` and `geofon` `PSN`; keying on the label is
+        # what makes a positional flip harmless.
+        assert list(_model_thresholds(fake_model("original"))) == ["P", "S"]
+        assert list(_model_thresholds(fake_model("geofon"))) == ["P", "S"]
+
+    def test_the_picker_takes_them_by_default(self):
+        picker = Picker(picker_model("obs"), device="cpu")
+        assert picker[-1].thresh == {"P": 0.2, "S": 0.1}
+
+    @pytest.mark.parametrize("thresh", [0.5, {"P": 0.5}])
+    def test_thresh_overrides_the_weight_set(self, thresh):
+        picker = Picker(picker_model("geofon"), thresh=thresh, device="cpu")
+        assert picker[-1].thresh == thresh
+
+
+class TestPickerPicks:
+    """W7: §1's two lines, and the table they promise."""
+
+    def test_one_station_gives_one_table(self):
+        da = component_array(["SHZ", "SHN", "SHE"])
+        picks = Picker(picker_model("original"), device="cpu")(da)
+        assert isinstance(picks, pd.DataFrame)
+        assert list(picks.columns) == ["phase", "time", "value"]
+        assert list(picks["phase"]) == ["P", "S"]  # the noise class is not picked
+
+    def test_scalar_coordinates_annotate_the_picks(self):
+        da = component_array(["SHZ", "SHN", "SHE"])
+        da = da.assign_coords(network="IA", station="DBNFM", location="--")
+        picks = Picker(picker_model("original"), device="cpu")(da)
+        assert list(picks.columns) == [
+            "network",
+            "station",
+            "location",
+            "phase",
+            "time",
+            "value",
+        ]
+        assert set(picks["station"]) == {"DBNFM"}
+
+    def test_a_whole_network_in_one_call(self):
+        # §1: the picker gathers the channel level itself and merges the
+        # per-leaf tables, so a collection answers with one flat table.
+        picks = xd.pick(station_tree(), picker_model("original"), device="cpu")
+        assert isinstance(picks, pd.DataFrame)
+        assert list(picks.columns) == [
+            "network",
+            "station",
+            "location",
+            "phase",
+            "time",
+            "value",
+        ]
+        assert list(picks["station"]) == ["DBNFM", "DBNFM", "LBFI", "LBFI"]
+        assert list(picks["phase"]) == ["P", "S", "P", "S"]
+
+    def test_pre_stacking_the_channels_agrees(self):
+        model = picker_model("original")
+        dc = component_collection(["SHZ", "SHN", "SHE"])
+        gathered = xd.pick(dc, model, device="cpu")
+        stacked = xd.pick(xd.stack(dc, "channel"), model, device="cpu")
+        assert gathered.equals(stacked)
+
+    def test_components_false_walks_leaf_by_leaf(self):
+        dc = component_collection(["SHZ", "SHN", "SHE"])
+        picks = xd.pick(dc, picker_model("original"), components=False, device="cpu")
+        assert list(picks["channel"]) == ["SHZ", "SHZ", "SHN", "SHN", "SHE", "SHE"]
+
+    def test_a_threshold_no_lane_reaches_gives_an_empty_table(self):
+        da = component_array(["SHZ", "SHN", "SHE"])
+        picks = Picker(picker_model("original"), thresh=1e6, device="cpu")(da)
+        assert picks.empty
+
+    def test_the_eager_and_streamed_forms_agree(self):
+        da = component_array(["SHZ", "SHN", "SHE"], n=64)
+        model = picker_model("original")
+        expected = Picker(model, device="cpu")(da)
+        streamed = Picker(model, device="cpu").process(da, chunks={"time": 13})
+        assert streamed.equals(expected)
+
+    def test_the_twin_returns_the_atom_on_an_ellipsis(self):
+        picker = xd.pick(..., picker_model("original"), device="cpu")
+        assert isinstance(picker, Picker)
+
+    def test_the_twin_and_the_class_are_two_faces_of_one_thing(self):
+        da = component_array(["SHZ", "SHN", "SHE"])
+        model = picker_model("original")
+        assert xd.pick(da, model, device="cpu").equals(Picker(model, device="cpu")(da))
+
+    def test_a_gap_splits_the_record_into_runs(self):
+        # `Atom.__call__` splits at coordinate discontinuities, so a gappy
+        # station is picked segment by segment, as SeisBench's grouping does.
+        da = component_array(["SHZ", "SHN", "SHE"], n=64)
+        gappy = xd.concat(
+            [da.isel(time=slice(0, 24)), da.isel(time=slice(40, 64))], "time"
+        )
+        picks = Picker(picker_model("original"), device="cpu")(gappy)
+        assert len(picks) == 4  # one P and one S per run
