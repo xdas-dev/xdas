@@ -89,6 +89,15 @@ class TestDataArrayWriter:
         with pytest.raises(TypeError):
             dw.submit(None)
 
+    def test_the_chunked_dimension_need_not_lead(self, tmp_path):
+        # joining on the first dimension stacks the chunks along the wrong
+        # axis whenever the chunked dimension does not lead the output.
+        expected = xd.testing.dummy(shape=(1000, 100)).transpose("distance", "time")
+        dw = xp.DataArrayWriter(tmp_path, dim="time")
+        for chunk in xd.split(expected, 10, dim="time"):
+            dw.submit(chunk)
+        assert dw.result().equals(expected)
+
 
 class TestProcessing:
     def test_stateful(self, tmp_path):

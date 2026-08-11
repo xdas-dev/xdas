@@ -238,6 +238,11 @@ class DataArrayWriter:
         The maximum number of thread used to load the chunks.
     create_dirs : bool, optional
         Whether to create parent directories if they do not exist. Default is False.
+    dim : str, optional
+        Dimension the chunks follow each other along, used to join them at
+        :meth:`result`. Defaults to ``"first"``, which is only right when the
+        chunked dimension leads the output: a pipeline emitting it elsewhere
+        must name it.
 
     Examples
     --------
@@ -256,7 +261,13 @@ class DataArrayWriter:
     """
 
     def __init__(
-        self, dirpath, encoding=None, max_buffers=1, max_workers=1, create_dirs=False
+        self,
+        dirpath,
+        encoding=None,
+        max_buffers=1,
+        max_workers=1,
+        create_dirs=False,
+        dim="first",
     ):
         dirpath = str(dirpath) if isinstance(dirpath, Path) else dirpath
         if create_dirs:
@@ -264,6 +275,7 @@ class DataArrayWriter:
         if not os.path.exists(dirpath):
             raise OSError(f"no directory {dirpath}")
         self.dirpath = dirpath
+        self.dim = dim
         self.encoding = encoding
         self.max_buffers = max_buffers
         self.max_workers = max_workers
@@ -310,7 +322,7 @@ class DataArrayWriter:
             result = future.result()
             self._results.append(result)
         self.shutdown()
-        return concat(self._results)
+        return concat(self._results, self.dim)
 
 
 class DataFrameWriter:
