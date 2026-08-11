@@ -16,7 +16,9 @@ from xdas.atoms import (
     ResamplePoly,
     Sequential,
     UpSample,
+    atomized,
 )
+from xdas.atoms.core import _whole_record
 from xdas.signal import lfilter
 from xdas.synthetics import randn_wavefronts
 
@@ -383,11 +385,13 @@ class TestAtomCoreMissingBranches:
             xs.integrate(atom1, atom2)
 
     def test_atomized_sequential_input(self):
+        # Composition has value semantics: the input pipeline is not mutated.
         atom = xs.integrate(...)
         seq = Sequential([atom])
-        initial_len = len(seq)
-        xs.integrate(seq)
-        assert len(seq) == initial_len + 1
+        result = xs.integrate(seq)
+        assert isinstance(result, Sequential)
+        assert len(result) == 2
+        assert len(seq) == 1
 
     def test_set_state_nested_atom(self):
         from xdas.atoms.core import Atom, State
@@ -521,3 +525,201 @@ class TestMLPickerMissingBranches:
         model = sbm.PhaseNet.from_pretrained("geofon")
         with pytest.raises(ValueError, match="component_strategy must be one of"):
             MLPicker(model, dim="time", component_strategy="invalid")
+
+
+class TestCompose:
+    def test_rshift_atoms(self):
+        pipeline = xs.detrend(...) >> xs.integrate(...)
+        assert isinstance(pipeline, Sequential)
+        assert len(pipeline) == 2
+
+    def test_rshift_value_semantics(self):
+        head = xs.detrend(...)
+        pipeline = head >> xs.integrate(...)
+        longer = pipeline >> np.square
+        assert isinstance(head, Partial)
+        assert len(pipeline) == 2
+        assert len(longer) == 3
+
+    def test_irshift(self):
+        pipeline = xs.detrend(...)
+        pipeline >>= xs.integrate(...)
+        pipeline >>= np.square
+        assert isinstance(pipeline, Sequential)
+        assert len(pipeline) == 3
+
+    def test_rshift_callable_wraps(self):
+        pipeline = xs.detrend(...) >> np.square
+        assert isinstance(pipeline[-1], Partial)
+        assert pipeline[-1].func is np.square
+
+    def test_rrshift_callable_prepends(self):
+        pipeline = np.square >> xs.detrend(...)
+        assert isinstance(pipeline, Sequential)
+        assert pipeline[0].func is np.square
+
+    def test_rrshift_applies_to_data(self):
+        da = xd.testing.dummy()
+        result = da >> Partial(np.square)
+        assert np.allclose(result.values, np.square(da.values))
+
+    def test_rrshift_applies_pipeline_to_data(self):
+        da = xd.testing.dummy()
+        pipeline = Partial(np.abs) >> Partial(np.square)
+        result = da >> pipeline
+        assert np.allclose(result.values, np.square(np.abs(da.values)))
+
+    def test_named_sequential_kept_nested_on_right(self):
+        named = Sequential([Partial(np.square)], name="named")
+        pipeline = xs.detrend(...) >> named
+        assert len(pipeline) == 2
+        assert pipeline[1] is named
+
+    def test_named_sequential_extended_keeps_name(self):
+        named = Sequential([Partial(np.square)], name="named")
+        pipeline = named >> Partial(np.abs)
+        assert pipeline.name == "named"
+        assert len(pipeline) == 2
+        assert len(named) == 1
+
+    def test_unnamed_sequentials_flatten(self):
+        left = Partial(np.abs) >> Partial(np.square)
+        right = Partial(np.sqrt) >> Partial(np.abs)
+        pipeline = left >> right
+        assert len(pipeline) == 4
+
+    def test_rshift_with_data_on_right_raises(self):
+        with pytest.raises(TypeError):
+            xs.detrend(...) >> 1.0
+
+
+class TestTracing:
+    def test_ufunc_appends(self):
+        atom = xs.detrend(...)
+        traced = np.square(atom)
+        assert isinstance(traced, Sequential)
+        assert len(traced) == 2
+
+    def test_expression_matches_eager(self):
+        da = xd.testing.dummy()
+        atom = xs.detrend(...)
+        traced = 20 * np.log10(np.abs(atom) + 1e-12)
+        expected = 20 * np.log10(np.abs(xs.detrend(da)) + 1e-12)
+        assert np.allclose(traced(da).values, expected.values)
+
+    def test_reflected_scalar(self):
+        da = xd.testing.dummy()
+        traced = 2.0 * xs.detrend(...)
+        assert np.allclose(traced(da).values, 2.0 * xs.detrend(da).values)
+
+    def test_untraceable_attribute_raises(self):
+        atom = xs.detrend(...)
+        with pytest.raises(AttributeError):
+            _ = atom.values
+
+    def test_fan_in_raises(self):
+        atom1 = xs.detrend(...)
+        atom2 = xs.detrend(...)
+        with pytest.raises(TypeError, match="fan-in"):
+            np.add(atom1, atom2)
+
+    def test_same_atom_twice_raises(self):
+        atom = xs.detrend(...)
+        with pytest.raises(TypeError, match="fan-in"):
+            np.add(atom, atom)
+
+    def test_equality_is_identity(self):
+        atom1 = xs.detrend(...)
+        atom2 = xs.detrend(...)
+        alias = atom1
+        assert atom1 == alias
+        assert atom1 != atom2
+        assert len({atom1, atom2}) == 2
+
+
+class TestWholeRecordRefusal:
+    """Whole-record functions carry their own guard at the definition site."""
+
+    @staticmethod
+    def whole_record_atom(*args, **kwargs):
+        @atomized
+        @_whole_record()
+        def whole_record(da, dim="time"):
+            return da
+
+        return whole_record(*args, **kwargs)
+
+    def test_chunked_along_dim_raises(self):
+        da = xd.testing.dummy()
+        atom = self.whole_record_atom(...)
+        with pytest.raises(ValueError, match="whole record"):
+            atom(da, chunk_dim="time")
+
+    def test_chunked_along_other_dim_passes(self):
+        da = xd.testing.dummy()
+        atom = self.whole_record_atom(...)
+        atom(da, chunk_dim="distance")
+
+    def test_unchunked_passes(self):
+        da = xd.testing.dummy()
+        atom = self.whole_record_atom(...)
+        atom(da)
+
+    def test_positional_dim_resolved(self):
+        da = xd.testing.dummy()
+        atom = self.whole_record_atom(..., "distance")
+        atom(da, chunk_dim="time")
+        with pytest.raises(ValueError, match="whole record"):
+            atom(da, chunk_dim="distance")
+
+    def test_alias_dim_resolved_against_the_data(self):
+        da = xd.testing.dummy()  # dims ("time", "distance")
+        atom = self.whole_record_atom(..., "last")
+        atom(da, chunk_dim="time")
+        with pytest.raises(ValueError, match="whole record"):
+            atom(da, chunk_dim="distance")
+
+    def test_streaming_class_unaffected(self):
+        da = xd.testing.dummy()
+        chunks = xd.split(da, 3, "time")
+        atom = IIRFilter(4, 10.0, "lowpass", dim="time")
+        for chunk in chunks:
+            atom(chunk, chunk_dim="time")
+
+
+class TestFresh:
+    def test_fresh_is_stateless_and_config_shared(self):
+        sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
+        atom = Partial(xs.sosfilt, sos, ..., dim="time", zi=...)
+        da = xd.testing.dummy()
+        atom(da, chunk_dim="time")
+        assert atom.initialized
+        clone = atom.fresh()
+        assert not clone.initialized
+        assert clone.func is atom.func
+        assert atom.initialized  # the original is untouched
+        assert clone(da).equals(Partial(xs.sosfilt, sos, ..., dim="time", zi=...)(da))
+
+    def test_fresh_recurses_into_sequences(self):
+        sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
+        seq = Sequential(
+            [Partial(xs.sosfilt, sos, ..., dim="time", zi=...), Partial(np.square)],
+            name="energy",
+        )
+        da = xd.testing.dummy()
+        seq(da, chunk_dim="time")
+        clone = seq.fresh()
+        assert not clone.initialized
+        assert clone.name == "energy"
+        assert len(clone) == len(seq)
+        assert clone[0] is not seq[0]
+        assert clone[0].func is seq[0].func
+
+
+class TestInitializedRecurses:
+    def test_a_fresh_nested_atom_reports_uninitialized(self):
+        sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
+        seq = Sequential([Partial(xs.sosfilt, sos, ..., dim="time", zi=...)])
+        assert not seq.initialized
+        seq(xd.testing.dummy(), chunk_dim="time")
+        assert seq.initialized

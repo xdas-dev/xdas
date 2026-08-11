@@ -137,6 +137,14 @@ class DataArray(NDArrayOperatorsMixin):
         if method != "__call__":
             return NotImplemented
 
+        if any(
+            hasattr(input, "__array_ufunc__")
+            and not isinstance(input, (self.__class__, np.ndarray, np.generic))
+            for input in inputs
+        ):
+            # Defer to foreign implementations (e.g. atoms tracing pipelines).
+            return NotImplemented
+
         coords = broadcast_coords(
             *tuple(input for input in inputs if isinstance(input, self.__class__))
         )

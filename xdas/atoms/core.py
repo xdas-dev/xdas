@@ -2,13 +2,19 @@
 Base classes for stateful processing atoms.
 
 Includes :class:`Atom`, :class:`State`, :class:`Sequential`, :class:`Partial`,
-and the :func:`atomized` decorator.
+the :func:`atomized` decorator, the :func:`as_function` generator of the
+function form of an atom class, and the :func:`compose` primitive behind the
+``>>`` operator.
 """
 
 import importlib
+import inspect
+import re
 from collections.abc import Callable
 from functools import wraps
 from typing import Any
+
+import numpy as np
 
 from ..core import DataArray, DataCollection, open_datacollection
 
@@ -53,7 +59,7 @@ class State:
         self.state = state
 
 
-class Atom:
+class Atom(np.lib.mixins.NDArrayOperatorsMixin):
     """
     The base class for atoms. Used to implement new Atom objects.
 
@@ -83,6 +89,10 @@ class Atom:
     that are usefull for the processing but that can be recomputed from the minimal set
     are initialized in the `initialize_from_state` method.
 
+    Atoms compose into pipelines with the ``>>`` operator (see :func:`compose`)
+    and trace ordinary numpy expressions: applying a ufunc to an atom appends
+    the operation to the pipeline instead of computing it.
+
     Attributes
     ----------
         state: dict
@@ -101,6 +111,8 @@ class Atom:
             Performs the main processing logic of the atom.
         reset()
             Resets the atom to its initial state.
+        fresh()
+            Returns a stateless clone sharing the configuration.
 
     """
 
@@ -108,6 +120,14 @@ class Atom:
         object.__setattr__(self, "_config", {})
         object.__setattr__(self, "_state", {})
         object.__setattr__(self, "_atoms", {})
+
+    def __eq__(self, other):
+        return self is other
+
+    def __ne__(self, other):
+        return self is not other
+
+    __hash__ = object.__hash__
 
     def __repr__(self):
         name = self.__class__.__name__
@@ -140,8 +160,10 @@ class Atom:
 
     @property
     def initialized(self):
-        """``True`` if every state key has been initialised (no ``...`` sentinels remain)."""
-        return all(value is not ... for value in self._state.values())
+        """``True`` if every state key, nested atoms included, is initialised."""
+        return all(value is not ... for value in self._state.values()) and all(
+            atom.initialized for atom in self._atoms.values()
+        )
 
     def initialize(self, x, **flags):
         """Initialise the atom from a first chunks of data."""
@@ -158,6 +180,7 @@ class Atom:
     def __call__(self, x, **flags):
         """Process input data, initializing state if needed and resetting after final chunk."""
         chunk_dim = flags.get("chunk_dim", None)
+        self._check_chunk_dim(x, chunk_dim)
         if not self.initialized or chunk_dim is None:
             self.initialize(x, **flags)
         y = self.call(x, **flags)
@@ -165,12 +188,116 @@ class Atom:
             self.reset()
         return y
 
+    def _check_chunk_dim(self, x, chunk_dim):
+        """Raise if this atom cannot process *x* chunked along *chunk_dim*."""
+
+    def _refuse_chunked_along(self, dim, chunk_dim, x=None):
+        """
+        Raise if a whole-record operation is being chunked along its own dim.
+
+        The guard for atoms that need the whole record along the dimension
+        they work on: call it from :meth:`initialize` (or a
+        :meth:`_check_chunk_dim` override) with the dimension the atom works
+        along and the dimension the stream is chunked along. ``"first"`` and
+        ``"last"`` aliases are resolved against *x* when given, so the
+        comparison is never made on an unresolved alias.
+        """
+        if chunk_dim is None:
+            return
+        if x is not None and hasattr(x, "dims"):
+            if dim == "first":
+                dim = x.dims[0]
+            elif dim == "last":
+                dim = x.dims[-1]
+        if dim is None or dim in ("first", "last") or dim == chunk_dim:
+            name = (
+                getattr(self, "name", None)
+                or getattr(getattr(self, "func", None), "__name__", None)
+                or type(self).__name__
+            )
+            raise ValueError(
+                f"{name} needs the whole record along {dim!r} and cannot "
+                f"process data chunked along {chunk_dim!r}: process the "
+                f"stream unchunked, or chunk along another dimension"
+            )
+
+    def __rshift__(self, other):
+        """Compose with *other* into a new pipeline: ``atom >> atom``."""
+        if isinstance(other, Atom) or callable(other):
+            return compose(self, other)
+        return NotImplemented
+
+    def __rrshift__(self, other):
+        """Prepend a bare callable, or apply the pipeline: ``da >> atom``."""
+        if callable(other):
+            return compose(other, self)
+        return self(other)
+
+    __irshift__ = __rshift__
+
+    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        """Append the ufunc to the pipeline instead of computing it (tracing)."""
+        if ufunc is np.right_shift and method == "__call__" and len(inputs) == 2:
+            # ``da >> atom``: the DataArray operand dispatched through numpy.
+            left, right = inputs
+            if right is self and not isinstance(left, Atom):
+                return self.__rrshift__(left)
+        if method != "__call__":
+            return NotImplemented
+        if "out" in kwargs:
+            # In-place operators rebind the target name with their return
+            # value, so tracing them keeps value semantics: drop the `out`
+            # and append the out-of-place operation.
+            if kwargs["out"] != (self,):
+                return NotImplemented
+            kwargs = {key: value for key, value in kwargs.items() if key != "out"}
+        if sum(input is self for input in inputs) != 1 or any(
+            isinstance(input, Atom) and input is not self for input in inputs
+        ):
+            # Never bail silently into computation: fan-in is a design
+            # boundary, and the error must say so at the line that traced it.
+            raise TypeError(
+                "traced fan-in is not supported: a pipeline is a single "
+                "chain, so a ufunc may involve one atom exactly once "
+                "(combine the branches eagerly, or wrap the whole "
+                "expression in a function and Partial it)"
+            )
+        args = tuple(... if input is self else input for input in inputs)
+        return compose(self, Partial(ufunc, *args, **kwargs))
+
     def reset(self):
         """Reset all state entries to ``...`` (uninitialised sentinel)."""
         for key in self._state:
             setattr(self, key, State(...))
         for filter in self._atoms.values():
             filter.reset()
+
+    def fresh(self):
+        """
+        Return a stateless clone of this atom: same config, no state.
+
+        Config is shared *by reference* (a model is never deep-copied),
+        nested atoms are recursed, and every state entry comes back
+        uninitialised — where :meth:`reset` wipes this instance, ``fresh``
+        leaves it untouched, so one configured atom can serve several
+        independent runs.
+        """
+        clone = type(self).__new__(type(self))
+        Atom.__init__(clone)
+        for name, value in vars(self).items():
+            if name in ("_config", "_state", "_atoms"):
+                continue
+            if name in self._atoms:
+                setattr(clone, name, self._atoms[name].fresh())
+            elif name in self._state:
+                setattr(clone, name, State(...))
+            elif name in self._config:
+                setattr(clone, name, value)
+            else:
+                # Attributes opted out of the registries with
+                # `object.__setattr__` (pure helpers) travel as they are.
+                object.__setattr__(clone, name, value)
+        return clone
 
     def save_state(self, path):
         """Serialise the current state to a NetCDF4 file at *path*."""
@@ -296,6 +423,10 @@ class Sequential(Atom, list):
             x = atom(x, **flags)
         return x
 
+    def fresh(self):
+        """Return a stateless clone: each stage cloned, config shared."""
+        return type(self)([atom.fresh() for atom in self], name=self.name)
+
     def __repr__(self) -> str:
         width = len(str(len(self)))
         name = self.name if self.name is not None else "sequence"
@@ -391,6 +522,23 @@ class Partial(Atom):
                 setattr(self, key, value)
             else:
                 self.kwargs[key] = value
+        # A whole-record function marked with `_whole_record` refuses chunked
+        # execution along its working dimension; that dimension is resolved
+        # from the call arguments so the guard can compare it with the
+        # chunked one.
+        dim_arg = getattr(func, "_whole_record_dim_arg", None)
+        if dim_arg is not None:
+            try:
+                bound = inspect.signature(func).bind_partial(*self.args, **self.kwargs)
+                bound.apply_defaults()
+                self.dim = bound.arguments.get(dim_arg)
+            except (TypeError, ValueError):
+                self.dim = None
+
+    def _check_chunk_dim(self, x, chunk_dim):
+        """Refuse chunking along the working dim of a whole-record function."""
+        if getattr(self.func, "_whole_record_dim_arg", None) is not None:
+            self._refuse_chunked_along(self.dim, chunk_dim, x)
 
     @property
     def stateful(self):
@@ -448,29 +596,74 @@ class Partial(Atom):
         }
 
 
+def compose(input, output):
+    """
+    Chain *input* then *output* into a new Sequential with value semantics.
+
+    Composition never mutates its operands: each call returns a fresh
+    Sequential, so intermediate pipelines stay usable on their own. Bare
+    callables are wrapped into Partial atoms. Unnamed Sequentials are
+    flattened; a named input Sequential keeps its name, a named output
+    Sequential stays nested.
+
+    This is the primitive behind the ``>>`` operator and operator tracing.
+
+    Parameters
+    ----------
+    input : Atom or callable
+        The upstream atom or pipeline.
+    output : Atom or callable
+        The atom or pipeline to append.
+
+    Returns
+    -------
+    Sequential
+        A new pipeline running *input* then *output*.
+    """
+    if not isinstance(input, Atom):
+        input = Partial(input)
+    if not isinstance(output, Atom):
+        output = Partial(output)
+    head = list(input) if isinstance(input, Sequential) else [input]
+    tail = (
+        list(output)
+        if isinstance(output, Sequential) and output.name is None
+        else [output]
+    )
+    name = input.name if isinstance(input, Sequential) else None
+    return Sequential(head + tail, name=name)
+
+
 def atomized(func):
     """
     Make the function return an Atom if `...` or an atom is passed as argument.
 
     In case `...` is passed as a positional argument, the function is wrapped into a
-    Partial object. If an Atom object is passed as a positional argument, the function
-    is wrapped into a Sequential object. Otherwise, the function is called as is.
+    Partial object. If an Atom object is passed as a positional argument, a new
+    Sequential is returned that chains that atom with the atomized function (the
+    input atom is never mutated). Otherwise, the function is called as is.
+
+    Applied to an Atom subclass, `atomized` instead generates its function
+    form (see :func:`as_function`): a function taking the data as first
+    argument followed by the class parameters, with the same `...`/atom
+    dispatch as above.
 
     Parameters
     ----------
-    func: callable
-        The function to wrap as a Partial atom if any `...` or input atom is a passed.
+    func: callable or type
+        The function to wrap as a Partial atom if any `...` or input atom is passed.
         It must handle the `...` argument as a placeholder for the input data and for
         the passing states. It must return a unique output except if the function is
         stateful. In that case, the function must return the processed data as first
-        output and the updated state as additional outputs.
+        output and the updated state as additional outputs. If an Atom subclass is
+        given, its function form is returned instead.
 
     Returns
     -------
     output or atom: Any or (Partial or Sequential)
         if no `...` or Atom object is passed as a positional argument, returns the
         output of the function. If an Atom object is passed as a positional argument,
-        returns a Sequential object containing the Atom object and the atomized function.
+        returns a new Sequential chaining the Atom object and the atomized function.
         If `...` is passed as a positional argument, returns a Partial object containing
         the atomized function. This latter has the same documentation and names than the
         original function.
@@ -514,6 +707,8 @@ def atomized(func):
     cumsum(...)  [stateful]
 
     """
+    if isinstance(func, type) and issubclass(func, Atom):
+        return as_function(func)
 
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -526,12 +721,76 @@ def atomized(func):
             else:
                 raise ValueError("Only one Atom object can be passed as function input")
             args = tuple(... if isinstance(arg, Atom) else arg for arg in args)
-            output = Partial(func, *args, **kwargs)
-            if isinstance(input, Sequential):
-                return input.append(output)
-            else:
-                return Sequential([input, output])
+            return compose(input, Partial(func, *args, **kwargs))
         else:
             return func(*args, **kwargs)
 
+    return wrapper
+
+
+def _whole_record(dim_arg="dim"):
+    """
+    Mark a function as needing the whole record along its working dimension.
+
+    The decorator to apply at the definition site of a whole-record function,
+    under :func:`atomized`: the resulting atoms refuse chunked execution
+    along the dimension named by the *dim_arg* argument (resolved from the
+    call arguments, aliases included), via
+    :meth:`Atom._refuse_chunked_along`.
+    """
+
+    def decorator(func):
+        func._whole_record_dim_arg = dim_arg
+        return func
+
+    return decorator
+
+
+def as_function(cls):
+    """
+    Generate the function form of an Atom subclass.
+
+    A lowercase function taking the data as first argument, then the class
+    parameters: called with data it builds the atom and applies it eagerly,
+    called with ``...`` in the data slot it returns the configured atom, and
+    called with an atom or a pipeline it returns a new pipeline extended
+    with this atom.
+
+    Parameters
+    ----------
+    cls : type
+        The :class:`Atom` subclass to generate the function form of.
+
+    Returns
+    -------
+    callable
+        The function form, named after the class in snake case.
+    """
+    parameters = [
+        parameter
+        for key, parameter in inspect.signature(cls.__init__).parameters.items()
+        if key != "self"
+    ]
+
+    def wrapper(da, *args, **kwargs):
+        atom = cls(*args, **kwargs)
+        if da is ...:
+            return atom
+        if isinstance(da, Atom):
+            return compose(da, atom)
+        return atom(da)
+
+    name = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", cls.__name__).lower()
+    wrapper.__name__ = name
+    wrapper.__qualname__ = name
+    wrapper.__module__ = cls.__module__
+    wrapper.__signature__ = inspect.Signature(
+        [inspect.Parameter("da", inspect.Parameter.POSITIONAL_OR_KEYWORD), *parameters]
+    )
+    wrapper.__doc__ = (
+        f"Apply a :class:`{cls.__name__}` atom to `da`.\n\n"
+        "Passing ``...`` as `da` returns the atom itself; passing an atom or a\n"
+        "pipeline returns a new pipeline extended with this atom. The other\n"
+        f"parameters are those of :class:`{cls.__name__}`, documented below.\n\n"
+    ) + (inspect.getdoc(cls) or "")
     return wrapper
