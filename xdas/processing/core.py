@@ -26,10 +26,25 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from .. import config
-from ..atoms.core import _announce_splits, _aschunks, _join_chunks
+from ..atoms.core import (
+    _annotate_path,
+    _announce_splits,
+    _aschunks,
+    _extend_path,
+    _iter_results,
+    _join_chunks,
+)
 from ..coordinates import AxisCoordinate
 from ..coordinates.core import parse_scalar_delta
-from ..core import DataArray, DataSequence, concat, open_dataarray, open_mfdataarray
+from ..core import (
+    DataArray,
+    DataCollection,
+    DataMapping,
+    DataSequence,
+    concat,
+    open_dataarray,
+    open_mfdataarray,
+)
 from ..virtual import TileArray, VirtualBackend, VirtualStack
 from .monitor import Monitor
 
@@ -218,7 +233,7 @@ def _dump(chunk, path, encoding):
     return open_dataarray(path)
 
 
-def process(atom, source, out=None, chunks=None, until=None):
+def process(atom, source, out=None, chunks=None, until=None, merge=True):
     """
     Execute a processing pipeline over any chunk source, into any sink.
 
@@ -237,10 +252,11 @@ def process(atom, source, out=None, chunks=None, until=None):
         reductions); at the end of the stream it is flushed so buffering
         atoms emit their remainder. :meth:`Atom.process` is this function
         with the atom bound.
-    source : DataArray, str, Path, iterable or loader
+    source : DataArray, DataCollection, str, Path, iterable or loader
         What to process. An in-memory :class:`DataArray` is processed in one
         eager call (or chunk by chunk if `chunks` is given); a virtual
-        DataArray streams through a :class:`DataArrayLoader`; a path,
+        DataArray streams through a :class:`DataArrayLoader`; a
+        :class:`~xdas.DataCollection` is walked leaf by leaf; a path,
         directory or glob pattern is opened with :func:`open_mfdataarray`
         first; a ``"tcp://..."`` address subscribes to a
         :class:`ZMQSubscriber`; any iterable of chunks (including
@@ -253,7 +269,11 @@ def process(atom, source, out=None, chunks=None, until=None):
         Stream (SDS) chunks, a ``*.csv`` file for DataFrame chunks, a
         ``"tcp://..."`` address publishes DataArrays. Non-inferable
         configuration (miniseed data quality, encodings) is passed as a
-        ready writer instance.
+        ready writer instance. Walking a collection, a single file, a URL
+        or a ready writer is *shared* by every leaf — one table for the
+        whole collection, the tree-path columns keeping the rows apart —
+        while a directory fans out, one subdirectory per leaf mirroring the
+        tree path (see :class:`_CollectionSink`).
     chunks : dict or "auto", optional
         Chunk sizes for DataArray sources, e.g. ``{"time": 1000}``.
         ``"auto"`` (the default for virtual sources) aligns chunk boundaries
@@ -262,6 +282,12 @@ def process(atom, source, out=None, chunks=None, until=None):
         Stop processing at this coordinate value along the chunked dimension.
         The chunk containing it is truncated; the pipeline is then flushed
         normally. This is the clean way to bound an unbounded source.
+    merge : bool, optional
+        Whether to fold the per-leaf results of a collection walk through
+        the atom's :attr:`~xdas.atoms.Atom.merge` hook, as ``atom(dc)``
+        does. Walk-level, not stage-level, and only meaningful for
+        ``out=None``: with any other sink the leaves were written as they
+        were produced and there is nothing left to fold. Default ``True``.
 
     Returns
     -------
@@ -269,6 +295,9 @@ def process(atom, source, out=None, chunks=None, until=None):
         The writer result: the joined output for ``out=None``, whatever the
         resolved writer's ``result()`` returns otherwise, or ``None`` when
         the pipeline emitted no output (no empty outputs are created).
+        Walking a collection, the result of a shared sink is its single
+        result and everything else answers with the tree, so
+        ``atom.process(dc, out=None)`` equals ``atom(dc)``.
 
     Notes
     -----
@@ -276,12 +305,47 @@ def process(atom, source, out=None, chunks=None, until=None):
     ``unbounded = True``) get streaming semantics: no byte total on the
     progress monitor, and a clean :exc:`KeyboardInterrupt` stops the loop,
     flushes the pipeline and returns the writer result instead of raising.
+
+    A :class:`~xdas.DataCollection` source is *walked*, exactly as
+    ``atom(dc)`` walks it (see :meth:`~xdas.atoms.Atom.__call__`): each
+    mapping level is first offered to the atom's
+    :meth:`~xdas.atoms.Atom.gather` hook — before anything is chunked, so a
+    channel level becomes a component dimension and the stacked array
+    streams as one thing — then recursed into, sequence levels are folded
+    element by element, and every leaf is streamed through the single-source
+    path with `chunks` and `until` applying per leaf. One atom instance
+    walks the leaves sequentially, reset between them: an atom holding a
+    model either saturates the CPU or holds a lot of device memory, so only
+    one should be live per node. Output chunks carry the tree path of the
+    leaf that produced them as they are produced, so a streaming walk hands
+    a leaf straight to a sink and still knows whose it was.
+
+    A :class:`~xdas.DataSequence` handed over as a collection is walked like
+    any other, so it folds rather than streaming as one concatenated result.
+    A glob or a directory that *opens* to a sequence is still a single
+    source, chained by :func:`get_source`; passing ``get_source(sequence)``
+    explicitly asks for the same of a collection in hand.
     """
+    if isinstance(source, (DataMapping, DataSequence)):
+        return _process_collection(atom, source, out, chunks, until, merge)
+    return _process_source(atom, source, out, chunks, until)
+
+
+def _process_source(atom, source, out, chunks, until, path=None):
+    """
+    Stream one source through *atom* into one sink (see :func:`process`).
+
+    The single-source path, and the only place chunks are actually driven.
+    *path* is the tree path of the leaf being streamed, when this runs as
+    one step of a collection walk: every output chunk is labelled with it
+    on its way to the sink, as it is produced.
+    """
+    path = {} if path is None else path
     source = get_source(source, chunks)
     if isinstance(source, DataArray):
         # In-memory, unchunked: direct eager call, then sink dispatch on the
         # result so `process(da, out=...)` and `pipeline(da)` stay twins.
-        result = atom(source)
+        result = _annotate_path(atom(source), path)
         if out is None:
             return result
         outputs = _aschunks(result)
@@ -307,6 +371,7 @@ def process(atom, source, out=None, chunks=None, until=None):
 
     def write(chunk):
         nonlocal writer
+        chunk = _annotate_path(chunk, path)
         if writer is None:
             writer = get_writer(out, chunk, chunk_dim)
         writer.write(chunk)
@@ -360,6 +425,258 @@ def process(atom, source, out=None, chunks=None, until=None):
             write(chunk_out)
     monitor.close()
     return writer.result() if writer is not None else None
+
+
+def _process_collection(atom, dc, out, chunks, until, merge):
+    """
+    Walk a collection leaf by leaf, streaming each leaf into the sink.
+
+    The streaming twin of :meth:`~xdas.atoms.Atom._walk`, and it mirrors it
+    step for step so the two cannot drift apart: ``atom.process(dc,
+    out=None)`` returns what ``atom(dc)`` returns.
+    """
+    walk = _Walk(atom, _CollectionSink(out), chunks, until)
+    result = walk.sink.result(walk.level(dc, {}))
+    if out is None and merge and getattr(atom, "merge", None) is not None:
+        return atom.merge(list(_iter_results(result)))
+    return result
+
+
+class _Walk:
+    """
+    One walk of a collection: what runs, where it writes, how it streams.
+
+    Holds everything a walk keeps constant — the atom, the resolved sink,
+    and the `chunks` and `until` that apply per leaf — so the recursion
+    carries only what changes: the level, and the tree path it was reached
+    by.
+
+    Parameters
+    ----------
+    atom : Atom or callable
+        The operation, one instance for the whole walk.
+    sink : _CollectionSink
+        The out spec, resolved per leaf.
+    chunks, until
+        As :func:`process`, applied per leaf.
+    """
+
+    def __init__(self, atom, sink, chunks, until):
+        self.atom = atom
+        self.sink = sink
+        self.chunks = chunks
+        self.until = until
+
+    def level(self, x, path):
+        """Walk one collection level, or stream *x* if it is a leaf."""
+        if isinstance(x, DataMapping):
+            gathered = self.atom.gather(x) if hasattr(self.atom, "gather") else None
+            if gathered is not None:
+                # Consulted before anything is chunked: the level becomes an
+                # axis of the input and the stacked array streams as one
+                # thing. Being consumed, it contributes no path column.
+                return self.level(gathered, path)
+            name = getattr(x, "name", None)
+            return DataCollection(
+                {
+                    key: self.level(value, _extend_path(path, name, key))
+                    for key, value in x.items()
+                },
+                name,
+            )
+        if isinstance(x, DataSequence):
+            return self.fold(x, path)
+        if hasattr(self.atom, "reset"):
+            self.atom.reset()  # one atom instance, the leaves taken one by one
+        return _asleaf(self.stream(self.atom, x, self.sink.spec(path), path))
+
+    def fold(self, x, path):
+        """
+        Fold a sequence level: one stream delivered in pieces.
+
+        State carries from element to element — the seams are judged from
+        the coordinates, as everywhere else — so the atom is flushed once,
+        after the last element, and its tail is attributed to that last
+        element. The whole sequence shares one sink: it is one stream, so
+        its chunks belong in one directory and concatenate into one result.
+        Only the tree-path column tells the elements apart, and only
+        approximately, since a buffering atom releases element *i-1*'s
+        samples while element *i* is being fed.
+        """
+        name = getattr(x, "name", None)
+        if hasattr(self.atom, "reset"):
+            self.atom.reset()
+        first = next((el for el in x if isinstance(el, DataArray)), None)
+        resolve = getattr(self.atom, "_resolve_dim", None)
+        dim = resolve(first) if resolve is not None else None
+        if dim is None:
+            # Nothing to fold along: each element is a leaf of its own.
+            return DataCollection(
+                [
+                    self.level(element, _extend_path(path, name, index))
+                    for index, element in enumerate(x)
+                ],
+                name,
+            )
+        spec = self.sink.spec(path)
+        writer = _SharedWriter(ResultWriter(None) if spec is None else spec)
+        for index, element in enumerate(x):
+            if not isinstance(element, DataArray):
+                raise NotImplementedError(
+                    "chunked processing of mapping collections is not supported: "
+                    "process each leaf with its own atom instance"
+                )
+            source = get_source(element, self.chunks)
+            if isinstance(source, DataArray):
+                source = _Element(source, dim)
+            self.stream(
+                _Held(self.atom), source, writer, _extend_path(path, name, index)
+            )
+        # Past the `dim` resolution the operation is an atom, so it flushes
+        # and resets; the tail is what its last element left buffered.
+        for chunk in self.atom.flush():
+            writer.write(
+                _annotate_path(chunk, _extend_path(path, name, max(len(x) - 1, 0)))
+            )
+        self.atom.reset()
+        result = writer.close()
+        if spec is None:
+            # As `Atom._fold`: the level answers with the chunks of its stream.
+            return DataCollection(_aschunks(result), name)
+        return _asleaf(result)
+
+    def stream(self, atom, source, out, path):
+        """Stream one leaf, or one element of a folded sequence, into *out*."""
+        return _process_source(atom, source, out, self.chunks, self.until, path)
+
+
+def _asleaf(result):
+    """Normalize a leaf result: nothing written is an empty collection."""
+    return DataCollection([]) if result is None else result
+
+
+class _Held:
+    """
+    An atom facade whose flush is held back.
+
+    A sequence level is one stream delivered in pieces, so its elements must
+    not each end the stream: the state carries across and the tail is
+    flushed once, by the walk, after the last element. Holding the flush is
+    also what keeps :func:`_process_source` from resetting the atom between
+    elements — the facade declares no ``reset``.
+    """
+
+    def __init__(self, atom):
+        self.atom = atom
+
+    def __call__(self, chunk, **flags):
+        """Process one chunk through the held atom."""
+        return self.atom(chunk, **flags)
+
+    def flush(self):
+        """Emit nothing: the stream is not over yet."""
+        return []
+
+
+class _Element:
+    """One in-memory element of a folded sequence, as a single-chunk source."""
+
+    def __init__(self, da, chunk_dim):
+        self.da = da
+        self.chunk_dim = chunk_dim
+
+    @property
+    def nbytes(self):
+        """Size of the element, in bytes."""
+        return self.da.nbytes
+
+    def __iter__(self):
+        yield self.da
+
+
+class _SharedWriter:
+    """
+    One writer shared by several streams of a collection walk.
+
+    A ``*.csv`` sink is one table for the whole collection — the tree-path
+    columns keep the leaves apart — so the writer must outlive the leaf that
+    created it and must not be closed by it. Resolution stays deferred to
+    the first output chunk (:func:`get_writer`), and :meth:`result` answers
+    nothing until the walk closes the sink itself.
+
+    Parameters
+    ----------
+    out : str, Path or writer
+        The out spec to resolve on the first chunk written.
+    """
+
+    def __init__(self, out):
+        self.out = out
+        self.writer = None
+
+    def write(self, chunk):
+        """Write one chunk, resolving the underlying writer on the first."""
+        if self.writer is None:
+            self.writer = get_writer(self.out, chunk)
+        self.writer.write(chunk)
+
+    def result(self):
+        """Answer nothing: a shared sink is closed by the walk, not by a leaf."""
+        return
+
+    def close(self):
+        """Close the underlying writer and return its result."""
+        return None if self.writer is None else self.writer.result()
+
+
+class _CollectionSink:
+    """
+    The `out` spec of a collection walk, resolved per leaf.
+
+    Three rules, one per kind of destination:
+
+    - ``None`` accumulates each leaf in memory, so the walk answers with the
+      tree the eager call returns;
+    - a single file, a URL or a ready writer instance is **shared** by every
+      leaf — one table, one archive, one socket for the whole collection,
+      the tree-path columns each chunk already carries keeping the rows
+      apart — and the walk answers with that one result;
+    - a directory **fans out**: one subdirectory per leaf, mirroring the
+      tree path, since a directory of netcdf chunks describes one stream.
+
+    Parameters
+    ----------
+    out : str, Path, writer or None
+        The out spec given to :func:`process`.
+    """
+
+    def __init__(self, out):
+        self.out = out
+        self.shared = None
+        if out is None:
+            pass
+        elif hasattr(out, "write") and hasattr(out, "result"):
+            self.shared = _SharedWriter(out)
+        elif isinstance(out, (str, Path)):
+            spec = str(out)
+            if re.match(r"[a-z0-9+.-]+://", spec) or Path(spec).suffix:
+                self.shared = _SharedWriter(out)
+        else:
+            raise TypeError(f"cannot infer a writer from `out` of type {type(out)}")
+
+    def spec(self, path):
+        """Return the out spec of the leaf reached by *path*."""
+        if self.shared is not None:
+            return self.shared
+        if self.out is None:
+            return None
+        return os.path.join(str(self.out), *(str(key) for key in path.values()))
+
+    def result(self, tree):
+        """Return the walk's answer, given its walked *tree* of leaf results."""
+        if self.shared is not None:
+            return self.shared.close()
+        return tree
 
 
 def _announce_realtime_seam(previous, chunk, chunk_dim):

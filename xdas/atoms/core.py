@@ -744,7 +744,7 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
         yield from self.flush()
         self.reset()
 
-    def process(self, source, out=None, chunks=None, until=None):
+    def process(self, source, out=None, chunks=None, until=None, merge=True):
         """
         Process any chunk source through this atom, writing to any sink.
 
@@ -754,18 +754,28 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
         atom). The same pipeline that runs eagerly with ``pipeline(da)``
         streams a massive archive with ``pipeline.process(da, out=...)``.
 
+        A :class:`~xdas.DataCollection` is walked exactly as ``atom(dc)``
+        walks it — `gather` first, then mapping levels recursed and sequence
+        levels folded, each leaf streamed in turn — so that
+        ``atom.process(dc, out=None) == atom(dc)``. The streaming form is
+        not second-class, which matters most where a leaf is too large to
+        call eagerly at all.
+
         Parameters
         ----------
-        source : DataArray, str, Path, iterable or loader
+        source : DataArray, DataCollection, str, Path, iterable or loader
             What to process: an in-memory or virtual :class:`DataArray`, a
-            file path, directory or glob pattern, a ``"tcp://..."`` address,
+            :class:`~xdas.DataCollection` to walk leaf by leaf, a file path,
+            directory or glob pattern, a ``"tcp://..."`` address,
             :func:`xdas.watch` for realtime, or any iterable of chunks.
         out : str, Path, writer or None, optional
             Where to write the output: ``None`` accumulates in memory and
             returns the joined result (size-guarded); a path is matched with
             the first output chunk (directory for DataArray or Stream
             chunks, ``*.csv`` for DataFrames, ``"tcp://..."`` to publish); a
-            writer instance passes through.
+            writer instance passes through. Walking a collection, a file, a
+            URL or a writer instance is shared by every leaf while a
+            directory fans out into one subdirectory per leaf.
         chunks : dict or "auto", optional
             Chunk sizes for DataArray sources, e.g. ``{"time": 1000}``.
             Virtual arrays default to ``"auto"``: chunk boundaries aligned
@@ -773,6 +783,10 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
         until : str, datetime64 or float, optional
             Stop at this coordinate value along the chunked dimension; the
             clean way to bound an unbounded source.
+        merge : bool, optional
+            Whether to fold the per-leaf results of a collection walk
+            through the `merge` hook, as ``atom(dc)`` does. Walk-level, not
+            stage-level, and only meaningful for ``out=None``.
 
         Returns
         -------
@@ -792,7 +806,7 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
         """
         from ..processing.core import process
 
-        return process(self, source, out=out, chunks=chunks, until=until)
+        return process(self, source, out=out, chunks=chunks, until=until, merge=merge)
 
     def _check_chunk_dim(self, x, chunk_dim):
         """Raise if this atom cannot process *x* chunked along *chunk_dim*."""

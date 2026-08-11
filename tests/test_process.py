@@ -17,10 +17,11 @@ import pytest
 
 import xdas as xd
 import xdas.processing as xp
-from xdas.atoms import Partial
+from xdas.atoms import Partial, State
 from xdas.atoms.core import _join_chunks
 from xdas.config import Config
 from xdas.processing.core import _auto_chunks, _ChainSource, _to_human
+from xdas.virtual import TileArray
 
 
 @pytest.fixture
@@ -542,3 +543,258 @@ class TestZMQRoundTrip:
         expected = np.square(da)
         assert result.coords.equals(expected.coords)
         assert np.allclose(result.values, expected.values)
+
+
+def cft(t0=0.0, quiet=False, open_ended=False):
+    """
+    A characteristic function peaking on P and S at ``t0 + 1``.
+
+    ``open_ended`` leaves the trigger on at the last sample, so the pick is
+    only emitted when the atom is flushed.
+    """
+    lane = [0.0, 0.8, 0.8] if open_ended else [0.0, 0.8, 0.0]
+    if quiet:
+        lane = [0.0, 0.0, 0.0]
+    return xd.DataArray(
+        data=[[0.0, 0.0, 0.0], lane, lane],
+        coords={
+            "phase": ["N", "P", "S"],
+            "time": {
+                "tie_indices": [0, 2],
+                "tie_values": [t0, t0 + 2.0],
+                "sampling_interval": 1.0,
+            },
+        },
+    )
+
+
+def seed_tree():
+    """A ``network / station / location`` tree of pick-able leaves."""
+    return xd.DataCollection(
+        {
+            "IA": xd.DataCollection(
+                {
+                    "DBNFM": xd.DataCollection({"--": cft()}, "location"),
+                    "LBFI": xd.DataCollection({"00": cft(10.0)}, "location"),
+                },
+                "station",
+            )
+        },
+        "network",
+    )
+
+
+def das_tree():
+    """A ``node / cable / acquisition`` tree, whose sequence level folds."""
+    return xd.DataCollection(
+        {
+            "N1": xd.DataCollection(
+                {"C1": xd.DataCollection([cft(0.0), cft(10.0)], "acquisition")}, "cable"
+            )
+        },
+        "node",
+    )
+
+
+def picker():
+    """A fresh table-valued atom, whose tables carry their tree path."""
+    return xd.trigger(..., thresh={"P": 0.5, "S": 0.5})
+
+
+class Resets(xd.atoms.Atom):
+    """An identity atom logging the chunk count it held at every reset."""
+
+    def __init__(self, log):
+        super().__init__()
+        self.log = log
+        self.count = State(...)
+
+    def initialize(self, x, **flags):
+        self.count = State(0)
+
+    def call(self, x, **flags):
+        self.count = State(self.count + 1)
+        return x
+
+    def reset(self):
+        self.log.append(self.count)
+        super().reset()
+
+
+class TestCollectionWalk:
+    """
+    W11: `process` walks a collection exactly as `atom(dc)` walks it.
+
+    The defining invariant is `atom.process(dc, out=None) == atom(dc)`: it is
+    what stops the streaming and the eager walk drifting apart, and it matters
+    most where a leaf is too large to call eagerly at all.
+    """
+
+    @pytest.mark.parametrize("chunks", [None, {"time": 2}])
+    def test_the_seed_tree_streams_to_the_eager_result(self, chunks):
+        dc = seed_tree()
+        expected = picker()(dc)
+        result = picker().process(dc, out=None, chunks=chunks)
+        assert isinstance(result, pd.DataFrame)
+        assert result.equals(expected)
+
+    @pytest.mark.parametrize("chunks", [None, {"time": 2}])
+    def test_the_das_tree_streams_to_the_eager_result(self, chunks):
+        dc = das_tree()
+        expected = picker()(dc)
+        result = picker().process(dc, out=None, chunks=chunks)
+        assert list(result["acquisition"]) == [0, 0, 1, 1]
+        assert result.equals(expected)
+
+    def test_an_array_atom_rebuilds_the_walked_tree(self, da, pipeline):
+        dc = xd.DataCollection({"a": da, "b": da}, "node")
+        expected = pipeline(dc)
+        result = pipeline.process(dc, chunks={"time": 30})
+        assert isinstance(result, xd.DataMapping)
+        assert result.name == "node" and list(result) == ["a", "b"]
+        for key in expected:
+            assert result[key].coords.equals(expected[key].coords)
+            assert np.allclose(result[key].values, expected[key].values)
+
+    def test_a_bare_sequence_folds_like_the_eager_call(self):
+        dc = xd.DataCollection([cft(0.0), cft(10.0)], "acquisition")
+        expected = picker()(dc)
+        result = picker().process(dc, out=None)
+        assert result.equals(expected)
+
+    def test_the_flushed_tail_goes_to_the_last_element(self):
+        dc = xd.DataCollection([cft(0.0), cft(10.0, open_ended=True)], "acquisition")
+        expected = picker()(dc)
+        result = picker().process(dc, out=None)
+        assert list(result["acquisition"]) == [0, 0, 1, 1]
+        assert result.equals(expected)
+
+    def test_a_sequence_with_nothing_to_fold_along_walks_element_by_element(self, da):
+        atom = Partial(np.square)
+        dc = xd.DataCollection([da, da])
+        result = atom.process(dc)
+        assert isinstance(result, xd.DataSequence) and len(result) == 2
+        assert np.allclose(result[0].values, np.square(da).values)
+
+    def test_a_bare_callable_walks_a_collection_too(self, da):
+        dc = xd.DataCollection({"a": xd.DataCollection([da], "acquisition")}, "node")
+        result = xp.process(np.square, dc)
+        assert np.allclose(result["a"][0].values, np.square(da).values)
+
+    def test_a_mapping_inside_a_folded_sequence_raises(self):
+        dc = xd.DataCollection([cft(0.0), xd.DataCollection({"a": cft(10.0)})])
+        with pytest.raises(NotImplementedError, match="mapping collections"):
+            picker().process(dc)
+
+    def test_merge_false_keeps_the_labelled_tree(self):
+        tree = picker().process(seed_tree(), out=None, merge=False)
+        assert isinstance(tree, xd.DataCollection)
+        assert tree.name == "network"
+        leaf = tree["IA"]["DBNFM"]["--"]
+        assert list(leaf.columns)[:3] == ["network", "station", "location"]
+
+    def test_the_atom_is_reset_between_leaves(self, da):
+        log = []
+        dc = xd.DataCollection({key: da for key in "abc"}, "node")
+        Resets(log).process(dc, chunks={"time": 30})
+        # the walk resets before every leaf, so each of the first two leaves
+        # left its own chunk count behind and none of them inherited it
+        assert [count for count in log if isinstance(count, int)] == [4, 4]
+
+    def test_state_does_not_leak_from_one_leaf_to_the_next(self, da, pipeline):
+        dc = xd.DataCollection({"a": da, "b": da}, "node")
+        result = pipeline.process(dc, chunks={"time": 30})
+        assert np.allclose(result["a"].values, result["b"].values)
+
+
+class TestCollectionSinks:
+    """W11: one rule per kind of destination, applied leaf by leaf."""
+
+    def test_one_csv_holds_every_leaf(self, tmp_path):
+        path = tmp_path / "picks.csv"
+        result = picker().process(seed_tree(), out=str(path))
+        assert path.exists()
+        written = pd.read_csv(path)
+        assert list(written["station"]) == ["DBNFM", "DBNFM", "LBFI", "LBFI"]
+        assert result.equals(written)
+
+    def test_a_csv_no_leaf_wrote_to_stays_absent(self, tmp_path):
+        path = tmp_path / "picks.csv"
+        dc = xd.DataCollection({"A": cft(quiet=True)}, "station")
+        assert picker().process(dc, out=str(path)).empty
+        assert not path.exists()
+
+    def test_a_leaf_emitting_nothing_answers_with_an_empty_collection(
+        self, da, tmp_path
+    ):
+        atom = Partial(lambda x: None)
+        dc = xd.DataCollection({"a": da, "b": da}, "node")
+        out = tmp_path / "results"
+        result = atom.process(dc, out=str(out), chunks={"time": 30})
+        assert all(len(leaf) == 0 for leaf in result.values())
+        assert not out.exists()  # no directory is created for nothing
+
+    def test_a_directory_fans_out_to_the_tree_path(self, da, pipeline, tmp_path):
+        dc = xd.DataCollection(
+            {"N1": xd.DataCollection({"C1": da, "C2": da}, "cable")}, "node"
+        )
+        out = tmp_path / "results"
+        result = pipeline.process(dc, out=str(out), chunks={"time": 30})
+        assert sorted(path.name for path in (out / "N1").iterdir()) == ["C1", "C2"]
+        expected = pipeline(dc)
+        assert np.allclose(result["N1"]["C1"].values, expected["N1"]["C1"].values)
+
+    def test_a_folded_sequence_writes_to_one_directory(self, da, pipeline, tmp_path):
+        dc = xd.DataCollection({"C1": xd.DataCollection([da], "acquisition")}, "cable")
+        out = tmp_path / "results"
+        result = pipeline.process(dc, out=str(out), chunks={"time": 30})
+        assert [path.name for path in out.iterdir()] == ["C1"]
+        assert np.allclose(result["C1"].values, pipeline(da).values)
+
+    def test_a_writer_instance_is_shared_by_every_leaf(self, tmp_path):
+        writer = xp.DataFrameWriter(str(tmp_path / "picks.csv"))
+        result = picker().process(seed_tree(), out=writer)
+        assert len(result) == 4
+
+    def test_an_uninferable_out_raises(self):
+        with pytest.raises(TypeError, match="cannot infer a writer"):
+            picker().process(seed_tree(), out=42)
+
+
+class TestCollectionGather:
+    """W11: the gather is consulted before anything is chunked."""
+
+    def test_a_channel_level_becomes_a_dimension_before_chunking(self):
+        from tests.test_atoms_ml import component_collection, picker_model
+
+        dc = component_collection(["SHZ", "SHN", "SHE"])
+        model = picker_model("original")
+        expected = xd.pick(dc, model, device="cpu")
+        result = xd.pick(..., model, device="cpu").process(
+            dc, out=None, chunks={"time": 8}
+        )
+        assert "channel" not in result.columns  # the level became an axis
+        assert result.equals(expected)
+
+    def test_the_gathered_array_stays_virtual(self, monkeypatch, tmp_path):
+        from tests.test_atoms_ml import component_trace, picker_model
+
+        keys = ["SHZ", "SHN", "SHE"]
+        for index, key in enumerate(keys):
+            (tmp_path / key).mkdir()
+            trace = component_trace(index, n=64)
+            for part, chunk in enumerate(xd.split(trace, 4, "time")):
+                chunk.to_netcdf(tmp_path / key / f"{part:03d}.nc")
+        dc = xd.DataCollection(
+            {
+                key: xd.open_mfdataarray(str(tmp_path / key / "*.nc"), vtype="tiles")
+                for key in keys
+            },
+            "channel",
+        )
+        atom = xd.pick(..., picker_model("original"), device="cpu")
+        assert isinstance(atom.gather(dc).data, TileArray)  # nothing was read
+        monkeypatch.setitem(Config.config, "memory_limit", 1)
+        with pytest.raises(ValueError, match="process"):
+            atom(dc)  # the eager walk refuses to load the stacked array
+        assert len(atom.process(dc, chunks={"time": 16})) > 0
