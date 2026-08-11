@@ -222,7 +222,10 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
                     "jitter in the tie values, consider smoothing the coordinate by "
                     "including some tolerance. This can be done by "
                     "`da[dim] = da[dim].simplify(tolerance)`, or by specifying a "
-                    "tolerance when opening multiple files."
+                    "tolerance when opening multiple files. If the overlaps are "
+                    "genuine, resolve them with `xdas.trim_overlaps(da)`, which "
+                    "drops the duplicated samples, or cut them apart with "
+                    "`xdas.split(da, 'overlaps')`, which keeps every copy."
                 )
             else:  # pragma: no cover
                 raise
@@ -309,7 +312,9 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
     @override
     def _to_dataset(self, dataset, attrs):
-        mapping = f"{self.name}: {self.name}_indices {self.name}_values"
+        # CF-1.13: a group names its tie point coordinate variables and
+        # ends with the interpolation variable describing them
+        mapping = f"{self.name}_values: {self.name}_interpolation"
         if "coordinate_interpolation" in attrs:
             attrs["coordinate_interpolation"] += " " + mapping
         else:
@@ -322,7 +327,10 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         )
         interp_attrs = {
             "interpolation_name": "linear",
-            "tie_points_mapping": f"{self.name}_points: {self.name}_indices {self.name}_values",
+            # interpolated dimension: index variable, subsampled dimension
+            "tie_point_mapping": f"{self.dim}: {self.name}_indices {self.name}_points",
+            # xdas reconstructs in float64 (int64 nanoseconds for datetimes)
+            "computational_precision": "64",
         }
         if self.sampling_interval is not None:
             interp_attrs.update(
@@ -345,18 +353,24 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         coords = {}
         mapping = dataset[name].attrs.pop("coordinate_interpolation", None)
         if mapping is not None:
-            for dim, indices, values in re.findall(r"(\w+): (\w+) (\w+)", mapping):
+            for coord, dim, indices, values in _parse_interpolation(mapping, dataset):
                 data = {
                     "tie_indices": dataset[indices].values,
                     "tie_values": dataset[values].values,
                 }
-                interp_attrs = dataset[f"{dim}_interpolation"].attrs
+                # the oldest files spelled the mapping without writing an
+                # interpolation variable at all
+                interp_attrs = (
+                    dataset[f"{coord}_interpolation"].attrs
+                    if f"{coord}_interpolation" in dataset
+                    else {}
+                )
                 if "sampling_interval" in interp_attrs:
                     data["sampling_interval"] = decode_delta(
                         "sampling_interval", interp_attrs
                     )
                     data["tolerance"] = decode_delta("tolerance", interp_attrs)
-                coords[dim] = Coordinate(data, dim)
+                coords[coord] = Coordinate(data, dim)
         return coords
 
     def __add__(self, other):
@@ -671,6 +685,58 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         den = np.diff(self.tie_indices)
         mask = den != 1
         return num[mask], den[mask]
+
+
+def _parse_interpolation(mapping, dataset):
+    """
+    Yield ``(name, dim, indices, values)`` per group of *mapping*.
+
+    Reads a ``coordinate_interpolation`` attribute in either spelling.
+    CF-1.13 words each group ``tie_point_coordinate_variable: [...]
+    interpolation_variable``, the coordinate name and the interpolated
+    dimension then coming from the interpolation variable and its
+    ``tie_point_mapping``; xdas wrote ``dimension: index_variable
+    value_variable`` before the format break. Only the CF spelling ends
+    a group with a variable carrying ``interpolation_name``, which is
+    what tells the two apart. The tie point coordinate variable name is
+    taken from the group as written, whatever it is.
+
+    Parameters
+    ----------
+    mapping : str
+        The attribute value to parse.
+    dataset : xarray.Dataset
+        The dataset the named variables live in.
+
+    Yields
+    ------
+    tuple of str
+        Coordinate name, interpolated dimension, tie point index
+        variable and tie point coordinate variable.
+    """
+    groups, tie_points = [], []
+    for word in mapping.split():
+        if word.endswith(":"):
+            tie_points.append(word[:-1])
+        else:
+            groups.append((tie_points, word))
+            tie_points = []
+    if all(
+        len(tie_points) == 1
+        and word in dataset
+        and "interpolation_name" in dataset[word].attrs
+        for tie_points, word in groups
+    ):
+        for (values,), interpolation in groups:
+            name = interpolation.removesuffix("_interpolation")
+            dim, indices, _ = re.match(
+                r"(\w+): (\w+) (\w+)",
+                dataset[interpolation].attrs["tie_point_mapping"],
+            ).groups()
+            yield name, dim, indices, values
+    else:
+        for dim, indices, values in re.findall(r"(\w+): (\w+) (\w+)", mapping):
+            yield dim, dim, indices, values
 
 
 def _sleeve(x, y, epsilon):

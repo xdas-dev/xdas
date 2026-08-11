@@ -6,53 +6,80 @@ dense rectilinear grid of file-backed *tiles*, described by a plain
 :class:`xarray.Dataset` (used as a container only) with one dimension
 ``tile_k`` per data axis:
 
-- 1-D *geometry* variables place the grid along each axis ``k``:
+- *geometry* variables place the grid along each axis ``k``:
   ``sizes_k`` (samples contributed by each tile, required), ``starts_k``
   (origin inside the decoded source, default 0) and ``steps_k`` (source
   stride, the per-tile decimation, default 1), reading as
   ``virtual[pos : pos + size] = source[start : start + size * step : step]``
-  with ``pos`` the running sum of the previous sizes along the axis;
+  with ``pos`` the running sum of the previous sizes along the axis.
+  A column that varies is 1-D over ``tile_k``; one holding the same
+  value everywhere folds to a 0-d variable (and one holding its kind's
+  default is left out), so an acquisition of equal-length files spends
+  one element instead of one per tile;
 - N-D *parameter* variables: ``paths`` (the source file of each tile,
   required) plus any format-private per-tile values forwarded to the
   engine as keyword arguments. A parameter carries only the tile
   dimensions along which it actually varies — a constant folds to a 0-d
-  variable — and broadcasts over the grid at read time;
-- an optional 0-d ``root`` variable: the common directory of the
-  sources, split off so the per-tile ``paths`` stay root-relative —
-  one shared constant instead of a per-tile repeat. Absent (or empty),
-  the paths are used as stored;
-- an optional *axis map*: the geometry axes are stored in *source*
-  order (``sizes_g`` describes source axis ``g``), and a 1-D ``axes``
-  variable lists the geometry axis each virtual axis presents, in
-  virtual order — how transposes and inserted axes stay lazy. Axes
-  beyond the 0-d ``source_ndim`` are *synthetic* (inserted, one sample
-  wide, backed by no source data); geometry axes left out of the map
-  are *hidden* (pinned to a single sample, read but not presented —
-  how integer indexing stays lazy). Both variables are absent from
-  freshly scanned manifests: the default is the identity, every
-  geometry axis a source axis presented in stored order.
+  variable — and broadcasts over the grid at read time.
 
-String variables (``paths``, ``root`` and any string parameter) are
-held as fixed-width bytes (numpy ``S`` kind, filesystem encoding): one
+The variables are therefore exactly the per-tile columns; everything
+else the tiling needs is one JSON document, the ``header`` dataset
+attribute:
+
+- ``ntiles``: the grid shape, and the single authority on it — an axis
+  whose columns have all folded has no dimension left to measure;
+- ``engine``: the engine specification, a registered name
+  (``xdas.io.Engine[name]``) or an object pairing that ``name`` with the
+  constants to pass its ``load_tile``;
+- ``dtype``: the element type of the sources as the engine decodes
+  them. Not a decode target: engines decode into the element type of
+  their sources, and the array records that type at scan time so
+  laziness holds — a virtual array answers ``dtype`` without touching
+  its sources — and verifies it against every decoded tile. Casting is
+  an explicit extra step (:meth:`TileArray.astype`), outside the tiles
+  machinery;
+- ``root``, optional: the common directory of the sources, split off so
+  the per-tile ``paths`` stay root-relative — one shared constant
+  instead of a per-tile repeat. Absent, the paths are used as stored;
+- ``axes``, optional: the axis map (below).
+
+The geometry axes are stored in *source* order (``sizes_g`` describes
+source axis ``g``), and ``axes`` is the full virtual arrangement in
+numpy indexing-key notation: the geometry axis each virtual axis
+presents, with ``null`` where the axis is *synthetic* (inserted, one
+sample wide, backed by no source data) — ``[1, null, 0]`` reads as
+``transpose(a)[:, np.newaxis]``. Absent means the identity: no
+transposition, no insertion, every geometry axis a source axis
+presented in stored order. Everything else derives from the list: the
+source rank is the grid rank less the number of ``null``s, and geometry
+axes missing from it are *hidden* (pinned to a single sample, read but
+not presented — how integer indexing stays lazy). Two invariants keep
+manifests canonical: synthetic grid axes stay trailing and are numbered
+in their virtual order (a transpose that reorders them renumbers the
+grid rather than the map), and pinning a synthetic axis deletes it from
+the grid rather than hiding it (a hidden synthetic axis would be
+contentless once the pin has selected into ``paths``).
+
+String variables (``paths`` and any string parameter) are held as
+fixed-width bytes (numpy ``S`` kind, filesystem encoding): one
 contiguous block instead of a heap of str objects, comparisons that
 vectorize, and a stored form that lands on disk as netCDF char arrays
 with no encoding step. The constructor recodes str-valued variables
-(hand-built manifests, legacy stored forms) on entry; values decode
-back to str only when handed to the engine.
+(hand-built manifests) on entry; values decode back to str only when
+handed to the engine. The ``root``, being a header value, travels
+through JSON instead: non-UTF-8 directory names survive as escaped
+surrogates, exactly as :func:`os.fsdecode` spells them.
 
-What arrays cannot carry — the ``dtype`` and the ``engine``
-specification — lives on the array itself, by value, and travels
-beside the dataset when the array is persisted (see
-:func:`xdas.io.xdas.save_dataarray`). The dtype is not a decode
-target: engines decode into the element type of their sources, and
-the array records that type at scan time so laziness holds — a
-virtual array answers ``dtype`` without touching its sources — and
-verifies it against every decoded tile. Casting is an explicit
-extra step (:meth:`TileArray.astype`), outside the tiles machinery.
-Every dataset attribute is a user attribute.
+A tile array carries no user attributes of its own — it is a duck
+array, like the numpy array it stands in for. Metadata belongs to the
+enclosing :class:`xdas.DataArray`.
 
-Geometry loads eagerly at construction (tiny); parameters stay folded —
-a constant occupies one element whatever the grid size — and broadcast
+Geometry loads eagerly at construction; a column holding one value
+everywhere (the absent ``starts_k`` and ``steps_k``, and the ``sizes_k``
+of an acquisition of equal-length files) is detected and kept as a
+broadcast view, so it costs one element instead of one per tile and its
+tile boundaries stay a closed form. Parameters stay folded — a constant
+occupies one element whatever the grid size — and broadcast
 over the grid only as tiles are read. Slicing (any nonzero step,
 negative ones reversing lazily), integer indexing and ``np.newaxis``
 fold into the geometry and the axis map and return a new
@@ -111,7 +138,13 @@ TILE_PREFIX = "tile_"
 """Prefix of the tile-grid dimensions of a manifest dataset."""
 
 TILES_GROUP = "__tiles__"
-"""Name of the sibling group holding a stored tile array's manifest."""
+"""Conventional name of the group holding a stored tile array's manifest."""
+
+HEADER = "header"
+"""Manifest attribute holding the JSON document of everything but the columns."""
+
+TILING = "__tiling__"
+"""Attribute of a placeholder variable naming the group describing its tiling."""
 
 _UNITS = ("B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
 """Decimal byte units, as xarray spells them in its ``Size:`` header."""
@@ -318,6 +351,135 @@ def _bounding_key(key, shape):
     return tuple(box), tuple(residual), empty
 
 
+def _as_engine(spec):
+    """Return engine specification *spec* as a normalized dict.
+
+    A plain string is shorthand for ``{"name": spec}``; the json round
+    trip deep-copies and normalizes (tuples become lists), so equality
+    survives a store round trip.
+    """
+    if isinstance(spec, str):
+        spec = {"name": spec}
+    spec = json.loads(json.dumps(spec))
+    if not isinstance(spec, dict) or "name" not in spec:
+        raise ValueError("the engine specification must have a `name` key")
+    return spec
+
+
+def _encode_axes(axes, source_ndim, ngrid):
+    """Return the header ``axes`` of a map, or None when it is the identity."""
+    encoded = [None if g >= source_ndim else g for g in axes]
+    return None if encoded == list(range(ngrid)) else encoded
+
+
+def _decode_axes(encoded, ngrid):
+    """Return ``(axes, source_ndim)`` from the header ``axes`` entry.
+
+    The synthetic axes are the ``null`` entries — they trail the source
+    axes in the grid, numbered in the order the list presents them —
+    so the source rank and the geometry axis of every virtual axis both
+    fall out of the one list.
+    """
+    if encoded is None:
+        return tuple(range(ngrid)), ngrid
+    if not isinstance(encoded, list):
+        raise ValueError("`axes` must be a list")
+    if not encoded:
+        raise ValueError("a tile array needs at least one visible axis")
+    source_ndim = ngrid - sum(g is None for g in encoded)
+    if source_ndim < 1:
+        raise ValueError("`axes` must leave at least one source axis")
+    axes, synthetic = [], source_ndim
+    for g in encoded:
+        if g is None:
+            axes.append(synthetic)
+            synthetic += 1
+        elif isinstance(g, int) and 0 <= g < source_ndim:
+            axes.append(g)
+        else:
+            raise ValueError(
+                f"`axes` must name source geometry axes below {source_ndim}"
+            )
+    if len(set(axes)) != len(axes):
+        raise ValueError("`axes` must name distinct geometry axes")
+    return tuple(axes), source_ndim
+
+
+def _make_header(counts, dtype, engine, root, axes, source_ndim):
+    """Return the header describing a manifest, defaults left out.
+
+    The engine collapses to its bare name when it carries no constants,
+    and the axis map and the root are absent at their defaults (the
+    identity arrangement, and paths stored whole).
+    """
+    header = {"ntiles": [int(count) for count in counts]}
+    header["engine"] = engine["name"] if set(engine) == {"name"} else dict(engine)
+    header["dtype"] = str(np.dtype(dtype))
+    encoded = _encode_axes(axes, source_ndim, len(counts))
+    if encoded is not None:
+        header["axes"] = encoded
+    if root:
+        header["root"] = root
+    return header
+
+
+def _read_header(dataset):
+    """Return the parsed header of manifest *dataset*."""
+    return json.loads(dataset.attrs[HEADER])
+
+
+def _write_header(dataset, header):
+    """Return *dataset* carrying *header* as its JSON header attribute."""
+    return dataset.assign_attrs({HEADER: json.dumps(header)})
+
+
+def _canonical(dataset, header, axes, source_ndim):
+    """Bring the grid of *dataset* back to its canonical numbering.
+
+    The two invariants of the axis map, enforced in one place: a
+    synthetic axis absent from *axes* has been pinned, and is
+    contentless once the pin has selected into the columns, so it
+    leaves the grid; the synthetic axes that remain trail the source
+    axes in the order they are presented. Mutates the ``ntiles`` of
+    *header* and returns the rewritten dataset and axis map — writing
+    the header back is the caller's.
+    """
+    ngrid = len(header["ntiles"])
+    keep = list(range(source_ndim)) + [g for g in axes if g >= source_ndim]
+    if keep == list(range(ngrid)):
+        return dataset, axes
+    dropped = [g for g in range(ngrid) if g not in keep]
+    dataset = dataset.isel(
+        {f"{TILE_PREFIX}{g}": 0 for g in dropped if f"{TILE_PREFIX}{g}" in dataset.dims}
+    ).drop_vars(
+        [
+            f"{kind}_{g}"
+            for g in dropped
+            for kind in ("sizes", "starts", "steps")
+            if f"{kind}_{g}" in dataset
+        ]
+    )
+    renames = {}
+    for new, old in enumerate(keep):
+        if new == old:
+            continue
+        if f"{TILE_PREFIX}{old}" in dataset.dims:
+            renames[f"{TILE_PREFIX}{old}"] = f"{TILE_PREFIX}{new}"
+        for kind in ("sizes", "starts", "steps"):
+            if f"{kind}_{old}" in dataset:
+                renames[f"{kind}_{old}"] = f"{kind}_{new}"
+    if renames:
+        # two passes through temporaries: a renumbering that swaps two
+        # axes would otherwise rename a name onto a live one
+        dataset = dataset.rename({old: f"_{new}" for old, new in renames.items()})
+        dataset = dataset.rename({f"_{new}": new for new in renames.values()})
+        # renaming leaves the columns in their old dimension order
+        order = [f"{TILE_PREFIX}{k}" for k in range(len(keep))]
+        dataset = dataset.transpose(*order, missing_dims="ignore")
+    header["ntiles"] = [header["ntiles"][g] for g in keep]
+    return dataset, tuple(keep.index(g) for g in axes)
+
+
 def _assign_geometry(dataset, assign):
     """Apply geometry *assign* to *dataset*, folding all-default columns away.
 
@@ -335,6 +497,114 @@ def _assign_geometry(dataset, assign):
     if assign:
         dataset = dataset.assign(assign)
     return dataset.drop_vars([name for name in drop if name in dataset])
+
+
+def _isel(dataset, indexers):
+    """Index *dataset* along the tile dimensions it still carries.
+
+    An axis whose every variable folded has no dimension left to index:
+    what it holds is one value for the whole axis, which selecting
+    among its tiles leaves untouched. Only the header's ``ntiles``
+    records how many tiles such a selection kept, so it is restated
+    here — for every indexed axis, dimension or not.
+    """
+    header = _read_header(dataset)
+    counts = header["ntiles"]
+    for dim, key in indexers.items():
+        g = int(dim[len(TILE_PREFIX) :])
+        counts[g] = (
+            len(range(*key.indices(counts[g])))
+            if isinstance(key, slice)
+            else len(np.asarray(key))
+        )
+    dataset = dataset.isel(
+        {dim: key for dim, key in indexers.items() if dim in dataset.dims}
+    )
+    return _write_header(dataset, header)
+
+
+def _fold_geometry(dataset, sizes, starts, steps):
+    """Rewrite the geometry of *dataset* in its canonical stored form.
+
+    A column holding one value everywhere is stored as a 0-d variable —
+    one element whatever the tile count — and one holding the kind's
+    default is not stored at all. No column has to stay expanded to
+    keep the grid measurable: the header's ``ntiles`` states how many
+    tiles an axis holds, the count no dimension is left to give.
+    """
+    columns = {
+        f"{kind}_{g}": values
+        for kind, per_axis in (("sizes", sizes), ("starts", starts), ("steps", steps))
+        for g, values in enumerate(per_axis)
+    }
+    assign, drop = {}, []
+    for name, values in columns.items():
+        kind = name.split("_")[0]
+        default = {"sizes": None, "starts": 0, "steps": 1}[kind]
+        if not len(values) or not bool((values == values[0]).all()):
+            continue  # varying: worth one value per tile, and it sizes the axis
+        if default is not None and int(values[0]) == default:
+            if name in dataset:
+                drop.append(name)
+            continue
+        stored = dataset.get(name)
+        if stored is None or stored.dims != ():
+            assign[name] = xr.Variable((), np.asarray(values[0], np.int64))
+    if assign:
+        dataset = dataset.assign(assign)
+    return dataset.drop_vars(drop) if drop else dataset
+
+
+class _Edges:
+    """The running sample offsets of the tiles along one geometry axis.
+
+    Either the eager ``cumsum`` of a varying size column, or — when
+    every tile is the same width — that width alone, every boundary
+    being a multiple of it. Constant columns arrive as zero-stride
+    broadcast views (see :meth:`TileArray._geometry`), which is what
+    picks the closed forms: they hold no array and turn locating a
+    tile into a division.
+    """
+
+    def __init__(self, sizes):
+        self.count = len(sizes)
+        self.size = int(sizes[0]) if self.count and sizes.strides == (0,) else None
+        self.values = (
+            None if self.size is not None else np.concatenate(([0], np.cumsum(sizes)))
+        )
+
+    @property
+    def total(self):
+        """int: the extent the axis spans, every tile summed."""
+        if self.size is None:
+            return int(self.values[-1])
+        return self.count * self.size
+
+    def at(self, index):
+        """int: the sample offset where tile *index* begins."""
+        if self.size is None:
+            return int(self.values[index])
+        return int(index) * self.size
+
+    def searchsorted(self, value, side):
+        """int: locate *value*, exactly as :func:`numpy.searchsorted` would."""
+        if self.size is None:
+            return int(np.searchsorted(self.values, value, side))
+        # boundaries are 0, size, ..., count * size: count them by division
+        index = -(-value // self.size) if side == "left" else value // self.size + 1
+        return int(min(max(index, 0), self.count + 1))
+
+    def span(self, start, stop):
+        """Return the offsets of tiles *start* to *stop* (excluded), as an array."""
+        if self.size is None:
+            return self.values[start:stop]
+        return np.arange(start, stop, dtype=np.int64) * self.size
+
+    def __iter__(self):
+        """Iterate over the boundaries, first to last."""
+        if self.size is None:
+            return iter(self.values)
+        return iter(range(0, (self.count + 1) * self.size, self.size))
 
 
 def _materialize(value):
@@ -373,15 +643,17 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
     Parameters
     ----------
     dataset : xarray.Dataset
-        The manifest dataset: the 1-D geometry and the N-D per-tile
-        parameter variables described in the module docstring. Every
-        dataset attribute is a user attribute.
-    dtype : str or numpy.dtype
+        The manifest dataset described in the module docstring: the
+        per-tile columns, plus the ``header`` attribute holding
+        everything else the tiling needs.
+    dtype : str or numpy.dtype, optional
         Element type of the sources as the engine decodes them
         (little-endian or single-byte), recorded so the lazy array can
         report it without reading. Verified against every decoded
-        tile, never used to cast.
-    engine : str or dict
+        tile, never used to cast. Read off the header when omitted;
+        given, it must agree with the header when there is one (a
+        hand-built dataset carries none, and then it is required).
+    engine : str or dict, optional
         The engine specification, stored by value with the array: the
         key ``"name"`` selects a registered engine
         (``xdas.io.Engine[name]``); the remaining keys are passed to
@@ -389,16 +661,17 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
         shorthand for ``{"name": engine}``. Never an
         :class:`~xdas.io.Engine` instance: the specification must
         reproduce the decode with no instance alive, so open-time
-        settings (``vtype``, ``ctype``) do not belong in it.
+        settings (``vtype``, ``ctype``) do not belong in it. Read off
+        the header when omitted, on the same terms as *dtype*.
     """
 
     # manifest concatenation fuses scan products into one compact array,
     # so multi-file scans can drain batches (see VirtualBackend)
     consolidates = True
 
-    def __init__(self, dataset, dtype, engine):
+    def __init__(self, dataset, dtype=None, engine=None):
         # canonical string dtype is fixed-width bytes: str-valued
-        # variables (hand-built or legacy stored manifests) recode here
+        # variables (hand-built manifests) recode here
         recode = {
             name: xr.Variable(dataset[name].dims, _as_bytes(dataset[name].values))
             for name in map(str, dataset.data_vars)
@@ -406,29 +679,48 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
         }
         if recode:
             dataset = dataset.assign(recode)
-        self.dataset = dataset
-        self._cache = None
-        if isinstance(engine, str):
-            engine = {"name": engine}
-        # the json round trip deep-copies and normalizes (tuples become
-        # lists), so equality survives a store round trip
-        engine = json.loads(json.dumps(engine))
-        if not isinstance(engine, dict) or "name" not in engine:
-            raise ValueError("the engine specification must have a `name` key")
-        # imported here: xdas.io imports this module at package init
-        from ..io.core import Engine
-
-        Engine[engine["name"]]  # fail fast on unregistered engines
-        self._engine = engine
-        self._dtype = np.dtype(dtype)
-        if self._dtype.byteorder == ">":
-            raise ValueError("only little-endian or single-byte dtypes are supported")
         ngrid = 0
         while f"sizes_{ngrid}" in dataset:
             ngrid += 1
         if ngrid == 0:
             raise ValueError("a tile array needs a `sizes_0` geometry variable")
+        if HEADER in dataset.attrs:
+            header = _read_header(dataset)
+        else:
+            # a hand-assembled dataset: the columns are all it says — the
+            # tile counts come from the dimensions it declares, everything
+            # else is the default — and the tiles machinery owns the whole
+            # manifest, stray attributes included
+            header = {
+                "ntiles": [
+                    int(dataset.sizes[dim]) if dim in dataset.dims else 1
+                    for dim in (f"{TILE_PREFIX}{k}" for k in range(ngrid))
+                ]
+            }
+            dataset = dataset.drop_attrs(deep=True)
+        self.dataset = dataset
+        self._cache = None
+        # the header is authoritative; an explicit argument fills in for
+        # a manifest that carries none (the scan-time assembly, and
+        # hand-built datasets) and must otherwise agree
+        if engine is None and "engine" not in header:
+            raise ValueError("the manifest records no engine")
+        self._engine = _as_engine(header["engine"] if engine is None else engine)
+        if "engine" in header and self._engine != _as_engine(header["engine"]):
+            raise ValueError(f"the manifest records the engine {header['engine']!r}")
+        # imported here: xdas.io imports this module at package init
+        from ..io.core import Engine
+
+        Engine[self._engine["name"]]  # fail fast on unregistered engines
+        if dtype is None and "dtype" not in header:
+            raise ValueError("the manifest records no dtype")
+        self._dtype = np.dtype(header["dtype"] if dtype is None else dtype)
+        if "dtype" in header and self._dtype != np.dtype(header["dtype"]):
+            raise ValueError(f"the manifest records the dtype {header['dtype']!r}")
+        if self._dtype.byteorder == ">":
+            raise ValueError("only little-endian or single-byte dtypes are supported")
         self.dims = dims = tuple(f"{TILE_PREFIX}{g}" for g in range(ngrid))
+        self._counts = self._tile_counts(header)
         self._sizes = self._geometry("sizes", None)
         self._starts = self._geometry("starts", 0)
         self._steps = self._geometry("steps", 1)
@@ -444,32 +736,11 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
             reach = self._starts[g] + (self._sizes[g] - 1) * self._steps[g]
             if np.any(reach < 0):
                 raise ValueError(f"`steps_{g}` walks out of the source")
-        self._edges = tuple(
-            np.concatenate(([0], np.cumsum(sizes))) for sizes in self._sizes
-        )
+        self._edges = tuple(_Edges(sizes) for sizes in self._sizes)
         # the axis map: which geometry axis each virtual axis presents.
-        # absent variables mean the identity — every geometry axis is a
+        # an absent entry means the identity — every geometry axis is a
         # source axis, presented in stored (= source) order
-        if "source_ndim" in dataset:
-            if tuple(dataset["source_ndim"].dims) != ():
-                raise ValueError("`source_ndim` must be a 0-d variable")
-            self._source_ndim = int(dataset["source_ndim"].values[()])
-        else:
-            self._source_ndim = ngrid
-        if not 0 < self._source_ndim <= ngrid:
-            raise ValueError("`source_ndim` must be between 1 and the geometry rank")
-        if "axes" in dataset:
-            if len(dataset["axes"].dims) != 1 or dataset["axes"].dims[0] in dims:
-                raise ValueError("`axes` must be 1-D over its own dimension")
-            self._axes = tuple(int(g) for g in dataset["axes"].values)
-        else:
-            self._axes = tuple(range(ngrid))
-        if not self._axes:
-            raise ValueError("a tile array needs at least one visible axis")
-        if len(set(self._axes)) != len(self._axes) or not all(
-            0 <= g < ngrid for g in self._axes
-        ):
-            raise ValueError(f"`axes` must name distinct geometry axes below {ngrid}")
+        self._axes, self._source_ndim = _decode_axes(header.get("axes"), ngrid)
         # synthetic axes (beyond the source rank) and hidden axes (absent
         # from the map) have no extent to offer: their tiles are one
         # sample wide, and a hidden axis holds a single tile — several
@@ -481,15 +752,12 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
                 raise ValueError(f"axis {g} is synthetic or hidden: sizes must be 1")
             if g not in self._axes and len(self._sizes[g]) != 1:
                 raise ValueError(f"hidden axis {g} must hold a single tile")
-        self._shape = tuple(int(self._edges[g][-1]) for g in self._axes)
+        self._shape = tuple(self._edges[g].total for g in self._axes)
         if "paths" not in dataset:
             raise ValueError("a tile array needs a `paths` variable")
-        if "root" in dataset:
-            if tuple(dataset["root"].dims) != ():
-                raise ValueError("`root` must be a 0-d variable")
-            self.root = os.fsdecode(dataset["root"].values[()])
-        else:
-            self.root = ""
+        self.root = header.get("root", "")
+        if not isinstance(self.root, str):
+            raise ValueError("`root` must be a string")
         geometry = {
             f"{kind}_{g}" for kind in ("sizes", "starts", "steps") for g in range(ngrid)
         }
@@ -497,8 +765,7 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
             sorted(
                 name
                 for name in map(str, dataset.data_vars)
-                if name not in geometry
-                and name not in ("paths", "root", "axes", "source_ndim")
+                if name not in geometry and name != "paths"
             )
         )
         for name in ("paths", *self._params):
@@ -507,9 +774,26 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
                 raise ValueError(
                     f"`{name}` dimensions must be an ordered subset of {dims}"
                 )
+        # canonical stored form: constant geometry columns hold one
+        # element whatever the tile count, and the header restates
+        # everything the columns no longer measure
+        dataset = _fold_geometry(self.dataset, self._sizes, self._starts, self._steps)
+        header = json.dumps(
+            _make_header(
+                self._counts,
+                self._dtype,
+                self._engine,
+                self.root,
+                self._axes,
+                self._source_ndim,
+            )
+        )
+        if dataset.attrs.get(HEADER) != header:
+            dataset = dataset.assign_attrs({HEADER: header})
+        self.dataset = dataset
 
     @classmethod
-    def from_tiles(cls, paths, sizes, dtype, engine, *, attrs=None, **params):
+    def from_tiles(cls, paths, sizes, dtype, engine, **params):
         """Build a tile array from per-tile descriptions of fresh sources.
 
         The scan-time encoder: every tile is read from the origin of
@@ -528,7 +812,7 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
             the working directory cannot be trusted later, as reads are
             lazy and stored views outlive the session. The common
             directory of the absolute paths is then split off into the
-            0-d ``root`` variable, the stored per-tile paths staying
+            header's ``root``, the stored per-tile paths staying
             root-relative.
         sizes : sequence of int or 1-D array-like
             One entry per axis (this defines the rank): the samples each
@@ -545,8 +829,6 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
             (``xdas.io.Engine[name]``); the remaining keys are passed
             to its ``load_tile`` as keyword parameters. A plain string
             is shorthand for ``{"name": engine}``.
-        attrs : dict, optional
-            User attributes of the virtual array.
         **params : array-like
             Per-tile engine parameters, broadcast over the grid: each
             read passes the tile's value to the engine as a keyword
@@ -585,8 +867,6 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
                 f"`paths` shape {paths.shape} does not match the grid {counts}"
             )
         data["paths"] = _fold_param(paths, counts, dims)
-        if root:
-            data["root"] = ((), np.asarray(root))
         reserved = {"paths", "root"} | {
             f"{kind}_{k}" for kind in ("sizes", "starts", "steps") for k in range(ndim)
         }
@@ -594,8 +874,15 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
             if name in reserved:
                 raise ValueError(f"parameter name {name!r} is reserved")
             data[name] = _fold_param(np.asarray(values), counts, dims)
-        dataset = xr.Dataset(data, attrs=dict(attrs or {}))
-        return cls(dataset, dtype, engine)
+        header = _make_header(
+            counts,
+            dtype,
+            _as_engine(engine),
+            os.fsdecode(root),
+            tuple(range(ndim)),
+            ndim,
+        )
+        return cls(_write_header(xr.Dataset(data), header))
 
     @classmethod
     def from_variable(cls, variable):
@@ -624,12 +911,9 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
     def to_dataset(self):
         """Encode this tile array as its manifest dataset.
 
-        The stored form — a copy of the wrapped dataset carrying the
-        user attributes. What the dataset cannot hold, the by-value
-        ``dtype`` and ``engine``, the caller reads off the properties
-        and stores beside it. Source paths are stored exactly as the
-        array holds them: relative to the 0-d ``root`` variable
-        carrying their common directory.
+        The stored form, whole: a copy of the wrapped dataset, columns
+        and header alike. Source paths are stored exactly as the array
+        holds them, relative to the header's ``root``.
 
         Returns
         -------
@@ -638,14 +922,16 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
         """
         return self.dataset.copy()
 
-    def create_variable(self, file, name, dims=None, dtype=None):
+    def create_variable(self, file, name, dims=None):
         """
         Create the placeholder variable of the stored form.
 
-        The placeholder records the dtype (as any typed store would,
-        e.g. zarr array metadata) and carries the engine specification
-        by value in a ``__tile_array__`` attribute; the manifest itself
-        is appended by :meth:`finalize_save` once *file* is closed.
+        The placeholder is a projection of the array — its dtype and
+        its dimensions, no values (an unwritten contiguous dataset
+        occupies no bytes) — pointing at the group that describes the
+        tiling through a ``__tiling__`` attribute, in the fashion of
+        CF's ``grid_mapping``. The manifest itself is stored there, as
+        :meth:`sibling_datasets` describes.
 
         Parameters
         ----------
@@ -655,67 +941,90 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
             Variable name to create inside *file*.
         dims : sequence of str, optional
             Dimension names for the variable.
-        dtype : dtype-like, optional
-            Element type of the placeholder. Default to :attr:`dtype`.
 
         Returns
         -------
         variable
             The newly created file variable.
         """
-        variable = file.create_variable(
-            name, dims, self.dtype if dtype is None else dtype
-        )
-        variable.attrs["__tile_array__"] = json.dumps({"engine": self.engine})
+        variable = file.create_variable(name, dims, self.dtype)
+        variable.attrs[TILING] = TILES_GROUP
         return variable
 
-    def finalize_save(self, fname, group=None):
+    def sibling_datasets(self):
         """
-        Append the manifest as a sibling group of the stored variable.
+        Return the manifest, stored beside the placeholder variable.
 
         The second half of the stored form, written natively by xarray
-        once the file handle of :meth:`create_variable` is closed: the
-        manifest dataset lands in a ``__tiles__`` group next to the
-        placeholder variable.
+        with the rest of the file's metadata: the manifest dataset
+        lands in the ``__tiles__`` group the placeholder points at.
 
-        Parameters
-        ----------
-        fname : str
-            Path of the file holding the placeholder variable.
-        group : str, optional
-            Group of the placeholder variable within the file.
+        Returns
+        -------
+        dict
+            ``{TILES_GROUP: manifest}``.
         """
         manifest = self.to_dataset()
         # strings are fixed-width bytes by construction and land on disk
         # as char arrays; only stale open-time encodings need clearing
         for name in list(manifest.variables):
             manifest[name].encoding.clear()
-        location = TILES_GROUP if group is None else f"{group}/{TILES_GROUP}"
-        manifest.to_netcdf(fname, mode="a", group=location, engine="h5netcdf")
+        return {TILES_GROUP: manifest}
 
     def _geometry(self, kind, default):
-        """Load the eager 1-D ``{kind}_k`` arrays (*default* where absent)."""
+        """Load the eager 1-D ``{kind}_k`` arrays (*default* where absent).
+
+        A column holding one value everywhere — always so when the
+        variable is absent or stored 0-d — is kept as a zero-stride
+        broadcast view instead of a full-length array: nothing
+        downstream writes to the geometry, and :class:`_Edges` keys its
+        closed forms off that view. Detected, never assumed — a
+        truncated last tile makes a size column vary.
+        """
         arrays = []
         for k, dim in enumerate(self.dims):
             name = f"{kind}_{k}"
-            if name in self.dataset:
-                if tuple(self.dataset[name].dims) != (dim,):
-                    raise ValueError(f"`{name}` must have dimensions ({dim!r},)")
-                arrays.append(np.asarray(self.dataset[name].values, dtype=np.int64))
-            else:
-                count = int(self.dataset.sizes[dim])
-                arrays.append(np.full(count, default, dtype=np.int64))
+            stored = self.dataset[name].dims if name in self.dataset else None
+            if stored == (dim,):
+                values = np.asarray(self.dataset[name].values, dtype=np.int64)
+                if (
+                    values.strides != (0,)
+                    and len(values)
+                    and (values == values[0]).all()
+                ):
+                    values = np.broadcast_to(values[0], values.shape)
+                arrays.append(values)
+                continue
+            if stored is not None and stored != ():
+                raise ValueError(f"`{name}` must have dimensions ({dim!r},) or ()")
+            # a folded column names one value, the grid the tile count
+            value = np.int64(
+                default if stored is None else self.dataset[name].values[()]
+            )
+            arrays.append(np.broadcast_to(value, (self._counts[k],)))
         return tuple(arrays)
+
+    def _tile_counts(self, header):
+        """Return how many tiles each geometry axis holds.
+
+        The header's ``ntiles`` is the single authority: an axis whose
+        columns have all folded has no dimension left to measure. The
+        dimensions the manifest still declares must agree with it.
+        """
+        counts = header["ntiles"]
+        if not isinstance(counts, list) or len(counts) != len(self.dims):
+            raise ValueError("`ntiles` must hold one count per geometry axis")
+        for k, dim in enumerate(self.dims):
+            if not (isinstance(counts[k], int) and counts[k] >= 1):
+                raise ValueError("`ntiles` must hold positive integers")
+            if dim in self.dataset.dims and int(self.dataset.sizes[dim]) != counts[k]:
+                raise ValueError(f"`ntiles` disagrees with the size of `{dim}`")
+        return tuple(int(count) for count in counts)
 
     @property
     def engine(self):
         """dict: the engine specification (``"name"`` plus its parameters)."""
         return self._engine
-
-    @property
-    def attrs(self):
-        """dict: the user attributes of the virtual array."""
-        return dict(self.dataset.attrs)
 
     @property
     def chunks(self):
@@ -725,22 +1034,23 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
         """
         return tuple(tuple(int(size) for size in self._sizes[g]) for g in self._axes)
 
-    def _assign_axes(self, dataset, axes, ngrid):
-        """Set the axis map of *dataset* to *axes*, dropping what is derivable.
+    def _assign_axes(self, dataset, axes):
+        """Set the axis map of *dataset* to *axes*, canonicalizing the grid.
 
-        The identity parts stay absent: `axes` is stored only when it
-        differs from the stored geometry order, `source_ndim` only when
-        synthetic axes exist. The source rank is this array's.
+        The header states the arrangement only when it is not the
+        identity; hidden synthetic axes leave the grid and the ones
+        that remain are renumbered into virtual order first (see
+        :func:`_canonical`). The source rank is this array's — no
+        operation of the grid creates or destroys a source axis.
         """
-        drop = [name for name in ("axes", "source_ndim") if name in dataset]
-        if drop:
-            dataset = dataset.drop_vars(drop)
-        assign = {}
-        if axes != tuple(range(ngrid)):
-            assign["axes"] = ("axis", np.asarray(axes, dtype=np.int64))
-        if self._source_ndim != ngrid:
-            assign["source_ndim"] = ((), np.asarray(self._source_ndim, dtype=np.int64))
-        return dataset.assign(assign) if assign else dataset
+        header = _read_header(dataset)
+        dataset, axes = _canonical(dataset, header, axes, self._source_ndim)
+        encoded = _encode_axes(axes, self._source_ndim, len(header["ntiles"]))
+        if encoded is None:
+            header.pop("axes", None)
+        else:
+            header["axes"] = encoded
+        return _write_header(dataset, header)
 
     @property
     def shape(self):
@@ -801,7 +1111,8 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
 
         Slices of any nonzero step trim the geometry (a negative step
         folds as its ascending twin, then the axis flips); an integer
-        pins the geometry axis at one sample and hides it from the map;
+        pins the geometry axis at one sample and hides it from the map
+        (a synthetic axis, contentless once pinned, leaves the grid);
         ``None`` inserts a synthetic axis. Raises :class:`_Unfoldable`
         for other entries, for empty selections (a grid needs at least
         one tile) and for all-integer keys (a scalar is not a tile
@@ -840,9 +1151,9 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
             if (lo, hi, s) == (0, extent, 1):
                 continue
             edges = self._edges[g]
-            i0 = int(np.searchsorted(edges, lo, "right")) - 1
-            i1 = int(np.searchsorted(edges, hi, "left"))
-            pos = edges[i0:i1]
+            i0 = edges.searchsorted(lo, "right") - 1
+            i1 = edges.searchsorted(hi, "left")
+            pos = edges.span(i0, i1)
             size = self._sizes[g][i0:i1]
             start = self._starts[g][i0:i1]
             step = self._steps[g][i0:i1]
@@ -858,11 +1169,11 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
             assign[f"steps_{g}"] = (dim, (step * s)[keep])
         if not new_axes:
             raise _Unfoldable("an all-integer key selects a scalar, not a grid")
-        dataset = _assign_geometry(self.dataset.isel(indexers), assign)
+        dataset = _assign_geometry(_isel(self.dataset, indexers), assign)
         new_axes = tuple(new_axes)
         if new_axes != self._axes:
-            dataset = self._assign_axes(dataset, new_axes, len(self.dims))
-        result = type(self)(dataset, self.dtype, self.engine)
+            dataset = self._assign_axes(dataset, new_axes)
+        result = type(self)(dataset)
         for axis in flips:
             result = result._flip(axis)
         # np.newaxis entries insert synthetic axes at their output position
@@ -889,8 +1200,8 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
         order = np.asarray(order)
         if not np.array_equal(np.sort(order), np.arange(len(self._sizes[g]))):
             raise ValueError(f"`order` must be a permutation of axis {axis} tiles")
-        dataset = self.dataset.isel({self.dims[g]: order})
-        return type(self)(dataset, self.dtype, self.engine)
+        dataset = _isel(self.dataset, {self.dims[g]: order})
+        return type(self)(dataset)
 
     def _flip(self, axis):
         """Reverse the array along virtual *axis*, staying virtual.
@@ -904,13 +1215,13 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
         starts = self._starts[g] + (self._sizes[g] - 1) * self._steps[g]
         steps = -self._steps[g]
         dataset = _assign_geometry(
-            self.dataset.isel({dim: slice(None, None, -1)}),
+            _isel(self.dataset, {dim: slice(None, None, -1)}),
             {
                 f"starts_{g}": (dim, starts[::-1]),
                 f"steps_{g}": (dim, steps[::-1]),
             },
         )
-        return type(self)(dataset, self.dtype, self.engine)
+        return type(self)(dataset)
 
     @classmethod
     def concat(cls, arrays, dim=0):
@@ -967,6 +1278,8 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
             ):
                 raise ValueError("can only concatenate compatible tile arrays")
         data = {}
+        counts = list(first._counts)
+        counts[gaxis] = sum(array._counts[gaxis] for array in arrays)
         for kind, per_axis, default in (
             ("sizes", [array._sizes for array in arrays], None),
             ("starts", [array._starts for array in arrays], 0),
@@ -980,10 +1293,6 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
                 if default is not None and bool((values == default).all()):
                     continue
                 data[f"{kind}_{g}"] = (dims[g], values)
-        if first._axes != tuple(range(ngrid)):
-            data["axes"] = ("axis", np.asarray(first._axes, dtype=np.int64))
-        if first._source_ndim != ngrid:
-            data["source_ndim"] = ((), np.asarray(first._source_ndim, dtype=np.int64))
         # the fused root is the deepest directory containing every input
         # root ("" when an input has none or no common directory exists)
         roots = [array.root for array in arrays]
@@ -991,8 +1300,6 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
             root = os.path.commonpath(roots) if all(roots) else ""
         except ValueError:
             root = ""
-        if root:
-            data["root"] = ((), np.asarray(os.fsencode(root)))
         for name in ("paths", *first._params):
             if name == "paths":
                 variables = [array._rebased_paths(root) for array in arrays]
@@ -1011,13 +1318,15 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
             )
             parts = []
             for variable, array in zip(variables, arrays):
-                counts = dict(zip(dims, (len(sizes) for sizes in array._sizes)))
-                parts.append(variable.set_dims({dim: counts[dim] for dim in union}))
+                sizes = dict(zip(dims, array._counts))
+                parts.append(variable.set_dims({dim: sizes[dim] for dim in union}))
             axis_pos = union.index(dims[gaxis])
             values = np.concatenate([part.values for part in parts], axis=axis_pos)
             data[name] = xr.Variable(union, values)
-        dataset = xr.Dataset(data, attrs=first.attrs)
-        return cls(dataset, first.dtype, first.engine)
+        header = _make_header(
+            counts, first.dtype, first.engine, root, first._axes, first._source_ndim
+        )
+        return cls(_write_header(xr.Dataset(data), header))
 
     def _full_paths(self):
         """Return the full source byte path of every tile, root joined, over the grid."""
@@ -1109,7 +1418,7 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
                 widths.append(size)
             selection, widths = tuple(selection), tuple(widths)
             dest = tuple(
-                slice(int(self._edges[g][index[g]]), int(self._edges[g][index[g] + 1]))
+                slice(self._edges[g].at(index[g]), self._edges[g].at(index[g] + 1))
                 for g in self._axes
             )
             kwargs = dict(spec)
@@ -1139,10 +1448,10 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
     def equals(self, other):
         """Whether *other* describes the same tiling (not elementwise).
 
-        Compares the engine, dtype, geometry, parameters and user
-        attributes; ``==`` stays elementwise, as on any numpy-like
-        array. Paths compare joined: two arrays naming the same source
-        files are equal however each splits its ``root``.
+        Compares the engine, dtype, geometry and parameters; ``==``
+        stays elementwise, as on any numpy-like array. Paths compare
+        joined: two arrays naming the same source files are equal
+        however each splits its ``root``.
         """
         if not isinstance(other, TileArray):
             return False
@@ -1150,7 +1459,6 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
             self.engine != other.engine
             or self.dtype != other.dtype
             or self.shape != other.shape
-            or self.attrs != other.attrs
             or self._params != other._params
             or self._axes != other._axes
             or self._source_ndim != other._source_ndim
@@ -1311,17 +1619,19 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
         dataset = self.dataset.assign(
             {f"sizes_{ngrid}": (f"{TILE_PREFIX}{ngrid}", np.ones(1, np.int64))}
         )
+        header = _read_header(dataset)
+        header["ntiles"] = [*header["ntiles"], 1]
         axes = self._axes[:axis] + (ngrid,) + self._axes[axis:]
-        dataset = self._assign_axes(dataset, axes, ngrid + 1)
-        return type(self)(dataset, self.dtype, self.engine)
+        return type(self)(self._assign_axes(_write_header(dataset, header), axes))
 
     def squeeze(self, axis=None):
         """Drop unit axes, staying virtual.
 
-        The dropped axes leave the virtual order (real ones stay in the
-        grid as hidden, one-sample reads); squeezing every axis away
-        materializes the value as a 0-d array, as a grid needs at least
-        one visible axis.
+        The dropped axes leave the virtual order — a source axis stays
+        in the grid as a hidden, one-sample read, a synthetic one
+        leaves it altogether; squeezing every axis away materializes
+        the value as a 0-d array, as a grid needs at least one visible
+        axis.
 
         Parameters
         ----------
@@ -1351,11 +1661,15 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
         if len(drop) == self.ndim:
             return np.asarray(self).reshape(())
         axes = tuple(g for k, g in enumerate(self._axes) if k not in drop)
-        dataset = self._assign_axes(self.dataset, axes, len(self.dims))
-        return type(self)(dataset, self.dtype, self.engine)
+        return type(self)(self._assign_axes(self.dataset, axes))
 
     def transpose(self, order=None):
         """Permute the axes, staying virtual (reversed order by default).
+
+        Only the axis map moves — unless the permutation reorders
+        synthetic axes past each other, which renumbers them (and the
+        columns carrying them) so they keep trailing the source axes in
+        virtual order.
 
         Parameters
         ----------
@@ -1372,8 +1686,7 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
         if sorted(order) != list(range(self.ndim)):
             raise ValueError(f"axes {order} do not permute a {self.ndim}-d array")
         axes = tuple(self._axes[a] for a in order)
-        dataset = self._assign_axes(self.dataset, axes, len(self.dims))
-        return type(self)(dataset, self.dtype, self.engine)
+        return type(self)(self._assign_axes(self.dataset, axes))
 
     def astype(self, dtype, **kwargs):
         """Materialize and cast the values to *dtype*."""
@@ -1381,7 +1694,7 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
 
     def __deepcopy__(self, memo):
         """Copy without the read cache; the dataset is immutable."""
-        return type(self)(self.dataset, self.dtype, self.engine)
+        return type(self)(self.dataset)
 
     def __repr__(self):
         """Summarize the array on one line, as the data of a data array.

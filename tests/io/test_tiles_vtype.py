@@ -286,6 +286,7 @@ def test_default_vtypes():
         "asn": "hdf5",
         "febus": "tiles",
         "miniseed": "tiles",
+        "obspy": "tiles",
         "prodml": "hdf5",
         "silixa": "tiles",
         "terra15": "hdf5",

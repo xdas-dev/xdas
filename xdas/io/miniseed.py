@@ -1,19 +1,44 @@
-"""I/O engine for MiniSEED files via ObsPy (:class:`MiniSEEDEngine`)."""
+"""Legacy MiniSEED engine (:class:`MiniSEEDEngine`), kept for stored views.
+
+This is the engine `engine="miniseed"` named before :mod:`xdas.io.obspy`
+replaced it, preserved verbatim so that manifests written by it keep decoding
+and code written against it keeps running. It describes a whole file as one
+tile of stacked channels, which it classifies at scan time as *synchronized*
+(all traces share one time coordinate) or *unsynchronized* (the time axis is
+the concatenation of the first channel's segments, every other channel assumed
+to match), and refuses anything else — a file holding two sampling rates, for
+instance.
+
+New code should use the `"obspy"` engine, which reads all of those and emits
+one lazy data array per ObsPy trace. Both engines take part in format
+auto-detection, `"obspy"` first: this one is reached only for a file the new
+engine cannot describe as a single data array, which is exactly the shape
+:func:`xdas.open_dataarray` was asked for.
+"""
 
 from typing import ClassVar
 
 import numpy as np
 import obspy
 
-from ..coordinates import (
-    AxisCoordinate,
-    Coordinate,
-    Coordinates,
-    get_sampling_interval,
-)
+from ..coordinates import AxisCoordinate, Coordinate, Coordinates
 from ..core import DataArray, concat_coords
 from ..virtual import TileArray
 from .core import Engine
+
+# the stream converters and the band-code table were never miniSEED-specific
+# and now live with the obspy engine; re-exported so that imports from this
+# module keep working
+from .obspy import from_stream, get_band_code, get_dtype, to_stream
+
+__all__ = [
+    "MiniSEEDEngine",
+    "from_stream",
+    "get_band_code",
+    "get_time_coord",
+    "to_stream",
+    "uniquifiy",
+]
 
 
 class MiniSEEDEngine(Engine, name="miniseed"):
@@ -59,7 +84,10 @@ class MiniSEEDEngine(Engine, name="miniseed"):
         ctype = self.ctype["time"]
         st = obspy.read(path, headonly=True)
 
-        dtype = uniquifiy(tr.data.dtype for tr in st)
+        # from the encoding, not from `tr.data`, which `headonly=True` leaves
+        # an empty float64 array: a STEIM-compressed file decodes to int32 and
+        # the tile array checks the scanned type against every decoded tile
+        dtype = uniquifiy(get_dtype(tr) for tr in st)
         if not isinstance(dtype, np.dtype):  # pragma: no cover
             raise ValueError("All traces must have the same dtype")
 
@@ -147,84 +175,6 @@ class MiniSEEDEngine(Engine, name="miniseed"):
         return data[selection]
 
 
-def to_stream(
-    da,
-    network="NET",
-    station="DAS{:05}",
-    location="00",
-    channel="{:1}N1",
-    dim=None,
-):
-    """
-    Convert a 2-D :class:`DataArray` to an :class:`obspy.Stream`.
-
-    Parameters
-    ----------
-    da : DataArray
-        2-D array with one time and one distance/channel dimension.
-    network, station, location, channel : str
-        SEED identifiers.  *station* and *channel* may contain ``{:...}``
-        format specs that are filled with the channel index.
-    dim : dict, optional
-        ``{distance_dim: time_dim}`` mapping.  Defaults to ``{"last": "first"}``.
-
-    Returns
-    -------
-    obspy.Stream
-    """
-    if dim is None:
-        dim = {"last": "first"}
-    dimdist, dimtime = dim.copy().popitem()
-    if not da.ndim == 2:
-        raise ValueError("the data array must be 2D")
-    starttime = obspy.UTCDateTime(str(da[dimtime][0].values))
-    delta = get_sampling_interval(da, dimtime)
-    band_code = get_band_code(1.0 / delta)
-    if "{" in channel and "}" in channel:
-        channel = channel.format(band_code)
-    header = {
-        "network": network,
-        "location": location,
-        "channel": channel,
-        "starttime": starttime,
-        "delta": delta,
-    }
-    return obspy.Stream(
-        [
-            obspy.Trace(
-                data=np.ascontiguousarray(da.isel({dimdist: idx}).values),
-                header=header | {"station": station.format(idx + 1)},
-            )
-            for idx in range(len(da[dimdist]))
-        ]
-    )
-
-
-def from_stream(st, dims=("channel", "time")):
-    """
-    Convert an :class:`obspy.Stream` to a :class:`DataArray`.
-
-    Parameters
-    ----------
-    st : obspy.Stream
-        Homogeneous stream (all traces must share start time and sample rate).
-    dims : tuple of str, optional
-        Dimension names for the output array.
-
-    Returns
-    -------
-    DataArray
-    """
-    data = np.stack([tr.data for tr in st])
-    channel = [tr.id for tr in st]
-    # Regular by construction from the stream's own sample rate, at ns
-    # resolution so a `to_stream` round trip preserves the coordinate.
-    t0 = np.datetime64(st[0].stats.starttime.datetime)
-    dt = np.rint(1e6 * st[0].stats.delta).astype("m8[us]").astype("m8[ns]")
-    time = Coordinate["interpolated"].from_block(t0, st[0].stats.npts, dt, dim=dims[1])
-    return DataArray(data, {dims[0]: channel, dims[1]: time})
-
-
 def get_time_coord(tr, ignore_last_sample, ctype):
     """Build a :class:`Coordinate` for the time axis of trace *tr*."""
     t0 = np.datetime64(tr.stats.starttime)
@@ -241,14 +191,3 @@ def uniquifiy(seq):
         return seq[0]
     else:
         return seq
-
-
-def get_band_code(sampling_rate):
-    """Return the SEED band code character for *sampling_rate* (Hz)."""
-    band_code = ["T", "P", "R", "U", "V", "L", "M", "B", "H", "C", "F"]
-    limits = [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 80, 250, 1000, 5000]
-    index = np.searchsorted(limits, sampling_rate, "right") - 1
-    if index < 0 or index >= len(band_code):
-        return "X"
-    else:
-        return band_code[index]

@@ -23,7 +23,7 @@ To deal with large multi-file dataset, *Xdas* uses the concept of virtual datase
 
 Which types an engine offers is declared by its `_supported_vtypes` attribute; the first one listed is the default. See [](#choosing-a-virtualization-backend) for how to pick, and [](data-formats.md) for what each engine supports and defaults to.
 
-A third backing, [Dask arrays](https://docs.Dask.org/en/stable/array.html), is deprecated and no longer used by any engine — see [](#dask-virtualization).
+A third backing, [Dask arrays](https://docs.Dask.org/en/stable/array.html), was removed in 0.2.9: it was used by no engine, and tile virtualization describes the same mapping as plain array data instead of as a computation graph. A Dask array is still valid data for a {py:class}`xdas.DataArray`; it is simply computed on write rather than serialized.
 
 ## HDF5 Virtualization
 
@@ -201,21 +201,3 @@ decimated reads matter. The larger the archive, the stronger the case for `tiles
 the only one of the two whose write, open and read costs do not all grow with the number
 of files.
 ```
-
-(dask-virtualization)=
-## Dask Virtualization (deprecated)
-
-```{deprecated} 0.2.9
-Dask virtualization is no longer used by any engine and writing it is deprecated. The
-formats that once relied on it — those HDF5 virtual datasets cannot serve — now use
-[tile virtualization](#tile-virtualization) instead. Existing files that store a Dask
-graph can still be read, so nothing on disk is lost, but new datasets should not be
-written this way.
-```
-
-Formats that HDF5 could not virtualize used to be loaded as Dask arrays: an
-N-dimensional stack of chunks, each with a task attached that produces its values,
-serialized into the native *Xdas* netCDF format as a computation graph. Tiles replace it
-with a manifest that describes the same mapping as plain array data, which is both more
-compact and far quicker to build, and which does not go sluggish once the graph reaches
-millions of tasks.

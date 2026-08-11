@@ -37,6 +37,16 @@ class TestEngineRegistry:
         with pytest.raises(ValueError, match="no engine could open"):
             AutoEngine().open_dataarray("/definitely/nonexistent_file.hdf5")
 
+    def test_auto_engine_fail_message_lists_every_refusal(self, tmp_path):
+        # no single refusal is *the* reason, so the message reports them all:
+        # a file an engine recognised and then rejected must be able to
+        # explain itself rather than be reported as merely unreadable
+        fake = tmp_path / "fake.h5"
+        fake.write_bytes(b"not a valid hdf5 file")
+        with pytest.raises(ValueError, match="no engine could open") as excinfo:
+            AutoEngine().open_dataarray(str(fake))
+        assert "\n  xdas: " in str(excinfo.value)
+
     def test_auto_engine_fail_message_includes_ctype(self, tmp_path):
         fake = tmp_path / "fake.h5"
         fake.write_bytes(b"not a valid hdf5 file")

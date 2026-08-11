@@ -17,7 +17,7 @@ class Engine:
 
     The Engine class provides a plugin architecture for reading and writing various
     file formats. Each Engine subclass corresponds to a specific file format (e.g.,
-    "xdas", "asn", "miniseed") and implements methods to open and save DataArray or
+    "xdas", "asn", "obspy") and implements methods to open and save DataArray or
     DataCollection objects.
 
     Engines are registered in a class-level registry using the `__init_subclass__` hook,
@@ -197,6 +197,10 @@ class AutoEngine(Engine):
     - The first engine that successfully opens the file is used
     - If all engines fail, an informative error message is raised
 
+    Registration order therefore settles which engine wins when several read
+    the same file: `"obspy"` is registered before the legacy `"miniseed"`, and
+    both after the format-specific engines.
+
     Parameters
     ----------
     vtype : str, optional
@@ -232,21 +236,59 @@ class AutoEngine(Engine):
 
     def open_dataarray(self, fname):
         """Try each registered engine in order and return the first successful result."""
-        for engine in self._ordered_engines():
+        opened, out = self._try_engines("open_dataarray", fname)
+        if opened:
+            return out
+        raise ValueError(self._failure_message(fname, out))
+
+    def open_datacollection(self, fname):
+        """Try each registered engine in order and return the first collection.
+
+        Raises :exc:`NotImplementedError` when no engine describes *fname* as a
+        collection, so that callers fall back to opening it as a data array the
+        same way they do for a named engine.
+        """
+        opened, out = self._try_engines("open_datacollection", fname)
+        if opened:
+            return out
+        raise NotImplementedError(
+            self._failure_message(fname, out, " as a data collection")
+        )
+
+    def _try_engines(self, method, fname):
+        """Return ``(True, result)`` from the first engine that opens *fname*.
+
+        On failure, returns ``(False, refusals)``: the ``{engine: error}`` of
+        every engine that recognised the file far enough to say something about
+        it. An engine that offers neither this shape nor the asked vtype or
+        ctype says nothing about the file and is left out. No single refusal is
+        *the* reason — the engines are tried in a cache-warmed order, not in
+        order of likelihood — so they are all reported.
+        """
+        refusals = {}
+        for name in self._ordered_engines():
             try:
-                out = Engine[engine](vtype=self.vtype, ctype=self.ctype).open_dataarray(
-                    fname
-                )
-                AutoEngine._last_successful_engine = engine
-                return out
-            except Exception:  # noqa: BLE001, S112 - try the next engine
+                engine = Engine[name](vtype=self.vtype, ctype=self.ctype)
+                out = getattr(engine, method)(fname)
+            except NotImplementedError:
                 continue
+            except Exception as exc:  # noqa: BLE001 - try the next engine
+                refusals[name] = exc
+                continue
+            AutoEngine._last_successful_engine = name
+            return True, out
+        return False, refusals
+
+    def _failure_message(self, fname, refusals=None, suffix=""):
         message = f"no engine could open the file '{fname}'"
         if self.ctype is not None:
             message += f" with ctype '{self.ctype}'"
         if self.vtype is not None:
             message += f" with vtype '{self.vtype}'"
-        raise ValueError(message)
+        message += suffix
+        for name, error in (refusals or {}).items():
+            message += f"\n  {name}: {type(error).__name__}: {error}"
+        return message
 
     def _ordered_engines(self):
         return [self._last_successful_engine] + [

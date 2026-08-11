@@ -42,9 +42,9 @@ class TestVirtualBackend:
         with pytest.raises(TypeError, match="abstract"):
             VirtualBackend()
 
-    def test_finalize_save_defaults_to_nothing(self):
+    def test_sibling_datasets_defaults_to_nothing(self):
         source = VirtualSource("path.h5", "data", (2, 3), np.dtype("f8"))
-        assert source.finalize_save("path.nc") is None
+        assert source.sibling_datasets() == {}
 
     def test_derived_properties_shared_by_both_backends(self):
         source = VirtualSource("path.h5", "data", (2, 3), np.dtype("f8"))

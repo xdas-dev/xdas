@@ -526,7 +526,8 @@ class TestIO:
         _da = xd.DataArray.from_netcdf(tmpfile_compressed)
         assert np.abs(da - _da).max().values < 0.001
 
-    def test_io_dask(self, tmp_path):
+    def test_io_dask_writes_eagerly(self, tmp_path):
+        """A dask-backed array is computed on write: no graph is stored."""
         values = np.random.rand(3, 10)
         chunks = np.split(values, 5, axis=1)
         for idx, chunk in enumerate(chunks):
@@ -547,13 +548,15 @@ class TestIO:
         fname = tmp_path / "tmp.nc"
         expected.to_netcdf(fname)
         result = xd.open_dataarray(fname)
-        assert isinstance(result.data, dask.array.Array)
+        assert not isinstance(result.data, dask.array.Array)
         assert np.array_equal(expected.values, result.values)
         assert expected.dtype == result.dtype
         assert expected.coords.equals(result.coords)
         assert expected.dims == result.dims
         assert expected.name == result.name
         assert expected.attrs == result.attrs
+        with pytest.raises(ValueError, match="virtual array as data"):
+            expected.to_netcdf(tmp_path / "virtual.nc", virtual=True)
 
     def test_io_non_dimensional(self, tmp_path):
         expected = xd.DataArray(coords={"dim": 0}, dims=())

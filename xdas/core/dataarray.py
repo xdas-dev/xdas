@@ -11,7 +11,6 @@ from functools import partial
 
 import numpy as np
 import xarray as xr
-from dask.array import Array as DaskArray
 from numpy.lib.mixins import NDArrayOperatorsMixin
 
 from ..coordinates import AxisCoordinate, Coordinates
@@ -105,7 +104,8 @@ class DataArray(NDArrayOperatorsMixin):
             data_repr = np.array2string(
                 self.data, precision=precision, threshold=0, edgeitems=edgeitems
             )
-        elif isinstance(self.data, DaskArray):
+        elif type(self.data).__module__.startswith("dask."):
+            # duck-typed: dask is no longer a dependency, only valid data
             data_repr = f"DaskArray: {_to_human(self.data.nbytes)} ({self.data.dtype})"
         else:
             data_repr = repr(self.data)
@@ -842,7 +842,7 @@ class DataArray(NDArrayOperatorsMixin):
             the obspy stream version of the data array.
 
         """
-        from ..io.miniseed import to_stream
+        from ..io.obspy import to_stream
 
         return to_stream(self, network, station, location, channel, dim)
 
@@ -868,7 +868,7 @@ class DataArray(NDArrayOperatorsMixin):
         DataArray:
             The consolidated data array.
         """
-        from ..io.miniseed import from_stream
+        from ..io.obspy import from_stream
 
         return from_stream(st, dims)
 

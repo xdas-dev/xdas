@@ -125,13 +125,68 @@ class TestDataCollection:
         assert result.equals(expected)
         result = dc.query(instrument="das*")
         assert result.equals(dc)
+        # an indexer applies wherever its level sits, not only at the root:
+        # das2 holds three acquisitions and keeps the first two
         result = dc.query(acquisition=slice(0, 2))
-        assert result.equals(dc)
+        assert [len(result[key]) for key in result] == [2, 2]
+        assert result["das1"].equals(dc["das1"])
 
     def test_fields(self):
         da = xd.testing.dummy()
         dc = self.nest(da)
         assert dc.fields == ("instrument", "acquisition")
+
+    def test_fields_recursive(self):
+        da = xd.testing.dummy()
+        dc = xd.DataCollection(
+            {
+                "DX": xd.DataCollection(
+                    {
+                        "CH001": xd.DataCollection(
+                            {
+                                "00": xd.DataCollection(
+                                    {"HHZ": xd.DataCollection([da], "acquisition")},
+                                    "channel",
+                                )
+                            },
+                            "location",
+                        )
+                    },
+                    "station",
+                )
+            },
+            "network",
+        )
+        assert dc.fields == (
+            "network",
+            "station",
+            "location",
+            "channel",
+            "acquisition",
+        )
+
+    def test_query_is_strict(self):
+        da = xd.testing.dummy()
+        dc = self.nest(da)
+        with pytest.raises(KeyError, match="do not name any level"):
+            dc.query(nonexistent="das1")
+        # a dimension name is not a level name: `sel` trims inside leaves,
+        # `query` chooses leaves
+        with pytest.raises(KeyError, match="do not name any level"):
+            dc.query(time=slice(0, 5))
+
+    def test_select_is_query(self):
+        da = xd.testing.dummy()
+        dc = self.nest(da)
+        assert dc.select(instrument="das1").equals(dc.query(instrument="das1"))
+        assert dc.select({"instrument": "das1"}).equals(dc.query(instrument="das1"))
+
+    def test_query_does_not_mutate_indexers(self):
+        da = xd.testing.dummy()
+        dc = self.nest(da)
+        indexers = {"instrument": "das1"}
+        dc.query(indexers, acquisition=0)
+        assert indexers == {"instrument": "das1"}
 
     def test_map(self):
         da = xd.testing.dummy()
@@ -278,7 +333,7 @@ class TestDataCollection:
     def test_query_invalid_key_in_sequence(self):
         da = xd.testing.dummy()
         dc = xd.DataCollection([da, da], "seq")
-        with pytest.raises(ValueError, match="query must be a string"):
+        with pytest.raises(ValueError, match="query must be an integer or a slice"):
             dc.query(seq="bad_string_key")
 
     def test_query_invalid_key_in_mapping(self):
@@ -298,6 +353,20 @@ class TestDataCollection:
         result = xd.DataCollection.from_netcdf(path)
         # Keys 0 and 2 are not a sequential range → returns as-is DataMapping
         assert isinstance(result, xd.DataCollection)
+
+    def test_zero_padded_keys_survive_every_read_path(self, tmp_path):
+        # a SEED location such as "00" is a mapping key, not a position: every
+        # way in must compare the canonical decimal spelling, not parse ints
+        da = xd.testing.dummy()
+        dc = xd.DataCollection({"00": da, "01": da}, "location")
+        path = tmp_path / "padded.nc"
+        dc.to_netcdf(path)
+        for result in (
+            xd.open_datacollection(path),
+            xd.DataCollection.from_netcdf(path),
+            xd.open_datacollection(path, engine="xdas"),
+        ):
+            assert list(result) == ["00", "01"]
 
     def test_sequence_from_netcdf_direct(self, tmp_path):
         from xdas.core.datacollection import DataSequence

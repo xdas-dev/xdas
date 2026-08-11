@@ -75,12 +75,29 @@ class DataCollection:
         """``True`` if the collection contains no elements."""
         return len(self) == 0
 
+    @property
+    def fields(self):
+        """Ordered, deduplicated tuple of the node names of the whole subtree."""
+        values = self.values() if self.ismapping() else self
+        out = (self.name,) + tuple(
+            name
+            for value in values
+            if isinstance(value, DataCollection)
+            for name in value.fields
+        )
+        return uniquifiy(out)
+
     def query(self, indexers=None, **indexers_kwargs):
         """
         Query a given subset from a data collection.
 
         The data collection is walked through, if any node name corresponds to a key of
         the `indexers`, the corresponding value is used to select a subset of that node.
+
+        Each indexer must name a level of the collection, i.e. be one of `fields`.
+        This is what distinguishes querying from `sel`: `query` chooses *which*
+        leaves are kept by their position in the hierarchy, while `sel` trims
+        *inside* each leaf by coordinate label.
 
         Parameters
         ----------
@@ -94,6 +111,11 @@ class DataCollection:
         -------
         DataCollection:
             The queried data.
+
+        Raises
+        ------
+        KeyError
+            If an indexer does not name any level of the collection.
 
         Examples
         --------
@@ -114,48 +136,68 @@ class DataCollection:
             0: <xdas.DataArray (time: 300, distance: 401)>
 
         """
-        if indexers is None:
-            indexers = {}
+        indexers = {} if indexers is None else dict(indexers)
         indexers.update(indexers_kwargs)
-        if self.name in indexers:
-            key = indexers[self.name]
-            if self.issequence():
+        fields = self.fields
+        unknown = [key for key in indexers if key not in fields]
+        if unknown:
+            raise KeyError(
+                f"{unknown} do not name any level of the collection; "
+                f"available: {list(fields)}"
+            )
+        return self._query(indexers)
+
+    def select(self, indexers=None, **indexers_kwargs):
+        """
+        Select a given subset from a data collection.
+
+        Alias of `query`, named after `obspy.Stream.select`. See `query`.
+        """
+        return self.query(indexers, **indexers_kwargs)
+
+    def _query(self, indexers):
+        """Recursive half of `query`, with the indexers already validated.
+
+        Every level is walked, whether or not it is named in *indexers*: an
+        indexer applies wherever its level sits in the tree, not only at the
+        root.
+        """
+        key = indexers.get(self.name)
+        if self.issequence():
+            data = list(self)
+            if self.name in indexers:
                 if isinstance(key, int):
-                    data = [self[key]]
+                    data = [data[key]]
                 elif isinstance(key, slice):
-                    data = self[key]
+                    data = data[key]
                 else:
-                    raise ValueError(f"{self.name} query must be a string")
-                data = [
-                    (
-                        value.query(indexers)
-                        if isinstance(value, DataCollection)
-                        else value
-                    )
-                    for value in data
-                ]
-            elif self.ismapping():
+                    raise ValueError(f"{self.name} query must be an integer or a slice")
+            data = [
+                (value._query(indexers) if isinstance(value, DataCollection) else value)
+                for value in data
+            ]
+        elif self.ismapping():
+            data = dict(self)
+            if self.name in indexers:
                 if isinstance(key, str):
                     data = {
                         name: value
-                        for name, value in self.items()
+                        for name, value in data.items()
                         if fnmatch(name, key)
                     }
                 else:
                     raise ValueError(f"{self.name} query must be a string")
-                data = {
-                    name: (
-                        value.query(indexers)
-                        if isinstance(value, DataCollection)
-                        else value
-                    )
-                    for name, value in data.items()
-                }
-            else:  # pragma: no cover
-                raise TypeError("unknown type of data collection")
-            return DataCollection(data, self.name)
-        else:
-            return self
+            data = {
+                name: (
+                    value._query(indexers)
+                    if isinstance(value, DataCollection)
+                    else value
+                )
+                for name, value in data.items()
+            }
+        else:  # pragma: no cover
+            raise TypeError("unknown type of data collection")
+        return DataCollection(data, self.name)
 
     def issequence(self):
         """Return ``True`` if this is a :class:`DataSequence`."""
@@ -185,15 +227,7 @@ class DataCollection:
         """
         if isinstance(fname, Path):
             fname = str(fname)
-        self = DataMapping.from_netcdf(fname, group)
-        try:
-            keys = [int(key) for key in self.keys()]
-            if keys == list(range(len(keys))):
-                return DataSequence.from_mapping(self)
-            else:
-                return self
-        except ValueError:
-            return self
+        return as_sequence_if_positional(DataMapping.from_netcdf(fname, group))
 
 
 class DataMapping(DataCollection, dict):
@@ -237,14 +271,6 @@ class DataMapping(DataCollection, dict):
 
     def __reduce__(self):
         return self.__class__, (dict(self), self.name)
-
-    @property
-    def fields(self):
-        """Ordered, deduplicated tuple of node names at this level and its immediate children."""
-        out = (self.name,) + tuple(
-            value.name for value in self.values() if isinstance(value, DataCollection)
-        )
-        return uniquifiy(out)
 
     def to_netcdf(
         self,
@@ -433,14 +459,6 @@ class DataSequence(DataCollection, list):
     def __reduce__(self):
         return self.__class__, (list(self), self.name)
 
-    @property
-    def fields(self):
-        """Ordered, deduplicated tuple of node names at this level and its immediate children."""
-        out = (self.name,) + tuple(
-            value.name for value in self if isinstance(value, DataCollection)
-        )
-        return uniquifiy(out)
-
     def to_mapping(self):
         """Convert to an integer-keyed :class:`DataMapping`."""
         return DataMapping(dict(enumerate(self)), self.name)
@@ -624,6 +642,19 @@ def parse(data, name=None):
     if isinstance(data, DataCollection) and name is None:
         name = data.name
     return data, name
+
+
+def as_sequence_if_positional(dm):
+    """Return :class:`DataMapping` *dm* as a sequence if its keys are its positions.
+
+    A sequence is written under the canonical decimal spelling of its
+    positions, so that is what is compared: parsing the keys as integers
+    instead would read a mapping keyed by a zero-padded code — a SEED
+    location, say — back as a sequence, losing the keys.
+    """
+    if list(dm) == [str(index) for index in range(len(dm))]:
+        return DataSequence.from_mapping(dm)
+    return dm
 
 
 def get_depth(group):
