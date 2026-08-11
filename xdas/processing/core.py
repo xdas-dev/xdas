@@ -7,7 +7,8 @@ Includes :class:`DataArrayLoader`, :class:`DataArrayWriter`,
 """
 
 import os
-from concurrent.futures import ThreadPoolExecutor
+from collections import deque
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 from glob import glob
 from pathlib import Path
 from queue import Queue
@@ -22,6 +23,187 @@ from watchdog.observers import Observer
 
 from ..core import DataArray, concat, open_dataarray
 from .monitor import Monitor
+
+
+class _RayFuture:
+    """A future handed out by :class:`ProcessPool`, resolved via the object store."""
+
+    def __init__(self, pool, task):
+        self._pool = pool
+        self._task = task
+        self._ref = None
+        self._cancelled = False
+
+    def result(self):
+        """Block until the task ran and return its output (or raise its error)."""
+        return self._pool._result(self)
+
+
+class ProcessPool:
+    """
+    A pool of worker processes whose results cross through shared memory.
+
+    Each task runs as a Ray task in its own process. The pool quacks like a
+    :class:`~concurrent.futures.Executor` as far as the loader and writer
+    need (``submit``/``shutdown``/context manager), but the data crossing
+    back is never pickled through a pipe: a task result lands in Ray's
+    shared-memory object store, written once by the worker, and ``result()``
+    maps it zero-copy into the parent. Large task *arguments* — the chunk a
+    writer sends out — take the same path, one memcpy into the store instead
+    of a serialize-transfer-deserialize round. The price of zero-copy is
+    immutability: array data coming out of the store is read-only, which
+    atoms honor by allocating their outputs.
+
+    ``max_workers`` is enforced by parking submissions beyond it and
+    launching them as running tasks finish, mirroring how a process pool
+    queues its backlog. Ray is initialized lazily on first use (an already
+    initialized Ray, e.g. configured by the user, is left untouched).
+
+    Parameters
+    ----------
+    max_workers : int
+        Maximum number of tasks running concurrently.
+    """
+
+    def __init__(self, max_workers):
+        try:
+            import ray
+        except ImportError:
+            raise ImportError(
+                "pool='processes' requires the ray package: pip install xdas[ray]"
+            ) from None
+        if not ray.is_initialized():
+            ray.init(include_dashboard=False)
+        self._ray = ray
+        self._max_workers = max_workers
+        self._remotes = {}
+        self._pending = deque()
+        self._running = []
+
+    def submit(self, fn, /, *args, **kwargs):
+        """
+        Schedule ``fn(*args, **kwargs)`` as a task and return its future.
+
+        Parameters
+        ----------
+        fn : callable
+            The unit of work; large array arguments go to the object store.
+
+        Returns
+        -------
+        _RayFuture
+            A ``result()``-able handle, resolved zero-copy from the store.
+        """
+        future = _RayFuture(self, (fn, args, kwargs))
+        self._pending.append(future)
+        self._launch()
+        return future
+
+    def shutdown(self, wait=True):
+        """
+        Cancel parked tasks and (by default) wait for the running ones.
+
+        The Ray runtime itself is left up: it is a session-wide resource,
+        shared with the other pools of the run and with whatever the user
+        configured before xdas started.
+
+        Parameters
+        ----------
+        wait : bool, optional
+            Whether to block until in-flight tasks complete.
+        """
+        while self._pending:
+            self._pending.popleft()._cancelled = True
+        if wait and self._running:
+            self._ray.wait(self._running, num_returns=len(self._running))
+        self._running.clear()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        self.shutdown()
+
+    def _remote(self, fn):
+        """Wrap *fn* as a Ray remote function, once per distinct callable."""
+        if fn not in self._remotes:
+            self._remotes[fn] = self._ray.remote(fn)
+        return self._remotes[fn]
+
+    def _launch(self):
+        """Drop finished tasks and start parked ones up to ``max_workers``."""
+        if self._running:
+            _, self._running = self._ray.wait(
+                self._running, num_returns=len(self._running), timeout=0
+            )
+        while self._pending and len(self._running) < self._max_workers:
+            future = self._pending.popleft()
+            fn, args, kwargs = future._task
+            future._ref = self._remote(fn).remote(*args, **kwargs)
+            self._running.append(future._ref)
+
+    def _result(self, future):
+        """Resolve *future*, first waiting out the backlog ahead of it."""
+        while future._ref is None:
+            if future._cancelled:
+                raise CancelledError()
+            self._ray.wait(self._running, num_returns=1)
+            self._launch()
+        return self._ray.get(future._ref)
+
+
+POOLS = {"threads": ThreadPoolExecutor, "processes": ProcessPool}
+"""Worker pools available for chunk ingress and egress, name → factory."""
+
+
+def get_pool(pool, max_workers):
+    """
+    Build the worker pool used to load or write chunks.
+
+    Threads are enough when the work releases the GIL, but compressed HDF5
+    does not: reading a chunk goes through one virtual layout, hence one h5py
+    call holding the global HDF5 lock, so decompression of several chunks
+    cannot overlap in-process and extra threads only contend. Worker
+    processes each hold their own lock. What crosses to a worker is the
+    *manifest* of the chunk (a sliced virtual array, kilobytes), not data,
+    and the loaded chunk crosses *back* through a shared-memory object
+    store: the worker writes it once, the parent maps it zero-copy
+    (read-only). ``"processes"`` requires the optional ``ray`` dependency
+    (``pip install xdas[ray]``).
+
+    Parameters
+    ----------
+    pool : str
+        Pool kind, ``"threads"`` (default everywhere) or ``"processes"``.
+    max_workers : int
+        Number of workers.
+
+    Returns
+    -------
+    executor
+        A :class:`~concurrent.futures.Executor`-like pool.
+
+    Examples
+    --------
+    >>> from xdas.processing.core import get_pool
+    >>> with get_pool("threads", 2) as pool:
+    ...     pool.submit(abs, -1).result()
+    1
+    """
+    if pool not in POOLS:
+        raise ValueError(f"no worker pool named {pool!r}; available: {sorted(POOLS)}")
+    return POOLS[pool](max_workers)
+
+
+def _load(da):
+    """Load a (virtual) DataArray. The unit of work shipped to ingress workers."""
+    return da.load()
+
+
+def _dump(chunk, path, encoding):
+    """Write *chunk* to *path* and return it virtually. Egress unit of work."""
+    chunk.to_netcdf(path, encoding=encoding)
+    return open_dataarray(path)
 
 
 def process(atom, data_loader, data_writer):
@@ -89,7 +271,16 @@ class DataArrayLoader:
     max_buffers : int, default=1
         The maximum number of chunks to load into memory at the same time.
     max_workers : int, default=1
-        The maximum number of thread used to load the chunks.
+        The maximum number of workers used to load the chunks.
+    pool : {"threads", "processes"}, default="threads"
+        The kind of workers to load with. Compressed HDF5 decodes under the
+        global HDF5 lock, so several threads do not decode concurrently and
+        ``max_workers`` above one only pays off with ``"processes"``: each
+        worker receives the manifest of its chunk (kilobytes), reads its own
+        files, and returns the loaded chunk through a shared-memory object
+        store — zero-copy for the parent, with chunk data arriving
+        read-only. Requires the optional ``ray`` dependency. See
+        :func:`get_pool`.
 
     Examples
     --------
@@ -107,9 +298,13 @@ class DataArrayLoader:
     >>> for chunk in dl:
     ...     process(chunk)  # doctest: +SKIP
 
+    Decode four chunks at a time, one worker process each
+
+    >>> dl = DataArrayLoader(da, chunks, 4, 4, pool="processes")  # doctest: +SKIP
+
     """
 
-    def __init__(self, da, chunks, max_buffers=1, max_workers=1):
+    def __init__(self, da, chunks, max_buffers=1, max_workers=1, pool="threads"):
         if not isinstance(da, DataArray):
             raise TypeError(f"`da` must by a DataArray object, not a {type(da)}")
         if not (isinstance(chunks, dict) and len(chunks) == 1):
@@ -134,28 +329,35 @@ class DataArrayLoader:
         self.chunk_size = chunk_size
         self.max_buffers = max_buffers
         self.max_workers = max_workers
+        self.pool = pool
 
     def __len__(self):
         div, mod = divmod(self.da.sizes[self.chunk_dim], self.chunk_size)
         return div if mod == 0 else div + 1
 
-    def _get_chunk(self, idx):
+    def _select(self, idx):
+        """Return chunk *idx* as a lazy selection: the manifest, not the data."""
         start = idx * self.chunk_size
         end = (idx + 1) * self.chunk_size
         query = {
             dim: slice(start, end) if dim == self.chunk_dim else slice(None)
             for dim in self.da.dims
         }
-        return self.da[query].load()
+        return self.da[query]
 
     def __iter__(self):
-        with ThreadPoolExecutor(self.max_workers) as executor:
+        with get_pool(self.pool, self.max_workers) as executor:
             it = iter(range(len(self)))
+
+            def submit(idx):
+                # The task is the sliced virtual array, so a process worker
+                # receives kilobytes and reads its own files.
+                return executor.submit(_load, self._select(idx))
 
             futures = []
             try:
                 for _ in range(self.max_buffers):
-                    futures.append(executor.submit(self._get_chunk, next(it)))
+                    futures.append(submit(next(it)))
             except StopIteration:
                 pass
 
@@ -164,7 +366,7 @@ class DataArrayLoader:
                 result = future.result()
 
                 try:
-                    futures.append(executor.submit(self._get_chunk, next(it)))
+                    futures.append(submit(next(it)))
                 except StopIteration:
                     pass
 
@@ -243,6 +445,13 @@ class DataArrayWriter:
         :meth:`result`. Defaults to ``"first"``, which is only right when the
         chunked dimension leads the output: a pipeline emitting it elsewhere
         must name it.
+    pool : {"threads", "processes"}, default="threads"
+        The kind of workers to write with. Compression happens under the
+        global HDF5 lock, so as on the read side several threads do not
+        compress concurrently; ``"processes"`` sends each chunk to a worker
+        through the shared-memory object store — one memcpy at memory
+        bandwidth — in exchange for parallel compression. Requires the
+        optional ``ray`` dependency. See :func:`get_pool`.
 
     Examples
     --------
@@ -268,6 +477,7 @@ class DataArrayWriter:
         max_workers=1,
         create_dirs=False,
         dim="first",
+        pool="threads",
     ):
         dirpath = str(dirpath) if isinstance(dirpath, Path) else dirpath
         if create_dirs:
@@ -279,7 +489,8 @@ class DataArrayWriter:
         self.encoding = encoding
         self.max_buffers = max_buffers
         self.max_workers = max_workers
-        self._executor = ThreadPoolExecutor(self.max_workers)
+        self.pool = pool
+        self._executor = get_pool(pool, self.max_workers)
         self._futures = []
         self._results = []
         self._count = 0
@@ -299,17 +510,13 @@ class DataArrayWriter:
             future = self._futures.pop(0)
             result = future.result()
             self._results.append(result)
-        self._futures.append(self._executor.submit(self._write, chunk, self._count))
+        path = os.path.join(self.dirpath, f"{self._count:09d}")
+        self._futures.append(self._executor.submit(_dump, chunk, path, self.encoding))
         self._count += 1
 
     def write(self, chunk):
         """Alias for :meth:`submit`."""
         return self.submit(chunk)
-
-    def _write(self, chunk, count):
-        path = os.path.join(self.dirpath, f"{count:09d}")
-        chunk.to_netcdf(path, encoding=self.encoding)
-        return open_dataarray(path)
 
     def shutdown(self):
         """Shut down the internal thread pool."""

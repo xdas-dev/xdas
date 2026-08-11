@@ -1,3 +1,4 @@
+import importlib.util
 import os
 import threading
 import time
@@ -53,6 +54,158 @@ class TestDataArrayLoader:
             xp.DataArrayLoader(da, {"space": 100})
         with pytest.raises(ValueError):
             xp.DataArrayLoader(da, {"time": 2000})
+
+    def test_unknown_pool_raises(self):
+        da = xd.testing.dummy(shape=(1000, 100))
+        with pytest.raises(ValueError, match="no worker pool"):
+            list(xp.DataArrayLoader(da, {"time": 100}, pool="fork"))
+
+
+class TestReadOnlyIngress:
+    """Chunks may arrive immutable (zero-copy from an object store).
+
+    Atoms honor this by allocating their outputs rather than writing into
+    their input; this pins the contract down without needing ray installed.
+    """
+
+    def test_pipeline_accepts_readonly_chunks(self):
+        da = xd.testing.dummy(shape=(1000, 100))
+        sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
+        sequence = Sequential([Partial(sosfilt, sos, ..., dim="time", zi=...)])
+        expected = xd.concat(
+            [sequence(chunk, chunk_dim="time") for chunk in xd.split(da, 10, "time")]
+        )
+        chunks = [chunk.copy() for chunk in xd.split(da, 10, "time")]
+        for chunk in chunks:
+            chunk.data.setflags(write=False)
+        sequence.reset()
+        result = xd.concat([sequence(chunk, chunk_dim="time") for chunk in chunks])
+        assert result.equals(expected)
+        for chunk, original in zip(chunks, xd.split(da, 10, "time")):
+            np.testing.assert_array_equal(chunk.data, original.data)
+
+
+def test_missing_ray_points_at_the_extra(monkeypatch):
+    """Without ray installed, the pool names the optional dependency."""
+    import builtins
+
+    from xdas.processing.core import ProcessPool
+
+    real_import = builtins.__import__
+
+    def no_ray(name, *args, **kwargs):
+        if name == "ray":
+            raise ImportError("no module named ray")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_ray)
+    with pytest.raises(ImportError, match=r"xdas\[ray\]"):
+        ProcessPool(1)
+
+
+requires_ray = pytest.mark.skipif(
+    importlib.util.find_spec("ray") is None, reason="ray is not installed"
+)
+
+
+@requires_ray
+@pytest.mark.slow
+class TestProcessPool:
+    """Worker processes get past the HDF5 lock, shared memory past the pipe."""
+
+    def test_loader_chunks_integrity(self, tmp_path):
+        # A virtual array: the manifest of each chunk is what crosses to the
+        # worker, which then reads its own files; the loaded chunk comes back
+        # through the object store.
+        expected = xd.testing.dummy(shape=(1000, 100))
+        expected.to_netcdf(tmp_path / "data.nc")
+        da = xd.open_dataarray(tmp_path / "data.nc")
+        dl = xp.DataArrayLoader(da, {"time": 100}, 4, 2, pool="processes")
+        assert xd.concat(list(dl)).equals(expected)
+
+    def test_loader_chunks_are_zero_copy(self):
+        # Read-only data is the signature of a store-backed array: the parent
+        # mapped shared memory, nothing was pickled back.
+        da = xd.testing.dummy(shape=(1000, 100))
+        chunks = list(xp.DataArrayLoader(da, {"time": 100}, 2, 2, pool="processes"))
+        assert all(not chunk.data.flags.writeable for chunk in chunks)
+
+    def test_loader_equals_threads(self):
+        da = xd.testing.dummy(shape=(1000, 100))
+        threads = list(xp.DataArrayLoader(da, {"time": 100}, 2, 2))
+        processes = list(xp.DataArrayLoader(da, {"time": 100}, 2, 2, "processes"))
+        assert xd.concat(processes).equals(xd.concat(threads))
+
+    def test_writer_equals_threads(self, tmp_path):
+        da = xd.testing.dummy(shape=(1000, 100))
+        chunks = list(xd.split(da, 10, "time"))
+        results = []
+        for pool in ["threads", "processes"]:
+            dirpath = tmp_path / pool
+            dirpath.mkdir()
+            dw = xp.DataArrayWriter(dirpath, max_buffers=2, max_workers=2, pool=pool)
+            for chunk in chunks:
+                dw.write(chunk)
+            results.append(dw.result())
+        assert results[1].load().equals(results[0].load())
+        assert results[0].load().equals(da)
+
+    def test_end_to_end(self, tmp_path):
+        # which pool the chunks travel through cannot change what comes out.
+        xd.testing.dummy(shape=(1000, 100)).to_netcdf(tmp_path / "data.nc")
+        da = xd.open_dataarray(tmp_path / "data.nc")
+        sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
+        results = []
+        for pool in ["threads", "processes"]:
+            sequence = Sequential([Partial(sosfilt, sos, ..., dim="time", zi=...)])
+            loader = xp.DataArrayLoader(da, {"time": 100}, 2, 2, pool=pool)
+            dirpath = tmp_path / pool
+            dirpath.mkdir()
+            writer = xp.DataArrayWriter(dirpath, dim="time")
+            results.append(xp.process(sequence, loader, writer))
+        assert results[1].load().equals(results[0].load())
+
+    def test_backlog_is_parked_and_ordered(self):
+        # More submissions than workers: the excess is parked, launched as
+        # capacity frees, and resolved in submission order. The tasks sleep
+        # so none can finish during the submit loop and free a slot.
+        from xdas.processing.core import ProcessPool
+
+        with ProcessPool(2) as pool:
+            futures = [pool.submit(_slow_double, i) for i in range(8)]
+            assert sum(future._ref is None for future in futures) == 6
+            assert len(pool._running) == 2
+            assert [future.result() for future in futures] == [2 * i for i in range(8)]
+
+    def test_errors_propagate(self):
+        from xdas.processing.core import ProcessPool
+
+        with ProcessPool(1) as pool, pytest.raises(ValueError, match="broken task"):
+            pool.submit(_raise).result()
+
+    def test_shutdown_cancels_backlog(self):
+        from concurrent.futures import CancelledError
+
+        from xdas.processing.core import ProcessPool
+
+        pool = ProcessPool(1)
+        futures = [pool.submit(_slow_double, i) for i in range(4)]
+        pool.shutdown()
+        pool.shutdown()  # idempotent: nothing left to wait for
+        assert futures[0].result() == 0
+        with pytest.raises(CancelledError):
+            futures[-1].result()
+
+
+def _slow_double(x):
+    """Worker task used by the pool tests, slow enough to keep a backlog parked."""
+    time.sleep(0.2)
+    return 2 * x
+
+
+def _raise():
+    """Worker task raising, to check error propagation through the store."""
+    raise ValueError("broken task")
 
 
 class TestDataArrayWriter:
