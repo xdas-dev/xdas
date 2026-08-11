@@ -275,6 +275,7 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
             Seam policy for chunked processing: ``"reset"`` (default) flushes
             and starts a new run at every gap or rate change, ``"raise"``
             refuses discontinuous input. Overlaps always raise.
+
     Methods
     -------
         gather(mapping)
