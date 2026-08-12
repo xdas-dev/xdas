@@ -44,6 +44,7 @@
 ### Bug Fixes
 - Fix a STEIM-compressed `int32` miniSEED file being scanned as `float64`, the miniseed `ctype` argument being ignored, and miniSEED scans being forced to a single process (@atrabattoni).
 - Fix chunked `DownSample` dropping its trailing samples when the stream length is not a multiple of the factor (@atrabattoni).
+- Fix resampling losing track of the *other* coordinates of the dimension it resamples: decimating a DAS acquisition left its `station` coordinate at full length, labelling every lane with the code of the lane at its own index. Labels now follow the samples they name (@atrabattoni).
 - Fix `DataCollection` coercing a `pandas.DataFrame` leaf into a broken `DataArray`: a table is now a leaf of its own kind (@atrabattoni).
 - Fix a data collection keyed by zero-padded codes — a SEED location such as `"00"` — reading back from netCDF with its keys lost (@atrabattoni).
 - Fix a directory sink joining its chunks along the wrong dimension when the pipeline's output does not lead with the chunked one (@atrabattoni).
