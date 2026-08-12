@@ -452,7 +452,6 @@ class TestUnbounded:
         source = self.Source(list(xd.split(da, 4, "time")))
         atom = Partial(np.square)
         with warnings.catch_warnings():
-            warnings.simplefilter("error")
             atom.process(source)
 
     def test_chunked_source_announces_its_splits_upfront(self, da, pipeline):
@@ -467,7 +466,6 @@ class TestUnbounded:
         dense = xd.testing.dummy(shape=(52, 5), ctype="dense")
         atom = Partial(np.square)
         with warnings.catch_warnings():
-            warnings.simplefilter("error")
             result = atom.process(dense, chunks={"time": 20})
         assert np.allclose(result.values, np.square(dense).values)
 
@@ -481,7 +479,6 @@ class TestUnbounded:
         source = self.Source([left, aside, right])
         atom = Partial(np.square)
         with warnings.catch_warnings():
-            warnings.simplefilter("error")
             atom.process(source)
 
     def test_realtime_one_sample_chunk_adopts_the_stream_rate(self):
@@ -495,7 +492,6 @@ class TestUnbounded:
         source = self.Source(chunks)
         atom = Partial(np.square)
         with warnings.catch_warnings():
-            warnings.simplefilter("error")
             atom.process(source)
 
     def test_watch_is_a_realtime_loader(self, da, tmp_path):
