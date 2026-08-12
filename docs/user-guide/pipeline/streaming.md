@@ -92,8 +92,36 @@ encoding = {"chunks": (10, 10), **hdf5plugin.Zfp(accuracy=1e-6)}
 publisher = ZMQPublisher(address, encoding)  # Add encoding here, the rest is the same
 ```
 
-{py:class}`~xdas.io.asn.ZMQSubscriber`
-
 ```{note}
-Xdas also implements the ZeroMQ protocol used by the OptoDAS interrogators by ASN. Equivalent {py:class}`~xdas.io.asn.ZMQPublisher` and {py:class}`~xdas.io.asn.ZMQSubscriber` can be found in {py:mod}`xdas.io.asn`. This can be useful get data in real-time from one instrument of that kind. Note that compression is not available with that protocol yet.
+Xdas also implements the ZeroMQ protocol used by the OptoDAS interrogators by ASN. Equivalent {py:class}`~xdas.io.asn.ZMQPublisher` and {py:class}`~xdas.io.asn.ZMQSubscriber` can be found in {py:mod}`xdas.io.asn`. This can be useful to get data in real-time from one instrument of that kind. Note that compression is not available with that protocol yet.
 ```
+
+## Processing a stream
+
+A pipeline consumes and produces a stream by naming the address on either end,
+so nothing about the pipeline itself changes between replaying an archive and
+following an instrument:
+
+```python
+pipeline.process("tcp://localhost:5556", out="tcp://*:5557")
+```
+
+A directory that is still being filled is the other unbounded source:
+{py:func}`xdas.watch` follows it as files arrive, where a bare directory path
+means "process what is there and stop".
+
+```python
+pipeline.process(xd.watch("/incoming", engine="febus"), out="results/")
+```
+
+Unbounded sources are processed until they are stopped. Interrupting with
+`Ctrl-C` flushes the pipeline, closes the destination cleanly and returns what
+was written; `until=` stops on its own at a coordinate value:
+
+```python
+pipeline.process(xd.watch("/incoming"), out="results/", until="2026-05-20T12:00:00")
+```
+
+Gaps are announced as they arrive rather than upfront — a stream cannot be
+inspected ahead of time — and each one flushes and restarts the state of every
+stage, exactly as it does on an archive.

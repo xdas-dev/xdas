@@ -124,8 +124,9 @@ class SOSFilter(Atom):
 
     Parameters
     ----------
-    sos : array-like, shape (n_sections, 6)
-        SOS filter coefficients as returned by e.g. :func:`scipy.signal.iirfilter`.
+    sos : array-like
+        SOS filter coefficients, of shape ``(n_sections, 6)``, as returned by
+        e.g. :func:`scipy.signal.iirfilter`.
     dim : str or int, optional
         Dimension to filter along.  Defaults to ``"last"``.
     parallel : int, bool, or None, optional
