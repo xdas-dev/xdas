@@ -113,8 +113,16 @@ and on the destination it is given:
 | a writer instance | used as configured |
 
 `out=None` is the convenient form and the dangerous one: the result must fit in
-memory. Beyond the `"memory_limit"` configuration entry (8 GiB by default) it
-raises rather than filling the machine.
+memory. Beyond the `"memory_limit"` configuration entry it raises rather than
+filling the machine. The default is a quarter of the memory the process can
+use — of the machine's, or of what a container or a batch scheduler allows it,
+whichever is smaller — so it scales with where the code runs:
+
+```{code-cell}
+xd.config.get("memory_limit") / 2**30  # GiB
+```
+
+Raise it, or lower it, with `xd.config.set("memory_limit", 64 * 2**30)`.
 
 The explicit form remains available and is what to reach for to configure the
 ends themselves — a process pool, a compression, a writer of another kind:

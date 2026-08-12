@@ -415,12 +415,13 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
             and isinstance(x.data, VirtualBackend)
             and x.nbytes > config.get("memory_limit")
         ):
+            limit = config.get("memory_limit")
             raise ValueError(
                 f"this eager call would load the full virtual array "
-                f"(~{x.nbytes / 2**30:.1f} GiB, above the 'memory_limit' "
-                "configuration entry) in memory: stream it chunk by chunk "
-                "with `.process(da, out=...)` instead, or raise the limit "
-                "with `xdas.config.set('memory_limit', ...)`"
+                f"(~{x.nbytes / 2**30:.1f} GiB) in memory, above the "
+                f"'memory_limit' configuration entry ({limit / 2**30:.1f} GiB): "
+                "stream it chunk by chunk with `.process(da, out=...)` instead, "
+                "or raise the limit with `xdas.config.set('memory_limit', ...)`"
             )
         if isinstance(x, (DataMapping, DataSequence)):
             if isinstance(x, DataMapping):
