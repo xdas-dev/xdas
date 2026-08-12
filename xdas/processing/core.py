@@ -13,8 +13,7 @@ import os
 import re
 import time
 import warnings
-from collections import deque
-from concurrent.futures import CancelledError, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from glob import glob
 from pathlib import Path
 from queue import Queue
@@ -49,6 +48,7 @@ from ..core import (
 )
 from ..virtual import TileArray, VirtualBackend, VirtualStack
 from .monitor import Monitor
+from .pools import ProcessPool
 
 AUTO_CHUNK_NBYTES = 256 * 2**20
 """Target in-memory chunk size (in bytes) for ``chunks="auto"``."""
@@ -62,138 +62,16 @@ it is how a subscriber knows the publisher has applied its subscription.
 """
 
 
-class _RayFuture:
-    """A future handed out by :class:`ProcessPool`, resolved via the object store."""
-
-    def __init__(self, pool, task):
-        self._pool = pool
-        self._task = task
-        self._ref = None
-        self._cancelled = False
-
-    def result(self):
-        """Block until the task ran and return its output (or raise its error)."""
-        return self._pool._result(self)
-
-
-class ProcessPool:
-    """
-    A pool of worker processes whose results cross through shared memory.
-
-    Each task runs as a Ray task in its own process. The pool quacks like a
-    :class:`~concurrent.futures.Executor` as far as the loader and writer
-    need (``submit``/``shutdown``/context manager), but the data crossing
-    back is never pickled through a pipe: a task result lands in Ray's
-    shared-memory object store, written once by the worker, and ``result()``
-    maps it zero-copy into the parent. Large task *arguments* — the chunk a
-    writer sends out — take the same path, one memcpy into the store instead
-    of a serialize-transfer-deserialize round. The price of zero-copy is
-    immutability: array data coming out of the store is read-only, which
-    atoms honor by allocating their outputs.
-
-    ``max_workers`` is enforced by parking submissions beyond it and
-    launching them as running tasks finish, mirroring how a process pool
-    queues its backlog. Ray is initialized lazily on first use (an already
-    initialized Ray, e.g. configured by the user, is left untouched).
-
-    Parameters
-    ----------
-    max_workers : int
-        Maximum number of tasks running concurrently.
-    """
-
-    def __init__(self, max_workers):
-        try:
-            import ray
-        except ImportError:
-            raise ImportError(
-                "pool='processes' requires the ray package: pip install xdas[ray]"
-            ) from None
-        if not ray.is_initialized():
-            ray.init(include_dashboard=False)
-        self._ray = ray
-        self._max_workers = max_workers
-        self._remotes = {}
-        self._pending = deque()
-        self._running = []
-
-    def submit(self, fn, /, *args, **kwargs):
-        """
-        Schedule ``fn(*args, **kwargs)`` as a task and return its future.
-
-        Parameters
-        ----------
-        fn : callable
-            The unit of work; large array arguments go to the object store.
-
-        Returns
-        -------
-        _RayFuture
-            A ``result()``-able handle, resolved zero-copy from the store.
-        """
-        future = _RayFuture(self, (fn, args, kwargs))
-        self._pending.append(future)
-        self._launch()
-        return future
-
-    def shutdown(self, wait=True):
-        """
-        Cancel parked tasks and (by default) wait for the running ones.
-
-        The Ray runtime itself is left up: it is a session-wide resource,
-        shared with the other pools of the run and with whatever the user
-        configured before xdas started.
-
-        Parameters
-        ----------
-        wait : bool, optional
-            Whether to block until in-flight tasks complete.
-        """
-        while self._pending:
-            self._pending.popleft()._cancelled = True
-        if wait and self._running:
-            self._ray.wait(self._running, num_returns=len(self._running))
-        self._running.clear()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc_info):
-        self.shutdown()
-
-    def _remote(self, fn):
-        """Wrap *fn* as a Ray remote function, once per distinct callable."""
-        if fn not in self._remotes:
-            self._remotes[fn] = self._ray.remote(fn)
-        return self._remotes[fn]
-
-    def _launch(self):
-        """Drop finished tasks and start parked ones up to ``max_workers``."""
-        if self._running:
-            _, self._running = self._ray.wait(
-                self._running, num_returns=len(self._running), timeout=0
-            )
-        while self._pending and len(self._running) < self._max_workers:
-            future = self._pending.popleft()
-            fn, args, kwargs = future._task
-            future._ref = self._remote(fn).remote(*args, **kwargs)
-            self._running.append(future._ref)
-
-    def _result(self, future):
-        """Resolve *future*, first waiting out the backlog ahead of it."""
-        while future._ref is None:
-            if future._cancelled:
-                raise CancelledError()
-            self._ray.wait(self._running, num_returns=1)
-            self._launch()
-        return self._ray.get(future._ref)
-
-
-POOLS = {"threads": ThreadPoolExecutor, "processes": ProcessPool}
+POOLS = {
+    "threads": lambda max_workers, max_buffers, slot_nbytes: ThreadPoolExecutor(
+        max_workers
+    ),
+    "processes": ProcessPool,
+}
 """Worker pools available for chunk ingress and egress, name → factory."""
 
 
-def get_pool(pool, max_workers):
+def get_pool(pool, max_workers, max_buffers=1, slot_nbytes=None):
     """
     Build the worker pool used to load or write chunks.
 
@@ -203,10 +81,9 @@ def get_pool(pool, max_workers):
     cannot overlap in-process and extra threads only contend. Worker
     processes each hold their own lock. What crosses to a worker is the
     *manifest* of the chunk (a sliced virtual array, kilobytes), not data,
-    and the loaded chunk crosses *back* through a shared-memory object
-    store: the worker writes it once, the parent maps it zero-copy
-    (read-only). ``"processes"`` requires the optional ``ray`` dependency
-    (``pip install xdas[ray]``).
+    and the loaded chunk crosses *back* through shared memory: the worker
+    writes it once into an arena slot, the parent maps the same pages
+    (read-only). See :class:`~xdas.processing.pools.ProcessPool`.
 
     Parameters
     ----------
@@ -214,6 +91,12 @@ def get_pool(pool, max_workers):
         Pool kind, ``"threads"`` (default everywhere) or ``"processes"``.
     max_workers : int
         Number of workers.
+    max_buffers : int, optional
+        Chunks the caller keeps in flight, which sizes the arena. Default 1.
+    slot_nbytes : int, optional
+        Largest chunk the arena can carry. Defaults to the ``chunks="auto"``
+        budget; pass the real chunk size when it is known, so that no chunk
+        has to fall back to the pickle path.
 
     Returns
     -------
@@ -229,7 +112,9 @@ def get_pool(pool, max_workers):
     """
     if pool not in POOLS:
         raise ValueError(f"no worker pool named {pool!r}; available: {sorted(POOLS)}")
-    return POOLS[pool](max_workers)
+    if slot_nbytes is None:
+        slot_nbytes = AUTO_CHUNK_NBYTES
+    return POOLS[pool](max_workers, max_buffers, slot_nbytes)
 
 
 def _load(da):
@@ -1127,7 +1012,12 @@ class DataArrayLoader:
         return self.da[query]
 
     def __iter__(self):
-        with get_pool(self.pool, self.max_workers) as executor:
+        # The chunk sizes are known here, so the arena can be cut to fit the
+        # biggest of them and no chunk ever has to take the pickle path.
+        largest = int(np.argmax(np.diff(self._divs)))
+        with get_pool(
+            self.pool, self.max_workers, self.max_buffers, self._select(largest).nbytes
+        ) as executor:
             it = iter(range(len(self)))
 
             def submit(idx):
@@ -1274,7 +1164,7 @@ class DataArrayWriter:
         self.max_buffers = max_buffers
         self.max_workers = max_workers
         self.pool = pool
-        self._executor = get_pool(pool, self.max_workers)
+        self._executor = get_pool(pool, self.max_workers, self.max_buffers)
         self._futures = []
         self._results = []
         self._count = 0

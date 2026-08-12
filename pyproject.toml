@@ -29,9 +29,6 @@ dependencies = [
     "pyzmq",
 ]
 
-[project.optional-dependencies]
-ray = ["ray"]
-
 [dependency-groups]
 dev = ["ruff", "pytest", "pytest-cov"]
 docs = [
@@ -43,7 +40,7 @@ docs = [
     "sphinx-copybutton",
     "sphinx",
 ]
-tests = ["dascore", "dask<2025.4.0", "psutil", "ray", "seisbench", "torch"]
+tests = ["dascore", "dask<2025.4.0", "psutil", "seisbench", "torch"]
 
 # Single source of truth for the version: xdas/__init__.py
 [tool.setuptools.dynamic]
