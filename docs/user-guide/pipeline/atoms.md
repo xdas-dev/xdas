@@ -14,24 +14,31 @@ os.chdir("../../_data")
 
 # Composing a processing sequence
 
-*Xdas* ships a processing vocabulary — filtering, resampling, integration,
-spectra, machine-learning picking — as *atoms*: elementary operations that
-compose into a pipeline. A pipeline built this way runs unchanged on an array
-in memory and, chunk by chunk, on an archive that does not fit in one (see
-[](processing.md)), which is what makes it worth defining one rather than
-calling functions in a row.
+*Xdas* ships its processing vocabulary — filtering, resampling, integration,
+spectra, machine-learning picking — in two interchangeable faces. The
+**function** is the one you write day to day; the **atom** is the same
+operation as an object, which composes into a pipeline and streams. Every
+function has an atom form and every atom a function form, so a pipeline built
+here runs unchanged on an array in memory and, chunk by chunk, on an archive
+that does not fit in one (see [](processing.md)).
+
+The parameters are physical throughout — a rate in hertz, a corner frequency,
+a window in seconds — rather than the arguments of the SciPy routine
+underneath (a decimation factor, a sample count, a normalised frequency). That
+is what lets one pipeline be defined once and applied to whatever it is given:
+nothing in it silently means something else at another sampling rate. The
+SciPy-shaped functions are still there, in {py:mod}`xdas.signal`.
 
 ## Applying and composing
 
-Every atom has a function form at the top level of `xdas`. Called on data, it
-applies:
+Called on data, the function applies:
 
 ```{code-cell}
 import numpy as np
 import xdas as xd
 
 da = xd.synthetics.wavelet_wavefronts()
-xd.filter(da, (5.0, None), dim="time")
+xd.resample(da, 25.0, dim="time")
 ```
 
 Called on `...` — the placeholder standing for the data to come — the same
@@ -41,16 +48,15 @@ function returns the atom instead, and atoms compose with `>>`:
 pipeline = (
     xd.taper(..., dim="time")
     >> xd.filter(..., (5.0, None), dim="time")
-    >> xd.decimate(..., 25.0, dim="time")
+    >> xd.resample(..., 25.0, dim="time")
 )
 pipeline
 ```
 
-The parameters are physical: corner frequencies in hertz, target rates in
-hertz, window lengths in seconds. They keep their meaning whatever the sampling
-rate of the data the pipeline is later given.
-
-Calling the pipeline applies it:
+Nothing in that pipeline names the data it will be given: `25.0` is the rate to
+land on, not a decimation factor, so the same object takes a 50 Hz record and a
+1 kHz one to 25 Hz — resampling by a rational ratio where it has to. Calling it
+applies it:
 
 ```{code-cell}
 result = pipeline(da)
@@ -64,9 +70,35 @@ Ordinary NumPy expressions compose too. Under the `...` seed they are *traced*
 mathematics:
 
 ```{code-cell}
-energy = 20 * np.log10(np.abs(xd.decimate(..., 25.0, dim="time")))
+energy = 20 * np.log10(np.abs(xd.resample(..., 25.0, dim="time")))
 energy
 ```
+
+## The vocabulary
+
+| | |
+| --- | --- |
+| {py:func}`~xdas.filter` | band, low- or high-pass, from a corner pair in Hz |
+| {py:func}`~xdas.resample` | to a target rate, by any rational ratio |
+| {py:func}`~xdas.decimate` | to a target rate, when the ratio is an integer |
+| {py:func}`~xdas.integrate`, {py:func}`~xdas.differentiate` | in the coordinate's own units |
+| {py:func}`~xdas.stft` | window and hop in seconds |
+| {py:func}`~xdas.detrend`, {py:func}`~xdas.taper` | whole-record shaping |
+| {py:func}`~xdas.hilbert` | analytic signal |
+| {py:func}`~xdas.medfilt`, {py:func}`~xdas.sliding_mean_removal` | kernels in seconds or meters |
+| {py:func}`~xdas.rechunk` | a streaming-cadence knob, not an operation |
+| {py:func}`~xdas.annotate`, {py:func}`~xdas.trigger`, {py:func}`~xdas.pick` | machine-learning picking (see [](picking.md)) |
+
+Each has an atom behind it — {py:class}`~xdas.atoms.Filter`,
+{py:class}`~xdas.atoms.Resample`, and so on — reached by seeding with `...`.
+
+Below them sits an expert layer, {py:mod}`xdas.atoms.kernel`, holding the exact
+primitives these design from the data at the first call:
+{py:class}`~xdas.atoms.LFilter`, {py:class}`~xdas.atoms.SOSFilter`,
+{py:class}`~xdas.atoms.DownSample` and friends, which take machine parameters —
+filter coefficients, integer factors — rather than physical ones. Reach for
+them when you need to say exactly what runs; otherwise you should never have to
+meet them.
 
 ## Wrapping your own functions
 
