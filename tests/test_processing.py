@@ -16,6 +16,9 @@ import xdas.processing as xp
 from xdas.atoms import Partial, Sequential
 from xdas.signal import sosfilt
 
+TIMEOUT = 60.0
+"""Seconds any ZMQ wait is given before failing, so that no test can hang."""
+
 
 class TestDataArrayLoader:
     def test_init(self):
@@ -383,13 +386,16 @@ class TestZMQ:
         publisher = xp.ZMQPublisher(address, encoding)
 
         def publish():
+            # A recording, wanted whole. Only the publisher can hold a replay
+            # back until its audience has landed; a subscriber joining one
+            # already under way has no way to recover its first packets.
+            publisher.wait_for_subscribers(timeout=TIMEOUT)
             for packet in packets:
-                time.sleep(0.001)
                 publisher.submit(packet)
 
         threading.Thread(target=publish).start()
+        subscriber = xp.ZMQSubscriber(address, timeout=TIMEOUT)
 
-        subscriber = xp.ZMQSubscriber(address)
         result = []
         for n, packet in enumerate(subscriber, start=1):
             result.append(packet)
@@ -404,6 +410,52 @@ class TestZMQ:
 
         result = self._publish_and_subscribe(packets, address)
         assert result.equals(expected)
+
+    def test_subscriber_joins_a_real_time_flux(self):
+        # A real-time publisher streams whether or not anyone is listening, so
+        # a subscriber joining it gets the stream from wherever it lands.
+        packets = xd.split(xd.testing.dummy(), 10)
+        address = f"tcp://localhost:{xd.io.get_free_port()}"
+        publisher = xp.ZMQPublisher(address)
+        stop = threading.Event()
+
+        def flux():
+            while not stop.is_set():
+                for packet in packets:
+                    if stop.is_set():
+                        return
+                    publisher.submit(packet)
+
+        thread = threading.Thread(target=flux)
+        thread.start()
+        try:
+            subscriber = xp.ZMQSubscriber(address, timeout=TIMEOUT)
+            # The flux greets us as it streams, without ever waiting for us.
+            subscriber.wait_until_subscribed()
+            received = [next(subscriber) for _ in range(3)]
+        finally:
+            stop.set()
+            thread.join()
+
+        subscriber.wait_until_subscribed()  # greeted already, so this returns
+        for packet in received:
+            assert any(packet.equals(published) for published in packets)
+
+    def test_subscriber_timeout(self):
+        address = f"tcp://localhost:{xd.io.get_free_port()}"
+        xp.ZMQPublisher(address)  # binds, but never publishes
+        subscriber = xp.ZMQSubscriber(address, timeout=0.1)
+        with pytest.raises(TimeoutError, match="no packet received"):
+            next(subscriber)
+
+    def test_wait_until_subscribed_needs_a_publisher_that_publishes(self):
+        # Only a publisher that publishes can acknowledge anybody: a silent one
+        # leaves a subscriber waiting, which is what the timeout is for.
+        address = f"tcp://localhost:{xd.io.get_free_port()}"
+        xp.ZMQPublisher(address)
+        subscriber = xp.ZMQSubscriber(address, timeout=0.1)
+        with pytest.raises(TimeoutError, match="no packet received"):
+            subscriber.wait_until_subscribed()
 
     def test_encoding(self):
         expected = xd.testing.dummy()

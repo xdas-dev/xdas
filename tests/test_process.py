@@ -9,7 +9,6 @@ deferred to the first output chunk.
 
 import os
 import threading
-import time
 
 import numpy as np
 import pandas as pd
@@ -529,9 +528,8 @@ class TestZMQRoundTrip:
         source = xp.get_source(address)
 
         def publish():
-            time.sleep(0.1)
+            publisher.wait_for_subscribers(timeout=60.0)
             for packet in packets:
-                time.sleep(0.001)
                 publisher.submit(packet)
 
         thread = threading.Thread(target=publish)

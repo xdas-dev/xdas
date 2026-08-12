@@ -3,13 +3,15 @@ Core processing infrastructure for chunked pipeline execution.
 
 Includes :class:`DataArrayLoader`, :class:`DataArrayWriter`,
 :class:`DataFrameWriter`, :class:`StreamWriter`, :class:`ZMQPublisher`,
-:class:`ZMQSubscriber`, :class:`RealTimeLoader`, :func:`watch`, and the
-:func:`process` dispatch boundary with its :func:`get_source` /
-:func:`get_writer` resolution machinery.
+:class:`ZMQSubscriber` with the :class:`SubscriptionTracker` shared with the
+ASN publisher, :class:`RealTimeLoader`, :func:`watch`, and the :func:`process`
+dispatch boundary with its :func:`get_source` / :func:`get_writer` resolution
+machinery.
 """
 
 import os
 import re
+import time
 import warnings
 from collections import deque
 from concurrent.futures import CancelledError, ThreadPoolExecutor
@@ -50,6 +52,14 @@ from .monitor import Monitor
 
 AUTO_CHUNK_NBYTES = 256 * 2**20
 """Target in-memory chunk size (in bytes) for ``chunks="auto"``."""
+
+WELCOME = b"xdas"
+"""
+Greeting a :class:`ZMQPublisher` sends to each subscriber as it registers it.
+
+Never a packet — those are netCDF binaries — so subscribers skip it. Receiving
+it is how a subscriber knows the publisher has applied its subscription.
+"""
 
 
 class _RayFuture:
@@ -1584,7 +1594,101 @@ class StreamWriter:
         return out
 
 
-class ZMQPublisher:
+class SubscriptionTracker:
+    """
+    Subscriber bookkeeping for publishers that own a ``zmq.XPUB`` socket.
+
+    A ZeroMQ publisher silently drops whatever it sends before a subscriber's
+    subscription has travelled to it — the "slow joiner" problem. Unlike
+    ``PUB``, an ``XPUB`` socket hands each subscription to the application, and
+    only once it has been applied to the socket's routing table. Reading one is
+    therefore proof that the peer is connected and that everything sent from
+    then on reaches it.
+
+    A real-time publisher never waits: an instrument streams what it measures
+    whether or not anyone listens, and a subscriber that joins late is meant to
+    pick the stream up from wherever it lands. So the count is there to be
+    *observed* — and to be waited on by the one publisher that is not
+    real-time, the one replaying a recording, where the head of a finite stream
+    would otherwise be lost to whoever was not connected yet.
+
+    A mixin rather than part of :class:`ZMQPublisher` because the ASN publisher
+    (:class:`xdas.io.asn.ZMQPublisher`), which speaks the protocol of the
+    instrument rather than this one, needs exactly the same bookkeeping.
+
+    Publishers mixing this in must expose their bound ``zmq.XPUB`` socket as
+    ``_socket`` with ``zmq.XPUB_VERBOSE`` set — so that peers subscribing to an
+    already-subscribed topic are announced too — their address as ``address``,
+    and initialize ``_nsubscribers`` to zero.
+    """
+
+    @property
+    def nsubscribers(self):
+        """The number of currently subscribed peers."""
+        self._read_subscriptions(0.0)
+        return self._nsubscribers
+
+    def wait_for_subscribers(self, count=1, timeout=60.0):
+        """
+        Block until at least *count* peers are subscribed.
+
+        Whatever is published once this returns is guaranteed to reach those
+        peers. This is for replaying a finite recording, where losing the first
+        packets to a subscriber that had not connected yet would lose them for
+        good; a real-time publisher has nothing to wait for and never calls it.
+
+        Parameters
+        ----------
+        count : int, optional
+            The number of subscribers to wait for. Defaults to one.
+        timeout : float or None, optional
+            How many seconds to wait at most. None waits forever.
+
+        Returns
+        -------
+        int
+            The number of subscribers connected once the wait is over, which
+            can exceed *count* if several peers joined at once.
+
+        Raises
+        ------
+        TimeoutError
+            If fewer than *count* subscribers showed up in time.
+
+        """
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while self.nsubscribers < count:
+            remaining = None if deadline is None else deadline - time.monotonic()
+            if not self._read_subscriptions(remaining):
+                raise TimeoutError(
+                    f"got {self._nsubscribers} of the {count} subscriber(s) "
+                    f"expected on {self.address} after {timeout} seconds"
+                )
+        return self._nsubscribers
+
+    def _read_subscriptions(self, timeout):
+        """
+        Fold pending subscription events into the subscriber count.
+
+        Waits up to *timeout* seconds (None waits forever) for a first event,
+        then folds in whatever else is already queued. Returns whether any
+        event was read.
+        """
+        wait = None if timeout is None else max(0, round(1000 * timeout))
+        received = False
+        while self._socket.poll(wait, zmq.POLLIN):
+            # XPUB only ever delivers subscriptions (\x01) and their
+            # cancellations (\x00), both followed by the topic.
+            if self._socket.recv().startswith(b"\x01"):
+                self._nsubscribers += 1
+            else:
+                self._nsubscribers -= 1
+            received = True
+            wait = 0
+        return received
+
+
+class ZMQPublisher(SubscriptionTracker):
     """
     A class for publishing DataArray chunks over ZeroMQ.
 
@@ -1594,6 +1698,19 @@ class ZMQPublisher:
         The address to bind the publisher to.
     encoding : dict
         The encoding to use when dumping the DataArrays to bytes.
+
+    Attributes
+    ----------
+    nsubscribers : int
+        The number of currently subscribed peers.
+
+    Methods
+    -------
+    submit(da)
+        Send a DataArray over ZeroMQ.
+    wait_for_subscribers(count, timeout)
+        Blocks until *count* peers are subscribed, so that nothing published
+        afterwards is dropped.
 
     Examples
     --------
@@ -1629,8 +1746,15 @@ class ZMQPublisher:
     def __init__(self, address, encoding=None):
         self.address = address
         self.encoding = encoding
+        self._nsubscribers = 0
         self._context = zmq.Context()
-        self._socket = self._context.socket(zmq.PUB)
+        # XPUB publishes exactly like PUB but also reports who subscribes.
+        self._socket = self._context.socket(zmq.XPUB)
+        self._socket.setsockopt(zmq.XPUB_VERBOSE, True)
+        # The greeting is a socket option, not a rendez-vous: the publisher
+        # waits for nobody, and hands it to each new peer in passing, on the
+        # next `submit`. A subscriber that receives it knows it is registered.
+        self._socket.setsockopt(zmq.XPUB_WELCOME_MSG, WELCOME)
         self._socket.bind(self.address)
 
     def submit(self, da):
@@ -1643,6 +1767,11 @@ class ZMQPublisher:
             The DataArray to be sent.
 
         """
+        # Taking the subscriptions the socket has queued is what greets the
+        # peers behind them — ZeroMQ holds a welcome message back until the
+        # application reads the subscription it answers — and what keeps the
+        # subscriber count current. Neither costs the publisher any waiting.
+        self._read_subscriptions(0.0)
         self._socket.send(tobytes(da, self.encoding))
 
     def write(self, da):
@@ -1662,11 +1791,14 @@ class ZMQSubscriber:
     ----------
     address : str
         The address to connect the subscriber to.
+    timeout : float or None, optional
+        How many seconds to wait at most for each packet. None, the default,
+        waits forever.
 
     Methods
     -------
-    submit(da)
-        Send a DataArray over ZeroMQ.
+    wait_until_subscribed()
+        Block until the publisher has registered this subscription.
 
     Examples
     --------
@@ -1680,34 +1812,41 @@ class ZMQSubscriber:
     >>> da = xd.testing.dummy()
     >>> packets = xd.split(da, 10)
 
-    We then publish the packets asynchronously
-
     >>> address = f"tcp://localhost:{xd.io.get_free_port()}"
     >>> publisher = ZMQPublisher(address)
 
+    A publisher drops what it sends to subscribers it does not know about yet.
+    Here the packets come from a recording and we want every one of them, so
+    the replay waits for its audience — a real-time publisher does not, and its
+    subscribers pick the stream up wherever they land, waiting instead with
+    :meth:`ZMQSubscriber.wait_until_subscribed`.
+
     >>> def publish():
+    ...     publisher.wait_for_subscribers()
     ...     for packet in packets:
     ...         publisher.submit(packet)
 
     >>> threading.Thread(target=publish).start()
 
-    Now let's receive the packets
+    Now let's receive the packets. The subscriber is an infinite iterator, so
+    we stop it once the whole stream has been received.
 
     >>> subscriber = ZMQSubscriber(address)
-    >>> packets = []
-    >>> for n, da in enumerate(subscriber, start=1):
-    ...     packets.append(da)
-    ...     if n == 10:
+    >>> received = []
+    >>> for packet in subscriber:
+    ...     received.append(packet)
+    ...     if len(received) == len(packets):
     ...         break
-    >>> da = xd.concat(packets)
-    >>> assert da.equals(da)
+    >>> assert xd.concat(received).equals(da)
     """
 
     chunk_dim = "time"
     unbounded = True
 
-    def __init__(self, address):
+    def __init__(self, address, timeout=None):
         self.address = address
+        self.timeout = timeout
+        self._subscribed = False
         self._context = zmq.Context()
         self._socket = self._context.socket(zmq.SUB)
         self._socket.connect(address)
@@ -1717,8 +1856,48 @@ class ZMQSubscriber:
         return self
 
     def __next__(self):
-        message = self._socket.recv()
-        return frombuffer(message)
+        while True:
+            message = self._recv()
+            if message == WELCOME:
+                # Sent again whenever the socket reconnects, e.g. to a
+                # publisher that restarted.
+                self._subscribed = True
+            else:
+                return frombuffer(message)
+
+    def wait_until_subscribed(self):
+        """
+        Block until the publisher has registered this subscription.
+
+        A publisher drops what it sends to a peer it does not know about yet,
+        and a subscriber cannot tell from its own side whether its
+        subscription has arrived — being connected is not being subscribed.
+        The publisher answers it with a greeting, in passing as it streams, and
+        receiving that greeting is proof that nothing published from then on
+        will be missed. Nothing is asked of the publisher in return, and a
+        real-time stream is never delayed by anyone.
+
+        It follows that only a publisher that publishes can acknowledge
+        anybody: waiting on one that has gone quiet — or on an address nothing
+        is bound to — raises :exc:`TimeoutError` once the subscriber's
+        ``timeout`` has passed, and waits forever without one. To be sure of
+        receiving a *recording* whole, it is the publisher that must wait, with
+        :meth:`ZMQPublisher.wait_for_subscribers`, since nothing a subscriber
+        does can hold back a replay that has already started.
+
+        Returns immediately once the publisher has greeted this subscriber.
+        """
+        while not self._subscribed:
+            self._subscribed = self._recv() == WELCOME
+
+    def _recv(self):
+        if self.timeout is not None and not self._socket.poll(
+            round(1000 * self.timeout)
+        ):
+            raise TimeoutError(
+                f"no packet received from {self.address} after {self.timeout} seconds"
+            )
+        return self._socket.recv()
 
 
 def tobytes(da, encoding=None):

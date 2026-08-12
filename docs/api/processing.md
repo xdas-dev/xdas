@@ -70,4 +70,14 @@
    ZMQPublisher.submit
    ZMQPublisher.write
    ZMQPublisher.result
+   ZMQPublisher.wait_for_subscribers
+```
+
+### ZMQSubscriber
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   ZMQSubscriber.wait_until_subscribed
 ```

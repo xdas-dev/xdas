@@ -1,6 +1,5 @@
 import json
 import threading
-import time
 
 import h5py
 import numpy as np
@@ -14,6 +13,10 @@ from xdas.io.asn import ZMQPublisher, ZMQSubscriber
 def get_free_local_address():
     port = xd.io.get_free_port()
     return f"tcp://localhost:{port}"
+
+
+TIMEOUT = 60.0
+"""Seconds any wait is given before failing, so that no test can hang."""
 
 
 da_float32 = xd.testing.dummy(shape=(100, 10), step=(0.1, 10.0), dtype="float32")
@@ -205,33 +208,27 @@ class TestZMQPublisher:
         address = get_free_local_address()
         pub = ZMQPublisher(address)
         pub.submit(da_float32)
-        time.sleep(0.01)
         assert pub.header == ZMQPublisher._get_header(da_float32)
 
     def test_send_header(self):
         address = get_free_local_address()
         pub = ZMQPublisher(address)
         pub.submit(da_float32)
-        time.sleep(0.01)
-        socket = self.get_socket(address)
+        socket = self.get_socket(pub)
         pub.submit(da_float32)  # a packet must be sent once subscriber is connected
-        time.sleep(0.01)
         assert socket.recv() == json.dumps(pub.header).encode("utf-8")
 
     def test_send_data(self):
         address = get_free_local_address()
         pub = ZMQPublisher(address)
         pub.submit(da_float32)
-        time.sleep(0.01)
-        socket = self.get_socket(address)
+        socket = self.get_socket(pub)
         pub.submit(da_float32)  # a packet must be sent once subscriber is connected
-        time.sleep(0.01)
         socket.recv()  # header
         message = socket.recv()
         assert message[:8] == da_float32["time"][0].values.astype("M8[ns]").tobytes()
         assert message[8:] == da_float32.data.tobytes()
         pub.submit(da_int16)
-        time.sleep(0.01)
         socket.recv()  # header
         message = socket.recv()
         assert message[:8] == da_int16["time"][0].values.astype("M8[ns]").tobytes()
@@ -242,11 +239,9 @@ class TestZMQPublisher:
         pub = ZMQPublisher(address)
         chunks = xd.split(da_float32, 10)
         pub.submit(chunks[0])
-        time.sleep(0.01)
-        socket = self.get_socket(address)
+        socket = self.get_socket(pub)
         for chunk in chunks[1:]:
             pub.submit(chunk)
-            time.sleep(0.01)
         assert socket.recv() == json.dumps(pub.header).encode("utf-8")
         for chunk in chunks[1:]:  # first was sent before subscriber connected
             message = socket.recv()
@@ -258,15 +253,12 @@ class TestZMQPublisher:
         pub = ZMQPublisher(address)
         chunks = xd.split(da_float32, 10)
         pub.submit(chunks[0])
-        time.sleep(0.01)
-        socket1 = self.get_socket(address)
+        socket1 = self.get_socket(pub)
         for chunk in chunks[1:5]:
             pub.submit(chunk)
-            time.sleep(0.01)
-        socket2 = self.get_socket(address)
+        socket2 = self.get_socket(pub, 2)
         for chunk in chunks[5:]:
             pub.submit(chunk)
-            time.sleep(0.01)
         assert socket1.recv() == json.dumps(pub.header).encode("utf-8")
         for chunk in chunks[1:]:  # first was sent before subscriber connected
             message = socket1.recv()
@@ -283,15 +275,12 @@ class TestZMQPublisher:
         pub = ZMQPublisher(address)
         chunks = xd.split(da_float32, 10)
         pub.submit(chunks[0])
-        time.sleep(0.01)
-        socket = self.get_socket(address)
+        socket = self.get_socket(pub)
         for chunk in chunks[1:5]:
             pub.submit(chunk)
             header1 = pub.header
-            time.sleep(0.01)
         for chunk in chunks[5:]:
             pub.submit(chunk.isel(distance=slice(0, 5)))
-            time.sleep(0.01)
             header2 = pub.header
         assert socket.recv() == json.dumps(header1).encode("utf-8")
         for chunk in chunks[1:5]:  # first was sent before subscriber connected
@@ -304,12 +293,30 @@ class TestZMQPublisher:
             assert message[:8] == chunk["time"][0].values.astype("M8[ns]").tobytes()
             assert message[8:] == chunk.isel(distance=slice(0, 5)).data.tobytes()
 
-    def get_socket(self, address):
+    def get_socket(self, pub, nsubscribers=1):
+        """Subscribe to *pub* and hand back the socket, once *pub* knows of it."""
         socket = zmq.Context().socket(zmq.SUB)
-        socket.connect(address)
+        socket.setsockopt(zmq.RCVTIMEO, round(1000 * TIMEOUT))
+        socket.connect(pub.address)
         socket.setsockopt(zmq.SUBSCRIBE, b"")
-        time.sleep(0.01)
+        pub.wait_for_subscribers(nsubscribers, TIMEOUT)
         return socket
+
+    def test_wait_for_subscribers_times_out(self):
+        address = get_free_local_address()
+        pub = ZMQPublisher(address)
+        assert pub.nsubscribers == 0
+        with pytest.raises(TimeoutError, match="0 of the 1 subscriber"):
+            pub.wait_for_subscribers(timeout=0.1)
+
+    def test_unsubscribing_is_accounted_for(self):
+        address = get_free_local_address()
+        pub = ZMQPublisher(address)
+        socket = self.get_socket(pub)
+        assert pub.nsubscribers == 1
+        socket.setsockopt(zmq.UNSUBSCRIBE, b"")
+        assert pub._read_subscriptions(TIMEOUT)  # blocks until the cancellation
+        assert pub.nsubscribers == 0
 
 
 class TestZMQSubscriber:
@@ -317,8 +324,9 @@ class TestZMQSubscriber:
         address = get_free_local_address()
         pub = ZMQPublisher(address)
         chunks = [da_float32]
-        threading.Thread(target=self.publish, args=(pub, chunks)).start()
-        sub = ZMQSubscriber(address)
+        thread = threading.Thread(target=self.publish, args=(pub, chunks))
+        thread.start()
+        sub = self.get_subscriber(address)
         assert sub.address == address
         assert sub.packet_size == 4008
         assert sub.shape == (100, 10)
@@ -331,8 +339,10 @@ class TestZMQSubscriber:
         assert sub.delta == np.timedelta64(100, "ms")
         result = next(sub)
         assert result.equals(da_float32)
+        thread.join()  # the socket only ever belongs to one thread at a time
         chunks = [da_int16]
-        threading.Thread(target=self.publish, args=(pub, chunks)).start()
+        thread = threading.Thread(target=self.publish, args=(pub, chunks))
+        thread.start()
         result = next(sub)
         assert sub.packet_size == 2008
         assert sub.dtype == np.int16
@@ -343,7 +353,7 @@ class TestZMQSubscriber:
         pub = ZMQPublisher(address)
         chunks = xd.split(da_float32, 5)
         threading.Thread(target=self.publish, args=(pub, chunks)).start()
-        sub = ZMQSubscriber(address)
+        sub = self.get_subscriber(address)
         assert sub.packet_size == 808
         assert sub.shape == (20, 10)
         assert sub.dtype == np.float32
@@ -363,11 +373,11 @@ class TestZMQSubscriber:
         chunks = xd.split(da_float32, 5)
         thread = threading.Thread(target=self.publish, args=(pub, chunks[:2]))
         thread.start()
-        sub1 = ZMQSubscriber(address)
+        sub1 = self.get_subscriber(address)
         thread.join()
-        thread = threading.Thread(target=self.publish, args=(pub, chunks[2:]))
+        thread = threading.Thread(target=self.publish, args=(pub, chunks[2:], 2))
         thread.start()
-        sub2 = ZMQSubscriber(address)
+        sub2 = self.get_subscriber(address)
 
         for chunk in chunks:
             result = next(sub1)
@@ -382,7 +392,7 @@ class TestZMQSubscriber:
         chunks = xd.split(da_float32, 5)
         chunks = [chunk.isel(distance=slice(0, 5)) for chunk in chunks[:2]] + chunks[2:]
         threading.Thread(target=self.publish, args=(pub, chunks)).start()
-        sub = ZMQSubscriber(address)
+        sub = self.get_subscriber(address)
         for chunk in chunks:
             result = next(sub)
             assert result.equals(chunk)
@@ -392,7 +402,7 @@ class TestZMQSubscriber:
         pub = ZMQPublisher(address)
         chunks = [da_float32]
         threading.Thread(target=self.publish, args=(pub, chunks)).start()
-        sub = ZMQSubscriber(address)
+        sub = self.get_subscriber(address)
         message = (
             b"{\n"
             b'    "bytesPerPackage": 64008,\n'
@@ -453,13 +463,76 @@ class TestZMQSubscriber:
         pub = ZMQPublisher(address)
         chunks = xd.split(da_float32, 5)
         threading.Thread(target=self.publish, args=(pub, chunks)).start()
-        sub = ZMQSubscriber(address)
+        sub = self.get_subscriber(address)
         sub = (chunk for _, chunk in zip(range(5), sub))
         result = xd.concat(list(sub))
         assert result.equals(da_float32)
 
-    def publish(self, pub, chunks):
-        time.sleep(0.01)
+    def get_subscriber(self, address):
+        """A subscriber that raises rather than waiting forever on a lost stream."""
+        return ZMQSubscriber(address, timeout=TIMEOUT)
+
+    def publish(self, pub, chunks, nsubscribers=1):
+        """
+        Replay *chunks* once the subscribers are there to get them.
+
+        These tests check a recording arrives whole, so the replay waits. A
+        real-time publisher does not, which is what
+        :meth:`test_subscriber_joins_a_real_time_flux` covers.
+        """
+        pub.wait_for_subscribers(nsubscribers, TIMEOUT)
         for chunk in chunks:
             pub.submit(chunk)
-            time.sleep(0.01)
+
+    def test_subscriber_joins_a_real_time_flux(self):
+        # An interrogator streams what it measures whether or not anyone is
+        # listening. Whoever connects gets the welcome header and picks the
+        # stream up wherever it happens to land — never the whole of it.
+        address = get_free_local_address()
+        pub = ZMQPublisher(address)
+        chunks = xd.split(da_float32, 10)
+        stop = threading.Event()
+
+        def flux():
+            while not stop.is_set():
+                for chunk in chunks:
+                    if stop.is_set():
+                        return
+                    pub.submit(chunk)
+
+        thread = threading.Thread(target=flux)
+        thread.start()
+        try:
+            sub = self.get_subscriber(address)
+            received = [next(sub) for _ in range(5)]
+        finally:
+            stop.set()
+            thread.join()
+
+        assert sub.shape == (10, 10)
+        for chunk in received:
+            assert any(chunk.equals(published) for published in chunks)
+
+    def test_init_skips_data_until_the_header(self):
+        # A subscriber that beat the first publication to the socket gets no
+        # welcome message, and can be handed data before the header arrives.
+        address = get_free_local_address()
+        pub = ZMQPublisher(address)
+        header = json.dumps(ZMQPublisher._get_header(da_float32)).encode("utf-8")
+
+        def publish():
+            pub.wait_for_subscribers(timeout=TIMEOUT)
+            pub._send_data(da_float32)
+            pub._send_message(header)
+            pub._send_data(da_float32)
+
+        threading.Thread(target=publish).start()
+        sub = self.get_subscriber(address)
+        assert sub.shape == (100, 10)
+        assert next(sub).equals(da_float32)
+
+    def test_timeout(self):
+        address = get_free_local_address()
+        ZMQPublisher(address)  # binds, but never publishes anything
+        with pytest.raises(TimeoutError, match="no message received"):
+            ZMQSubscriber(address, timeout=0.1)

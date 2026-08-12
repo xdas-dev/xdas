@@ -15,6 +15,7 @@ import zmq
 
 from ..coordinates import Coordinate, get_sampling_interval
 from ..core import DataArray, concat_coords
+from ..processing.core import SubscriptionTracker
 from ..virtual import TileArray, VirtualSource
 from .core import Engine
 
@@ -130,9 +131,18 @@ class ZMQSubscriber:
     ----------
     address : str
         ZMQ address of the publisher (e.g. ``"tcp://localhost:5555"``).
+    timeout : float or None, optional
+        How many seconds to wait at most for each message. None, the default,
+        waits forever.
+
+    Methods
+    -------
+    wait_until_subscribed()
+        Block until the publisher has registered this subscription. Building
+        the subscriber already does it.
     """
 
-    def __init__(self, address):
+    def __init__(self, address, timeout=None):
         """
         Initialize a ZMQStream object.
 
@@ -140,10 +150,11 @@ class ZMQSubscriber:
         ----------
         address : str
             The address to connect to.
+        timeout : float or None, optional
+            How many seconds to wait at most for each message.
 
         Examples
         --------
-        >>> import time
         >>> import threading
 
         >>> import xdas as xd
@@ -157,8 +168,8 @@ class ZMQSubscriber:
         >>> chunks = xd.split(da, 10)
 
         >>> def publish():
+        ...     publisher.wait_for_subscribers()  # a replay, so no chunk is lost
         ...     for chunk in chunks:
-        ...         time.sleep(0.001)  # so that the subscriber can connect in time
         ...         publisher.submit(chunk)
         >>> threading.Thread(target=publish).start()
 
@@ -169,9 +180,10 @@ class ZMQSubscriber:
 
         """
         self.address = address
+        self.timeout = timeout
+        self._subscribed = False
         self._connect(self.address)
-        message = self._get_message()
-        self._update_header(message)
+        self.wait_until_subscribed()
 
     def __iter__(self):
         return self
@@ -191,8 +203,49 @@ class ZMQSubscriber:
         socket.setsockopt_string(zmq.SUBSCRIBE, "")
         self._socket = socket
 
+    def wait_until_subscribed(self):
+        """
+        Block until the publisher has registered this subscription.
+
+        A publisher drops what it sends to a peer it does not know about yet,
+        and a subscriber cannot tell from its own side whether its
+        subscription has arrived — being connected is not being subscribed.
+        Here the proof comes for free: the header describing the stream is the
+        greeting an ASN publisher answers a new subscription with, in passing
+        as it streams. It never waits for anyone, and receiving its header is
+        proof that nothing it publishes from then on will be missed.
+
+        This is done when the subscriber is built — a packet cannot be decoded
+        before it — so calling it again returns immediately. The one stream
+        that keeps a subscriber waiting is one that is not streaming: a
+        publisher that has gone quiet, or has yet to send its first packet,
+        acknowledges nobody.
+        """
+        # A subscriber that beat the first publication to the socket gets no
+        # welcome message, and can be handed data before the header is sent.
+        while not self._subscribed:
+            message = self._get_message()
+            if self._is_header(message):
+                self._update_header(message)
+                self._subscribed = True
+
     def _get_message(self):
+        if self.timeout is not None and not self._socket.poll(
+            round(1000 * self.timeout)
+        ):
+            raise TimeoutError(
+                f"no message received from {self.address} after {self.timeout} seconds"
+            )
         return self._socket.recv()
+
+    @staticmethod
+    def _is_header(message):
+        """Whether *message* is a header rather than a data packet."""
+        try:
+            header = json.loads(message.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        return isinstance(header, dict) and "bytesPerPackage" in header
 
     def _is_packet(self, message):
         return len(message) == self.packet_size
@@ -223,7 +276,7 @@ class ZMQSubscriber:
         return DataArray(data, {"time": time, "distance": self.distance})
 
 
-class ZMQPublisher:
+class ZMQPublisher(SubscriptionTracker):
     """
     A class to stream data using ZeroMQ.
 
@@ -236,11 +289,16 @@ class ZMQPublisher:
     ----------
     address : str
         The address where the ZeroMQ is bound to.
+    nsubscribers : int
+        The number of currently subscribed peers.
 
     Methods
     -------
     submit(da)
         Submits the data array for publishing.
+    wait_for_subscribers(count, timeout)
+        Blocks until *count* peers are subscribed, so that nothing published
+        afterwards is dropped.
 
     Examples
     --------
@@ -260,6 +318,7 @@ class ZMQPublisher:
 
     def __init__(self, address):
         self.address = address
+        self._nsubscribers = 0
         self._connect(address)
         self._header = None
 
@@ -272,7 +331,9 @@ class ZMQPublisher:
     def header(self, header):
         """Set the welcome-message header and push it to the ZMQ socket option."""
         self._header = header
-        self.socket.setsockopt(zmq.XPUB_WELCOME_MSG, json.dumps(header).encode("utf-8"))
+        self._socket.setsockopt(
+            zmq.XPUB_WELCOME_MSG, json.dumps(header).encode("utf-8")
+        )
 
     def submit(self, da):
         """Publish *da* over ZMQ."""
@@ -287,7 +348,7 @@ class ZMQPublisher:
         socket = context.socket(zmq.XPUB)
         socket.setsockopt(zmq.XPUB_VERBOSE, True)
         socket.bind(address)
-        self.socket = socket
+        self._socket = socket
 
     @staticmethod
     def _get_header(da):
@@ -306,11 +367,17 @@ class ZMQPublisher:
         return header
 
     def _send(self, da):
+        # Taking the subscriptions the socket has queued is what greets the
+        # peers behind them with the header — ZeroMQ holds a welcome message
+        # back until the application reads the subscription it answers — and
+        # what keeps the subscriber count current. Neither costs any waiting.
+        self._read_subscriptions(0.0)
         da = da.transpose("time", "distance")
         header = self._get_header(da)
-        if self.header is None:
-            self.header = header
         if header != self.header:
+            # Peers that subscribed before there was a header to welcome them
+            # with — including the very first one — only learn the layout if it
+            # is sent down the stream, so the first submit publishes it too.
             self.header = header
             self._send_header()
         self._send_data(da)
@@ -327,7 +394,7 @@ class ZMQPublisher:
         self._send_message(message)
 
     def _send_message(self, message):
-        self.socket.send(message)
+        self._socket.send(message)
 
 
 def float_to_timedelta(value, unit):
