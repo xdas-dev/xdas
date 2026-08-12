@@ -160,20 +160,16 @@ Coordinates:
 ```
 
 {py:class}`~xdas.atoms.Annotate` consumes the component dimension and appends
-its classes as a `phase` dimension, keeping the order of the dimensions it was
-given:
+its classes as a `phase` dimension, laying the samples out last so that the
+characteristic function of one phase is contiguous:
 
 ```python
 >>> cft = xd.annotate(xd.resample(sub, 100.0), model)
 >>> cft
-<xdas.DataArray (time: 12000, phase: 3)>
-[[nan nan nan]
- [nan nan nan]
- [nan nan nan]
- ...
- [nan nan nan]
- [nan nan nan]
- [nan nan nan]]
+<xdas.DataArray (phase: 3, time: 12000)>
+[[nan nan nan ... nan nan nan]
+ [nan nan nan ... nan nan nan]
+ [nan nan nan ... nan nan nan]]
 Coordinates:
     network: 'IA'
     station: 'DBNFM'
@@ -182,9 +178,9 @@ Coordinates:
   * time (time): 2026-05-20T00:21:59.771 to 2026-05-20T00:23:59.761
 ```
 
-The `nan` rows the repr shows are the ends of the record, blinded by the
-model's own `annotate_batch_post` as SeisBench blinds them; the values in
-between are the characteristic function.
+The `nan` values at both ends of each row are the ends of the record, blinded
+by the model's own `annotate_batch_post` as SeisBench blinds them; the values
+in between are the characteristic function.
 
 The `phase` coordinate carries the model's own labels, so a class is selected
 by name — `cft.sel(phase="P")` — and never by position. That matters more than

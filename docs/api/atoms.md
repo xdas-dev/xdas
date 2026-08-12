@@ -36,6 +36,8 @@ Methods
    Atom.reset
    Atom.process
    Atom.iter_chunks
+   Atom.gather
+   Atom.merge
    Atom.save_state
    Atom.set_state
    Atom.load_state
@@ -91,9 +93,7 @@ Methods
 
 ## Task atoms
 
-Public processing vocabulary with physical parameters only. Each task atom has
-a function form exported at the top level of `xdas` (e.g. `xdas.filter`,
-`xdas.decimate`).
+Public processing vocabulary with physical parameters only.
 
 ```{eval-rst}
 .. autosummary::
@@ -106,6 +106,11 @@ a function form exported at the top level of `xdas` (e.g. `xdas.filter`,
    Resample
    STFT
 ```
+
+## Function forms
+
+Every atom has a function form exported at the top level of `xdas`: called on
+data it applies eagerly, called on `...` it returns the atom.
 
 ```{eval-rst}
 .. currentmodule:: xdas
