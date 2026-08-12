@@ -1649,8 +1649,8 @@ def _stack_arrays(objs, keys, level, dim, join, tolerance, path):
     messages, joinable = _leaf_mismatches(objs, keys)
     if messages and join is not None and joinable:
         objs = _join_leaves(objs, keys, joinable, join)
-        messages, joinable = _leaf_mismatches(objs, keys)
-        joinable = []  # already spent
+        messages, _ = _leaf_mismatches(objs, keys)
+        joinable = []  # already spent: what remains is not a join away
     if messages:
         hint = (
             " (pass join='inner' or join='outer' to align them first)"

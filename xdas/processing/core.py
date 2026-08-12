@@ -345,6 +345,11 @@ def _process_source(atom, source, out, chunks, until, path=None):
     if isinstance(source, DataArray):
         # In-memory, unchunked: direct eager call, then sink dispatch on the
         # result so `process(da, out=...)` and `pipeline(da)` stay twins.
+        if until is not None:
+            # `until` truncates the source rather than the stream here, which
+            # is the same cut: inclusive, as `sel` slices.
+            dim = getattr(atom, "_resolve_dim", lambda _: None)(source) or "time"
+            source = source.sel({dim: slice(None, until)})
         result = _annotate_path(atom(source), path)
         if out is None:
             return result
@@ -436,7 +441,7 @@ def _process_collection(atom, dc, out, chunks, until, merge):
     out=None)`` returns what ``atom(dc)`` returns.
     """
     walk = _Walk(atom, _CollectionSink(out), chunks, until)
-    result = walk.sink.result(walk.level(dc, {}))
+    result = walk.sink.result(walk.level(dc, {}, ()))
     if out is None and merge and getattr(atom, "merge", None) is not None:
         return atom.merge(list(_iter_results(result)))
     return result
@@ -467,7 +472,7 @@ class _Walk:
         self.chunks = chunks
         self.until = until
 
-    def level(self, x, path):
+    def level(self, x, path, where):
         """Walk one collection level, or stream *x* if it is a leaf."""
         if isinstance(x, DataMapping):
             gathered = self.atom.gather(x) if hasattr(self.atom, "gather") else None
@@ -475,22 +480,22 @@ class _Walk:
                 # Consulted before anything is chunked: the level becomes an
                 # axis of the input and the stacked array streams as one
                 # thing. Being consumed, it contributes no path column.
-                return self.level(gathered, path)
+                return self.level(gathered, path, where)
             name = getattr(x, "name", None)
             return DataCollection(
                 {
-                    key: self.level(value, _extend_path(path, name, key))
+                    key: self.level(value, _extend_path(path, name, key), (*where, key))
                     for key, value in x.items()
                 },
                 name,
             )
         if isinstance(x, DataSequence):
-            return self.fold(x, path)
+            return self.fold(x, path, where)
         if hasattr(self.atom, "reset"):
             self.atom.reset()  # one atom instance, the leaves taken one by one
-        return _asleaf(self.stream(self.atom, x, self.sink.spec(path), path))
+        return _asleaf(self.stream(self.atom, x, self.sink.spec(where), path))
 
-    def fold(self, x, path):
+    def fold(self, x, path, where):
         """
         Fold a sequence level: one stream delivered in pieces.
 
@@ -513,12 +518,14 @@ class _Walk:
             # Nothing to fold along: each element is a leaf of its own.
             return DataCollection(
                 [
-                    self.level(element, _extend_path(path, name, index))
+                    self.level(
+                        element, _extend_path(path, name, index), (*where, index)
+                    )
                     for index, element in enumerate(x)
                 ],
                 name,
             )
-        spec = self.sink.spec(path)
+        spec = self.sink.spec(where)
         writer = _SharedWriter(ResultWriter(None) if spec is None else spec)
         for index, element in enumerate(x):
             if not isinstance(element, DataArray):
@@ -664,13 +671,16 @@ class _CollectionSink:
         else:
             raise TypeError(f"cannot infer a writer from `out` of type {type(out)}")
 
-    def spec(self, path):
-        """Return the out spec of the leaf reached by *path*."""
+    def spec(self, where):
+        """Return the out spec of the leaf reached by the keys *where*."""
         if self.shared is not None:
             return self.shared
         if self.out is None:
             return None
-        return os.path.join(str(self.out), *(str(key) for key in path.values()))
+        # keyed on the keys themselves, not on the annotation path: an
+        # unnamed level contributes no column but still needs its own
+        # directory, or its leaves would overwrite one another
+        return os.path.join(str(self.out), *(str(key) for key in where))
 
     def result(self, tree):
         """Return the walk's answer, given its walked *tree* of leaf results."""
@@ -784,6 +794,11 @@ def get_source(source, chunks=None):
         # own loader instead of materializing whole runs as single chunks.
         return _ChainSource(source, chunks)
     if isinstance(source, DataArray):
+        if isinstance(chunks, dict):
+            # A chunk cannot be larger than what it cuts: the last acquisition
+            # of a sequence is routinely shorter than the size asked for, and
+            # one chunk is what that means.
+            chunks = {dim: min(size, source.sizes[dim]) for dim, size in chunks.items()}
         if isinstance(source.data, VirtualBackend):
             return DataArrayLoader(source, "auto" if chunks is None else chunks)
         if chunks is None:
@@ -885,7 +900,7 @@ class ResultWriter:
     def write(self, chunk):
         """Accumulate one chunk, enforcing the in-memory size guard."""
         self.chunks.append(chunk)
-        self.nbytes += getattr(chunk, "nbytes", 0)
+        self.nbytes += _sizeof(chunk)
         limit = config.get("memory_limit")
         if self.nbytes > limit:
             raise ValueError(
@@ -931,6 +946,22 @@ class _ChainSource:
     def __iter__(self):
         for loader in self.loaders:
             yield from loader
+
+
+def _sizeof(chunk):
+    """
+    Return the in-memory size of an output chunk, in bytes.
+
+    A pipeline emits arrays, tables and streams, and only the first knows
+    `nbytes`: taking the others as weightless would silence the accumulation
+    guard exactly where it matters, on the unbounded walk of a collection
+    into one pick table.
+    """
+    if isinstance(chunk, pd.DataFrame):
+        return int(chunk.memory_usage(deep=True).sum())
+    if hasattr(chunk, "traces"):
+        return sum(trace.data.nbytes for trace in chunk.traces)
+    return getattr(chunk, "nbytes", 0)
 
 
 def _to_human(nbytes):
@@ -1339,11 +1370,12 @@ class DataFrameWriter:
         return self.submit(df)
 
     def _write(self, df):
-        if df is not None:  # pragma: no branch
-            if not os.path.exists(self.path):
-                df.to_csv(self.path, mode="w", header=True, index=False)
-            else:
-                df.to_csv(self.path, mode="a", header=False, index=False)
+        # A run appends to the table it finds, which is what lets a restarted
+        # acquisition keep filling the day's file.
+        if os.path.exists(self.path):
+            df.to_csv(self.path, mode="a", header=False, index=False)
+        else:
+            df.to_csv(self.path, mode="w", header=True, index=False)
 
     def shutdown(self):
         """Shut down the internal thread pool."""
@@ -1514,7 +1546,7 @@ class StreamWriter:
             Stream chunk to persist.
         """
         if not isinstance(st, obspy.Stream):
-            raise TypeError(f"`st` must by a DataFrame object, not a {type(st)}")
+            raise TypeError(f"`st` must be a Stream object, not a {type(st)}")
         if self._future is not None:
             self._future.result()
         self._future = self._executor.submit(self._write, st)
@@ -1532,6 +1564,11 @@ class StreamWriter:
 
     def result(self):
         """Merge all temporary MiniSEED files and write the final output."""
+        if self._future is None:
+            # A pipeline that emitted nothing leaves nothing to merge; a
+            # writer passed in by the caller still gets asked for its result.
+            self.shutdown()
+            return obspy.Stream()
         self._future.result()
         self.shutdown()
         pattern = f"{self.dirpath}/*_tmp.mseed"

@@ -794,7 +794,8 @@ class TestCollectionGather:
         )
         atom = xd.pick(..., picker_model("original"), device="cpu")
         assert isinstance(atom.gather(dc).data, TileArray)  # nothing was read
-        monkeypatch.setitem(Config.config, "memory_limit", 1)
+        # a limit below the stacked array (1536 B) but above the pick table
+        monkeypatch.setitem(Config.config, "memory_limit", 1024)
         with pytest.raises(ValueError, match="process"):
             atom(dc)  # the eager walk refuses to load the stacked array
         assert len(atom.process(dc, chunks={"time": 16})) > 0
