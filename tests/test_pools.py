@@ -1,7 +1,9 @@
 import os
 import shutil
+import sys
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 
+import cloudpickle
 import numpy as np
 import pytest
 from loky import process_executor
@@ -26,6 +28,12 @@ from xdas.processing.pools import (
     sweep,
     view,
 )
+
+# The tasks below are sent to worker processes, which would have to import this
+# module to unpickle them by reference -- and cannot: pytest imports the test
+# suite without putting its directory on the path, so `tests` is a package only
+# in the parent. Sending them by value keeps the worker from needing it.
+cloudpickle.register_pickle_by_value(sys.modules[__name__])
 
 
 def _double(x):
