@@ -210,7 +210,7 @@ class Trigger(Atom):
 
         - "axis": An integer indicating the axis number of the dimension along which to
           find picks.
-        - "shape": A tuple indicating the unravel shape of the lanes along wigh the
+        - "shape": A tuple indicating the unravel shape of the lanes along which
           the picks will be found.
         - "thresh_on"/"thresh_off": Float arrays holding the trigger on and off
           thresholds of each lane, raveled like the lanes.
@@ -245,6 +245,7 @@ class Trigger(Atom):
         self.offset = State(0)
         self.coord = State(Coordinate({"tie_indices": [], "tie_values": []}, self.dim))
         self.annotations = State(self._annotations(cft))
+        self.labels = State({})
 
     def call(self, cft, **flags):
         """
@@ -284,6 +285,7 @@ class Trigger(Atom):
         data = np.asarray(cft.values, dtype=float)
         values, indices = self._call_numeric(data)
         self.coord = concat_coords([self.coord, cft.coords[self.dim]], tolerance=None)
+        self.labels = self._accumulate(cft)
         picks = self._picks(indices, values)
         if independent:
             return [picks] + self.flush()
@@ -300,8 +302,8 @@ class Trigger(Atom):
         Parameters
         ----------
         results : sequence of DataFrame
-            The per-leaf pick tables, in walk order. Leaves that produced no
-            pick at all contribute nothing rather than an empty table.
+            The per-leaf pick tables, in walk order. A leaf that produced no
+            pick contributes an empty table, which concatenates away.
 
         Returns
         -------
@@ -374,17 +376,24 @@ class Trigger(Atom):
         return np.broadcast_to(values.reshape(shape), self.shape).reshape(-1).copy()
 
     def _annotations(self, cft):
-        """Resolve the requested columns into ``(name, axis, source)`` triples."""
+        """
+        Resolve the requested columns into ``(name, axis, source)`` triples.
+
+        *source* is the coordinate the column is read from, or ``None`` when
+        it is attached to the picked dimension: those are indexed by absolute
+        sample number, so they are read off the coordinates accumulated over
+        the run rather than off the chunk in hand.
+        """
         annotations = []
         for name in self._names(cft):
             if name == self.dim:
-                # The picked dimension is the chunked one: its indices are
-                # absolute, so they index the coordinate accumulated so far.
                 annotations.append((name, self.axis, None))
                 continue
             coord = self._annotation(cft, name)
             if coord.dim is None:
                 annotations.append((name, None, coord))
+            elif coord.dim == self.dim:
+                annotations.append((name, self.axis, None))
             else:
                 annotations.append((name, cft.get_axis_num(coord.dim), coord))
         return tuple(annotations)
@@ -405,7 +414,8 @@ class Trigger(Atom):
         ``(time, distance, phase)`` give the same columns.
         """
         if self.coords is None:
-            return cft.dims
+            # A dimension without a coordinate has no labels to annotate with.
+            return tuple(dim for dim in cft.dims if dim in cft.coords)
         if self.coords == "auto":
             scalars = tuple(
                 name for name, coord in cft.coords.items() if coord.dim is None
@@ -426,12 +436,34 @@ class Trigger(Atom):
             )
         return cft.coords[name]
 
+    def _accumulate(self, cft):
+        """
+        Extend the coordinates of the picked dimension with those of *cft*.
+
+        A trigger reports the sample its onset was found at, which may lie in
+        a chunk already gone: the labels of the picked dimension are kept for
+        the whole run so that an absolute index still names something. The
+        dimension coordinate itself is kept as a coordinate (`coord`), which
+        stays compact; the others are plain arrays.
+        """
+        labels = dict(self.labels)
+        for name, axis, source in self.annotations:
+            if source is not None or name == self.dim:
+                continue
+            values = np.asarray(cft.coords[name].values)
+            previous = labels.get(name)
+            labels[name] = (
+                values if previous is None else np.concatenate([previous, values])
+            )
+        labels[self.dim] = self.coord.values
+        return labels
+
     def _picks(self, indices, values):
         """Build the pick table of the *values* found at *indices*."""
         picks = {}
         for name, axis, source in self.annotations:
             if source is None:
-                picks[name] = self.coord[indices[axis]].values
+                picks[name] = self.labels[name][indices[axis]]
             elif axis is None:
                 picks[name] = np.full(len(values), source.values, dtype=source.dtype)
             else:
@@ -455,15 +487,15 @@ class Trigger(Atom):
 
         Parameters
         ----------
-        data : DataArray
+        data : ndarray
             The characteristic function where picks must be found.
 
         Returns
         -------
-        coords : tuple of 1d ndarray
-            A tuple containing the coordinates of the picks.
         values : 1d ndarray
             The values of the picks.
+        indices : tuple of 1d ndarray
+            One index array per axis, locating each pick.
 
         Notes
         -----

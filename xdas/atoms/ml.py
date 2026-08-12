@@ -1013,9 +1013,18 @@ class Annotate(Atom):
         Firing once per run, this stays chunk-invariant. The in-flight
         output queue is drained here, so nothing survives the end of a run.
         """
-        if self.started is not True:
-            return self._harvest(block=True)
         dim = self.sample_dim
+        if self.started is not True:
+            buffered = self.buffer
+            if isinstance(buffered, DataArray) and buffered.sizes[dim] > 0:
+                # The whole stream was shorter than one window: say so, as
+                # the eager call does, rather than answering with nothing.
+                raise ValueError(
+                    f"the record is shorter along {dim!r} "
+                    f"({buffered.sizes[dim]} samples) than one model window "
+                    f"({self.nperseg} samples)"
+                )
+            return self._harvest(block=True)
         buffer = self.buffer
         remainder = buffer.sizes[dim] - self.nperseg
         if remainder > 0:
@@ -1170,10 +1179,12 @@ class Annotate(Atom):
         """Queue the output chunk of *length* samples found at *start* in the stack."""
         dim = self.sample_dim
         data = self._pull(start, length)
-        coords = da.coords.copy()
+        # Slice the whole chunk, not just the dimension coordinate: a label
+        # attached to the samples (a tag, a pick id) has to follow them, or
+        # it keeps the input length and is silently dropped on assembly.
+        coords = da.isel({dim: slice(offset, offset + length)}).coords.copy()
         if self.component_dim is not None:
             coords = coords.drop_dims(self.component_dim)
-        coords[dim] = coords[dim][offset : offset + length]
         coords["phase"] = self.phases
         shape = tuple(da.sizes[other] for other in self.batch_dims)
         shape = (*shape, self.classes, length)
@@ -1713,17 +1724,29 @@ class MLPicker(Annotate):
     """
     Deprecated alias of :class:`Annotate`, removed in 0.4.
 
-    Beyond the name, the output of this atom is now laid out sample-last,
-    ``(..., "phase", dim)``, rather than leading with the sample dimension.
+    The old signature is kept, positional arguments included, but the results
+    move: the output is laid out sample-last, ``(..., "phase", dim)``, rather
+    than leading with the sample dimension; the component dimension is found
+    by its labels rather than assumed; the window overlap is read off the
+    weight set rather than fixed at half a window; and the end-aligned final
+    window SeisBench appends is emitted at :meth:`flush`.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(
+        self, model, dim="time", device=None, component_strategy="clone", **kwargs
+    ):
         warnings.warn(
             "MLPicker is deprecated and will be removed in 0.4, use Annotate instead",
             DeprecationWarning,
-            stacklevel=2,
+            stacklevel=3,
         )
-        super().__init__(*args, **kwargs)
+        super().__init__(
+            model,
+            dim=dim,
+            device=device,
+            component_strategy=component_strategy,
+            **kwargs,
+        )
 
 
 annotate = atomized(Annotate)
