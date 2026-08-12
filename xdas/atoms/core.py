@@ -167,32 +167,9 @@ def _iter_results(tree):
         yield tree
 
 
-def _flush_through(atoms, **flags):
-    """
-    Codec-drain a linear chain of atoms.
-
-    Flush the first atom and push its tail through the remaining atoms, then
-    flush the second one, and so on. Tails flow downstream as ordinary data:
-    each downstream atom folds them into its own state before being flushed
-    itself.
-    """
-    atoms = list(atoms)
-    chunks = []
-    for index, atom in enumerate(atoms):
-        tail = atom.flush()
-        for downstream in atoms[index + 1 :]:
-            tail = [
-                chunk
-                for out in (downstream(x, **flags) for x in tail)
-                for chunk in _aschunks(out)
-            ]
-        chunks.extend(tail)
-    return chunks
-
-
 class State:
     """
-    A class to declare a new state or to update a preexising one into an Atom object.
+    A class to declare a new state or to update a preexisting one into an Atom object.
 
     Parameters
     ----------
@@ -201,7 +178,7 @@ class State:
 
     Examples
     --------
-    In practice the State object is used when implementing new Atom objects. Bellow a
+    In practice the State object is used when implementing new Atom objects. Below a
     dummy example without any class declaration.
 
     >>> from xdas.atoms import Atom, State
@@ -243,21 +220,21 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
     that is updated during each execution of the Atom. The Atom object is initialized
     with an initial state at the first call. In subsequent calls, the state is updated
     **if and only if the `chunk_dim` flag is provided** along with the dimension along
-    wich chunking was performed. If this flag is not provided, the state is reset
+    which chunking was performed. If this flag is not provided, the state is reset
     between calls. The Atom can be reset manually to its initial state by calling the
     `reset` method.
 
-    When implementing a new Atom object, the user must sublcass the Atom class, and
+    When implementing a new Atom object, the user must subclass the Atom class, and
     at minima define the `initialize` and the `call` methods. The `initialize` method
     is called at the first call to the Atom and is used to initialize the Atom with the
     input data. The `call` method is called at each subsequent call to the Atom and is
     used to perform the main processing logic. The Atom class handles when an how those
     two methods are called.
 
-    To reduce the size of the state that need to be stored, a good practive is to also
+    To reduce the size of the state that need to be stored, a good practice is to also
     define the `initialize_from_state` method. This method is called in the
     `initialize` as soon as the minimal set of states is initialized. The other states
-    that are usefull for the processing but that can be recomputed from the minimal set
+    that are useful for the processing but that can be recomputed from the minimal set
     are initialized in the `initialize_from_state` method.
 
     Atoms compose into pipelines with the ``>>`` operator (see :func:`compose`)
@@ -270,7 +247,7 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
             Returns the current state of the atom recursively including
             the state of nested atoms.
         initialized: bool
-            Wether the atom has been initialized or not.
+            Whether the atom has been initialized or not.
         on_discontinuity: str
             Seam policy for chunked processing: ``"reset"`` (default) flushes
             and starts a new run at every gap or rate change, ``"raise"``
@@ -360,7 +337,7 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
         )
 
     def initialize(self, x, **flags):
-        """Initialise the atom from a first chunks of data."""
+        """Initialise the atom from a first chunk of data."""
         return NotImplemented
 
     def initialize_from_state(self):
@@ -424,8 +401,10 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
         to `gather`, which may collapse a level into an axis of the input
         (see :meth:`gather`).
 
-        A single output chunk is returned bare; otherwise a
-        :class:`DataSequence` of chunks is returned.
+        A single output chunk is returned bare; several are joined into one
+        object when their kind allows it (arrays concatenated along the
+        working dimension, tables into one table) and returned as a
+        :class:`DataSequence` of chunks when it does not.
         """
         merge = flags.pop("merge", True)
         chunk_dim = flags.get("chunk_dim", None)
@@ -571,11 +550,11 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
         Compare an incoming chunk with the expected continuation of the stream.
 
         Returns ``None`` when there is nothing to judge against (first chunk,
-        non-array chunk), else one of ``"continuous"``, ``"gap"``, ``"rate"``
-        or ``"overlap"``. Both O(1) checks of the regularity contract happen
-        here: the sampling interval must match within tolerance, and the chunk
-        must start one interval after the previous end within the jitter
-        budget.
+        non-array chunk, or neither side of the seam declaring a rate), else
+        one of ``"continuous"``, ``"gap"``, ``"rate"`` or ``"overlap"``. Both
+        O(1) checks of the regularity contract happen here: the sampling
+        interval must match within tolerance, and the chunk must start one
+        interval after the previous end within the jitter budget.
         """
         seam = self._seam
         if info is None or seam is None or seam["chunk_dim"] != info["chunk_dim"]:
@@ -589,14 +568,15 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
                     "regularize it first, e.g. `da[dim] = da[dim].to_regular()` "
                     "or open the files with a tolerance"
                 )
-        if seam["delta"] is None:
+        # a one-sample chunk declares no interval of its own: the seam is
+        # judged on the rate of whichever side knows one
+        delta = seam["delta"] if seam["delta"] is not None else info["delta"]
+        if delta is None:
             return None
         tolerance = max(seam["tolerance"], info["tolerance"])
-        if info["delta"] is not None and np.abs(info["delta"] - seam["delta"]) > (
-            tolerance
-        ):
+        if info["delta"] is not None and np.abs(info["delta"] - delta) > tolerance:
             return "rate"
-        jump = info["start"] - (seam["end"] + seam["delta"])
+        jump = info["start"] - (seam["end"] + delta)
         if np.abs(jump) <= tolerance:
             return "continuous"
         return "gap" if jump > 0 else "overlap"
@@ -688,18 +668,12 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
 
     def _join(self, chunks, dim):
         """Re-join output chunks: one chunk bare, else gap-aware concat or sequence."""
-        if len(chunks) == 1:
-            return chunks[0]
-        if dim is not None and chunks and all(isinstance(c, DataArray) for c in chunks):
-            try:
-                return concat(chunks, dim)
-            except (TypeError, ValueError):
-                return DataCollection(chunks)
-        if chunks and all(isinstance(c, pd.DataFrame) for c in chunks):
-            # A pick table is a chunk type of its own: an atom emitting one per
-            # run, plus one at flush, still answers with a single table.
-            return pd.concat(chunks, ignore_index=True)
-        return DataCollection(chunks)
+        # a call answers with an object, so zero chunks and chunk types with no
+        # join of their own become an empty and a plain sequence respectively
+        if not chunks:
+            return DataCollection([])
+        result = _join_chunks(chunks, dim)
+        return DataCollection(result) if isinstance(result, list) else result
 
     def flush(self):
         """
@@ -732,7 +706,8 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
 
         Yields
         ------
-        Zero or more output chunks per input chunk, then the flushed tail.
+        chunk : DataArray or pandas.DataFrame
+            Zero or more output chunks per input chunk, then the flushed tail.
         """
         if chunk_dim is None:
             chunk_dim = getattr(source, "chunk_dim", "time")
@@ -834,8 +809,9 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
                 or getattr(getattr(self, "func", None), "__name__", None)
                 or type(self).__name__
             )
+            named = ", ".join(repr(d) for d in dims)
             raise ValueError(
-                f"{name} needs the whole record along {dim!r} and cannot "
+                f"{name} needs the whole record along {named} and cannot "
                 f"process data chunked along {chunk_dim!r}: process the "
                 f"stream unchunked, or chunk along another dimension"
             )
@@ -867,7 +843,7 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
             # In-place operators rebind the target name with their return
             # value, so tracing them keeps value semantics: drop the `out`
             # and append the out-of-place operation.
-            if kwargs["out"] != (self,):
+            if len(kwargs["out"]) != 1 or kwargs["out"][0] is not self:
                 return NotImplemented
             kwargs = {key: value for key, value in kwargs.items() if key != "out"}
         if sum(input is self for input in inputs) != 1 or any(
@@ -1059,10 +1035,22 @@ class Sequential(Atom, list):
         Cascade-flush the pipeline, codec-drain style.
 
         Flush the first stage and push its tail through the following stages,
-        then flush the second stage, and so on. Returns the drained chunks.
+        then flush the second stage, and so on. Tails flow downstream as
+        ordinary data: each downstream stage folds them into its own state
+        before being flushed itself. Returns the drained chunks.
         """
         flags = {"chunk_dim": self._seam["chunk_dim"]} if self._seam else {}
-        return _flush_through(self, **flags)
+        chunks = []
+        for index, atom in enumerate(self):
+            tail = atom.flush()
+            for downstream in self[index + 1 :]:
+                tail = [
+                    chunk
+                    for out in (downstream(x, **flags) for x in tail)
+                    for chunk in _aschunks(out)
+                ]
+            chunks.extend(tail)
+        return chunks
 
     def _resolve_dim(self, x):
         """Resolve the operating dimension from the first stage that has one."""
@@ -1115,7 +1103,13 @@ class Sequential(Atom, list):
 
     def fresh(self):
         """Return a stateless clone: each stage cloned, config shared."""
-        return type(self)([atom.fresh() for atom in self], name=self.name)
+        # the stages are not in `vars`, and a subclass that assembles its own
+        # (a `Picker`, say) cannot be rebuilt by calling its constructor
+        clone = super().fresh()
+        for key, atom in enumerate(self):
+            clone.append(atom.fresh())
+            clone._atoms[key] = clone[key]
+        return clone
 
     def __repr__(self) -> str:
         width = len(str(len(self)))
@@ -1145,8 +1139,8 @@ class Partial(Atom):
     keyword arguments, to properly initialize the corresponding states and to return as
     many additional outputs as there are stateful arguments.
 
-    Partial uses several reserved keyword arguments that cannot by passed to `func`:
-    'func', 'name' and 'state'.
+    Partial uses two reserved keyword arguments that cannot be passed to `func`:
+    'func' and 'name'.
 
     Parameters
     ----------

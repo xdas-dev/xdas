@@ -679,6 +679,13 @@ class TestTracing:
         with pytest.raises(TypeError):
             np.multiply(atom1, 2.0, out=atom2)
 
+    def test_out_to_a_data_array_raises(self):
+        # writing a traced expression into an array cannot be honoured: there
+        # is nothing to write until the pipeline runs.
+        atom = xs.detrend(...)
+        with pytest.raises(TypeError):
+            np.multiply(atom, 2.0, out=xd.testing.dummy())
+
     def test_non_call_ufunc_method_raises(self):
         atom = xs.detrend(...)
         with pytest.raises(TypeError):
@@ -768,6 +775,21 @@ class TestFresh:
         assert len(clone) == len(seq)
         assert clone[0] is not seq[0]
         assert clone[0].func is seq[0].func
+
+    def test_fresh_keeps_the_type_of_a_self_assembling_sequence(self):
+        # a pipeline that builds its own stages (a `Picker`) cannot be rebuilt
+        # by calling its constructor with them.
+        class Assembled(Sequential):
+            def __init__(self, factor):
+                super().__init__([Partial(np.square)] * factor, name="assembled")
+                self.factor = factor
+
+        seq = Assembled(2)
+        clone = seq.fresh()
+        assert isinstance(clone, Assembled)
+        assert clone.factor == 2
+        assert len(clone) == 2
+        assert clone[0] is not seq[0]
 
 
 class TestFreshNested:

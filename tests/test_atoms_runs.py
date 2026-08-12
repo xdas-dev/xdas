@@ -238,6 +238,17 @@ class TestSeamEdgeCases:
         result = xd.concat(outs, "time")
         assert np.allclose(result.values, expected.values)
 
+    def test_single_sample_chunk_does_not_hide_the_next_seam(self):
+        # the first chunk holds one sample, so the seam it leaves behind knows
+        # no rate: the gap that follows is judged on the incoming chunk's.
+        sampled = dummy(shape=(52, 5), ctype="sampled")
+        left, right = sampled.isel(time=slice(0, 1)), sampled.isel(time=slice(11, None))
+        atom = DownSample(2, dim="time")
+        atom.on_discontinuity = "raise"
+        atom(left, chunk_dim="time")
+        with pytest.raises(ValueError, match="discontinuous"):
+            atom(right, chunk_dim="time")
+
     def test_stream_of_single_samples_has_nothing_to_judge(self):
         sampled = dummy(shape=(3, 5), ctype="sampled")
         atom = DownSample(2, dim="time")
