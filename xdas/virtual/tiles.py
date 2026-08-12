@@ -669,6 +669,10 @@ class TileArray(VirtualBackend, np.lib.mixins.NDArrayOperatorsMixin, vtype="tile
     # so multi-file scans can drain batches (see VirtualBackend)
     consolidates = True
 
+    #: Common directory of the tile sources, the stored per-tile paths
+    #: being relative to it. Rewriting it relocates the whole archive.
+    root: str
+
     def __init__(self, dataset, dtype=None, engine=None):
         # canonical string dtype is fixed-width bytes: str-valued
         # variables (hand-built manifests) recode here

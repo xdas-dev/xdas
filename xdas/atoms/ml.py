@@ -31,7 +31,7 @@ class LazyModule:
             except ImportError:
                 raise ImportError(
                     f"{self._name} is not installed by default, "
-                    f"please install is manually"
+                    f"please install it manually"
                 )
         return getattr(self._module, name)
 
