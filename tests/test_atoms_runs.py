@@ -256,6 +256,25 @@ class TestSeamEdgeCases:
         expected = DownSample(2, dim="time")(sampled)
         assert np.allclose(xd.concat(outs, "time").values, expected.values)
 
+    def test_alias_resolves_on_a_dimension_without_a_coordinate(self):
+        # the alias has to resolve against the dimensions, not the
+        # coordinates: a dimension carrying none is still chunkable, and the
+        # seam state has to be allocated for it.
+        import scipy.signal as sp
+
+        from xdas.atoms import LFilter
+
+        values = np.random.default_rng(0).normal(size=(24, 12))
+        coords = {"time": {"tie_indices": [0, 23], "tie_values": [0.0, 2.3]}}
+        bare = xd.DataArray(values, coords, ("time", "distance"))
+        b, a = sp.butter(2, 0.4)
+        expected = LFilter(b, a, dim="last")(bare)
+        outs = collect(
+            LFilter(b, a, dim="last"), xd.split(bare, 4, "distance"), "distance"
+        )
+        result = np.concatenate([out.values for out in outs], axis=1)
+        assert np.allclose(result, expected.values)
+
     def test_first_alias_resolves_on_eager_calls(self, da):
         result = DownSample(2, dim="first")(da)
         expected = DownSample(2, dim="time")(da)

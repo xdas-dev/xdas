@@ -93,7 +93,7 @@ class LFilter(Atom):
         # `dim` may be the "first"/"last" alias, which never equals a real
         # dimension name: resolve it against the data before comparing, else
         # the seam state is silently never allocated.
-        dim = self._resolve_dim(da) or self.dim
+        dim = self._dim_name(da)
         if dim == chunk_dim:
             n_sections = max(len(self.a), len(self.b)) - 1
             shape = tuple(
@@ -145,7 +145,7 @@ class SOSFilter(Atom):
         """Set the filter axis and allocate the SOS initial-conditions buffer."""
         self.axis = State(da.get_axis_num(self.dim))
         # Resolve the "first"/"last" alias before comparing (see `LFilter`).
-        dim = self._resolve_dim(da) or self.dim
+        dim = self._dim_name(da)
         if dim == chunk_dim:
             n_sections = self.sos.shape[0]
             shape = (n_sections,) + tuple(
@@ -192,7 +192,7 @@ class DownSample(Atom):
     def initialize(self, da, chunk_dim=None, **flags):
         """Initialise the carry-over buffer for chunked operation."""
         # Resolve the "first"/"last" alias before comparing (see `LFilter`).
-        dim = self._resolve_dim(da) or self.dim
+        dim = self._dim_name(da)
         if chunk_dim == dim:
             self.buffer = State(da.isel({self.dim: slice(0, 0)}))
         else:
@@ -250,7 +250,7 @@ class UpSample(Atom):
             return da
         # The "first"/"last" alias never matches a real dimension name, so it
         # has to be resolved before it names an axis or a coordinate.
-        name = self._resolve_dim(da) or self.dim
+        name = self._dim_name(da)
         shape = tuple(
             self.factor * size if dim == name else size
             for dim, size in da.sizes.items()
@@ -389,7 +389,7 @@ class Polyphase(Atom):
             )
         self.axis = State(da.get_axis_num(self.dim))
         # Resolve the "first"/"last" alias before comparing (see `LFilter`).
-        dim = self._resolve_dim(da) or self.dim
+        dim = self._dim_name(da)
         if dim == chunk_dim:
             shape = tuple(
                 self._history_size() if name == dim else size
@@ -468,7 +468,7 @@ class Polyphase(Atom):
         """Build the output coordinates on the resampled, delay-corrected grid."""
         # The "first"/"last" alias would name a new dimension if it reached the
         # `Coordinate` built below, so resolve it here.
-        name = self._resolve_dim(da) or self.dim
+        name = self._dim_name(da)
         coord = da.coords[name]
         delta = get_sampling_interval(da, name, cast=False)
         size = stop - first
@@ -495,10 +495,12 @@ class Polyphase(Atom):
             data["tolerance"] = base + drift
         coords = da.coords.copy()
         coords[name] = Coordinate(data, name)
-        # Output `index` is drawn from input sample `index * down / up`, which
-        # `first`/`stop` keep inside this chunk by construction.
-        positions = np.rint(np.arange(first, stop) * self.down / self.up)
-        positions = np.clip(positions.astype(int) - start, 0, da.sizes[name] - 1)
+        # Output `index` is drawn from input sample `index * down // up`.
+        # Flooring — never rounding — is what keeps the position inside this
+        # chunk by construction: rounding a half-integer up can walk past the
+        # last input sample the chunk holds, and the clip that would be needed
+        # to pull it back lands on a different sample than the eager call.
+        positions = (np.arange(first, stop) * self.down) // self.up - start
         return _carry_labels(coords, name, positions)
 
     def _upsampled(self, count, delta):
@@ -557,7 +559,7 @@ class Rechunk(Atom):
     def initialize(self, da, chunk_dim=None, **flags):
         """Initialise the carry-over buffer for chunked operation."""
         # Resolve the "first"/"last" alias before comparing (see `LFilter`).
-        dim = self._resolve_dim(da) or self.dim
+        dim = self._dim_name(da)
         if chunk_dim == dim:
             self.buffer = State(da.isel({self.dim: slice(0, 0)}))
         else:

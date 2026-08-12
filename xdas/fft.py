@@ -15,7 +15,7 @@ from .parallel import parallelize
 
 
 @atomized
-@_whole_record()
+@_whole_record(default="last")
 def fft(da, n=None, dim=None, norm=None, parallel=None):
     """
     Compute the discrete Fourier Transform along a given dimension.
@@ -90,7 +90,7 @@ def fft(da, n=None, dim=None, norm=None, parallel=None):
 
 
 @atomized
-@_whole_record()
+@_whole_record(default="last")
 def rfft(da, n=None, dim=None, norm=None, parallel=None):
     """
     Compute the discrete Fourier Transform  for real inputs along a given dimension.
@@ -161,7 +161,7 @@ def rfft(da, n=None, dim=None, norm=None, parallel=None):
 
 
 @atomized
-@_whole_record()
+@_whole_record(default="last")
 def ifft(da, n=None, dim=None, norm=None, parallel=None):
     """
     Compute the inverse of `fft`.
@@ -232,7 +232,7 @@ def ifft(da, n=None, dim=None, norm=None, parallel=None):
 
 
 @atomized
-@_whole_record()
+@_whole_record(default="last")
 def irfft(da, n=None, dim=None, norm=None, parallel=None):
     """
     Compute the inverse of `rfft`.

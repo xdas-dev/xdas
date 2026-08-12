@@ -502,16 +502,30 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
 
         return live(self.state)
 
-    def _resolve_dim(self, x):
-        """Resolve the dimension this atom operates along on *x*, or ``None``."""
+    def _dim_name(self, x):
+        """
+        Resolve the ``"first"``/``"last"`` alias of this atom against *x*.
+
+        The alias never equals a real dimension name, so it has to be
+        resolved before it names an axis, a coordinate, or is compared with
+        the chunked dimension. Resolution is against the *dimensions* of *x*,
+        which a dimension without a coordinate still has.
+        """
         dim = getattr(self, "dim", None)
         if not isinstance(x, DataArray) or not isinstance(dim, str):
-            return None
+            return dim
         if dim == "first":
-            dim = x.dims[0]
-        elif dim == "last":
-            dim = x.dims[-1]
-        return dim if dim in x.coords else None
+            return x.dims[0]
+        if dim == "last":
+            return x.dims[-1]
+        return dim
+
+    def _resolve_dim(self, x):
+        """Resolve the dimension this atom operates along on *x*, or ``None``."""
+        dim = self._dim_name(x)
+        if not isinstance(dim, str):
+            return None
+        return dim if dim in getattr(x, "coords", {}) else None
 
     def _split_runs(self, x, dim):
         """Split *x* at the discontinuities of its *dim* coordinate."""
@@ -1215,13 +1229,16 @@ class Partial(Atom):
         try:
             bound = inspect.signature(func).bind_partial(*self.args, **self.kwargs)
             bound.apply_defaults()
+            default = getattr(func, "_whole_record_default", None)
             dim = bound.arguments.get("dim")
             if isinstance(dim, dict) and len(dim) == 1:
                 # {input_dim: output_dim} mapping (e.g. the fft functions):
                 # the operating dimension is the input one.
                 ((dim, _),) = dim.items()
-            self.dim = dim
+            self.dim = default if dim is None else dim
             refuse_dim = bound.arguments.get(dim_arg) if dim_arg else None
+            if refuse_dim is None:
+                refuse_dim = default
         except (TypeError, ValueError):
             self.dim = None
             refuse_dim = None
@@ -1420,7 +1437,7 @@ def atomized(func):
     return wrapper
 
 
-def _whole_record(dim_arg="dim"):
+def _whole_record(dim_arg="dim", default=None):
     """
     Mark a function as needing the whole record along its working dimension.
 
@@ -1429,10 +1446,17 @@ def _whole_record(dim_arg="dim"):
     along the dimension named by the *dim_arg* argument (resolved from the
     call arguments, aliases included), via
     :meth:`Atom._refuse_chunked_along`.
+
+    *default* names the dimension the function works along when that argument
+    is left unset. A function whose ``dim=None`` means "the last one" has to
+    say so here: an unknown dimension is refused whatever the stream is
+    chunked along, which would reject the transform of *another* dimension
+    than the chunked one.
     """
 
     def decorator(func):
         func._whole_record_dim_arg = dim_arg
+        func._whole_record_default = default
         return func
 
     return decorator

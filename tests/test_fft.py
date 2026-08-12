@@ -97,11 +97,15 @@ class TestChunkGuard:
             with pytest.raises(ValueError, match="whole record"):
                 atom(chunk, chunk_dim="time")
 
-    def test_default_dim_is_conservative(self):
+    def test_default_dim_resolves_to_the_last_one(self):
+        # the default `dim` is not an unknown dimension: it is the last one,
+        # so it is refused along the last one and allowed along the others.
         da = xd.testing.dummy()
         atom = xfft.fft(...)
         with pytest.raises(ValueError, match="whole record"):
-            atom(da.isel(time=slice(0, 50)), chunk_dim="time")
+            atom(da.isel(distance=slice(0, 50)), chunk_dim="distance")
+        result = xfft.fft(...)(da.isel(time=slice(0, 50)), chunk_dim="time")
+        assert result.dims == ("time", "spectrum")
 
     def test_chunked_along_other_dim_commutes(self):
         da = xd.testing.dummy()
