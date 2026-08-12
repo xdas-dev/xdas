@@ -1,3 +1,4 @@
+import gc
 import os
 import shutil
 import sys
@@ -84,6 +85,21 @@ class TestArena:
         assert not os.path.exists(arena.path)
         # The pages outlive the name: whoever still holds a chunk can read it.
         np.testing.assert_array_equal(data, [1.0, 2.0, 3.0, 4.0])
+
+    def test_an_arena_left_to_the_collector_lets_go_of_everything(self):
+        # A pool that is never shut down still has to release its arena, or a
+        # process opening pools in a loop would hold every one it ever made.
+        arena = Arena(2, 1024)
+        path = arena.path
+        _, offset, _ = arena.reserve()
+        data = view(ShmRef(path, offset, (2,), "<f8"))
+        data[:] = [1.0, 2.0]
+        del arena
+        gc.collect()
+        assert not os.path.exists(path)
+        assert path not in _ARENAS
+        # The chunk still in hand keeps its own pages readable regardless.
+        np.testing.assert_array_equal(data, [1.0, 2.0])
 
     def test_create_refuses_when_it_cannot_fit(self):
         # An arena that would claim more than its share of the filesystem is

@@ -23,12 +23,18 @@ virtual array, a DataFrame, an oversized chunk, an arena with no free slot)
 simply travels the ordinary pickle path: the transport is an optimization, and
 falling back to it is never wrong, only slower.
 
-Releasing the memory is the other half of the design. Pages die with the
-mappings that hold them, so a crash of any kind frees them; what can outlive
-the run is the arena's *name*. It is unlinked when the pool shuts down, again
-by a finalizer at interpreter exit, and any arena left by a process that no
-longer exists is swept when the next one starts. Nothing in ``/dev/shm``
+Releasing the memory is the other half of the design. Pages die with the last
+mapping that holds them, so anything that gets to run Python on the way out —
+an interrupt included — frees them at once, and the arena's *name* is unlinked
+when the pool shuts down, again by a finalizer at interpreter exit, and swept
+at the start of the next run if its owner is gone. Nothing in ``/dev/shm``
 survives two runs.
+
+A run killed outright is the exception, and not because of the arena: loky's
+workers do not notice that their parent has died, so they stay, and what they
+still hold mapped stays with them until they are killed too. That is worth
+knowing when a scheduler or an out-of-memory killer ends a job, and it is the
+same with or without shared memory in the picture.
 
 All of that rests on POSIX semantics — unlinking a file that is still mapped,
 and signal zero as a liveness probe — so the arena is built on POSIX only.
@@ -74,6 +80,20 @@ def _unlink(path):
         os.unlink(path)
     except OSError:
         pass
+
+
+def _discard(path):
+    """
+    Let go of an arena entirely: its name, and this process's handle on it.
+
+    Dropping the handle is what actually frees the pages, and it has to be
+    done for a pool that was never shut down as much as for one that was, or a
+    process that opens pools in a loop would hold every arena it ever made.
+    The mapping itself is not closed: chunks still in the caller's hands are
+    views on it, and they keep it alive on their own until they are collected.
+    """
+    _ARENAS.pop(path, None)
+    _unlink(path)
 
 
 def sweep():
@@ -287,7 +307,7 @@ class Arena:
             os.close(fd)
         # Unlink on garbage collection and at interpreter exit, whichever
         # comes first; the sweep covers the case where neither runs.
-        self._finalizer = weakref.finalize(self, _unlink, self.path)
+        self._finalizer = weakref.finalize(self, _discard, self.path)
         try:
             attach(self.path, self.size)
         except OSError:  # pragma: no cover - mapping refused
@@ -368,7 +388,6 @@ class Arena:
         when the last chunk still pointing into them is collected.
         """
         self._finalizer()
-        _ARENAS.pop(self.path, None)
 
 
 class ProcessFuture:
