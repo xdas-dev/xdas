@@ -179,9 +179,17 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
 
     @override
     def _is_monotonic_increasing(self):
-        return not self.get_split_indices(
-            "overlaps", tolerance=False
-        ).size  # TODO: do not clall split_indices
+        # inside a segment the step is the sampling interval, at a seam it is
+        # the jump plus one interval. A segment of a single sample has no
+        # interior, so a coordinate made of those alone is ordered by its seams
+        # only, whatever the sign of the interval.
+        if self.empty:
+            return True
+        zero = self.sampling_interval - self.sampling_interval
+        if np.any(self.tie_lengths > 1) and not self.sampling_interval > zero:
+            return False
+        _, deltas = self._split_candidates()
+        return bool(np.all(deltas + self.sampling_interval > zero))
 
     @override
     def _get_value(self, index):

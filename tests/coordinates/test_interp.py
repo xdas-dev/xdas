@@ -547,6 +547,28 @@ class TestInterpCoordinateExtra:
         )
         assert coord._is_monotonic_increasing() is True
 
+    def test_is_monotonic_increasing_subsample_overlap(self):
+        # the axis advances by 0.4 of a 1.0 sampling interval: an overlap, but
+        # the values keep increasing, so the axis stays sorted
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 5, 9], "tie_values": [0.0, 4.0, 4.4, 8.4]}
+        )
+        np.testing.assert_array_equal(coord.get_split_indices("overlaps"), [5])
+        assert coord._is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_smooth_decrease(self):
+        # no discontinuity anywhere — the axis simply turns around inside a
+        # segment, which no boundary can report
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 8], "tie_values": [0.0, 4.0, 2.0]}
+        )
+        np.testing.assert_array_equal(coord.get_split_indices("discontinuities"), [])
+        assert coord._is_monotonic_increasing() is False
+
+    def test_is_monotonic_increasing_single_decreasing_segment(self):
+        coord = InterpCoordinate({"tie_indices": [0, 4], "tie_values": [4.0, 0.0]})
+        assert coord._is_monotonic_increasing() is False
+
     def test_slice_step_collision(self):
         coord = InterpCoordinate(
             {"tie_indices": [0, 2, 6, 12], "tie_values": [0.0, 20.0, 60.0, 120.0]}

@@ -590,7 +590,16 @@ class AxisCoordinate(Coordinate, ABC):
 
     @abstractmethod
     def _is_monotonic_increasing(self):
-        """Return ``True`` if all consecutive differences in this coordinate are positive."""
+        """
+        Return ``True`` if all consecutive differences in this coordinate are positive.
+
+        This is a property of the raw steps, not of the jumps that
+        :meth:`get_split_indices` reports: an overlap shorter than one sampling
+        interval still moves the axis forward, and leaves it sorted. Only an
+        overlap of a full interval or more breaks the order. Implementations
+        must therefore look at the values themselves rather than at the
+        discontinuities, which say nothing about the slope within a segment.
+        """
 
     @abstractmethod
     def _get_value(self, index):

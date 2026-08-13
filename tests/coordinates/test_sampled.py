@@ -1012,6 +1012,38 @@ class TestSampledCoordinateMissingBranches:
         )
         assert coord._is_monotonic_increasing() is True
 
+    def test_is_monotonic_increasing_subsample_overlap(self):
+        # the seam advances by 0.4 of a 1.0 sampling interval: an overlap, but
+        # the values keep increasing, so the axis stays sorted
+        coord = SampledCoordinate(
+            {"tie_values": [0.0, 4.4], "tie_lengths": [5, 5], "sampling_interval": 1.0}
+        )
+        npt.assert_array_equal(coord.get_split_indices("overlaps"), [5])
+        assert coord._is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_negative_interval(self):
+        # a regular axis running backwards has no seam to report it
+        coord = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [5], "sampling_interval": -1.0}
+        )
+        npt.assert_array_equal(coord.get_split_indices("discontinuities"), [])
+        assert coord._is_monotonic_increasing() is False
+
+    def test_is_monotonic_increasing_single_sample_segments(self):
+        # segments of one sample have no interior, so the interval never falls
+        # between two samples and its sign cannot disorder anything
+        coord = SampledCoordinate(
+            {
+                "tie_values": [0.0, 1.0, 2.0],
+                "tie_lengths": [1, 1, 1],
+                "sampling_interval": -1.0,
+            }
+        )
+        assert coord._is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_empty(self):
+        assert SampledCoordinate()._is_monotonic_increasing() is True
+
     def test_get_sampling_interval_singleton(self):
         coord = SampledCoordinate(
             {"tie_values": [0.0], "tie_lengths": [1], "sampling_interval": 1.0}
