@@ -131,6 +131,24 @@ class TestTriggerCoords:
             expected.sort_values(coords, ignore_index=True)
         )
 
+    def test_annotates_with_a_coordinate_along_the_picked_dimension(self):
+        # A label riding on the picked dimension is indexed by absolute sample
+        # number, so it is read off the labels kept for the whole run rather
+        # than off the chunk in hand: a pick found in a chunk already gone
+        # still names the right sample.
+        cft = self.generate().assign_coords(
+            sample=("time", [f"s{n}" for n in range(10)])
+        )
+        coords = ["time", "sample", "station"]
+        expected = Trigger(thresh=0.5, dim="time", coords=coords)(cft)
+        assert list(expected["sample"]) == ["s2", "s7", "s7"]
+        atom = Trigger(thresh=0.5, dim="time", coords=coords)
+        picks = [atom(chunk, chunk_dim="time") for chunk in xd.split(cft, 3, "time")]
+        result = pd.concat(picks, ignore_index=True)
+        assert result.sort_values(coords, ignore_index=True).equals(
+            expected.sort_values(coords, ignore_index=True)
+        )
+
     def test_unknown_coordinate_raises(self):
         cft = self.generate()
         with pytest.raises(KeyError, match="not a coordinate"):

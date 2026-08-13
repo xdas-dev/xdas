@@ -10,8 +10,6 @@ for *arbitrary* split points, including at discontinuities — continuous
 elements carry state across, discontinuous ones reset, and tails are flushed.
 """
 
-import warnings
-
 import numpy as np
 import pytest
 
@@ -330,10 +328,9 @@ class TestSplitAnnouncement:
         with pytest.warns(UserWarning, match="1 discontinuity along 'time'"):
             xd.filter(joined, (1.0, 10.0))
 
+    @pytest.mark.filterwarnings("error::UserWarning")
     def test_gapless_input_is_silent(self, da):
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            xd.filter(da, (1.0, 10.0))
+        xd.filter(da, (1.0, 10.0))
 
     def test_every_leaf_of_a_collection_reports(self, da):
         # The message names the source by its start, so two leaves with the

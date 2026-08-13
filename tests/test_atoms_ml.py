@@ -624,6 +624,15 @@ class TestAnnotateWindowing:
         chunks = list(picker.iter_chunks(xd.split(da, indices, "time"), "time"))
         assert xd.concat(chunks, "time").equals(expected)
 
+    def test_a_chunked_record_shorter_than_one_window_raises_at_the_end(self):
+        # Chunked, the shortfall is only known once the stream has ended: the
+        # chunks pile up in the buffer, and the flush that closes the run says
+        # so rather than answering with nothing, as the eager call does upfront.
+        da = pin_array(("time", "distance")).isel(time=slice(0, 7))
+        picker = Annotate(annotate_model(), "time", device="cpu")
+        with pytest.raises(ValueError, match="shorter along"):
+            list(picker.iter_chunks(xd.split(da, 3, "time"), "time"))
+
     def test_flushing_before_any_window_emits_nothing(self):
         assert Annotate(annotate_model(), "time", device="cpu").flush() == []
 

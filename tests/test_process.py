@@ -112,9 +112,9 @@ class TestSourceDispatch:
         with pytest.raises(TypeError, match="source"):
             xp.get_source(42)
 
-    def test_tcp_scheme(self):
+    def test_tcp_scheme(self, opened):
         address = f"tcp://localhost:{xd.io.get_free_port()}"
-        source = xp.get_source(address)
+        source = opened(xp.get_source(address))
         assert isinstance(source, xp.ZMQSubscriber)
         assert source.unbounded
         assert source.chunk_dim == "time"
@@ -407,6 +407,15 @@ class TestUnbounded:
         assert result.coords.equals(expected.coords)
         assert np.allclose(result.values, expected.values)
 
+    def test_until_truncates_an_unchunked_source(self, da, pipeline):
+        # Nothing is chunked here, so `until` cuts the source itself; the cut
+        # is the same one, inclusive, as `sel` slices.
+        until = da["time"][60].values
+        result = pipeline.process(da, until=until)
+        expected = pipeline(da.sel(time=slice(None, until)))
+        assert result.coords.equals(expected.coords)
+        assert np.allclose(result.values, expected.values)
+
     def test_until_skips_late_chunks(self, da, pipeline):
         until = da["time"][30].values
         chunks = list(xd.split(da, [30], "time"))
@@ -446,53 +455,45 @@ class TestUnbounded:
         with pytest.warns(UserWarning, match="realtime source has a discontinuity"):
             atom.process(source)
 
+    @pytest.mark.filterwarnings("error::UserWarning")
     def test_realtime_continuous_stream_is_silent(self, da):
-        import warnings
-
         source = self.Source(list(xd.split(da, 4, "time")))
         atom = Partial(np.square)
-        with warnings.catch_warnings():
-            atom.process(source)
+        atom.process(source)
 
     def test_chunked_source_announces_its_splits_upfront(self, da, pipeline):
         with pytest.warns(UserWarning, match="1 discontinuity along 'time'"):
             pipeline.process(gappy(da), chunks={"time": 30})
 
+    @pytest.mark.filterwarnings("error::UserWarning")
     def test_upfront_scan_skips_non_axis_coordinates(self):
         # A dense coordinate has no free discontinuity scan: the source is
         # processed without any upfront announcement.
-        import warnings
-
         dense = xd.testing.dummy(shape=(52, 5), ctype="dense")
         atom = Partial(np.square)
-        with warnings.catch_warnings():
-            result = atom.process(dense, chunks={"time": 20})
+        result = atom.process(dense, chunks={"time": 20})
         assert np.allclose(result.values, np.square(dense).values)
 
+    @pytest.mark.filterwarnings("error::UserWarning")
     def test_realtime_chunks_without_the_dim_are_not_judged(self, da):
         # A realtime chunk that does not carry the chunked dimension leaves
         # the seam information untouched rather than resetting it.
-        import warnings
-
         aside = xd.testing.dummy(dims=("distance",), shape=(5,), step=(10.0,))
         left, right = xd.split(da, 2, "time")
         source = self.Source([left, aside, right])
         atom = Partial(np.square)
-        with warnings.catch_warnings():
-            atom.process(source)
+        atom.process(source)
 
+    @pytest.mark.filterwarnings("error::UserWarning")
     def test_realtime_one_sample_chunk_adopts_the_stream_rate(self):
         # A one-sample chunk of a sampled coordinate declares no rate of its
         # own: continuous with the stream, it inherits the previous chunk's
         # delta so the seam after it is still judged correctly.
-        import warnings
-
         sampled = xd.testing.dummy(shape=(52, 5), ctype="sampled")
         chunks = list(xd.split(sampled, [50, 51], "time"))
         source = self.Source(chunks)
         atom = Partial(np.square)
-        with warnings.catch_warnings():
-            atom.process(source)
+        atom.process(source)
 
     def test_watch_is_a_realtime_loader(self, da, tmp_path):
         loader = xd.watch(tmp_path)
@@ -516,12 +517,12 @@ class TestUnbounded:
 
 
 class TestZMQRoundTrip:
-    def test_publish_process_subscribe(self, da):
+    def test_publish_process_subscribe(self, da, opened):
         address = f"tcp://localhost:{xd.io.get_free_port()}"
         packets = list(xd.split(da, 10, "time"))
         # Bind before connecting so the subscription is live for packet one.
-        publisher = xp.ZMQPublisher(address)
-        source = xp.get_source(address)
+        publisher = opened(xp.ZMQPublisher(address))
+        source = opened(xp.get_source(address))
 
         def publish():
             publisher.wait_for_subscribers(timeout=60.0)
@@ -716,6 +717,15 @@ class TestCollectionSinks:
         path = tmp_path / "picks.csv"
         dc = xd.DataCollection({"A": cft(quiet=True)}, "station")
         assert picker().process(dc, out=str(path)).empty
+        assert not path.exists()
+
+    def test_a_shared_csv_no_leaf_emitted_to_closes_to_nothing(self, da, tmp_path):
+        # Not one leaf emits, so the shared table is never even resolved to a
+        # writer: closing it has nothing to report and nothing to write.
+        atom = Partial(lambda x: None)
+        dc = xd.DataCollection({"a": da, "b": da}, "node")
+        path = tmp_path / "picks.csv"
+        assert atom.process(dc, out=str(path)) is None
         assert not path.exists()
 
     def test_a_leaf_emitting_nothing_answers_with_an_empty_collection(

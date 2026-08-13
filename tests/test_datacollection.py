@@ -1,5 +1,3 @@
-import warnings
-
 import h5py
 import numpy as np
 import pandas as pd
@@ -664,6 +662,7 @@ class TestMergeCollectionResults:
         assert isinstance(result, pd.DataFrame)
         assert result.empty
 
+    @pytest.mark.filterwarnings("error::UserWarning")
     def test_an_agreeing_scalar_coordinate_dedupes_silently(self):
         # what the obspy engine produces: every leaf carries its four SEED
         # identifiers as scalar coordinates, and the tree keys hold the very
@@ -675,9 +674,7 @@ class TestMergeCollectionResults:
             },
             "station",
         )
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            result = xd.trigger(dc, thresh=self.thresh)
+        result = xd.trigger(dc, thresh=self.thresh)
         assert list(result.columns) == ["station", "phase", "time", "value"]
         assert list(result["station"]) == ["DBNFM", "DBNFM", "LBFI", "LBFI"]
 
