@@ -15,7 +15,7 @@ import zmq
 
 from ..coordinates import Coordinate, get_sampling_interval
 from ..core import DataArray, concat_coords
-from ..processing.core import SubscriptionTracker
+from ..processing.core import SubscriptionTracker, ZMQEndpoint
 from ..virtual import TileArray, VirtualSource
 from .core import Engine
 
@@ -123,7 +123,7 @@ type_map = {
 }
 
 
-class ZMQSubscriber:
+class ZMQSubscriber(ZMQEndpoint):
     """
     Iterator that pulls :class:`DataArray` chunks from a live ASN ZMQ publisher.
 
@@ -140,6 +140,8 @@ class ZMQSubscriber:
     wait_until_subscribed()
         Block until the publisher has registered this subscription. Building
         the subscriber already does it.
+    close()
+        Release the socket and its context.
     """
 
     def __init__(self, address, timeout=None):
@@ -171,12 +173,20 @@ class ZMQSubscriber:
         ...     publisher.wait_for_subscribers()  # a replay, so no chunk is lost
         ...     for chunk in chunks:
         ...         publisher.submit(chunk)
-        >>> threading.Thread(target=publish).start()
+        >>> thread = threading.Thread(target=publish)
+        >>> thread.start()
 
         >>> subscriber = ZMQSubscriber(address)
         >>> for nchunk in range(10):
         ...     chunk = next(subscriber)
         ...     # do something with the chunk
+
+        Both ends hold a socket until they are closed, by hand as here or by
+        using them as context managers.
+
+        >>> thread.join()
+        >>> subscriber.close()
+        >>> publisher.close()
 
         """
         self.address = address
@@ -201,6 +211,7 @@ class ZMQSubscriber:
         socket = context.socket(zmq.SUB)
         socket.connect(address)
         socket.setsockopt_string(zmq.SUBSCRIBE, "")
+        self._context = context
         self._socket = socket
 
     def wait_until_subscribed(self):
@@ -299,6 +310,8 @@ class ZMQPublisher(SubscriptionTracker):
     wait_for_subscribers(count, timeout)
         Blocks until *count* peers are subscribed, so that nothing published
         afterwards is dropped.
+    close()
+        Release the socket and its context.
 
     Examples
     --------
@@ -309,10 +322,10 @@ class ZMQPublisher(SubscriptionTracker):
 
     >>> port = xd.io.get_free_port()
     >>> address = f"tcp://localhost:{port}"
-    >>> publisher = ZMQPublisher(address)
     >>> chunks = xd.split(da, 10)
-    >>> for chunk in chunks:
-    ...     publisher.submit(chunk)
+    >>> with ZMQPublisher(address) as publisher:
+    ...     for chunk in chunks:
+    ...         publisher.submit(chunk)
 
     """
 
@@ -348,6 +361,7 @@ class ZMQPublisher(SubscriptionTracker):
         socket = context.socket(zmq.XPUB)
         socket.setsockopt(zmq.XPUB_VERBOSE, True)
         socket.bind(address)
+        self._context = context
         self._socket = socket
 
     @staticmethod

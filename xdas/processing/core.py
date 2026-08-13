@@ -256,7 +256,9 @@ def _process_source(atom, source, out, chunks, until, path=None):
         writer = get_writer(out, outputs[0], "first")
         for chunk in outputs:
             writer.write(chunk)
-        return writer.result()
+        result = writer.result()
+        _close_if_owned(writer, out)
+        return result
     if hasattr(atom, "reset"):
         atom.reset()
     chunk_dim = getattr(source, "chunk_dim", "time")
@@ -324,7 +326,23 @@ def _process_source(atom, source, out, chunks, until, path=None):
         for chunk_out in atom.flush():
             write(chunk_out)
     monitor.close()
-    return writer.result() if writer is not None else None
+    if writer is None:
+        return None
+    result = writer.result()
+    _close_if_owned(writer, out)
+    return result
+
+
+def _close_if_owned(writer, out):
+    """
+    Release a sink :func:`process` opened itself.
+
+    A publisher built from a ``"tcp://..."`` spec holds a socket that nothing
+    else will ever close, whereas one the caller passed in stays theirs to
+    reuse and to close.
+    """
+    if writer is not out and isinstance(writer, ZMQEndpoint):
+        writer.close()
 
 
 def _process_collection(atom, dc, out, chunks, until, merge):
@@ -528,7 +546,11 @@ class _SharedWriter:
 
     def close(self):
         """Close the underlying writer and return its result."""
-        return None if self.writer is None else self.writer.result()
+        if self.writer is None:
+            return None
+        result = self.writer.result()
+        _close_if_owned(self.writer, self.out)
+        return result
 
 
 class _CollectionSink:
@@ -1484,7 +1506,45 @@ class StreamWriter:
         return out
 
 
-class SubscriptionTracker:
+class ZMQEndpoint:
+    """
+    Ownership of the ZeroMQ context and socket an endpoint speaks through.
+
+    A socket nobody closes keeps its file descriptor, and its context keeps an
+    I/O thread, until the process ends. Releasing them is therefore part of the
+    interface rather than an afterthought: as a context manager where the
+    endpoint has a scope, with :meth:`close` where it does not, and on garbage
+    collection for one that is merely dropped — the last of which is a safety
+    net, not the way to write it, since when it runs is not for the caller
+    to know.
+
+    Endpoints inheriting this must expose their socket as ``_socket`` and the
+    context it came from as ``_context``.
+    """
+
+    _socket = None
+    _context = None
+
+    def close(self):
+        """Close the socket and terminate the context. Closing twice is a no-op."""
+        if self._socket is not None:
+            self._socket.close()
+            self._socket = None
+        if self._context is not None:
+            self._context.term()
+            self._context = None
+
+    def __del__(self):
+        self.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+
+
+class SubscriptionTracker(ZMQEndpoint):
     """
     Subscriber bookkeeping for publishers that own a ``zmq.XPUB`` socket.
 
@@ -1508,8 +1568,9 @@ class SubscriptionTracker:
 
     Publishers mixing this in must expose their bound ``zmq.XPUB`` socket as
     ``_socket`` with ``zmq.XPUB_VERBOSE`` set — so that peers subscribing to an
-    already-subscribed topic are announced too — their address as ``address``,
-    and initialize ``_nsubscribers`` to zero.
+    already-subscribed topic are announced too — the context it came from as
+    ``_context``, their address as ``address``, and initialize
+    ``_nsubscribers`` to zero. Closing comes with :class:`ZMQEndpoint`.
     """
 
     @property
@@ -1601,6 +1662,8 @@ class ZMQPublisher(SubscriptionTracker):
     wait_for_subscribers(count, timeout)
         Blocks until *count* peers are subscribed, so that nothing published
         afterwards is dropped.
+    close()
+        Release the socket and its context.
 
     Examples
     --------
@@ -1611,15 +1674,16 @@ class ZMQPublisher(SubscriptionTracker):
 
     >>> packets = xd.split(xd.testing.dummy(), 10)
 
-    We initialize the publisher at a given address
+    We initialize the publisher at a given address. Used as a context manager,
+    it releases its socket on the way out.
 
     >>> address = f"tcp://localhost:{xd.io.get_free_port()}"
-    >>> publisher = ZMQPublisher(address)
 
     We can then publish the packets
 
-    >>> for da in packets:
-    ...     publisher.submit(da)
+    >>> with ZMQPublisher(address) as publisher:
+    ...     for da in packets:
+    ...         publisher.submit(da)
 
     To reduce the size of the packets, we can also specify an encoding
 
@@ -1627,9 +1691,9 @@ class ZMQPublisher(SubscriptionTracker):
 
     >>> address = f"tcp://localhost:{xd.io.get_free_port()}"
     >>> encoding = {"chunks": (10, 10), **hdf5plugin.Zfp(accuracy=1e-6)}
-    >>> publisher = ZMQPublisher(address, encoding)
-    >>> for da in packets:
-    ...     publisher.submit(da)
+    >>> with ZMQPublisher(address, encoding) as publisher:
+    ...     for da in packets:
+    ...         publisher.submit(da)
 
     """
 
@@ -1673,7 +1737,7 @@ class ZMQPublisher(SubscriptionTracker):
         return
 
 
-class ZMQSubscriber:
+class ZMQSubscriber(ZMQEndpoint):
     """
     A class for subscribing to DataArray chunks over ZeroMQ.
 
@@ -1689,6 +1753,8 @@ class ZMQSubscriber:
     -------
     wait_until_subscribed()
         Block until the publisher has registered this subscription.
+    close()
+        Release the socket and its context.
 
     Examples
     --------
@@ -1716,7 +1782,8 @@ class ZMQSubscriber:
     ...     for packet in packets:
     ...         publisher.submit(packet)
 
-    >>> threading.Thread(target=publish).start()
+    >>> thread = threading.Thread(target=publish)
+    >>> thread.start()
 
     Now let's receive the packets. The subscriber is an infinite iterator, so
     we stop it once the whole stream has been received.
@@ -1728,6 +1795,13 @@ class ZMQSubscriber:
     ...     if len(received) == len(packets):
     ...         break
     >>> assert xd.concat(received).equals(da)
+
+    Both ends hold a socket until they are closed. Where the two cannot be
+    written as one ``with`` block, as here, closing them by hand does the same.
+
+    >>> thread.join()
+    >>> subscriber.close()
+    >>> publisher.close()
     """
 
     chunk_dim = "time"

@@ -43,6 +43,8 @@
 - `DataCollection.query` raises a `KeyError` on an indexer naming no level of the collection, instead of silently returning everything unchanged (@atrabattoni).
 
 ### Bug Fixes
+- **ZeroMQ publishers and subscribers release their sockets.** Both ends now have `close()` and work as context managers, `process()` closes a publisher it opened itself from a `"tcp://..."` spec, and one that is simply dropped is closed by the garbage collector. Until now every publisher and subscriber ever built held its socket and its context's I/O thread for the life of the process (@atrabattoni).
+- Fix a file handle leaking on every auto-detection attempt: probing a file that is not TDMS left it open, since a reader that fails to build is never handed to the `with` that would have closed it (@atrabattoni).
 - Fix a STEIM-compressed `int32` miniSEED file being scanned as `float64`, the miniseed `ctype` argument being ignored, and miniSEED scans being forced to a single process (@atrabattoni).
 - Fix chunked `DownSample` dropping its trailing samples when the stream length is not a multiple of the factor (@atrabattoni).
 - Fix resampling losing track of the *other* coordinates of the dimension it resamples: decimating a DAS acquisition left its `station` coordinate at full length, labelling every lane with the code of the lane at its own index. Labels now follow the samples they name (@atrabattoni).

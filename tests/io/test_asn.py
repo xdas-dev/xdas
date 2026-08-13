@@ -44,11 +44,16 @@ class TestASNEngineROIBounds:
 
 
 class TestASNEnginePublisher:
+    @pytest.fixture(autouse=True)
+    def _close_endpoints(self, opened):
+        """Close whatever this test opens, so that no socket outlives it."""
+        self.opened = opened
+
     def test_write_method(self):
         from xdas.io.asn import ZMQPublisher as ASNZMQPublisher
 
         address = get_free_local_address()
-        pub = ASNZMQPublisher(address)
+        pub = self.opened(ASNZMQPublisher(address))
         pub.write(da_float32)
 
 
@@ -190,6 +195,11 @@ class TestASNEngine:
 
 
 class TestZMQPublisher:
+    @pytest.fixture(autouse=True)
+    def _close_endpoints(self, opened):
+        """Close whatever this test opens, so that no socket outlives it."""
+        self.opened = opened
+
     def test_get_header(self):
         header = ZMQPublisher._get_header(da_float32)
         assert header["bytesPerPackage"] == 40
@@ -206,13 +216,13 @@ class TestZMQPublisher:
 
     def test_init_conect_set_header(self):
         address = get_free_local_address()
-        pub = ZMQPublisher(address)
+        pub = self.opened(ZMQPublisher(address))
         pub.submit(da_float32)
         assert pub.header == ZMQPublisher._get_header(da_float32)
 
     def test_send_header(self):
         address = get_free_local_address()
-        pub = ZMQPublisher(address)
+        pub = self.opened(ZMQPublisher(address))
         pub.submit(da_float32)
         socket = self.get_socket(pub)
         pub.submit(da_float32)  # a packet must be sent once subscriber is connected
@@ -220,7 +230,7 @@ class TestZMQPublisher:
 
     def test_send_data(self):
         address = get_free_local_address()
-        pub = ZMQPublisher(address)
+        pub = self.opened(ZMQPublisher(address))
         pub.submit(da_float32)
         socket = self.get_socket(pub)
         pub.submit(da_float32)  # a packet must be sent once subscriber is connected
@@ -236,7 +246,7 @@ class TestZMQPublisher:
 
     def test_send_chunks(self):
         address = get_free_local_address()
-        pub = ZMQPublisher(address)
+        pub = self.opened(ZMQPublisher(address))
         chunks = xd.split(da_float32, 10)
         pub.submit(chunks[0])
         socket = self.get_socket(pub)
@@ -250,7 +260,7 @@ class TestZMQPublisher:
 
     def test_several_subscribers(self):
         address = get_free_local_address()
-        pub = ZMQPublisher(address)
+        pub = self.opened(ZMQPublisher(address))
         chunks = xd.split(da_float32, 10)
         pub.submit(chunks[0])
         socket1 = self.get_socket(pub)
@@ -272,7 +282,7 @@ class TestZMQPublisher:
 
     def test_change_header(self):
         address = get_free_local_address()
-        pub = ZMQPublisher(address)
+        pub = self.opened(ZMQPublisher(address))
         chunks = xd.split(da_float32, 10)
         pub.submit(chunks[0])
         socket = self.get_socket(pub)
@@ -295,7 +305,8 @@ class TestZMQPublisher:
 
     def get_socket(self, pub, nsubscribers=1):
         """Subscribe to *pub* and hand back the socket, once *pub* knows of it."""
-        socket = zmq.Context().socket(zmq.SUB)
+        context = self.opened(zmq.Context())
+        socket = self.opened(context.socket(zmq.SUB))
         socket.setsockopt(zmq.RCVTIMEO, round(1000 * TIMEOUT))
         socket.connect(pub.address)
         socket.setsockopt(zmq.SUBSCRIBE, b"")
@@ -304,14 +315,14 @@ class TestZMQPublisher:
 
     def test_wait_for_subscribers_times_out(self):
         address = get_free_local_address()
-        pub = ZMQPublisher(address)
+        pub = self.opened(ZMQPublisher(address))
         assert pub.nsubscribers == 0
         with pytest.raises(TimeoutError, match="0 of the 1 subscriber"):
             pub.wait_for_subscribers(timeout=0.1)
 
     def test_unsubscribing_is_accounted_for(self):
         address = get_free_local_address()
-        pub = ZMQPublisher(address)
+        pub = self.opened(ZMQPublisher(address))
         socket = self.get_socket(pub)
         assert pub.nsubscribers == 1
         socket.setsockopt(zmq.UNSUBSCRIBE, b"")
@@ -320,9 +331,14 @@ class TestZMQPublisher:
 
 
 class TestZMQSubscriber:
+    @pytest.fixture(autouse=True)
+    def _close_endpoints(self, opened):
+        """Close whatever this test opens, so that no socket outlives it."""
+        self.opened = opened
+
     def test_one_chunk(self):
         address = get_free_local_address()
-        pub = ZMQPublisher(address)
+        pub = self.opened(ZMQPublisher(address))
         chunks = [da_float32]
         thread = threading.Thread(target=self.publish, args=(pub, chunks))
         thread.start()
@@ -350,7 +366,7 @@ class TestZMQSubscriber:
 
     def test_several_chunks(self):
         address = get_free_local_address()
-        pub = ZMQPublisher(address)
+        pub = self.opened(ZMQPublisher(address))
         chunks = xd.split(da_float32, 5)
         threading.Thread(target=self.publish, args=(pub, chunks)).start()
         sub = self.get_subscriber(address)
@@ -369,7 +385,7 @@ class TestZMQSubscriber:
 
     def test_several_subscribers(self):
         address = get_free_local_address()
-        pub = ZMQPublisher(address)
+        pub = self.opened(ZMQPublisher(address))
         chunks = xd.split(da_float32, 5)
         thread = threading.Thread(target=self.publish, args=(pub, chunks[:2]))
         thread.start()
@@ -388,7 +404,7 @@ class TestZMQSubscriber:
 
     def test_change_header(self):
         address = get_free_local_address()
-        pub = ZMQPublisher(address)
+        pub = self.opened(ZMQPublisher(address))
         chunks = xd.split(da_float32, 5)
         chunks = [chunk.isel(distance=slice(0, 5)) for chunk in chunks[:2]] + chunks[2:]
         threading.Thread(target=self.publish, args=(pub, chunks)).start()
@@ -399,7 +415,7 @@ class TestZMQSubscriber:
 
     def test_roiDec(self):
         address = get_free_local_address()
-        pub = ZMQPublisher(address)
+        pub = self.opened(ZMQPublisher(address))
         chunks = [da_float32]
         threading.Thread(target=self.publish, args=(pub, chunks)).start()
         sub = self.get_subscriber(address)
@@ -460,7 +476,7 @@ class TestZMQSubscriber:
 
     def test_iter(self):
         address = get_free_local_address()
-        pub = ZMQPublisher(address)
+        pub = self.opened(ZMQPublisher(address))
         chunks = xd.split(da_float32, 5)
         threading.Thread(target=self.publish, args=(pub, chunks)).start()
         sub = self.get_subscriber(address)
@@ -470,7 +486,7 @@ class TestZMQSubscriber:
 
     def get_subscriber(self, address):
         """A subscriber that raises rather than waiting forever on a lost stream."""
-        return ZMQSubscriber(address, timeout=TIMEOUT)
+        return self.opened(ZMQSubscriber(address, timeout=TIMEOUT))
 
     def publish(self, pub, chunks, nsubscribers=1):
         """
@@ -489,7 +505,7 @@ class TestZMQSubscriber:
         # listening. Whoever connects gets the welcome header and picks the
         # stream up wherever it happens to land — never the whole of it.
         address = get_free_local_address()
-        pub = ZMQPublisher(address)
+        pub = self.opened(ZMQPublisher(address))
         chunks = xd.split(da_float32, 10)
         stop = threading.Event()
 
@@ -517,7 +533,7 @@ class TestZMQSubscriber:
         # A subscriber that beat the first publication to the socket gets no
         # welcome message, and can be handed data before the header arrives.
         address = get_free_local_address()
-        pub = ZMQPublisher(address)
+        pub = self.opened(ZMQPublisher(address))
         header = json.dumps(ZMQPublisher._get_header(da_float32)).encode("utf-8")
 
         def publish():
@@ -533,6 +549,6 @@ class TestZMQSubscriber:
 
     def test_timeout(self):
         address = get_free_local_address()
-        ZMQPublisher(address)  # binds, but never publishes anything
+        self.opened(ZMQPublisher(address))  # binds, never publishes anything
         with pytest.raises(TimeoutError, match="no message received"):
             ZMQSubscriber(address, timeout=0.1)

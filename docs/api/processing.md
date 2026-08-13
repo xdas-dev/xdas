@@ -71,6 +71,7 @@
    ZMQPublisher.write
    ZMQPublisher.result
    ZMQPublisher.wait_for_subscribers
+   ZMQPublisher.close
 ```
 
 ### ZMQSubscriber
@@ -80,4 +81,5 @@
    :toctree: ../_autosummary
 
    ZMQSubscriber.wait_until_subscribed
+   ZMQSubscriber.close
 ```

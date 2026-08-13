@@ -84,6 +84,23 @@ print(f"We received {len(received)} packets!")
 assert xd.concatenate(received).equals(da)
 ```
 
+Both ends hold a socket for as long as they live. Closing them releases it,
+along with the background thread ZeroMQ runs underneath:
+
+```{code-cell}
+subscriber.close()
+publisher.close()
+```
+
+Where a publisher or a subscriber has a scope, using it as a context manager
+says the same thing and cannot be forgotten:
+
+```python
+with ZMQPublisher(address) as publisher:
+    for packet in packets:
+        publisher.submit(packet)
+```
+
 ## Using encoding
 
 To reduce the volume of the transmitted data, compression is often useful. Xdas enable the use of the ZFP algorithm when storing data but also when streaming it. Encoding is declared the same way.
@@ -96,6 +113,7 @@ import hdf5plugin
 address = f"tcp://localhost:{xd.io.get_free_port()}"
 encoding = {"chunks": (10, 10), **hdf5plugin.Zfp(accuracy=1e-6)}
 publisher = ZMQPublisher(address, encoding)  # Add encoding here, the rest is the same
+publisher.close()
 ```
 
 ## Real-time streams
@@ -106,9 +124,9 @@ error, for a subscriber to miss whatever was published before it connected.
 Subscribing to a live flux is the same two lines as above, minus the waiting:
 
 ```python
-subscriber = ZMQSubscriber("tcp://interrogator:5555")
-for packet in subscriber:
-    ...
+with ZMQSubscriber("tcp://interrogator:5555") as subscriber:
+    for packet in subscriber:
+        ...
 ```
 
 The waiting moves to the receiving end, where it costs the stream nothing. A

@@ -1,3 +1,5 @@
+from contextlib import ExitStack
+
 import pytest
 
 import xdas
@@ -5,6 +7,19 @@ import xdas
 
 def pytest_configure(config):
     xdas.config.set("n_workers", 1)
+
+
+@pytest.fixture
+def opened():
+    """
+    Register a ZMQ endpoint to be closed when the test ends, and return it.
+
+    Endpoints are context managers, but a test that hands one to a thread, or
+    lets one raise on the way in, reads better flat than nested. Wrapping the
+    call in this keeps the socket from outliving the test either way.
+    """
+    with ExitStack() as stack:
+        yield stack.enter_context
 
 
 @pytest.fixture

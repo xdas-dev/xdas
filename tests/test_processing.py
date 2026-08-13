@@ -1,3 +1,4 @@
+import gc
 import os
 import threading
 from pathlib import Path
@@ -317,8 +318,13 @@ class TestDataFrameWriter:
 
 
 class TestZMQ:
+    @pytest.fixture(autouse=True)
+    def _close_endpoints(self, opened):
+        """Close whatever this test opens, so that no socket outlives it."""
+        self.opened = opened
+
     def _publish_and_subscribe(self, packets, address, encoding=None):
-        publisher = xp.ZMQPublisher(address, encoding)
+        publisher = self.opened(xp.ZMQPublisher(address, encoding))
 
         def publish():
             # A recording, wanted whole. Only the publisher can hold a replay
@@ -328,14 +334,16 @@ class TestZMQ:
             for packet in packets:
                 publisher.submit(packet)
 
-        threading.Thread(target=publish).start()
-        subscriber = xp.ZMQSubscriber(address, timeout=TIMEOUT)
+        thread = threading.Thread(target=publish)
+        thread.start()
+        subscriber = self.opened(xp.ZMQSubscriber(address, timeout=TIMEOUT))
 
         result = []
         for n, packet in enumerate(subscriber, start=1):
             result.append(packet)
             if n == len(packets):
                 break
+        thread.join()
         return xd.concat(result)
 
     def test_publish_and_subscribe(self):
@@ -351,7 +359,7 @@ class TestZMQ:
         # a subscriber joining it gets the stream from wherever it lands.
         packets = xd.split(xd.testing.dummy(), 10)
         address = f"tcp://localhost:{xd.io.get_free_port()}"
-        publisher = xp.ZMQPublisher(address)
+        publisher = self.opened(xp.ZMQPublisher(address))
         stop = threading.Event()
 
         def flux():
@@ -364,7 +372,7 @@ class TestZMQ:
         thread = threading.Thread(target=flux)
         thread.start()
         try:
-            subscriber = xp.ZMQSubscriber(address, timeout=TIMEOUT)
+            subscriber = self.opened(xp.ZMQSubscriber(address, timeout=TIMEOUT))
             # The flux greets us as it streams, without ever waiting for us.
             subscriber.wait_until_subscribed()
             received = [next(subscriber) for _ in range(3)]
@@ -378,8 +386,8 @@ class TestZMQ:
 
     def test_subscriber_timeout(self):
         address = f"tcp://localhost:{xd.io.get_free_port()}"
-        xp.ZMQPublisher(address)  # binds, but never publishes
-        subscriber = xp.ZMQSubscriber(address, timeout=0.1)
+        self.opened(xp.ZMQPublisher(address))  # binds, but never publishes
+        subscriber = self.opened(xp.ZMQSubscriber(address, timeout=0.1))
         with pytest.raises(TimeoutError, match="no packet received"):
             next(subscriber)
 
@@ -387,8 +395,8 @@ class TestZMQ:
         # Only a publisher that publishes can acknowledge anybody: a silent one
         # leaves a subscriber waiting, which is what the timeout is for.
         address = f"tcp://localhost:{xd.io.get_free_port()}"
-        xp.ZMQPublisher(address)
-        subscriber = xp.ZMQSubscriber(address, timeout=0.1)
+        self.opened(xp.ZMQPublisher(address))
+        subscriber = self.opened(xp.ZMQSubscriber(address, timeout=0.1))
         with pytest.raises(TimeoutError, match="no packet received"):
             subscriber.wait_until_subscribed()
 
@@ -638,18 +646,57 @@ class TestStreamWriterEdgeCases:
         with pytest.raises(TypeError):
             sw.submit("not_a_stream")
 
+    def test_result_without_any_chunk_is_an_empty_stream(self, tmp_path):
+        # A pipeline that emitted nothing leaves no temporary file to merge.
+        result = xp.StreamWriter(tmp_path, "M").result()
+        assert isinstance(result, obspy.Stream)
+        assert len(result) == 0
+
 
 class TestZMQPublisherAliases:
-    def test_write_alias(self):
+    def test_write_alias(self, opened):
         address = f"tcp://localhost:{xd.io.get_free_port()}"
-        publisher = xp.ZMQPublisher(address)
+        publisher = opened(xp.ZMQPublisher(address))
         da = xd.testing.dummy()
         publisher.write(da)  # use write() alias
 
-    def test_result_returns_none(self):
+    def test_result_returns_none(self, opened):
         address = f"tcp://localhost:{xd.io.get_free_port()}"
-        publisher = xp.ZMQPublisher(address)
+        publisher = opened(xp.ZMQPublisher(address))
         assert publisher.result() is None
+
+
+class TestZMQEndpointLifecycle:
+    def address(self):
+        return f"tcp://localhost:{xd.io.get_free_port()}"
+
+    def test_closing_releases_the_socket_and_the_context(self):
+        publisher = xp.ZMQPublisher(self.address())
+        socket, context = publisher._socket, publisher._context
+        publisher.close()
+        assert socket.closed
+        assert context.closed
+
+    def test_closing_twice_releases_nothing_more(self):
+        subscriber = xp.ZMQSubscriber(self.address())
+        subscriber.close()
+        subscriber.close()
+        assert subscriber._socket is None
+        assert subscriber._context is None
+
+    def test_the_context_manager_closes_on_the_way_out(self):
+        with xp.ZMQPublisher(self.address()) as publisher:
+            assert not publisher._socket.closed
+        assert publisher._socket is None
+
+    def test_a_dropped_endpoint_is_closed_by_the_collector(self):
+        # The safety net under an endpoint nobody closed: when it runs is not
+        # for the caller to know, which is why `close` is the way to write it.
+        publisher = xp.ZMQPublisher(self.address())
+        socket = publisher._socket
+        del publisher
+        gc.collect()
+        assert socket.closed
 
 
 class TestHandlerDirect:
