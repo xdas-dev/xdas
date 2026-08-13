@@ -529,13 +529,12 @@ class TestSampledCoordinateConcat:
 
 class TestSampledCoordinateDiscontinuitiesAvailabilities:
     def test_discontinuities_and_availabilities(self):
-        # tie_lengths set to create 2 segments
+        # two segments, [0, 1, 2] then [5, 6]: one 2.0 gap between them
         coord = SampledCoordinate(
             {"tie_values": [0.0, 5.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
         )
         dis = coord.get_discontinuities()
         avail = coord.get_availabilities()
-        # expect DataFrame with specific columns
         for df in (dis, avail):
             assert isinstance(df, pd.DataFrame)
             assert set(df.columns) >= {
@@ -546,8 +545,17 @@ class TestSampledCoordinateDiscontinuitiesAvailabilities:
                 "delta",
                 "type",
             }
-        # availabilities should list segments (2 segments -> 2 records)
-        assert len(avail) >= 1
+        # the discontinuity straddles the two segments, which the
+        # availabilities bound on either side
+        npt.assert_array_equal(dis["start_index"], [2])
+        npt.assert_array_equal(dis["end_index"], [3])
+        npt.assert_array_equal(dis["start_value"], [2.0])
+        npt.assert_array_equal(dis["end_value"], [5.0])
+        npt.assert_array_equal(dis["delta"], [2.0])
+        npt.assert_array_equal(dis["type"], ["gap"])
+        npt.assert_array_equal(avail["start_index"], [0, 3])
+        npt.assert_array_equal(avail["end_index"], [2, 4])
+        npt.assert_array_equal(avail["type"], ["data", "data"])
 
 
 class TestSampledCoordinateSlicing:

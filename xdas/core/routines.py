@@ -2174,10 +2174,13 @@ def trim_overlaps(obj, keep="last", dim="first", tolerance=None):
     """
     Remove the overlapping samples of a data array, keeping one copy of each.
 
-    An overlap is a place where the coordinate steps backwards: two segments
-    describe the same span of time (or distance), typically because two files
-    share a sample at their seam, or because an acquisition was restarted
-    slightly before it stopped. This routine cuts the data array at its
+    An overlap is a place where the coordinate fails to advance by a full
+    sampling interval: two segments describe the same span of time (or
+    distance), typically because two files share a sample at their seam, or
+    because an acquisition was restarted slightly before it stopped. The axis
+    may well still move forward there — an overlap shorter than one sample
+    does — which is the convention ObsPy's `Stream.get_gaps` uses too. This
+    routine cuts the data array at its
     overlaps, drops the duplicated samples from all but one segment, and
     concatenates what is left back into a single data array.
 
@@ -2200,9 +2203,9 @@ def trim_overlaps(obj, keep="last", dim="first", tolerance=None):
     dim : str, optional
         The dimension along which to look for overlaps. Default to "first".
     tolerance : float or timedelta64, optional
-        The magnitude below which a backward step is not considered an
-        overlap. For time coordinates, numeric values are considered as
-        seconds. By default only exactly zero-magnitude steps are ignored.
+        The magnitude below which a shortfall is not considered an overlap.
+        For time coordinates, numeric values are considered as seconds. By
+        default only exact continuations are ignored.
         Note that jitter is usually better handled upstream, by spending a
         tolerance when combining or by `da[dim] = da[dim].simplify(tolerance)`.
 
