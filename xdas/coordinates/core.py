@@ -866,26 +866,32 @@ class AxisCoordinate(Coordinate, ABC):
 
         Parameters
         ----------
-        kind : {"discontinuities", "gaps", "overlaps"}, optional
+        kind : {"discontinuities", "gaps", "overlaps", "reversals"}, optional
             Which boundary type to return. ``"gaps"`` returns only boundaries
             where the axis advances by more than one sampling interval;
             ``"overlaps"`` returns only boundaries where it advances by less
             than one — the ObsPy convention, so an overlap shorter than a
             sample counts even though the axis still moves forward.
-            ``"discontinuities"`` (default) returns both.
+            ``"discontinuities"`` (default) returns both. ``"reversals"``
+            returns the boundaries where the axis does not advance at all:
+            those overlaps that are a full sampling interval or longer, which
+            are the only ones that break the sort order. Cutting there yields
+            monotonic pieces, unless the axis also decreases *within* a
+            segment, which no boundary can report.
         tolerance : float, timedelta, None, or ``False``, optional
             Minimum absolute magnitude of the jump to report. Boundaries
             smaller than *tolerance* are silently dropped. ``None`` removes
             only zero-magnitude jumps (i.e. consecutive equal values).
             ``False`` (default) disables magnitude filtering and returns all
-            boundaries of the requested kind.
+            boundaries of the requested kind. For ``"reversals"`` it is the
+            step, not the jump, that is compared against it.
 
         Returns
         -------
         numpy.ndarray
             Integer indices of the start of each new segment (excluding the first).
         """
-        valid_kinds = {"discontinuities", "gaps", "overlaps"}
+        valid_kinds = {"discontinuities", "gaps", "overlaps", "reversals"}
         if kind not in valid_kinds:
             raise ValueError(f"`kind` must be one of {valid_kinds}; got {kind!r}")
 
@@ -895,8 +901,26 @@ class AxisCoordinate(Coordinate, ABC):
         if kind == "discontinuities" and tolerance is False:
             return positions
 
+        zero = np.timedelta64(0) if np.issubdtype(self.dtype, np.datetime64) else 0
+
+        if kind == "reversals":
+            if positions.size == 0:
+                return positions
+            # a reversal is judged on the raw step rather than on the jump: the
+            # question is whether the axis moves forward at all, not whether it
+            # moves forward by a whole sample. The default threshold is exactly
+            # zero, so that the boundaries reported here are exactly the ones
+            # that make `_is_monotonic_increasing` false
+            steps = self._get_value(positions) - self._get_value(positions - 1)
+            if tolerance is False:
+                threshold = zero
+            else:
+                threshold = -parse_scalar_delta(
+                    tolerance, self.dtype, default_zero=True
+                )
+            return positions[steps <= threshold]
+
         if tolerance is False:
-            zero = np.timedelta64(0) if np.issubdtype(self.dtype, np.datetime64) else 0
             match kind:
                 case "gaps":
                     mask = deltas >= zero

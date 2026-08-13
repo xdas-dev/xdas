@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import numpy.testing as npt
 import pytest
@@ -544,3 +546,89 @@ class TestGetSamplingIntervalHelperNonAxis:
 
         da = xd.DataArray(np.zeros(3), {"x": [0.0, 1.0, 2.0], "meta": 0})
         assert get_sampling_interval(da, "meta") is None
+
+
+class TestReversals:
+    """A reversal is an overlap of a full sampling interval or more."""
+
+    def test_a_subsample_overlap_is_not_a_reversal(self):
+        # the axis advances by 0.4 of a 1.0 sampling interval: an overlap that
+        # leaves the order intact, so there is nothing to cut
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 5, 9], "tie_values": [0.0, 4.0, 4.4, 8.4]}
+        )
+        npt.assert_array_equal(coord.get_split_indices("overlaps"), [5])
+        npt.assert_array_equal(coord.get_split_indices("reversals"), [])
+
+    def test_a_full_sample_overlap_is_a_reversal(self):
+        # 0.5 of a sampling interval short of a whole one: the axis stops
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 5, 9], "tie_values": [0.0, 4.0, 3.5, 7.5]}
+        )
+        npt.assert_array_equal(coord.get_split_indices("reversals"), [5])
+        assert not coord._is_monotonic_increasing()
+
+    def test_repeated_values_are_a_reversal(self):
+        # an axis that stands still is not strictly increasing either, and the
+        # default threshold is exact rather than the epsilon used on jumps
+        coord = DenseCoordinate([10.0, 20.0, 20.0, 30.0])
+        npt.assert_array_equal(coord.get_split_indices("reversals"), [2])
+
+    def test_reversals_are_the_boundaries_monotonicity_trips_on(self):
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 4, 5, 9, 10, 14],
+                "tie_values": [0.0, 4.0, 10.0, 14.0, 13.0, 17.0],
+            }
+        )
+        # a gap, then an overlap of two sampling intervals
+        npt.assert_array_equal(coord.get_split_indices("discontinuities"), [5, 10])
+        npt.assert_array_equal(coord.get_split_indices("reversals"), [10])
+        assert not coord._is_monotonic_increasing()
+        for chunk in xd.split(
+            xd.DataArray(np.arange(15.0), {"dim_0": coord}), "reversals"
+        ):
+            assert chunk["dim_0"]._is_monotonic_increasing()
+
+    def test_tolerance_drops_the_short_reversals(self):
+        coord = DenseCoordinate([0.0, 1.0, 0.5, 1.5, 2.5, 0.5])
+        npt.assert_array_equal(coord.get_split_indices("reversals"), [2, 5])
+        npt.assert_array_equal(coord.get_split_indices("reversals", 1.0), [5])
+
+
+class TestOrderedSelectionOnUnsortedAxes:
+    @staticmethod
+    def dataarray(coord):
+        return xd.DataArray(np.arange(len(coord), dtype=float), {"dim_0": coord})
+
+    def test_a_subsample_overlap_slices_without_splitting(self):
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 5, 9], "tie_values": [0.0, 4.0, 4.4, 8.4]}
+        )
+        da = self.dataarray(coord)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = da.sel(dim_0=slice(2.0, 6.0))
+        npt.assert_array_equal(result.values, [2.0, 3.0, 4.0, 5.0, 6.0])
+
+    def test_a_reversal_splits_and_concatenates(self):
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 5, 9], "tie_values": [0.0, 4.0, 3.0, 7.0]}
+        )
+        da = self.dataarray(coord)
+        with pytest.warns(match="not monotonic increasing"):
+            result = da.sel(dim_0=slice(2.0, 5.0))
+        npt.assert_array_equal(result.values, [2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+
+    def test_an_axis_that_decreases_within_a_segment_is_refused(self):
+        # nothing marks the turn, so no splitting can order it: the selection
+        # says so instead of recursing on itself forever
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 8], "tie_values": [0.0, 4.0, 2.0]}
+        )
+        da = self.dataarray(coord)
+        with (
+            pytest.warns(match="not monotonic increasing"),
+            pytest.raises(ValueError, match="decreases along its axis"),
+        ):
+            da.sel(dim_0=slice(1.0, 3.0))

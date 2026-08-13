@@ -2128,15 +2128,16 @@ def split(da, indices_or_sections="discontinuities", dim="first", tolerance=None
         - If `indices_or_section` is a 1-D array of sorted integers, the entries
         indicate where the array is split along `dim`. For example, `[2, 3]` would, for
         `dim="first"`, result in [da[:2], da[2:3], da[3:]].
-        - If `indices_or_section` is one of "discontinuities", "gaps" or "overlaps",
-        splitting will occurs at the indices given by `Coordinate.get_split_indices`.
+        - If `indices_or_section` is one of "discontinuities", "gaps", "overlaps" or
+        "reversals", splitting will occurs at the indices given by
+        `Coordinate.get_split_indices`.
     dim : str, optional
         The dimension along which to split, by default "first"
     tolerance : float or timedelta64, optional
-        Passed to `Coordinate.get_split_indices` if `indices_or_section` is
-        "discontinuities", "gaps" or "overlaps" to determine what can be considered as
-        a discontiuity. For time coordinates, numeric values are considered as seconds.
-        Zero tolerance by default.
+        Passed to `Coordinate.get_split_indices` if `indices_or_section` is one of its
+        boundary kinds, to determine what can be considered as a discontiuity. For time
+        coordinates, numeric values are considered as seconds. Zero tolerance by
+        default.
 
     Returns
     -------

@@ -340,10 +340,10 @@ class TestDenseCoordinateUnsortedSelection:
 
     def test_sel_slice_is_still_refused(self):
         # a slice resolves its bounds by searching, so the guard still catches
-        # it and sends it down the split-on-overlaps path, which cannot order
+        # it and sends it down the split-on-reversals path, which cannot order
         # these labels either: the selection fails rather than returning
         # something arbitrary. The `TypeError` is numpy's, from differencing
-        # strings while looking for the overlaps.
+        # strings while looking for the reversals.
         with (
             pytest.raises(TypeError),
             pytest.warns(match="not monotonic increasing"),
@@ -390,7 +390,8 @@ class TestDenseCoordinateDuplicatedSelection:
     Duplicated labels are ambiguous, whatever the guard does.
 
     The ``is_unique`` half of the monotonicity check keeps routing slices
-    through the split-on-overlaps path, and an exact look-up is refused by
+    through the split-on-reversals path — a repeated value is a boundary the
+    axis does not advance across — and an exact look-up is refused by
     ``pandas`` because it cannot name a single position.
     """
 

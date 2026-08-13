@@ -434,13 +434,23 @@ class DataArray(NDArrayOperatorsMixin):
                 if is_slice:
                     warnings.warn(
                         f"dimension {dim} is not monotonic increasing, "
-                        f"spliting on overlaps, slicing and concatenating can be slow..."
+                        f"spliting where it goes backwards, slicing and "
+                        f"concatenating can be slow..."
                     )
+                    # cutting at the reversals — the boundaries where the axis
+                    # fails to move forward — is what makes the pieces sorted.
+                    # An axis that decreases *within* a segment has none to cut
+                    # at, and no splitting can order it.
+                    if not self[dim].get_split_indices("reversals").size:
+                        raise ValueError(
+                            f"dimension {dim} decreases along its axis, which no "
+                            f"splitting can order; slicing it by label is undefined"
+                        )
                     from .routines import concat, split
 
                     chunks = [
                         chunk.sel(indexers, method, endpoint, drop)
-                        for chunk in split(self, "overlaps", dim, False)
+                        for chunk in split(self, "reversals", dim, False)
                     ]
                     return concat(chunks, dim, False)
                 else:
