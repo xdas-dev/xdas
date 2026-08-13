@@ -3,6 +3,25 @@ import os
 import xdas.config as xc
 
 
+class TestDefaults:
+    def test_the_two_parallel_paths_have_their_own_knob(self):
+        # One count cannot serve both: threads are sized against one array,
+        # scan workers against the cost of starting a process. Tuning either
+        # must leave the other alone.
+        previous = xc.get("n_workers")
+        xc.set("n_workers", 2)
+        try:
+            assert xc.get("scan_workers") == xc.Config.config["scan_workers"]
+        finally:
+            xc.set("n_workers", previous)
+
+    def test_neither_default_follows_the_core_count_upwards(self):
+        # A 48-core machine must not split a small array 48 ways, nor boot 48
+        # interpreters to read a few headers.
+        assert xc.Config.config["n_workers"] <= xc.THREAD_CAP
+        assert xc.Config.config["scan_workers"] <= xc.SCAN_WORKERS
+
+
 class TestTotalMemory:
     def test_reads_the_machine(self):
         # Whatever the machine, the answer must be a plausible byte count.

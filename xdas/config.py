@@ -10,6 +10,23 @@ from typing import ClassVar
 MEMORY_FRACTION = 0.25
 """Share of the machine's memory the default ``"memory_limit"`` allows."""
 
+THREAD_CAP = 16
+"""Most threads one array operation is ever split across.
+
+Splitting costs a fixed few milliseconds per thread, paid twice (once to split
+the inputs, once to concatenate the outputs), so past a handful of threads a
+wider pool loses to its own overhead however many cores the machine has.
+"""
+
+SCAN_WORKERS = 8
+"""Processes the multi-file metadata scan runs on.
+
+Fewer than the machine has on purpose: each one boots an interpreter and
+imports xdas before it is useful, so a wide pool is slow to become ready and
+expensive to keep warm, while the scan itself is bound by the filesystem well
+before it is bound by cores.
+"""
+
 FALLBACK_MEMORY = 32 * 2**30
 """Memory assumed when the machine's cannot be determined."""
 
@@ -56,7 +73,11 @@ class Config:
     """Global configuration store backed by a plain dict."""
 
     config: ClassVar[dict] = {
-        "n_workers": os.cpu_count(),
+        # Two knobs, because the two parallel paths want different numbers: a
+        # thread count sized against one array, and a pool of scan processes
+        # sized against the cost of starting them.
+        "n_workers": min(os.cpu_count(), THREAD_CAP),
+        "scan_workers": min(os.cpu_count(), SCAN_WORKERS),
         # A guard against footguns, not a budget: it must sit far enough above
         # what one legitimately loads at once that it only ever fires on a
         # mistake, which a fixed number cannot do across a laptop and a node

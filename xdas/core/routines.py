@@ -18,12 +18,11 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import xarray as xr
-from loky import get_reusable_executor
 from tqdm import tqdm
 
 from ..coordinates import AxisCoordinate, Coordinates
 from ..coordinates.core import parse_scalar_delta
-from ..parallel import get_workers_count
+from ..parallel import get_scan_pool, get_scan_workers
 from ..virtual import TileArray, VirtualBackend, VirtualSource, VirtualStack
 from .dataarray import DataArray
 from .datacollection import DataCollection, DataMapping, DataSequence
@@ -324,7 +323,7 @@ def open_mfdatacollection(
             f"{MAX_OPEN_FILES}, because the scan holds one data collection per "
             "file in memory. Open the files in batches and combine the results."
         )
-    max_workers = get_workers_count(parallel)
+    max_workers = get_scan_workers(parallel, len(paths))
     if max_workers == 1:
         if verbose:
             iterator = tqdm(paths, desc="Fetching metadata from files")
@@ -332,7 +331,7 @@ def open_mfdatacollection(
             iterator = paths
         objs = [open_datacollection(path, engine=engine) for path in iterator]
     else:
-        executor = get_reusable_executor(max_workers)
+        executor = get_scan_pool(max_workers)
         futures = [
             executor.submit(open_datacollection, path, engine=engine) for path in paths
         ]
@@ -712,7 +711,7 @@ def open_mfdataarray(
             "in batches and pass the results to `combine_by_coords`, or use a "
             f"vtype that consolidates ({consolidating}), which has no ceiling."
         )
-    max_workers = get_workers_count(parallel)
+    max_workers = get_scan_workers(parallel, len(paths))
     objs = []  # pending scan products, drained into `runs` every MAX_OPEN_FILES
     runs = []  # per-batch continuous runs (streaming mode only)
     failures = []
@@ -737,7 +736,7 @@ def open_mfdataarray(
                 failures.append((path, error))
                 warnings.warn(f"could not open {path}: {error}", RuntimeWarning)
     else:
-        executor = get_reusable_executor(max_workers)
+        executor = get_scan_pool(max_workers)
         futures_to_paths = {
             executor.submit(open_dataarray, path, engine=engine): path for path in paths
         }

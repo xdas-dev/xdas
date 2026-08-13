@@ -11,4 +11,7 @@
    parallelize
    concatenate
    get_workers_count
+   get_scan_workers
+   get_scan_pool
+   shutdown_scan_pool
 ```
