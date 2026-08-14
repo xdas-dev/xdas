@@ -1717,7 +1717,8 @@ class Picker(Sequential):
         if thresh is None:
             thresh = _model_thresholds(model, **annotate_kwargs)
         stages.append(Trigger(thresh, dim=dim, coords=coords))
-        super().__init__(stages, name="picker")
+        # named so that composing a picker nests it rather than flattening it
+        super().__init__(stages, name="Picker")
 
 
 class MLPicker(Annotate):

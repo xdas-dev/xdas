@@ -88,9 +88,7 @@ class Filter(Atom):
     >>> filtered = xd.filter(da, (1.0, 10.0))
     >>> atom = xd.filter(..., (None, 10.0), ftype="fir")
     >>> atom
-    Filter(freq=(None, 10.0), ftype=fir, order=4, zerophase=False, dim=time, btype=lowpass, cutoff=10.0)
-      FIRFilter(numtaps=Ellipsis, cutoff=10.0, btype=lowpass, window=hamming, scale=True, up=1, down=1, dim=time)
-        Polyphase(taps=Ellipsis, up=1, down=1, dim=time)
+    Filter(freq=(None, 10.0), ftype='fir')
 
     """
 
