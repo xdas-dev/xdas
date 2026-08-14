@@ -5,15 +5,15 @@ import pytest
 
 import xdas as xd
 import xdas.signal as xs
-from xdas.core.datacollection import get_depth
+from xdas.core.datacollection import get_depth, to_human
 
 
 class TestDataCollection:
     def nest(self, da):
         return xd.DataCollection(
             {
-                "das1": xd.DataCollection([da, da], "acquisition"),
-                "das2": xd.DataCollection([da, da, da], "acquisition"),
+                "das1": xd.DataCollection([da, da], "record"),
+                "das2": xd.DataCollection([da, da, da], "record"),
             },
             "instrument",
         )
@@ -24,8 +24,8 @@ class TestDataCollection:
         data = (
             "instrument",
             {
-                "das1": ("acquisition", [da, da]),
-                "das2": ("acquisition", [da, da, da]),
+                "das1": ("record", [da, da]),
+                "das2": ("record", [da, da, da]),
             },
         )
         result = xd.DataCollection(data)
@@ -51,8 +51,8 @@ class TestDataCollection:
         assert result.equals(dc)
         dc = xd.DataCollection(
             {
-                "das1": xd.DataCollection([da, da], "acquisition"),
-                "das2": xd.DataCollection([da, da, da], "acquisition"),
+                "das1": xd.DataCollection([da, da], "record"),
+                "das2": xd.DataCollection([da, da, da], "record"),
             },
             "instrument",
         )
@@ -89,10 +89,10 @@ class TestDataCollection:
             assert get_depth(file) > 0
             assert get_depth(file["instrument"]) > 0
             assert get_depth(file["instrument/das1"]) > 0
-            assert get_depth(file["instrument/das1/acquisition"]) > 0
-            assert get_depth(file["instrument/das1/acquisition/0"]) == 0
+            assert get_depth(file["instrument/das1/record"]) > 0
+            assert get_depth(file["instrument/das1/record/0"]) == 0
             with pytest.raises(ValueError):
-                get_depth(file["instrument/das1/acquisition/0/da"])
+                get_depth(file["instrument/das1/record/0/da"])
 
     def test_isel(self):
         da = xd.testing.dummy()
@@ -117,10 +117,10 @@ class TestDataCollection:
     def test_query(self):
         da = xd.testing.dummy()
         dc = self.nest(da)
-        result = dc.query(instrument="das1", acquisition=0)
+        result = dc.query(instrument="das1", record=0)
         expected = xd.DataCollection(
             {
-                "das1": xd.DataCollection([da], "acquisition"),
+                "das1": xd.DataCollection([da], "record"),
             },
             "instrument",
         )
@@ -129,14 +129,14 @@ class TestDataCollection:
         assert result.equals(dc)
         # an indexer applies wherever its level sits, not only at the root:
         # das2 holds three acquisitions and keeps the first two
-        result = dc.query(acquisition=slice(0, 2))
+        result = dc.query(record=slice(0, 2))
         assert [len(result[key]) for key in result] == [2, 2]
         assert result["das1"].equals(dc["das1"])
 
     def test_fields(self):
         da = xd.testing.dummy()
         dc = self.nest(da)
-        assert dc.fields == ("instrument", "acquisition")
+        assert dc.fields == ("instrument", "record")
 
     def test_fields_recursive(self):
         da = xd.testing.dummy()
@@ -147,7 +147,7 @@ class TestDataCollection:
                         "CH001": xd.DataCollection(
                             {
                                 "00": xd.DataCollection(
-                                    {"HHZ": xd.DataCollection([da], "acquisition")},
+                                    {"HHZ": xd.DataCollection([da], "record")},
                                     "channel",
                                 )
                             },
@@ -164,7 +164,7 @@ class TestDataCollection:
             "station",
             "location",
             "channel",
-            "acquisition",
+            "record",
         )
 
     def test_query_is_strict(self):
@@ -187,7 +187,7 @@ class TestDataCollection:
         da = xd.testing.dummy()
         dc = self.nest(da)
         indexers = {"instrument": "das1"}
-        dc.query(indexers, acquisition=0)
+        dc.query(indexers, record=0)
         assert indexers == {"instrument": "das1"}
 
     def test_map(self):
@@ -232,7 +232,7 @@ class TestDataCollection:
         from xdas.core.datacollection import DataMapping
 
         dm = DataMapping({}, "empty")
-        assert repr(dm) == "Empty"
+        assert repr(dm) == "<xdas.DataCollection: 0 leaves, 0 B>"
 
     def test_mapping_reduce(self):
         import pickle
@@ -533,6 +533,87 @@ class TestDataFrameLeaves:
         assert "ST01" in text
         assert "das" in text
 
+    def test_repr_measures_a_table_by_its_columns(self):
+        # rows x columns, and a size that ignores the index, as DataArray.nbytes
+        # ignores coordinates
+        df = pd.DataFrame({"time": [1.0, 2.0], "value": [0.5, 0.9]})
+        dc = xd.DataCollection({"ST01": df}, "station")
+        assert "(rows: 2, columns: 2)" in repr(dc)
+        assert repr(dc).splitlines()[0] == "<xdas.DataCollection: 1 leaf, 32 B>"
+
+
+class TestCollectionRepr:
+    def array(self, **sizes):
+        data = np.zeros(tuple(sizes.values()), dtype="float32")
+        return xd.DataArray(data, dims=tuple(sizes))
+
+    def test_levels_head_the_columns_when_homogeneous(self):
+        dc = xd.DataCollection(
+            {
+                "CCN": (
+                    "cable",
+                    {"N": ("record", [self.array(time=4, distance=3)])},
+                )
+            },
+            "node",
+        )
+        lines = repr(dc).splitlines()
+        assert lines[0] == "<xdas.DataCollection: 1 leaf, 48 B>"
+        assert lines[1] == "node  cable  record"
+        assert lines[2] == "CCN   N           0  (time: 4, distance: 3)  48 B"
+
+    def test_no_level_row_when_depths_differ(self):
+        # one branch has a level the other does not: no depth can be headed
+        dc = xd.DataCollection(
+            {
+                "CCN": ("cable", {"N": ("record", [self.array(time=4)])}),
+                "SER": ("cable", {"S": self.array(time=4)}),
+            },
+            "node",
+        )
+        lines = repr(dc).splitlines()
+        assert lines[1:] == [
+            "CCN  N  0  (time: 4)  16 B",
+            "SER  S     (time: 4)  16 B",
+        ]
+
+    def test_no_level_row_when_a_level_is_unnamed(self):
+        dc = xd.DataCollection({"CCN": {"N": [self.array(time=4)]}}, "node")
+        assert repr(dc).splitlines()[1:] == ["CCN  N  0  (time: 4)  16 B"]
+
+    def test_no_level_row_when_branches_name_levels_differently(self):
+        dc = xd.DataCollection(
+            {
+                "CCN": ("cable", [self.array(time=4)]),
+                "SER": ("record", [self.array(time=4)]),
+            },
+            "node",
+        )
+        assert repr(dc).splitlines()[1:] == [
+            "CCN  0  (time: 4)  16 B",
+            "SER  0  (time: 4)  16 B",
+        ]
+
+    def test_repeated_keys_are_blanked(self):
+        dc = xd.DataCollection(
+            {"CCN": ("cable", [self.array(time=4), self.array(time=4)])}, "node"
+        )
+        assert repr(dc).splitlines()[2:] == [
+            "CCN       0  (time: 4)  16 B",
+            "          1  (time: 4)  16 B",
+        ]
+
+    def test_size_is_what_loading_would_cost(self):
+        # a lazily opened array reports its full size without being read
+        da = xd.synthetics.wavelet_wavefronts()
+        dc = xd.DataCollection([da], "record")
+        assert to_human(da.nbytes) in repr(dc)
+
+    def test_human_sizes_reach_terabytes(self):
+        assert to_human(0) == "0 B"
+        assert to_human(1024) == "1.0 KB"
+        assert to_human(1024**4) == "1.0 TB"
+
 
 class TestMergeCollectionResults:
     """
@@ -622,13 +703,13 @@ class TestMergeCollectionResults:
 
     def test_sequence_levels_contribute_their_position(self):
         dc = xd.DataCollection(
-            {"node": xd.DataCollection([self.cft(0.0), self.cft(10.0)], "acquisition")},
+            {"node": xd.DataCollection([self.cft(0.0), self.cft(10.0)], "record")},
             "cable",
         )
         result = xd.trigger(dc, thresh=self.thresh)
-        assert list(result.columns)[:2] == ["cable", "acquisition"]
+        assert list(result.columns)[:2] == ["cable", "record"]
         assert list(result["cable"]) == ["node"] * 4
-        assert list(result["acquisition"]) == [0, 0, 1, 1]
+        assert list(result["record"]) == [0, 0, 1, 1]
 
     def test_an_unnamed_level_contributes_no_column(self):
         dc = xd.DataCollection({"a": self.cft(), "b": self.cft()})

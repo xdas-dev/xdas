@@ -420,25 +420,16 @@ def open_mfdatatree(
     Examples
     --------
     >>> import xdas as xd
-    >>> paths = "/data/{node}/{cable}/[acquisition]/proc/[acquisition].h5"
+    >>> paths = "/data/{node}/{cable}/[record]/proc/[record].h5"
     >>> xd.open_mfdatatree(paths, engine="asn") # doctest: +SKIP
-    Node:
-      CCN:
-        Cable:
-          N:
-            Acquisition:
-              0: <xdas.DataArray (time: ..., distance: ...)>
-              1: <xdas.DataArray (time: ..., distance: ...)>
-      SER:
-        Cable:
-          N:
-            Acquisition:
-              0: <xdas.DataArray (time: ..., distance: ...)>
-          S:
-            Acquisition:
-              0: <xdas.DataArray (time: ..., distance: ...)>
-              1: <xdas.DataArray (time: ..., distance: ...)>
-              2: <xdas.DataArray (time: ..., distance: ...)>
+    <xdas.DataCollection: 6 leaves, 1.2 TB>
+    node  cable  record
+    CCN   N           0  (time: ..., distance: ...)  ...
+                      1  (time: ..., distance: ...)  ...
+    SER   N           0  (time: ..., distance: ...)  ...
+          S           0  (time: ..., distance: ...)  ...
+                      1  (time: ..., distance: ...)  ...
+                      2  (time: ..., distance: ...)  ...
 
 
     """
@@ -818,7 +809,7 @@ def _combine_runs(runs, dim, tolerance, squeeze):
                 else da[dim].values
             )
         )
-    collection = DataCollection(results, "acquisition")
+    collection = DataCollection(results, "record")
     if squeeze and len(collection) == 1:
         return collection[0]
     return collection
@@ -1004,9 +995,8 @@ def combine_by_field(
     nodes = [dc for dc in objs if isinstance(dc, dict)]
     if leaves and not nodes:
         objs = [da for dc in leaves for da in dc]
-        # the level is named for what its elements are, and combining changes
-        # that: whatever the inputs held, each output element is one
-        # acquisition epoch. `combine_by_coords` names it.
+        # the level is named for what its elements are: whatever the inputs
+        # held, each output element is one continuous record.
         return combine_by_coords(objs, dim, tolerance, squeeze, virtual, verbose)
     elif nodes and not leaves:
         (name,) = {dc.name for dc in nodes}
@@ -1095,10 +1085,10 @@ def combine_by_coords(
 
     # concatenate each bag. `Bag` splits on sampling rate, dtype and non-concat
     # coordinates, and gaps land inside the coordinate, so every element of the
-    # result is one acquisition epoch — which is what the level is named for.
+    # result is one continuous record — which is what the level is named for.
     collection = DataCollection(
         [concatenate(bag, dim, tolerance, virtual, verbose) for bag in bags],
-        "acquisition",
+        "record",
     )
 
     # squeeze if possible
@@ -1496,21 +1486,19 @@ def stack(dc, level, dim=None, join=None, tolerance=None):
     ...     "station",
     ... )
     >>> dc
-    Station:
-      SX01:
-        Channel:
-          SHZ: <xdas.DataArray (time: 4)>
-          SHN: <xdas.DataArray (time: 4)>
-      SX02:
-        Channel:
-          SHZ: <xdas.DataArray (time: 4)>
-          SHN: <xdas.DataArray (time: 4)>
+    <xdas.DataCollection: 4 leaves, 128 B>
+    station  channel
+    SX01     SHZ      (time: 4)  32 B
+             SHN      (time: 4)  32 B
+    SX02     SHZ      (time: 4)  32 B
+             SHN      (time: 4)  32 B
 
     >>> stacked = xd.stack(dc, "channel")
     >>> stacked
-    Station:
-      SX01: <xdas.DataArray (channel: 2, time: 4)>
-      SX02: <xdas.DataArray (channel: 2, time: 4)>
+    <xdas.DataCollection: 2 leaves, 128 B>
+    station
+    SX01     (channel: 2, time: 4)  64 B
+    SX02     (channel: 2, time: 4)  64 B
 
     >>> stacked["SX01"]["channel"].values
     array(['SHN', 'SHZ'], dtype='<U3')

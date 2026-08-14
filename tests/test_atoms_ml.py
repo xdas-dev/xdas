@@ -1492,7 +1492,7 @@ class TestAnnotateGathersItsComponentLevel:
         dc = xd.DataCollection(
             {
                 "N1": xd.DataCollection(
-                    {"C1": xd.DataCollection(acquisitions, "acquisition")}, "cable"
+                    {"C1": xd.DataCollection(acquisitions, "record")}, "cable"
                 )
             },
             "node",

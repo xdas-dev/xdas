@@ -297,11 +297,11 @@ class TestOpen:  # TODO: those tests are weirdly slow...
             {
                 "DAS01": xd.DataCollection(
                     [xd.testing.dummy(dims=("time", "space"), shape=(10, 5))],
-                    name="acquisition",
+                    name="record",
                 ),
                 "DAS02": xd.DataCollection(
                     [xd.testing.dummy(dims=("time", "space"), shape=(7, 3))],
-                    name="acquisition",
+                    name="record",
                 ),
             },
             name="station",
@@ -315,7 +315,7 @@ class TestOpen:  # TODO: those tests are weirdly slow...
             ):
                 chunk.to_netcdf(dirpath / f"chunk_{index}.nc")
 
-        result = xd.open(tmp_path / "{station}" / "[acquisition].nc")
+        result = xd.open(tmp_path / "{station}" / "[record].nc")
         assert result.equals(expected)
 
     def test_open_single_datacollection(self, tmp_path):
@@ -333,11 +333,11 @@ class TestOpen:  # TODO: those tests are weirdly slow...
             {
                 "DAS01": xd.DataCollection(
                     [xd.testing.dummy(dims=("time", "space"), shape=(10, 5))],
-                    name="acquisition",
+                    name="record",
                 ),
                 "DAS02": xd.DataCollection(
                     [xd.testing.dummy(dims=("time", "space"), shape=(7, 3))],
-                    name="acquisition",
+                    name="record",
                 ),
             },
             name="station",
@@ -602,7 +602,7 @@ class TestOpenMFDataTree:
             for idx, da in enumerate(xd.split(xd.testing.dummy(), 3), start=1):
                 da.to_netcdf(dirname / f"{idx:03d}.nc")
         da = xd.testing.dummy()
-        dc = xd.open_mfdatatree(tmp_path / "{node}" / "00[acquisition].nc")
+        dc = xd.open_mfdatatree(tmp_path / "{node}" / "00[record].nc")
         assert list(dc.keys()) == keys
         for key in keys:
             assert dc[key][0].load().equals(da)
@@ -627,9 +627,9 @@ class TestOpenMFDataTree:
                     path = tmp_path / network / station / f"{idx:03d}.nc"
                     da.to_netcdf(path, create_dirs=True)
                     dc[network][station] = xd.combine_by_coords(dc[network][station])
-                    dc[network][station].name = "acquisition"
+                    dc[network][station].name = "record"
         result = xd.open_mfdatatree(
-            tmp_path / "{network}" / "{station}" / "00[acquisition].nc"
+            tmp_path / "{network}" / "{station}" / "00[record].nc"
         )
         assert result.equals(dc)
 
@@ -1006,10 +1006,10 @@ class TestTrimOverlaps:
     def test_recurses_over_a_collection(self):
         _, da = self.segments([(0.0, np.arange(5.0)), (0.03, np.arange(100.0, 105.0))])
         dc = xd.DataCollection(
-            {"CH001": xd.DataCollection([da, da], "acquisition")}, "station"
+            {"CH001": xd.DataCollection([da, da], "record")}, "station"
         )
         result = xd.trim_overlaps(dc)
-        assert result.fields == ("station", "acquisition")
+        assert result.fields == ("station", "record")
         assert list(result) == ["CH001"]
         assert len(result["CH001"]) == 2
         for element in result["CH001"]:
@@ -1358,10 +1358,10 @@ class TestStack:
         assert da["channel"].dim == "component"
 
     def test_a_sequence_level_is_keyed_by_position(self):
-        dc = xd.DataCollection([trace(), trace(), trace()], "acquisition")
-        da = xd.stack(dc, "acquisition")
-        assert da.dims == ("acquisition", "time")
-        assert da["acquisition"].values.tolist() == [0, 1, 2]
+        dc = xd.DataCollection([trace(), trace(), trace()], "record")
+        da = xd.stack(dc, "record")
+        assert da.dims == ("record", "time")
+        assert da["record"].values.tolist() == [0, 1, 2]
 
     def test_a_single_member_level_gives_a_length_one_dimension(self):
         dc = instrument(channels=("SHZ",))
@@ -1374,14 +1374,14 @@ class TestStack:
             {
                 code: xd.DataCollection(
                     [trace(code, npts=5), trace(code, start=10.0, npts=5)],
-                    "acquisition",
+                    "record",
                 )
                 for code in ("SHZ", "SHN")
             },
             "channel",
         )
         result = xd.stack(dc, "channel")
-        assert result.name == "acquisition"
+        assert result.name == "record"
         assert len(result) == 2
         for da in result:
             assert da.dims == ("channel", "time")
@@ -1404,7 +1404,7 @@ class TestStack:
 
     def test_levels_above_the_collapsed_one_are_walked(self):
         dc = xd.DataCollection(
-            {"DX": xd.DataCollection([instrument()], "acquisition")}, "network"
+            {"DX": xd.DataCollection([instrument()], "record")}, "network"
         )
         result = xd.stack(dc, "channel")
         assert result.name == "network"
@@ -1458,7 +1458,7 @@ class TestStack:
         dc = xd.DataCollection(
             {
                 "SHZ": trace("SHZ"),
-                "SHN": xd.DataCollection([trace("SHN")], "acquisition"),
+                "SHN": xd.DataCollection([trace("SHN")], "record"),
             },
             "channel",
         )
@@ -1468,14 +1468,12 @@ class TestStack:
     def test_differently_named_sub_levels_raise(self):
         dc = xd.DataCollection(
             {
-                "SHZ": xd.DataCollection([trace("SHZ")], "acquisition"),
+                "SHZ": xd.DataCollection([trace("SHZ")], "record"),
                 "SHN": xd.DataCollection([trace("SHN")], "epoch"),
             },
             "channel",
         )
-        with pytest.raises(
-            ValueError, match="'acquisition' sequence.*'epoch' sequence"
-        ):
+        with pytest.raises(ValueError, match="'record' sequence.*'epoch' sequence"):
             xd.stack(dc, "channel")
 
     def test_differing_sub_keys_raise(self):
@@ -1492,8 +1490,8 @@ class TestStack:
     def test_differing_sub_lengths_raise(self):
         dc = xd.DataCollection(
             {
-                "SHZ": xd.DataCollection([trace("SHZ")], "acquisition"),
-                "SHN": xd.DataCollection([trace("SHN"), trace("SHN")], "acquisition"),
+                "SHZ": xd.DataCollection([trace("SHZ")], "record"),
+                "SHN": xd.DataCollection([trace("SHN"), trace("SHN")], "record"),
             },
             "channel",
         )
@@ -1557,12 +1555,12 @@ class TestStack:
     def test_the_mismatch_error_names_where_it_happened(self):
         dc = xd.DataCollection(
             {
-                "SHZ": xd.DataCollection([trace("SHZ")], "acquisition"),
-                "SHN": xd.DataCollection([trace("SHN", start=2.0)], "acquisition"),
+                "SHZ": xd.DataCollection([trace("SHZ")], "record"),
+                "SHN": xd.DataCollection([trace("SHN", start=2.0)], "record"),
             },
             "channel",
         )
-        with pytest.raises(ValueError, match="at acquisition=0"):
+        with pytest.raises(ValueError, match="at record=0"):
             xd.stack(dc, "channel")
 
     def test_an_unjoinable_mismatch_gets_no_join_hint(self):

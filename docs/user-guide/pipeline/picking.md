@@ -36,22 +36,11 @@ tree, without decoding anything (see [](../io/obspy.md)):
 
 ```python
 >>> dc.select(station="DBNFM")
-Network:
-  IA:
-    Station:
-      DBNFM:
-        Location:
-          --:
-            Channel:
-              SHE:
-                Acquisition:
-                  0: <xdas.DataArray (time: 3456001)>
-              SHN:
-                Acquisition:
-                  0: <xdas.DataArray (time: 3456001)>
-              SHZ:
-                Acquisition:
-                  0: <xdas.DataArray (time: 3456001)>
+<xdas.DataCollection: 3 leaves, 39.6 MB>
+network  station  location  channel  record
+IA       DBNFM    --        SHE           0  (time: 3456001)  13.2 MB
+                            SHN           0  (time: 3456001)  13.2 MB
+                            SHZ           0  (time: 3456001)  13.2 MB
 ```
 
 One station, `OMBFM`, started at 00:43 and lost a second of data twelve minutes
@@ -111,12 +100,12 @@ and picks leaf by leaf.
 
 ```python
 >>> picks.head()
-  network station location  acquisition phase                        time     value
-0      IA   DBNFM       --            0     P  2026-05-20 00:22:43.446860  0.410896
-1      IA   DBNFM       --            0     P  2026-05-20 00:58:37.956860  0.544187
-2      IA   DBNFM       --            0     P  2026-05-20 02:09:35.936860  0.683518
-3      IA   DBNFM       --            0     P  2026-05-20 02:16:24.486860  0.733029
-4      IA   DBNFM       --            0     P  2026-05-20 02:50:49.036860  0.342554
+  network station location  record phase                       time     value
+0      IA   DBNFM       --       0     P 2026-05-20 00:22:43.446860  0.410896
+1      IA   DBNFM       --       0     P 2026-05-20 00:58:37.956860  0.544187
+2      IA   DBNFM       --       0     P 2026-05-20 02:09:35.936860  0.683518
+3      IA   DBNFM       --       0     P 2026-05-20 02:16:24.486860  0.733029
+4      IA   DBNFM       --       0     P 2026-05-20 02:50:49.036860  0.342554
 >>> len(picks)
 1918
 >>> picks["phase"].value_counts()
@@ -206,7 +195,7 @@ before it the resampler, see two minutes of record here instead of a day.
 
 Nothing above is specific to seismometers: a DAS acquisition is a lane per
 channel, and a DAS archive is a collection like any other. Take a synthetic
-cable pair, each recorded as two consecutive acquisitions:
+cable pair, each recorded as two consecutive records:
 
 ```python
 >>> from xdas.synthetics import randn_wavefronts
@@ -214,22 +203,19 @@ cable pair, each recorded as two consecutive acquisitions:
 >>> das = xd.DataCollection(
 ...     {
 ...         cable: xd.DataCollection(
-...             xd.split(da.sel(distance=slice(*bounds)), 2, dim="time"), "acquisition"
+...             xd.split(da.sel(distance=slice(*bounds)), 2, dim="time"), "record"
 ...         )
 ...         for cable, bounds in {"east": (0, 40000), "west": (60000, 100000)}.items()
 ...     },
 ...     "cable",
 ... )
 >>> das
-Cable:
-  east:
-    Acquisition:
-      0: <xdas.DataArray (time: 10000, distance: 3)>
-      1: <xdas.DataArray (time: 10000, distance: 3)>
-  west:
-    Acquisition:
-      0: <xdas.DataArray (time: 10000, distance: 3)>
-      1: <xdas.DataArray (time: 10000, distance: 3)>
+<xdas.DataCollection: 4 leaves, 937.5 KB>
+cable  record
+east        0  (time: 10000, distance: 3)  234.4 KB
+            1  (time: 10000, distance: 3)  234.4 KB
+west        0  (time: 10000, distance: 3)  234.4 KB
+            1  (time: 10000, distance: 3)  234.4 KB
 ```
 
 Calling the picker walks that tree in memory:
@@ -237,14 +223,14 @@ Calling the picker walks that tree in memory:
 ```python
 >>> picker = xd.pick(..., model)
 >>> picker(das)
-  cable  acquisition  distance phase                    time     value
-0  east            0       0.0     S 2024-01-01 00:00:53.560  0.346529
-1  east            0   20000.0     P 2024-01-01 00:00:39.170  0.390122
-2  east            0   40000.0     P 2024-01-01 00:00:35.640  0.402109
-3  east            0   40000.0     S 2024-01-01 00:00:39.930  0.371556
-4  west            0   60000.0     P 2024-01-01 00:00:35.560  0.305741
-5  west            0   60000.0     S 2024-01-01 00:00:39.880  0.330890
-6  west            0   80000.0     P 2024-01-01 00:00:38.960  0.452030
+  cable  record  distance phase                    time     value
+0  east       0       0.0     S 2024-01-01 00:00:53.560  0.346529
+1  east       0   20000.0     P 2024-01-01 00:00:39.170  0.390122
+2  east       0   40000.0     P 2024-01-01 00:00:35.640  0.402109
+3  east       0   40000.0     S 2024-01-01 00:00:39.930  0.371556
+4  west       0   60000.0     P 2024-01-01 00:00:35.560  0.305741
+5  west       0   60000.0     S 2024-01-01 00:00:39.880  0.330890
+6  west       0   80000.0     P 2024-01-01 00:00:38.960  0.452030
 ```
 
 `process()` walks the very same tree, but streams each leaf in chunks instead
@@ -258,10 +244,10 @@ two answers are the same table:
 True
 ```
 
-The state carries across the chunks and across the acquisitions of a sequence,
+The state carries across the chunks and across the records of a sequence,
 and the tables are labelled as each leaf is produced, so a sink can be given
 the rows directly. A `*.csv` destination is *shared* — every leaf appends to
-one table, the `cable` and `acquisition` columns keeping the rows apart:
+one table, the `cable` and `record` columns keeping the rows apart:
 
 ```python
 >>> picker.process(das, chunks={"time": 5000}, out="picks.csv")

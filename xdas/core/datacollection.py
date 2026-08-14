@@ -38,22 +38,19 @@ class DataCollection:
     >>> da = wavelet_wavefronts()
     >>> dc = xd.DataCollection(
     ...     {
-    ...         "das1": ("acquisition", [da, da]),
-    ...         "das2": ("acquisition", [da, da, da]),
+    ...         "das1": ("record", [da, da]),
+    ...         "das2": ("record", [da, da, da]),
     ...     },
     ...     "instrument",
     ... )
     >>> dc
-    Instrument:
-      das1:
-        Acquisition:
-          0: <xdas.DataArray (time: 300, distance: 401)>
-          1: <xdas.DataArray (time: 300, distance: 401)>
-      das2:
-        Acquisition:
-          0: <xdas.DataArray (time: 300, distance: 401)>
-          1: <xdas.DataArray (time: 300, distance: 401)>
-          2: <xdas.DataArray (time: 300, distance: 401)>
+    <xdas.DataCollection: 5 leaves, 4.6 MB>
+    instrument  record
+    das1             0  (time: 300, distance: 401)  939.8 KB
+                     1  (time: 300, distance: 401)  939.8 KB
+    das2             0  (time: 300, distance: 401)  939.8 KB
+                     1  (time: 300, distance: 401)  939.8 KB
+                     2  (time: 300, distance: 401)  939.8 KB
 
     """
 
@@ -130,16 +127,15 @@ class DataCollection:
         >>> da = wavelet_wavefronts()
         >>> dc = xd.DataCollection(
         ...     {
-        ...         "das1": ("acquisition", [da, da]),
-        ...         "das2": ("acquisition", [da, da, da]),
+        ...         "das1": ("record", [da, da]),
+        ...         "das2": ("record", [da, da, da]),
         ...     },
         ...     "instrument",
         ... )
-        >>> dc.query(instrument="das1", acquisition=0)
-        Instrument:
-          das1:
-            Acquisition:
-            0: <xdas.DataArray (time: 300, distance: 401)>
+        >>> dc.query(instrument="das1", record=0)
+        <xdas.DataCollection: 1 leaf, 939.8 KB>
+        instrument  record
+        das1             0  (time: 300, distance: 401)  939.8 KB
 
         """
         indexers = {} if indexers is None else dict(indexers)
@@ -258,22 +254,7 @@ class DataMapping(DataCollection, dict):
         self.name = name
 
     def __repr__(self):
-        if len(self) == 0:
-            return "Empty"
-        width = max([len(str(key)) for key in self])
-        name = self.name if self.name is not None else "collection"
-        s = f"{name.capitalize()}:\n"
-        for key, value in self.items():
-            if isinstance(key, int):
-                label = f"  {key:{width}}: "
-            else:
-                label = f"  {key + ':':{width + 1}} "
-            if isinstance(value, DataCollection):
-                s += label + "\n"
-                s += "\n".join(f"    {e}" for e in repr(value).split("\n")[:-1]) + "\n"
-            else:
-                s += label + repr(value).split("\n")[0] + "\n"
-        return s
+        return format_collection(self)
 
     def __reduce__(self):
         return self.__class__, (dict(self), self.name)
@@ -460,7 +441,7 @@ class DataSequence(DataCollection, list):
         self.name = name
 
     def __repr__(self):
-        return repr(self.to_mapping())
+        return format_collection(self)
 
     def __reduce__(self):
         return self.__class__, (list(self), self.name)
@@ -631,6 +612,141 @@ class DataSequence(DataCollection, list):
 
         """
         return self.__class__([value.copy() for value in self], self.name)
+
+
+def format_collection(dc):
+    """
+    Render a data collection as a flat table, one row per leaf.
+
+    Each row spells out the keys that address a leaf, then that leaf's shape
+    and the memory it takes once loaded. Repeated keys are blanked so that a
+    row shows only what changed from the one above.
+
+    Parameters
+    ----------
+    dc : DataCollection
+        The collection to render.
+
+    Returns
+    -------
+    str
+        The representation, starting with a summary line.
+
+    """
+    rows = get_leaves(dc)
+    header = (
+        f"<xdas.DataCollection: {len(rows)} {'leaf' if len(rows) == 1 else 'leaves'}, "
+        f"{to_human(sum(get_nbytes(leaf) for _, leaf in rows))}>"
+    )
+    if not rows:
+        return header
+
+    keys = [[key for _, key in path] for path, _ in rows]
+    ncolumns = max(len(row) for row in keys)
+    grid = [row + [""] * (ncolumns - len(row)) for row in keys]
+    # a blank cell means "as in the row above"; a branch that stops short
+    # simply leaves the rest of its row empty
+    body = [
+        [
+            (
+                ""
+                if index
+                and all(grid[index][j] == grid[index - 1][j] for j in range(d + 1))
+                else key
+            )
+            for d, key in enumerate(row)
+        ]
+        + [get_shape(leaf), to_human(get_nbytes(leaf))]
+        for index, (row, (_, leaf)) in enumerate(zip(grid, rows))
+    ]
+
+    fields = get_fields(rows)
+    heads = (fields if fields else [""] * ncolumns) + ["", ""]
+    # positional keys and the memory column are right aligned so that they
+    # can be compared down the column
+    columns = zip(*[row + cells[-2:] for row, cells in zip(grid, body)])
+    right = [all(cell.isdigit() or not cell for cell in column) for column in columns]
+    right[-1] = True
+    widths = [
+        max(len(heads[d]), *(len(row[d]) for row in body)) for d in range(len(heads))
+    ]
+
+    lines = [header]
+    if fields:
+        lines.append(format_row(heads, widths, right))
+    lines.extend(format_row(row, widths, right) for row in body)
+    return "\n".join(lines)
+
+
+def format_row(cells, widths, right):
+    """Pad *cells* to *widths*, right justifying those flagged in *right*."""
+    return "  ".join(
+        cell.rjust(width) if flag else cell.ljust(width)
+        for cell, width, flag in zip(cells, widths, right)
+    ).rstrip()
+
+
+def get_leaves(dc):
+    """Return one ``(path, leaf)`` per leaf, *path* being ``[(field, key), ...]``."""
+    leaves = []
+
+    def walk(node, path):
+        items = enumerate(node) if node.issequence() else node.items()
+        for key, value in items:
+            row = path + [(node.name, str(key))]
+            if isinstance(value, DataCollection):
+                walk(value, row)
+            else:
+                leaves.append((row, value))
+
+    walk(dc, [])
+    return leaves
+
+
+def get_fields(rows):
+    """Return the field names, or None unless every level is named and shared.
+
+    A field name belongs to a node, not to a depth: two branches can name
+    their levels differently or not at all. Heading the columns would then
+    claim a regularity the collection does not have, so it is omitted.
+    """
+    depths = {len(path) for path, _ in rows}
+    if len(depths) != 1:
+        return None
+    names = [{path[depth][0] for path, _ in rows} for depth in range(depths.pop())]
+    if any(len(found) != 1 or next(iter(found)) is None for found in names):
+        return None
+    return [next(iter(found)) for found in names]
+
+
+def get_shape(leaf):
+    """Describe the extent of *leaf*, naming its axes."""
+    if isinstance(leaf, pd.DataFrame):
+        return f"(rows: {len(leaf)}, columns: {len(leaf.columns)})"
+    sizes = ", ".join(f"{dim}: {size}" for dim, size in leaf.sizes.items())
+    return f"({sizes})"
+
+
+def get_nbytes(leaf):
+    """Return what *leaf* occupies in memory once loaded.
+
+    `nbytes` covers every array backing, virtual sources included, and gives
+    the loaded size without reading anything. A dataframe has no such
+    attribute: it is measured shallowly and without its index, which is O(1)
+    and counts data but not labels, as `DataArray.nbytes` does.
+    """
+    if hasattr(leaf, "nbytes"):
+        return leaf.nbytes
+    return int(leaf.memory_usage(index=False, deep=False).sum())
+
+
+def to_human(nbytes):
+    """Format a byte count with the largest unit that keeps it above one."""
+    for unit in ("B", "KB", "MB", "GB"):
+        if nbytes < 1024:
+            return f"{nbytes:.1f} {unit}" if unit != "B" else f"{nbytes} B"
+        nbytes /= 1024
+    return f"{nbytes:.1f} TB"
 
 
 def parse(data, name=None):
