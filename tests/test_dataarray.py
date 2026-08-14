@@ -193,7 +193,7 @@ class TestSelection:
             ]
         )
         expected = xd.DataArray(data, {"time": time, "distance": distance})
-        with pytest.warns(match="overlap"):
+        with pytest.warns(match="not monotonic increasing"):
             result = da.sel(time=slice(0.15, 1.25))
         np.testing.assert_array_equal(result, expected)
         np.testing.assert_array_max_ulp(result["time"], expected["time"], maxulp=3)
@@ -202,7 +202,7 @@ class TestSelection:
 
         da = da.transpose("distance", "time")
         expected = expected.transpose("distance", "time")
-        with pytest.warns(match="overlap"):
+        with pytest.warns(match="not monotonic increasing"):
             result = da.sel(time=slice(0.15, 1.25))
         np.testing.assert_array_equal(result, expected)
         np.testing.assert_array_max_ulp(result["time"], expected["time"], maxulp=3)
