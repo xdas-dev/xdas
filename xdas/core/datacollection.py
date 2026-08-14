@@ -13,6 +13,10 @@ import pandas as pd
 
 from .dataarray import DataArray
 
+#: printed where a branch has no key at all for a depth, as opposed to the
+#: blank that repeats the key of the row above
+ABSENT = "-"
+
 
 class DataCollection:
     """
@@ -643,14 +647,16 @@ def format_collection(dc):
 
     keys = [[key for _, key in path] for path, _ in rows]
     ncolumns = max(len(row) for row in keys)
-    grid = [row + [""] * (ncolumns - len(row)) for row in keys]
-    # a blank cell means "as in the row above"; a branch that stops short
-    # simply leaves the rest of its row empty
+    # a column is a depth, so a branch that stops short has no key to put in
+    # the deeper ones and says so, rather than leaving a blank that would read
+    # as "as in the row above"
+    grid = [row + [ABSENT] * (ncolumns - len(row)) for row in keys]
     body = [
         [
             (
                 ""
                 if index
+                and key != ABSENT
                 and all(grid[index][j] == grid[index - 1][j] for j in range(d + 1))
                 else key
             )
@@ -665,14 +671,17 @@ def format_collection(dc):
     # positional keys and the memory column are right aligned so that they
     # can be compared down the column
     columns = zip(*[row + cells[-2:] for row, cells in zip(grid, body)])
-    right = [all(cell.isdigit() or not cell for cell in column) for column in columns]
+    right = [
+        all(cell.isdigit() or cell == ABSENT or not cell for cell in column)
+        for column in columns
+    ]
     right[-1] = True
     widths = [
         max(len(heads[d]), *(len(row[d]) for row in body)) for d in range(len(heads))
     ]
 
     lines = [header]
-    if fields:
+    if any(heads):
         lines.append(format_row(heads, widths, right))
     lines.extend(format_row(row, widths, right) for row in body)
     return "\n".join(lines)
@@ -704,19 +713,21 @@ def get_leaves(dc):
 
 
 def get_fields(rows):
-    """Return the field names, or None unless every level is named and shared.
+    """Return the name of each depth, empty where the branches disagree.
 
     A field name belongs to a node, not to a depth: two branches can name
-    their levels differently or not at all. Heading the columns would then
-    claim a regularity the collection does not have, so it is omitted.
+    the same depth differently or not at all, and only some of them reach
+    the deepest ones. Such a depth is left unheaded rather than headed with
+    a name that speaks for one branch only, but the depths that do agree are
+    still worth naming.
     """
-    depths = {len(path) for path, _ in rows}
-    if len(depths) != 1:
-        return None
-    names = [{path[depth][0] for path, _ in rows} for depth in range(depths.pop())]
-    if any(len(found) != 1 or next(iter(found)) is None for found in names):
-        return None
-    return [next(iter(found)) for found in names]
+    ncolumns = max(len(path) for path, _ in rows)
+    heads = []
+    for depth in range(ncolumns):
+        found = {path[depth][0] for path, _ in rows if depth < len(path)}
+        name = next(iter(found)) if len(found) == 1 else None
+        heads.append(name if name is not None else "")
+    return heads
 
 
 def get_shape(leaf):

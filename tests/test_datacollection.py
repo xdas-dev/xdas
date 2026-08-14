@@ -562,8 +562,9 @@ class TestCollectionRepr:
         assert lines[1] == "node  cable  record"
         assert lines[2] == "CCN   N           0  (time: 4, distance: 3)  48 B"
 
-    def test_no_level_row_when_depths_differ(self):
-        # one branch has a level the other does not: no depth can be headed
+    def test_a_depth_a_branch_never_reaches_is_marked_absent(self):
+        # the marker distinguishes "no such level here" from the blank that
+        # repeats the key above
         dc = xd.DataCollection(
             {
                 "CCN": ("cable", {"N": ("record", [self.array(time=4)])}),
@@ -571,17 +572,23 @@ class TestCollectionRepr:
             },
             "node",
         )
-        lines = repr(dc).splitlines()
-        assert lines[1:] == [
-            "CCN  N  0  (time: 4)  16 B",
-            "SER  S     (time: 4)  16 B",
+        assert repr(dc).splitlines()[1:] == [
+            "node  cable  record",
+            "CCN   N           0  (time: 4)  16 B",
+            "SER   S           -  (time: 4)  16 B",
         ]
 
-    def test_no_level_row_when_a_level_is_unnamed(self):
+    def test_an_unnamed_depth_leaves_its_column_unheaded(self):
+        # the named depths are still worth heading
         dc = xd.DataCollection({"CCN": {"N": [self.array(time=4)]}}, "node")
-        assert repr(dc).splitlines()[1:] == ["CCN  N  0  (time: 4)  16 B"]
+        assert repr(dc).splitlines()[1:] == [
+            "node",
+            "CCN   N  0  (time: 4)  16 B",
+        ]
 
-    def test_no_level_row_when_branches_name_levels_differently(self):
+    def test_a_disputed_depth_leaves_its_column_unheaded(self):
+        # one branch calls it a cable, the other a record: neither speaks for
+        # the column, but the root still does
         dc = xd.DataCollection(
             {
                 "CCN": ("cable", [self.array(time=4)]),
@@ -590,8 +597,16 @@ class TestCollectionRepr:
             "node",
         )
         assert repr(dc).splitlines()[1:] == [
-            "CCN  0  (time: 4)  16 B",
-            "SER  0  (time: 4)  16 B",
+            "node",
+            "CCN   0  (time: 4)  16 B",
+            "SER   0  (time: 4)  16 B",
+        ]
+
+    def test_no_header_when_nothing_is_named(self):
+        dc = xd.DataCollection([self.array(time=4), self.array(time=4)])
+        assert repr(dc).splitlines()[1:] == [
+            "0  (time: 4)  16 B",
+            "1  (time: 4)  16 B",
         ]
 
     def test_repeated_keys_are_blanked(self):
