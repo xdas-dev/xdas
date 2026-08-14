@@ -99,3 +99,19 @@ class TestFunc:
         out = da.copy()
         np.cumsum(da, axis=-1, out=out)
         assert not out.equals(da)
+
+    def test_explicit_axis_wins_over_registered_default(self):
+        # registration defaults such as `axis=-1` fill in only when the caller
+        # says nothing; an explicitly passed axis must survive, positional
+        # included.
+        da = xd.testing.dummy()
+        expected = np.cumsum(da.data, axis=0)
+        np.testing.assert_array_equal(np.cumsum(da, axis=0).data, expected)
+        np.testing.assert_array_equal(np.cumsum(da, 0).data, expected)
+        np.testing.assert_array_equal(np.cumsum(da).data, np.cumsum(da.data, axis=-1))
+
+    def test_explicit_axis_wins_on_a_reduction(self):
+        da = xd.testing.dummy()
+        result = np.sum(da, 0)
+        assert result.dims == ("distance",)
+        np.testing.assert_array_equal(result.data, np.sum(da.data, axis=0))

@@ -1,213 +1,21 @@
 """
-Threshold-based triggering atom :class:`Trigger`.
+Compatibility home of the threshold trigger.
 
-Detects phase arrivals in :class:`DataArray` objects using an on/off
-mechanism.
+:class:`Trigger` now lives in :mod:`xdas.atoms.detect` and is re-exported
+here unchanged. :func:`find_picks` is the historical functional form and
+stays as is.
 """
 
 import numpy as np
 import pandas as pd
 from numba import njit
 
-from .atoms.core import Atom, State, atomized
+from .atoms.core import atomized
+from .atoms.detect import Trigger
 from .coordinates import Coordinate
 from .core import concat_coords
 
-
-class Trigger(Atom):
-    """
-    Find picks in a data array along a given axis based on a given threshold.
-
-    The pick findings use a triggering mechanism where triggers are turned on and off
-    based on the threshold crossings. The trigger off threshold is half of the trigger
-    on threshold. Picks are determined by finding the maximum value on each triggered
-    region.
-
-    Parameters
-    ----------
-    thresh : float
-        The threshold value for picking.
-    dim : str, optional
-        The dimension along which to find picks. Defaults to "last".
-
-    Notes
-    -----
-    For more details see the documentation of the `initialize` and `call` methods.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> import xdas as xd
-    >>> from xdas.atoms import Trigger
-
-    Use case:
-
-    >>> cft = xd.DataArray(
-    ...     data=[[0.0, 0.1, 0.9, 0.8, 0.2, 0.1, 0.6, 0.7, 0.3, 0.2]],
-    ...     coords={
-    ...         "space": [0.0],
-    ...         "time": {"tie_indices": [0, 9], "tie_values": [0.0, 9.0]},
-    ...     },
-    ... )
-
-    Chunked processing using atomic processing:
-
-    >>> atom = Trigger(thresh=0.5, dim="time")
-    >>> chunks = xd.split(cft, 3, dim="time")
-    >>> result = []
-    >>> for chunk in chunks:
-    ...     picks = atom(chunk, chunk_dim="time")
-    ...     result.append(picks)
-    >>> result = pd.concat(result, ignore_index=True)
-    >>> result
-       space  time  value
-    0    0.0   2.0    0.9
-    1    0.0   7.0    0.7
-
-    """
-
-    def __init__(self, thresh, dim="last"):
-        super().__init__()
-
-        # parameters
-        self.thresh_on = float(thresh)
-        self.thresh_off = float(thresh) / 2.0
-        self.dim = str(dim)
-
-        # states
-        self.axis = State(...)
-        self.shape = State(...)
-        self.status = State(...)
-        self.index = State(...)
-        self.value = State(...)
-        self.offset = State(...)
-        self.coord = State(...)
-
-    def initialize(self, cft, **flags):
-        """
-        Initialize the trigger with the following states.
-
-        - "axis": An integer indicating the axis number of the dimension along which to
-          find picks.
-        - "shape": A tuple indicating the unravel shape of the lanes along wigh the
-          the picks will be found.
-        - "status": A boolean array indicating the trigger status for each lane.
-        - "index": An integer array indicating the index of the last triggered value
-          for each lane.
-        - "value": A float array indicating the value of the last triggered value for
-          each lane.
-        - "offset": An integer indicating the offset of the chunk.
-        - "coord": An InterpCoordinate containing coordinate information along 'dim' up
-          to the last processed chunk.
-
-
-        Parameters
-        ----------
-        cft : DataArray
-            The characteristic function where picks must be found.
-        **flags
-            Optional flags.
-
-        """
-        self.axis = State(cft.get_axis_num(self.dim))
-        self.shape = State(cft.shape[: self.axis] + cft.shape[self.axis + 1 :])
-        self.status = State(np.zeros(self.shape, dtype=bool))
-        self.index = State(np.zeros(self.shape, dtype=int))
-        self.value = State(np.zeros(self.shape, dtype=float))
-        self.offset = State(0)
-        self.coord = State(Coordinate({"tie_indices": [], "tie_values": []}, self.dim))
-
-    def call(self, cft, **flags):
-        """
-        Call the trigger.
-
-        Parameters
-        ----------
-        cft : DataArray
-            The characteristic function where picks must be found.
-        **flags
-            Optional flags.
-
-        Returns
-        -------
-        picks: DataFrame
-            A DataFrame containing the pick coordinates and their corresponding values.
-
-        Notes
-        -----
-        In the trigger does not turn off at the end of the array, the last pick will
-        not be found. This can be fixed by appending a zero to the end of the array.
-
-        """
-        data = np.asarray(cft.values, dtype=float)
-        values, coords = self._call_numeric(data)
-        self.coord = concat_coords([self.coord, cft.coords[self.dim]], tolerance=None)
-
-        picks = {}
-        for axis, dim in enumerate(cft.dims):
-            if dim == self.dim:
-                picks[dim] = self.coord[coords[axis]].values
-            else:
-                picks[dim] = cft.coords[dim][coords[axis]].values
-        picks["value"] = values
-        return pd.DataFrame(picks)
-
-    def _call_numeric(self, data):
-        """
-        Find picks in a N-dimensional array along a given axis based on a given threshold.
-
-        The pick findings use a triggering mechanism where triggers are turned on and off
-        based on the threshold crossings. The trigger off threshold is half of the trigger
-        on threshold. Picks are determined by finding the maximum value on each triggered
-        region.
-
-        Parameters
-        ----------
-        data : DataArray
-            The characteristic function where picks must be found.
-
-        Returns
-        -------
-        coords : tuple of 1d ndarray
-            A tuple containing the coordinates of the picks.
-        values : 1d ndarray
-            The values of the picks.
-
-        Notes
-        -----
-        If the trigger does not turn off at the end of the array, the last pick will \
-        not be found. This can be fixed by appending a zero to the end of the array.
-
-        """
-        data = np.moveaxis(data, self.axis, -1)
-        length = data.shape[-1]
-
-        # ravel additional axes into a unique lanes axis
-        data = np.reshape(data, (-1, data.shape[-1]))
-        status_view = np.reshape(self.status, (-1,))
-        index_view = np.reshape(self.index, (-1,))
-        value_view = np.reshape(self.value, (-1,))
-
-        lanes, indices, values = _trigger(
-            data,
-            self.thresh_on,
-            self.thresh_off,
-            status_view,
-            index_view,
-            value_view,
-            self.offset,
-        )
-        self.offset += length
-
-        # unravel lanes indices
-        if self.shape:
-            coords = np.unravel_index(lanes, self.shape)
-        else:
-            coords = ()
-
-        # insert found indices into the original axis position
-        coords = coords[: self.axis] + (indices,) + coords[self.axis :]
-        return values, coords
+__all__ = ["Trigger", "find_picks"]
 
 
 @atomized
@@ -265,7 +73,7 @@ def find_picks(cft, thresh, dim="last", state_dict=None):  # TODO: state_dict =>
     ...     data=[[0.0, 0.1, 0.9, 0.8, 0.2, 0.1, 0.6, 0.7, 0.3, 0.2]],
     ...     coords={
     ...         "space": [0.0],
-    ...         "time": {"tie_indices": [0, 9], "tie_values": [0.0, 9.0]},
+    ...         "time": {"tie_indices": [0, 9], "tie_values": [0.0, 9.0], "sampling_interval": 1.0},
     ...     },
     ... )
 

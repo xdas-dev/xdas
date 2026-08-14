@@ -365,7 +365,7 @@ class VirtualSource(VirtualArray):
     sliced to indicate which regions should be used. Sliced VirtualSource eventually can
     be assigned to a VirtualLayout to
 
-    Best practive is to pass it a `h5py.Dataset` obtain destructuring a `h5py.File`.
+    Best practice is to pass it a `h5py.Dataset` obtain destructuring a `h5py.File`.
     Otherwise the exact filename, dataset name, shape and dtype must be passed.
 
     The data can be accessed using `numpy.asarray` or the `__array__` special method.
@@ -476,7 +476,7 @@ class Selection:
     """
     Used to perform lazy selection.
 
-    It is usefull when dealing with lazy array to avoid loading unneccessary data.
+    It is useful when dealing with lazy array to avoid loading unnecessary data.
     It must be initialized with the shape of the underlying array. It allows to track
     the succesive slice or single element selections made along the different
     dimensions of the array. Once the overall selection must be aaplied, the

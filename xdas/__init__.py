@@ -57,7 +57,27 @@ __all__ = [  # noqa: RUF022 - grouped by kind, not alphabetically
     "plot_availability",
     "sortby",
     "split",
+    "stack",
     "trim_overlaps",
+    # task atoms (function forms)
+    "annotate",
+    "decimate",
+    "detrend",
+    "differentiate",
+    "filter",
+    "hilbert",
+    "integrate",
+    "medfilt",
+    "mlpicker",
+    "pick",
+    "rechunk",
+    "resample",
+    "sliding_mean_removal",
+    "stft",
+    "taper",
+    "trigger",
+    # streaming
+    "watch",
 ]
 
 from . import (
@@ -72,6 +92,27 @@ from . import (
     synthetics,
     testing,
     virtual,
+)
+
+# The compat module first, so that a later `import xdas.trigger` finds it in
+# `sys.modules` and does not rebind the attribute: the lowercase twin below
+# stays `xdas.trigger` for everyone.
+from . import trigger as _trigger_module  # noqa: F401  isort: skip
+from .atoms.detect import trigger
+from .atoms.kernel import rechunk
+from .atoms.ml import annotate, mlpicker, pick
+from .atoms.tasks import (
+    decimate,
+    detrend,
+    differentiate,
+    filter,
+    hilbert,
+    integrate,
+    medfilt,
+    resample,
+    sliding_mean_removal,
+    stft,
+    taper,
 )
 from .coordinates import (
     Coordinate,
@@ -110,6 +151,8 @@ from .core import (
     routines,
     sortby,
     split,
+    stack,
     trim_overlaps,
 )
 from .core.methods import *
+from .processing.core import watch

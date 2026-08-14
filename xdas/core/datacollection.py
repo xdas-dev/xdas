@@ -9,6 +9,7 @@ from fnmatch import fnmatch
 from pathlib import Path
 
 import h5py
+import pandas as pd
 
 from .dataarray import DataArray
 
@@ -66,6 +67,11 @@ class DataCollection:
         elif isinstance(data, DataArray):
             if name is not None:
                 data = data.rename(name)
+            return data
+        elif isinstance(data, pd.DataFrame):
+            # A table is a leaf of its own kind: atoms emitting pick tables
+            # walk collections like any other, and coercing their result into
+            # a `DataArray` would silently destroy it.
             return data
         else:
             return DataArray(data, name=name)
@@ -262,11 +268,11 @@ class DataMapping(DataCollection, dict):
                 label = f"  {key:{width}}: "
             else:
                 label = f"  {key + ':':{width + 1}} "
-            if isinstance(value, DataArray):
-                s += label + repr(value).split("\n")[0] + "\n"
-            else:
+            if isinstance(value, DataCollection):
                 s += label + "\n"
                 s += "\n".join(f"    {e}" for e in repr(value).split("\n")[:-1]) + "\n"
+            else:
+                s += label + repr(value).split("\n")[0] + "\n"
         return s
 
     def __reduce__(self):

@@ -529,13 +529,12 @@ class TestSampledCoordinateConcat:
 
 class TestSampledCoordinateDiscontinuitiesAvailabilities:
     def test_discontinuities_and_availabilities(self):
-        # tie_lengths set to create 2 segments
+        # two segments, [0, 1, 2] then [5, 6]: one 2.0 gap between them
         coord = SampledCoordinate(
             {"tie_values": [0.0, 5.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
         )
         dis = coord.get_discontinuities()
         avail = coord.get_availabilities()
-        # expect DataFrame with specific columns
         for df in (dis, avail):
             assert isinstance(df, pd.DataFrame)
             assert set(df.columns) >= {
@@ -546,8 +545,17 @@ class TestSampledCoordinateDiscontinuitiesAvailabilities:
                 "delta",
                 "type",
             }
-        # availabilities should list segments (2 segments -> 2 records)
-        assert len(avail) >= 1
+        # the discontinuity straddles the two segments, which the
+        # availabilities bound on either side
+        npt.assert_array_equal(dis["start_index"], [2])
+        npt.assert_array_equal(dis["end_index"], [3])
+        npt.assert_array_equal(dis["start_value"], [2.0])
+        npt.assert_array_equal(dis["end_value"], [5.0])
+        npt.assert_array_equal(dis["delta"], [2.0])
+        npt.assert_array_equal(dis["type"], ["gap"])
+        npt.assert_array_equal(avail["start_index"], [0, 3])
+        npt.assert_array_equal(avail["end_index"], [2, 4])
+        npt.assert_array_equal(avail["type"], ["data", "data"])
 
 
 class TestSampledCoordinateSlicing:
@@ -1003,6 +1011,38 @@ class TestSampledCoordinateMissingBranches:
             }
         )
         assert coord._is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_subsample_overlap(self):
+        # the seam advances by 0.4 of a 1.0 sampling interval: an overlap, but
+        # the values keep increasing, so the axis stays sorted
+        coord = SampledCoordinate(
+            {"tie_values": [0.0, 4.4], "tie_lengths": [5, 5], "sampling_interval": 1.0}
+        )
+        npt.assert_array_equal(coord.get_split_indices("overlaps"), [5])
+        assert coord._is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_negative_interval(self):
+        # a regular axis running backwards has no seam to report it
+        coord = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [5], "sampling_interval": -1.0}
+        )
+        npt.assert_array_equal(coord.get_split_indices("discontinuities"), [])
+        assert coord._is_monotonic_increasing() is False
+
+    def test_is_monotonic_increasing_single_sample_segments(self):
+        # segments of one sample have no interior, so the interval never falls
+        # between two samples and its sign cannot disorder anything
+        coord = SampledCoordinate(
+            {
+                "tie_values": [0.0, 1.0, 2.0],
+                "tie_lengths": [1, 1, 1],
+                "sampling_interval": -1.0,
+            }
+        )
+        assert coord._is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_empty(self):
+        assert SampledCoordinate()._is_monotonic_increasing() is True
 
     def test_get_sampling_interval_singleton(self):
         coord = SampledCoordinate(

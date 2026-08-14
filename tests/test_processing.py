@@ -1,6 +1,6 @@
+import gc
 import os
 import threading
-import time
 from pathlib import Path
 
 import hdf5plugin
@@ -14,6 +14,9 @@ import xdas as xd
 import xdas.processing as xp
 from xdas.atoms import Partial, Sequential
 from xdas.signal import sosfilt
+
+TIMEOUT = 60.0
+"""Seconds any ZMQ wait is given before failing, so that no test can hang."""
 
 
 class TestDataArrayLoader:
@@ -54,6 +57,95 @@ class TestDataArrayLoader:
         with pytest.raises(ValueError):
             xp.DataArrayLoader(da, {"time": 2000})
 
+    def test_unknown_pool_raises(self):
+        da = xd.testing.dummy(shape=(1000, 100))
+        with pytest.raises(ValueError, match="no worker pool"):
+            list(xp.DataArrayLoader(da, {"time": 100}, pool="fork"))
+
+
+class TestReadOnlyIngress:
+    """Chunks may arrive immutable (mapped from an arena slot).
+
+    Atoms honor this by allocating their outputs rather than writing into
+    their input; this pins the contract down without spawning a process pool.
+    """
+
+    def test_pipeline_accepts_readonly_chunks(self):
+        da = xd.testing.dummy(shape=(1000, 100))
+        sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
+        sequence = Sequential([Partial(sosfilt, sos, ..., dim="time", zi=...)])
+        expected = xd.concat(
+            [sequence(chunk, chunk_dim="time") for chunk in xd.split(da, 10, "time")]
+        )
+        chunks = [chunk.copy() for chunk in xd.split(da, 10, "time")]
+        for chunk in chunks:
+            chunk.data.setflags(write=False)
+        sequence.reset()
+        result = xd.concat([sequence(chunk, chunk_dim="time") for chunk in chunks])
+        assert result.equals(expected)
+        for chunk, original in zip(chunks, xd.split(da, 10, "time")):
+            np.testing.assert_array_equal(chunk.data, original.data)
+
+
+@pytest.mark.slow
+class TestProcessPool:
+    """Worker processes get past the HDF5 lock, shared memory past the pipe."""
+
+    def test_loader_chunks_integrity(self, tmp_path):
+        # A virtual array: the manifest of each chunk is what crosses to the
+        # worker, which then reads its own files; the loaded chunk comes back
+        # through an arena slot.
+        expected = xd.testing.dummy(shape=(1000, 100))
+        expected.to_netcdf(tmp_path / "data.nc")
+        da = xd.open_dataarray(tmp_path / "data.nc")
+        dl = xp.DataArrayLoader(da, {"time": 100}, 4, 2, pool="processes")
+        assert xd.concat(list(dl)).equals(expected)
+
+    def test_loader_chunks_are_zero_copy(self):
+        # Read-only data is the signature of an arena-backed chunk: the parent
+        # mapped the worker's pages, nothing was pickled back. The arena is
+        # sized for streaming, so the chunks are read one at a time and
+        # dropped -- a caller keeping every chunk alive would run it out of
+        # slots and get the (correct, slower) pickle path instead.
+        da = xd.testing.dummy(shape=(1000, 100))
+        loader = xp.DataArrayLoader(da, {"time": 100}, 2, 2, pool="processes")
+        assert all(not chunk.data.flags.writeable for chunk in loader)
+
+    def test_loader_equals_threads(self):
+        da = xd.testing.dummy(shape=(1000, 100))
+        threads = list(xp.DataArrayLoader(da, {"time": 100}, 2, 2))
+        processes = list(xp.DataArrayLoader(da, {"time": 100}, 2, 2, "processes"))
+        assert xd.concat(processes).equals(xd.concat(threads))
+
+    def test_writer_equals_threads(self, tmp_path):
+        da = xd.testing.dummy(shape=(1000, 100))
+        chunks = list(xd.split(da, 10, "time"))
+        results = []
+        for pool in ["threads", "processes"]:
+            dirpath = tmp_path / pool
+            dirpath.mkdir()
+            dw = xp.DataArrayWriter(dirpath, max_buffers=2, max_workers=2, pool=pool)
+            for chunk in chunks:
+                dw.write(chunk)
+            results.append(dw.result())
+        assert results[1].load().equals(results[0].load())
+        assert results[0].load().equals(da)
+
+    def test_end_to_end(self, tmp_path):
+        # which pool the chunks travel through cannot change what comes out.
+        xd.testing.dummy(shape=(1000, 100)).to_netcdf(tmp_path / "data.nc")
+        da = xd.open_dataarray(tmp_path / "data.nc")
+        sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
+        results = []
+        for pool in ["threads", "processes"]:
+            sequence = Sequential([Partial(sosfilt, sos, ..., dim="time", zi=...)])
+            loader = xp.DataArrayLoader(da, {"time": 100}, 2, 2, pool=pool)
+            dirpath = tmp_path / pool
+            dirpath.mkdir()
+            writer = xp.DataArrayWriter(dirpath, dim="time")
+            results.append(xp.process(sequence, loader, writer))
+        assert results[1].load().equals(results[0].load())
+
 
 class TestDataArrayWriter:
     def test_init(self, tmp_path):
@@ -88,6 +180,23 @@ class TestDataArrayWriter:
         dw = xp.DataArrayWriter(tmp_path, create_dirs=True)
         with pytest.raises(TypeError):
             dw.submit(None)
+
+    def test_empty_chunks_are_dropped(self, tmp_path):
+        expected = xd.testing.dummy(shape=(1000, 100))
+        dw = xp.DataArrayWriter(tmp_path, dim="time")
+        dw.submit(expected.isel(time=slice(0, 0)))
+        for chunk in xd.split(expected, 10, dim="time"):
+            dw.submit(chunk)
+        assert dw.result().equals(expected)
+
+    def test_the_chunked_dimension_need_not_lead(self, tmp_path):
+        # joining on the first dimension stacks the chunks along the wrong
+        # axis whenever the chunked dimension does not lead the output.
+        expected = xd.testing.dummy(shape=(1000, 100)).transpose("distance", "time")
+        dw = xp.DataArrayWriter(tmp_path, dim="time")
+        for chunk in xd.split(expected, 10, dim="time"):
+            dw.submit(chunk)
+        assert dw.result().equals(expected)
 
 
 class TestProcessing:
@@ -165,12 +274,14 @@ class TestDataFrameWriter:
         assert result.equals(expected)
 
     def test_write_empty_dataframe(self, tmp_path):
+        # Empty chunks are accepted and silently dropped (many flushes
+        # produce nothing): no file is created for them.
         dw = xp.DataFrameWriter(tmp_path / "output.csv")
         expected = pd.DataFrame()
         dw.submit(expected)
         result = dw.result()
         assert result.equals(expected)
-        assert Path(dw.path).exists()
+        assert not Path(dw.path).exists()
 
     def test_with_existing_file(self, tmp_path):
         dw1 = xp.DataFrameWriter(tmp_path / "output.csv")
@@ -207,22 +318,32 @@ class TestDataFrameWriter:
 
 
 class TestZMQ:
+    @pytest.fixture(autouse=True)
+    def _close_endpoints(self, opened):
+        """Close whatever this test opens, so that no socket outlives it."""
+        self.opened = opened
+
     def _publish_and_subscribe(self, packets, address, encoding=None):
-        publisher = xp.ZMQPublisher(address, encoding)
+        publisher = self.opened(xp.ZMQPublisher(address, encoding))
 
         def publish():
+            # A recording, wanted whole. Only the publisher can hold a replay
+            # back until its audience has landed; a subscriber joining one
+            # already under way has no way to recover its first packets.
+            publisher.wait_for_subscribers(timeout=TIMEOUT)
             for packet in packets:
-                time.sleep(0.001)
                 publisher.submit(packet)
 
-        threading.Thread(target=publish).start()
+        thread = threading.Thread(target=publish)
+        thread.start()
+        subscriber = self.opened(xp.ZMQSubscriber(address, timeout=TIMEOUT))
 
-        subscriber = xp.ZMQSubscriber(address)
         result = []
         for n, packet in enumerate(subscriber, start=1):
             result.append(packet)
             if n == len(packets):
                 break
+        thread.join()
         return xd.concat(result)
 
     def test_publish_and_subscribe(self):
@@ -232,6 +353,52 @@ class TestZMQ:
 
         result = self._publish_and_subscribe(packets, address)
         assert result.equals(expected)
+
+    def test_subscriber_joins_a_real_time_flux(self):
+        # A real-time publisher streams whether or not anyone is listening, so
+        # a subscriber joining it gets the stream from wherever it lands.
+        packets = xd.split(xd.testing.dummy(), 10)
+        address = f"tcp://localhost:{xd.io.get_free_port()}"
+        publisher = self.opened(xp.ZMQPublisher(address))
+        stop = threading.Event()
+
+        def flux():
+            while not stop.is_set():
+                for packet in packets:
+                    if stop.is_set():
+                        return
+                    publisher.submit(packet)
+
+        thread = threading.Thread(target=flux)
+        thread.start()
+        try:
+            subscriber = self.opened(xp.ZMQSubscriber(address, timeout=TIMEOUT))
+            # The flux greets us as it streams, without ever waiting for us.
+            subscriber.wait_until_subscribed()
+            received = [next(subscriber) for _ in range(3)]
+        finally:
+            stop.set()
+            thread.join()
+
+        subscriber.wait_until_subscribed()  # greeted already, so this returns
+        for packet in received:
+            assert any(packet.equals(published) for published in packets)
+
+    def test_subscriber_timeout(self):
+        address = f"tcp://localhost:{xd.io.get_free_port()}"
+        self.opened(xp.ZMQPublisher(address))  # binds, but never publishes
+        subscriber = self.opened(xp.ZMQSubscriber(address, timeout=0.1))
+        with pytest.raises(TimeoutError, match="no packet received"):
+            next(subscriber)
+
+    def test_wait_until_subscribed_needs_a_publisher_that_publishes(self):
+        # Only a publisher that publishes can acknowledge anybody: a silent one
+        # leaves a subscriber waiting, which is what the timeout is for.
+        address = f"tcp://localhost:{xd.io.get_free_port()}"
+        self.opened(xp.ZMQPublisher(address))
+        subscriber = self.opened(xp.ZMQSubscriber(address, timeout=0.1))
+        with pytest.raises(TimeoutError, match="no packet received"):
+            subscriber.wait_until_subscribed()
 
     def test_encoding(self):
         expected = xd.testing.dummy()
@@ -479,18 +646,57 @@ class TestStreamWriterEdgeCases:
         with pytest.raises(TypeError):
             sw.submit("not_a_stream")
 
+    def test_result_without_any_chunk_is_an_empty_stream(self, tmp_path):
+        # A pipeline that emitted nothing leaves no temporary file to merge.
+        result = xp.StreamWriter(tmp_path, "M").result()
+        assert isinstance(result, obspy.Stream)
+        assert len(result) == 0
+
 
 class TestZMQPublisherAliases:
-    def test_write_alias(self):
+    def test_write_alias(self, opened):
         address = f"tcp://localhost:{xd.io.get_free_port()}"
-        publisher = xp.ZMQPublisher(address)
+        publisher = opened(xp.ZMQPublisher(address))
         da = xd.testing.dummy()
         publisher.write(da)  # use write() alias
 
-    def test_result_returns_none(self):
+    def test_result_returns_none(self, opened):
         address = f"tcp://localhost:{xd.io.get_free_port()}"
-        publisher = xp.ZMQPublisher(address)
+        publisher = opened(xp.ZMQPublisher(address))
         assert publisher.result() is None
+
+
+class TestZMQEndpointLifecycle:
+    def address(self):
+        return f"tcp://localhost:{xd.io.get_free_port()}"
+
+    def test_closing_releases_the_socket_and_the_context(self):
+        publisher = xp.ZMQPublisher(self.address())
+        socket, context = publisher._socket, publisher._context
+        publisher.close()
+        assert socket.closed
+        assert context.closed
+
+    def test_closing_twice_releases_nothing_more(self):
+        subscriber = xp.ZMQSubscriber(self.address())
+        subscriber.close()
+        subscriber.close()
+        assert subscriber._socket is None
+        assert subscriber._context is None
+
+    def test_the_context_manager_closes_on_the_way_out(self):
+        with xp.ZMQPublisher(self.address()) as publisher:
+            assert not publisher._socket.closed
+        assert publisher._socket is None
+
+    def test_a_dropped_endpoint_is_closed_by_the_collector(self):
+        # The safety net under an endpoint nobody closed: when it runs is not
+        # for the caller to know, which is why `close` is the way to write it.
+        publisher = xp.ZMQPublisher(self.address())
+        socket = publisher._socket
+        del publisher
+        gc.collect()
+        assert socket.closed
 
 
 class TestHandlerDirect:

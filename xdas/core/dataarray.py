@@ -137,6 +137,14 @@ class DataArray(NDArrayOperatorsMixin):
         if method != "__call__":
             return NotImplemented
 
+        if any(
+            hasattr(input, "__array_ufunc__")
+            and not isinstance(input, (self.__class__, np.ndarray, np.generic))
+            for input in inputs
+        ):
+            # Defer to foreign implementations (e.g. atoms tracing pipelines).
+            return NotImplemented
+
         coords = broadcast_coords(
             *tuple(input for input in inputs if isinstance(input, self.__class__))
         )
@@ -379,24 +387,70 @@ class DataArray(NDArrayOperatorsMixin):
         -------
         DataArray
             The selected part of the original data array.
+
+        Notes
+        -----
+        Naming labels — a scalar, or a list of them — works whatever the order
+        of the coordinate, which makes categorical axes such as a phase axis
+        ``["P", "S", "N"]`` selectable; a list returns the labels in the order
+        it asks for them. Ordered look-ups need an axis whose values increase:
+        a slice on an axis that goes backwards somewhere is resolved by cutting
+        it on its overlaps and concatenating, which is slow and warns, and an
+        inexact look-up (*method*) is refused.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> import xdas as xd
+        >>> da = xd.DataArray(
+        ...     np.arange(6).reshape(2, 3),
+        ...     {"time": [0.0, 1.0], "phase": ["P", "S", "N"]},
+        ... )
+        >>> da.sel(phase=["S", "P"])
+        <xdas.DataArray (time: 2, phase: 2)>
+        [[1 0]
+         [4 3]]
+        Coordinates:
+          * time (time): [0. 1.]
+          * phase (phase): ['S' 'P']
         """
         if indexers is None:
             indexers = {}
         indexers.update(indexers_kwargs)
 
-        # handle not monotonic increasing coordinates
+        # Only *ordered* look-ups need a sorted axis. Resolving a slice searches
+        # for its bounds and `method` searches for a neighbour, so both are
+        # guarded below: an axis that goes backwards somewhere is cut into
+        # monotonic chunks for a slice, and refused for a neighbour search. An
+        # exact label look-up is not ordered — it is a hash look-up, well
+        # defined whatever the order — so it is left alone, which is what makes
+        # a categorical axis such as ``["P", "S", "N"]`` selectable by label.
+        # Labels that designate more than one position are the coordinate's own
+        # business; `to_index` raises on them.
         for dim in indexers:
-            if not self[dim]._is_monotonic_increasing():
-                if isinstance(indexers[dim], slice):
+            is_slice = isinstance(indexers[dim], slice)
+            is_ordered = is_slice or method is not None
+            if is_ordered and not self[dim]._is_monotonic_increasing():
+                if is_slice:
                     warnings.warn(
                         f"dimension {dim} is not monotonic increasing, "
-                        f"spliting on overlaps, slicing and concatenating can be slow..."
+                        f"spliting where it goes backwards, slicing and "
+                        f"concatenating can be slow..."
                     )
+                    # cutting at the reversals — the boundaries where the axis
+                    # fails to move forward — is what makes the pieces sorted.
+                    # An axis that decreases *within* a segment has none to cut
+                    # at, and no splitting can order it.
+                    if not self[dim].get_split_indices("reversals").size:
+                        raise ValueError(
+                            f"dimension {dim} decreases along its axis, which no "
+                            f"splitting can order; slicing it by label is undefined"
+                        )
                     from .routines import concat, split
 
                     chunks = [
                         chunk.sel(indexers, method, endpoint, drop)
-                        for chunk in split(self, "overlaps", dim, False)
+                        for chunk in split(self, "reversals", dim, False)
                     ]
                     return concat(chunks, dim, False)
                 else:

@@ -590,7 +590,16 @@ class AxisCoordinate(Coordinate, ABC):
 
     @abstractmethod
     def _is_monotonic_increasing(self):
-        """Return ``True`` if all consecutive differences in this coordinate are positive."""
+        """
+        Return ``True`` if all consecutive differences in this coordinate are positive.
+
+        This is a property of the raw steps, not of the jumps that
+        :meth:`get_split_indices` reports: an overlap shorter than one sampling
+        interval still moves the axis forward, and leaves it sorted. Only an
+        overlap of a full interval or more breaks the order. Implementations
+        must therefore look at the values themselves rather than at the
+        discontinuities, which say nothing about the slope within a segment.
+        """
 
     @abstractmethod
     def _get_value(self, index):
@@ -857,24 +866,32 @@ class AxisCoordinate(Coordinate, ABC):
 
         Parameters
         ----------
-        kind : {"discontinuities", "gaps", "overlaps"}, optional
+        kind : {"discontinuities", "gaps", "overlaps", "reversals"}, optional
             Which boundary type to return. ``"gaps"`` returns only boundaries
-            where the axis jumps forward by more than one sampling interval;
-            ``"overlaps"`` returns only boundaries where the axis jumps
-            backward. ``"discontinuities"`` (default) returns both.
+            where the axis advances by more than one sampling interval;
+            ``"overlaps"`` returns only boundaries where it advances by less
+            than one — the ObsPy convention, so an overlap shorter than a
+            sample counts even though the axis still moves forward.
+            ``"discontinuities"`` (default) returns both. ``"reversals"``
+            returns the boundaries where the axis does not advance at all:
+            those overlaps that are a full sampling interval or longer, which
+            are the only ones that break the sort order. Cutting there yields
+            monotonic pieces, unless the axis also decreases *within* a
+            segment, which no boundary can report.
         tolerance : float, timedelta, None, or ``False``, optional
             Minimum absolute magnitude of the jump to report. Boundaries
             smaller than *tolerance* are silently dropped. ``None`` removes
             only zero-magnitude jumps (i.e. consecutive equal values).
             ``False`` (default) disables magnitude filtering and returns all
-            boundaries of the requested kind.
+            boundaries of the requested kind. For ``"reversals"`` it is the
+            step, not the jump, that is compared against it.
 
         Returns
         -------
         numpy.ndarray
             Integer indices of the start of each new segment (excluding the first).
         """
-        valid_kinds = {"discontinuities", "gaps", "overlaps"}
+        valid_kinds = {"discontinuities", "gaps", "overlaps", "reversals"}
         if kind not in valid_kinds:
             raise ValueError(f"`kind` must be one of {valid_kinds}; got {kind!r}")
 
@@ -884,8 +901,26 @@ class AxisCoordinate(Coordinate, ABC):
         if kind == "discontinuities" and tolerance is False:
             return positions
 
+        zero = np.timedelta64(0) if np.issubdtype(self.dtype, np.datetime64) else 0
+
+        if kind == "reversals":
+            if positions.size == 0:
+                return positions
+            # a reversal is judged on the raw step rather than on the jump: the
+            # question is whether the axis moves forward at all, not whether it
+            # moves forward by a whole sample. The default threshold is exactly
+            # zero, so that the boundaries reported here are exactly the ones
+            # that make `_is_monotonic_increasing` false
+            steps = self._get_value(positions) - self._get_value(positions - 1)
+            if tolerance is False:
+                threshold = zero
+            else:
+                threshold = -parse_scalar_delta(
+                    tolerance, self.dtype, default_zero=True
+                )
+            return positions[steps <= threshold]
+
         if tolerance is False:
-            zero = np.timedelta64(0) if np.issubdtype(self.dtype, np.datetime64) else 0
             match kind:
                 case "gaps":
                     mask = deltas >= zero
@@ -910,8 +945,10 @@ class AxisCoordinate(Coordinate, ABC):
         Parameters
         ----------
         tolerance : float, timedelta, or None, optional
-            Minimum magnitude of a gap or overlap to include.  ``None``
-            (default) reports all discontinuities regardless of size.
+            Minimum absolute magnitude of the jump to report, as in
+            :meth:`get_split_indices`. ``None`` (default) reports every
+            discontinuity regardless of size; a jump of exactly zero is a
+            clean continuation and is never reported.
 
         Returns
         -------
@@ -919,17 +956,37 @@ class AxisCoordinate(Coordinate, ABC):
             A DataFrame with the following columns:
 
             - start_index : int
-                The index where the discontinuity starts.
+                The index of the last sample before the discontinuity.
             - end_index : int
-                The index where the discontinuity ends.
+                The index of the first sample after it.
             - start_value : float
-                The value at the start of the discontinuity.
+                The value at `start_index`.
             - end_value : float
-                The value at the end of the discontinuity.
+                The value at `end_index`.
             - delta : float
-                The difference between the end_value and start_value.
+                The jump: the step from `start_value` to `end_value` minus one
+                sampling interval, i.e. how far the axis lands from a clean
+                continuation. This is the quantity `tolerance` filters on.
             - type : str
-                The type of the discontinuity, either "gap" or "overlap".
+                The type of the discontinuity, "gap" when `delta` is positive
+                and "overlap" when it is negative.
+
+        Notes
+        -----
+        This follows the ObsPy convention: `start_value`, `end_value` and
+        `delta` are the *Last Sample*, *Next Sample* and *Delta* columns of
+        :meth:`obspy.core.stream.Stream.get_gaps`. An axis that moves forward
+        by less than one sampling interval is an overlap, as it is there.
+
+        Examples
+        --------
+        >>> import xdas as xd
+        >>> coord = xd.Coordinate(
+        ...     {"tie_indices": [0, 4, 5, 9], "tie_values": [0.0, 4.0, 3.0, 7.0]}
+        ... )
+        >>> coord.get_discontinuities()
+           start_index  end_index  start_value  end_value  delta     type
+        0            4          5          4.0        3.0   -2.0  overlap
 
         """
         if self.empty:
@@ -943,23 +1000,22 @@ class AxisCoordinate(Coordinate, ABC):
                     "type",
                 ]
             )
-        indices = self.get_split_indices("discontinuities", tolerance)
+        # same candidates and same filter as `get_split_indices`, but the jump
+        # of each survivor is reported alongside its position
+        positions, deltas = self._split_candidates()
+        tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
+        mask = np.abs(deltas) > tolerance
         records = []
-        for index in indices:
-            start_index = index
-            end_index = index + 1
-            start_value = self._get_value(index)
-            end_value = self._get_value(index + 1)
-            delta = end_value - start_value
-            if tolerance is not None and np.abs(delta) < tolerance:
-                continue
+        # a split index is the first sample of the new segment: the step being
+        # reported runs from the sample before it to it
+        for index, delta in zip(positions[mask], deltas[mask]):
             record = {
-                "start_index": start_index,
-                "end_index": end_index,
-                "start_value": start_value,
-                "end_value": end_value,
+                "start_index": index - 1,
+                "end_index": index,
+                "start_value": self._get_value(index - 1),
+                "end_value": self._get_value(index),
                 "delta": delta,
-                "type": ("gap" if end_value > start_value else "overlap"),
+                "type": ("gap" if delta > 0 else "overlap"),
             }
             records.append(record)
         return pd.DataFrame.from_records(records)

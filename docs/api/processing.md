@@ -11,6 +11,9 @@
    :toctree: ../_autosummary
 
    process
+   watch
+   get_source
+   get_writer
 ```
 
 ## Loaders
@@ -43,6 +46,7 @@
    StreamWriter
    ZMQPublisher
    ZMQSubscriber
+   ResultWriter
 ```
 
 ### DataArrayWriter
@@ -66,4 +70,16 @@
    ZMQPublisher.submit
    ZMQPublisher.write
    ZMQPublisher.result
+   ZMQPublisher.wait_for_subscribers
+   ZMQPublisher.close
+```
+
+### ZMQSubscriber
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   ZMQSubscriber.wait_until_subscribed
+   ZMQSubscriber.close
 ```

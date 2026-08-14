@@ -14,73 +14,150 @@ os.chdir("../../_data")
 
 # Composing a processing sequence
 
-The xdas library provides various routines from NumPy, SciPy, and ObsPy that have been optimized for DAS DataArray objects, and which can be incorporated in a processing pipeline. See [](processing) for an explanation of the xdas processing workflows, e.g. for bigger-than-RAM datasets. Higher-level operations (FK-filters, STA/LTA detector, etc.) can be constructed from a sequence of the elementary operations implemented in xdas. To facilitate this and other user-defined operations, xdas offers a convenient framework to create and execute a (nested) sequences of atomic operations. By using sequences, built-in and user-defined processing tasks mesh seamlessly with the optimization and IO-infrastructure that xdas offers, improving the robustness and reproducibility of complex processing pipelines.
+*Xdas* ships its processing vocabulary — filtering, resampling, integration,
+spectra, machine-learning picking — in two interchangeable faces. The
+**function** is the one you write day to day; the **atom** is the same
+operation as an object, which composes into a pipeline and streams. Every
+function has an atom form and every atom a function form, so a pipeline built
+here runs unchanged on an array in memory and, chunk by chunk, on an archive
+that does not fit in one (see [](processing.md)).
 
-## Chaining elementary operations (atoms)
+The parameters are physical throughout — a rate in hertz, a corner frequency,
+a window in seconds — rather than the arguments of the SciPy routine
+underneath (a decimation factor, a sample count, a normalised frequency). That
+is what lets one pipeline be defined once and applied to whatever it is given:
+nothing in it silently means something else at another sampling rate. The
+SciPy-shaped functions are still there, in {py:mod}`xdas.signal`.
 
-There are three "flavours" declaring the atoms that can be used to compose a sequence, illustrated by the following example:
+## Applying and composing
 
-```{code-cell} 
+Called on data, the function applies:
+
+```{code-cell}
 import numpy as np
-import xdas
-import xdas.signal as xs
-from xdas.atoms import Partial, Sequential, IIRFilter
+import xdas as xd
 
-sequence = Sequential(
-    [
-      xs.taper(..., dim="time"),
-      Partial(np.square),
-      IIRFilter(order=4, cutoff=1.5, btype="highpass", dim="time"),
-    ]
-)
-sequence
+da = xd.synthetics.wavelet_wavefronts()
+xd.resample(da, 25.0, dim="time")
 ```
 
-In the snippet above, we define our `sequence` as an instance of the `Sequential` class, which contains three operations. The first operation applies a Tukey taper along the time dimension, encoded by the xdas implementation of the SciPy library routines (`xdas.signal`). Since this functions takes a data array as the first argument, we use `...` as a placeholder. 
+Called on `...` — the placeholder standing for the data to come — the same
+function returns the atom instead, and atoms compose with `>>`:
 
-The second operation in this sequence is defined by the `square` operation built into NumPy. Since this function is not imported directly from xdas, using `...` as a placeholder won't work. This is where `Partial` comes in: wrapping `Partial` around `np.square` would be equivalent to `np.square(...)`, effectively converting an arbitrary routine into an xdas routine and inserting a placeholder as the first argument (to be substituted with a data array later).
+```{code-cell}
+pipeline = (
+    xd.taper(..., dim="time")
+    >> xd.filter(..., (5.0, None), dim="time")
+    >> xd.resample(..., 25.0, dim="time")
+)
+pipeline
+```
 
-The last operation, `IIRFilter`, instantiates a specific class dedicated to chunked execution. It inherits from the `Atom` class, which handles the logic of initialising and passing around state objects (like the filter state). This allows us to process our data one chunk at a time, without explicitly having to handle state updates and transfer.
+Nothing in that pipeline names the data it will be given: `25.0` is the rate to
+land on, not a decimation factor, so the same object takes a 50 Hz record and a
+1 kHz one to 25 Hz — resampling by a rational ratio where it has to. Calling it
+applies it:
 
-## Executing a sequence
-
-Once the processing sequence has been defined, it can operate on data in memory by simply calling the sequence with the data array as the argument:
-
-```{code-cell} 
-from xdas.synthetics import wavelet_wavefronts
-
-da = wavelet_wavefronts()
-result = sequence(da)
+```{code-cell}
+result = pipeline(da)
 result.plot(yincrease=False)
 ```
 
-The same sequence can be re-used, so it only needs to be defined once.
+The same pipeline can be reused: it is defined once and carries no data.
 
-For executing a sequence on chunked data (e.g., larger-than-memory data sets), see the next section: [](processing.md).
+Ordinary NumPy expressions compose too. Under the `...` seed they are *traced*
+— appended to the pipeline rather than computed — so an expression reads as
+mathematics:
+
+```{code-cell}
+energy = 20 * np.log10(np.abs(xd.resample(..., 25.0, dim="time")))
+energy
+```
+
+## The vocabulary
+
+| | |
+| --- | --- |
+| {py:func}`~xdas.filter` | band, low- or high-pass, from a corner pair in Hz |
+| {py:func}`~xdas.resample` | to a target rate, by any rational ratio |
+| {py:func}`~xdas.decimate` | to a target rate, when the ratio is an integer |
+| {py:func}`~xdas.integrate`, {py:func}`~xdas.differentiate` | in the coordinate's own units |
+| {py:func}`~xdas.stft` | window and hop in seconds |
+| {py:func}`~xdas.detrend`, {py:func}`~xdas.taper` | whole-record shaping |
+| {py:func}`~xdas.hilbert` | analytic signal |
+| {py:func}`~xdas.medfilt`, {py:func}`~xdas.sliding_mean_removal` | kernels in seconds or meters |
+| {py:func}`~xdas.rechunk` | a streaming-cadence knob, not an operation |
+| {py:func}`~xdas.annotate`, {py:func}`~xdas.trigger`, {py:func}`~xdas.pick` | machine-learning picking (see [](picking.md)) |
+
+Each has an atom behind it — {py:class}`~xdas.atoms.Filter`,
+{py:class}`~xdas.atoms.Resample`, and so on — reached by seeding with `...`.
+
+Below them sits an expert layer, {py:mod}`xdas.atoms.kernel`, holding the exact
+primitives these design from the data at the first call:
+{py:class}`~xdas.atoms.LFilter`, {py:class}`~xdas.atoms.SOSFilter`,
+{py:class}`~xdas.atoms.DownSample` and friends, which take machine parameters —
+filter coefficients, integer factors — rather than physical ones. Reach for
+them when you need to say exactly what runs; otherwise you should never have to
+meet them.
+
+## Wrapping your own functions
+
+Any callable taking a data array as its first argument becomes an atom by
+composition — `>>` wraps it:
+
+```{code-cell}
+pipeline = xd.taper(..., dim="time") >> np.square
+pipeline
+```
+
+`Partial` does the same explicitly, and is what to reach for when the extra
+arguments have to be given at definition time:
+
+```{code-cell}
+from xdas.atoms import Partial
+
+Partial(np.percentile, ..., 90.0, axis=0)
+```
 
 ## Defining custom atoms
 
-The `Partial` method is a convenient wrapper for simple functions that take an xdas DataArray as the first argument, which covers a lot of cases. However, more complex routines, particularly those that rely on a state, will require a more explicit treatment. Such operations can be subclassed from the `Atom` base class, and adhere to the following structure:
+An operation that carries a *state* from one chunk to the next — a recursive
+filter, a running mean, a detector — is written as a subclass of `Atom`.
+`call` maps one input chunk to zero or more output chunks, and `flush` emits
+whatever remains buffered at the end of a run:
 
-```{code-cell} 
+```{code-cell}
 from xdas.atoms import Atom, State
 
 class MyStatefulRoutine(Atom):
 
-  def __init__(self, a, b, c=10):
-    super().__init__()
-    # Set class-specific parameters
-    self.a = a
-    self.b = b
-    self.c = c
-    # Define the state variable (if needed)
-    self.state = State(...)
+    def __init__(self, a, dim="time"):
+        super().__init__()
+        # Configuration: kept as-is, shared by clones of this atom
+        self.a = a
+        self.dim = dim
+        # State: reset between runs, carried across the chunks of one run
+        self.buffer = State(...)
 
-  def initialize(self, da, **kwargs):
-    # Initialize state based on DataArray ``da``
-    ...
-  
-  def call(self, da, **kwargs):
-    # Apply routine to DataArray ``da``
-    ...
+    def initialize(self, da, **flags):
+        # Called on the first chunk of a run, to size the state from the data
+        self.buffer = ...
+
+    def call(self, da, **flags):
+        # Applied to every chunk; may return nothing, one chunk, or several
+        ...
+
+    def flush(self):
+        # Called at the end of a run: emit what is still buffered
+        return []
 ```
+
+*Xdas* handles the rest: state is carried across chunk boundaries, flushed and
+reset at every gap or sampling-rate change of the input, and `flush` is called
+at the end of the stream. {py:func}`xdas.testing.assert_chunk_invariant` checks
+that a pipeline gives the very same answer eagerly and chunk by chunk, gaps
+included — the thing worth verifying before trusting a custom atom on an
+archive.
+
+For executing a pipeline on chunked data, see the next section:
+[](processing.md).

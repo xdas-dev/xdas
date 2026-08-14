@@ -201,7 +201,9 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
     @override
     def _is_monotonic_increasing(self):
-        return not self.get_split_indices("overlaps", tolerance=False).size
+        # every step is a tie-value difference divided by a positive index
+        # difference, so the whole axis increases exactly when the tie values do
+        return bool(is_monotonic_increasing(self.tie_values))
 
     @override
     def _get_value(self, index):

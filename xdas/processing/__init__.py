@@ -1,8 +1,8 @@
 """
 Chunked processing pipeline for larger-than-memory datasets.
 
-Provides loaders, writers, real-time streaming, and the :func:`process`
-orchestrator.
+Provides loaders, writers, real-time streaming, the :func:`process`
+orchestrator and its :func:`get_source` / :func:`get_writer` dispatch.
 """
 
 __all__ = [
@@ -10,10 +10,14 @@ __all__ = [
     "DataArrayWriter",
     "DataFrameWriter",
     "RealTimeLoader",
+    "ResultWriter",
     "StreamWriter",
     "ZMQPublisher",
     "ZMQSubscriber",
+    "get_source",
+    "get_writer",
     "process",
+    "watch",
 ]
 
 from .core import (
@@ -21,8 +25,12 @@ from .core import (
     DataArrayWriter,
     DataFrameWriter,
     RealTimeLoader,
+    ResultWriter,
     StreamWriter,
     ZMQPublisher,
     ZMQSubscriber,
+    get_source,
+    get_writer,
     process,
+    watch,
 )

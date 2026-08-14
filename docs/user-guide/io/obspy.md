@@ -62,8 +62,7 @@ for station in stations:
 *Xdas* reads seismological data through ObsPy, with the engine named `"obspy"`
 after the library rather than after any one format: decoding is
 {py:func}`obspy.read`, so miniSEED, SAC, GSE2, SEG-2 and everything else ObsPy
-supports goes through the same path. `engine="miniseed"` still works as an
-alias.
+supports goes through the same path.
 
 The engine mirrors {py:func}`obspy.read` exactly: **one contiguous ObsPy
 `Trace` becomes one lazy `DataArray`**, and the collection mirrors the
@@ -71,7 +70,9 @@ The engine mirrors {py:func}`obspy.read` exactly: **one contiguous ObsPy
 at this point — the scan only records where each trace lives.
 
 ```{note}
-This part encourages experimenting with seismic data. Depending on the most common use cases users find, this could lead to changes in development direction.
+The legacy `"miniseed"` engine is a different reader, kept for the code written
+against it: it returns one stacked-channel array per file rather than a
+collection. See [](data-formats.md).
 ```
 
 ## Reading
@@ -82,6 +83,7 @@ the directory layout does not have to be described, since the SEED identifiers
 inside the files already say where each trace belongs.
 
 ```{code-cell}
+import numpy as np
 import xdas as xd
 
 dc = xd.open("NX/*/*.mseed", engine="obspy")
@@ -103,7 +105,7 @@ semantics of `obspy.Stream.select`, with shell-style globbing on the keys:
 dc.select(station="SX00[123]", channel="HH?")
 ```
 
-`select` chooses *which* leaves are kept; {py:meth}`~xdas.DataCollection.sel`
+`select` chooses *which* leaves are kept; {py:meth}`~xdas.DataMapping.sel`
 trims *inside* each leaf by coordinate label. Indexing works too, and reads
 like the seed id it is:
 
@@ -159,15 +161,12 @@ every copy and look at them, `xd.split(da, "overlaps")` cuts them apart.
 ## Stacking channels and stations
 
 As often, the different channels of a station are synchronized. They can be
-stacked into a two-dimensional array with {py:func}`xdas.concat`, which stays
-lazy: the identifiers that vary along the new dimension become a coordinate,
-the ones that do not stay scalar.
+collapsed into a dimension of a two-dimensional array with
+{py:func}`xdas.stack`, which stays lazy: the level's keys become the new
+coordinate, and the identifiers that do not vary stay scalar.
 
 ```{code-cell}
-def stack(node, dim):
-    return xd.concat([node[key][0] for key in sorted(node)], dim)
-
-da = stack(dc["NX"]["SX001"]["00"], "channel")
+da = xd.stack(dc["NX"]["SX001"]["00"], "channel")[0]
 da
 ```
 
@@ -177,10 +176,7 @@ array, ready for array analysis:
 
 ```{code-cell}
 sub = dc.sel(time=slice("2024-01-01T00:01:00", "2024-01-01T00:02:59.99"))
-da = xd.concat(
-    [stack(sub["NX"][station]["00"], "channel") for station in sorted(sub["NX"])],
-    "station",
-)
+da = xd.stack(xd.stack(sub["NX"], "channel"), "station")["00"][0]
 da
 ```
 

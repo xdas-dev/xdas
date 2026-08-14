@@ -5,6 +5,7 @@ import pytest
 
 import xdas as xd
 from xdas.core.routines import Bag, CompatibilityError
+from xdas.virtual import VirtualSource
 
 
 class TestBag:
@@ -1289,3 +1290,696 @@ class TestSortbyMetadataFree:
         result = xd.sortby(shuffled, "time")
         assert np.array_equal(result["time"].values, expected["time"].values)
         np.testing.assert_array_equal(np.asarray(result.data), expected.values)
+
+
+def trace(channel="SHZ", station="SX01", start=0.0, npts=5, values=None):
+    """A one-dimensional trace with the SEED identifiers as scalar coordinates."""
+    time = {"tie_indices": [0, npts - 1], "tie_values": [start, start + npts - 1.0]}
+    if values is None:
+        values = np.arange(npts, dtype="float64")
+    return xd.DataArray(
+        values,
+        {
+            "network": (None, "DX"),
+            "station": (None, station),
+            "channel": (None, channel),
+            "time": time,
+        },
+    )
+
+
+def regular_trace(channel="SHZ", start=0.0, npts=5, step=1.0):
+    """A trace whose time coordinate declares its nominal sampling interval."""
+    return xd.DataArray(
+        np.arange(npts, dtype="float64"),
+        {
+            "channel": (None, channel),
+            "time": {
+                "tie_indices": [0, npts - 1],
+                "tie_values": [start, start + step * (npts - 1)],
+                "sampling_interval": step,
+            },
+        },
+    )
+
+
+def instrument(station="SX01", channels=("SHZ", "SHN", "SHE"), **kwargs):
+    """One station as a `channel` level of traces."""
+    return xd.DataCollection(
+        {code: trace(code, station, **kwargs) for code in channels}, "channel"
+    )
+
+
+class TestStack:
+    def test_channel_level_becomes_a_dimension(self):
+        dc = xd.DataCollection(
+            {"SX01": instrument("SX01"), "SX02": instrument("SX02")}, "station"
+        )
+        result = xd.stack(dc, "channel")
+        assert result.name == "station"
+        assert list(result) == ["SX01", "SX02"]
+        da = result["SX01"]
+        assert da.dims == ("channel", "time")
+        assert da.shape == (3, 5)
+        assert da["channel"].values.tolist() == ["SHE", "SHN", "SHZ"]
+        assert da["station"].values == "SX01"
+        assert da["network"].values == "DX"
+
+    def test_the_new_dimension_is_named_after_the_level(self):
+        dc = instrument()
+        assert xd.stack(dc, "channel").dims == ("channel", "time")
+
+    def test_dim_renames_the_new_dimension_and_keeps_the_keys(self):
+        dc = instrument()
+        da = xd.stack(dc, "channel", dim="component")
+        assert da.dims == ("component", "time")
+        assert da["component"].values.tolist() == ["SHE", "SHN", "SHZ"]
+        # the leaves' own `channel` scalar is promoted alongside it
+        assert da["channel"].dim == "component"
+
+    def test_a_sequence_level_is_keyed_by_position(self):
+        dc = xd.DataCollection([trace(), trace(), trace()], "acquisition")
+        da = xd.stack(dc, "acquisition")
+        assert da.dims == ("acquisition", "time")
+        assert da["acquisition"].values.tolist() == [0, 1, 2]
+
+    def test_a_single_member_level_gives_a_length_one_dimension(self):
+        dc = instrument(channels=("SHZ",))
+        da = xd.stack(dc, "channel")
+        assert da.shape == (1, 5)
+        assert da["channel"].values.tolist() == ["SHZ"]
+
+    def test_levels_below_the_collapsed_one_are_merged_in_lockstep(self):
+        dc = xd.DataCollection(
+            {
+                code: xd.DataCollection(
+                    [trace(code, npts=5), trace(code, start=10.0, npts=5)],
+                    "acquisition",
+                )
+                for code in ("SHZ", "SHN")
+            },
+            "channel",
+        )
+        result = xd.stack(dc, "channel")
+        assert result.name == "acquisition"
+        assert len(result) == 2
+        for da in result:
+            assert da.dims == ("channel", "time")
+            assert da["channel"].values.tolist() == ["SHN", "SHZ"]
+
+    def test_a_mapping_below_the_collapsed_level_is_merged_in_lockstep(self):
+        dc = xd.DataCollection(
+            {
+                code: xd.DataCollection(
+                    {loc: trace(code) for loc in ("00", "10")}, "location"
+                )
+                for code in ("SHZ", "SHN")
+            },
+            "channel",
+        )
+        result = xd.stack(dc, "channel")
+        assert result.name == "location"
+        assert list(result) == ["00", "10"]
+        assert result["10"].dims == ("channel", "time")
+
+    def test_levels_above_the_collapsed_one_are_walked(self):
+        dc = xd.DataCollection(
+            {"DX": xd.DataCollection([instrument()], "acquisition")}, "network"
+        )
+        result = xd.stack(dc, "channel")
+        assert result.name == "network"
+        assert result["DX"][0].dims == ("channel", "time")
+
+    def test_a_leaf_beside_the_level_is_left_alone(self):
+        dc = xd.DataCollection(
+            {"SX01": instrument("SX01"), "SX02": trace(station="SX02")}, "station"
+        )
+        result = xd.stack(dc, "channel")
+        assert result["SX01"].dims == ("channel", "time")
+        assert result["SX02"].dims == ("time",)
+
+    def test_varying_scalar_coordinates_are_promoted(self):
+        dc = xd.DataCollection(
+            {name: trace(station=name) for name in ("SX01", "SX02")}, "station"
+        )
+        da = xd.stack(dc, "station")
+        assert da["station"].values.tolist() == ["SX01", "SX02"]
+        assert da["network"].dim is None
+
+    # --- input validation ---
+
+    def test_unknown_join_raises(self):
+        with pytest.raises(ValueError, match="unknown join method 'left'"):
+            xd.stack(instrument(), "channel", join="left")
+
+    def test_a_data_array_is_not_a_collection(self):
+        with pytest.raises(TypeError, match="can only stack a level"):
+            xd.stack(trace(), "channel")
+
+    def test_unknown_level_raises(self):
+        with pytest.raises(KeyError, match="'component' does not name any level"):
+            xd.stack(instrument(), "component")
+
+    def test_an_empty_level_raises(self):
+        dc = xd.DataCollection({}, "channel")
+        with pytest.raises(ValueError, match="level 'channel' is empty"):
+            xd.stack(dc, "channel")
+
+    def test_dim_colliding_with_a_leaf_dimension_raises(self):
+        dc = xd.DataCollection(
+            {code: trace(code) for code in ("SHZ", "SHN")}, "channel"
+        )
+        with pytest.raises(ValueError, match="already has a 'time' dimension"):
+            xd.stack(dc, "channel", dim="time")
+
+    # --- structural disagreement ---
+
+    def test_a_leaf_facing_a_sub_tree_raises(self):
+        dc = xd.DataCollection(
+            {
+                "SHZ": trace("SHZ"),
+                "SHN": xd.DataCollection([trace("SHN")], "acquisition"),
+            },
+            "channel",
+        )
+        with pytest.raises(ValueError, match="sub-trees .*do not agree"):
+            xd.stack(dc, "channel")
+
+    def test_differently_named_sub_levels_raise(self):
+        dc = xd.DataCollection(
+            {
+                "SHZ": xd.DataCollection([trace("SHZ")], "acquisition"),
+                "SHN": xd.DataCollection([trace("SHN")], "epoch"),
+            },
+            "channel",
+        )
+        with pytest.raises(
+            ValueError, match="'acquisition' sequence.*'epoch' sequence"
+        ):
+            xd.stack(dc, "channel")
+
+    def test_differing_sub_keys_raise(self):
+        dc = xd.DataCollection(
+            {
+                "SHZ": xd.DataCollection({"00": trace("SHZ")}, "location"),
+                "SHN": xd.DataCollection({"10": trace("SHN")}, "location"),
+            },
+            "channel",
+        )
+        with pytest.raises(ValueError, match="does not hold the same keys"):
+            xd.stack(dc, "channel")
+
+    def test_differing_sub_lengths_raise(self):
+        dc = xd.DataCollection(
+            {
+                "SHZ": xd.DataCollection([trace("SHZ")], "acquisition"),
+                "SHN": xd.DataCollection([trace("SHN"), trace("SHN")], "acquisition"),
+            },
+            "channel",
+        )
+        with pytest.raises(ValueError, match="does not hold the same number"):
+            xd.stack(dc, "channel")
+
+    def test_a_level_nested_under_itself_raises(self):
+        dc = xd.DataCollection(
+            {
+                code: xd.DataCollection({code: trace(code)}, "channel")
+                for code in ("SHZ", "SHN")
+            },
+            "channel",
+        )
+        with pytest.raises(ValueError, match="nested under itself"):
+            xd.stack(dc, "channel")
+
+    # --- coordinate disagreement ---
+
+    def test_differing_leaf_dimensions_raise(self):
+        dc = xd.DataCollection(
+            {"SHZ": trace("SHZ"), "SHN": trace("SHN").expand_dims("space")},
+            "channel",
+        )
+        with pytest.raises(ValueError, match="has dimensions"):
+            xd.stack(dc, "channel")
+
+    def test_a_missing_coordinate_raises(self):
+        dc = xd.DataCollection(
+            {"SHZ": trace("SHZ"), "SHN": trace("SHN").drop_coords("network")},
+            "channel",
+        )
+        with pytest.raises(ValueError, match=r"lacks the coordinates \['network'\]"):
+            xd.stack(dc, "channel")
+
+    def test_a_dimension_without_coordinate_cannot_be_aligned(self):
+        dc = xd.DataCollection(
+            {
+                "SHZ": xd.DataArray(np.arange(4.0)),
+                "SHN": xd.DataArray(np.arange(5.0)),
+            },
+            "channel",
+        )
+        with pytest.raises(ValueError, match="no coordinate to align on"):
+            xd.stack(dc, "channel", join="inner")
+
+    def test_a_time_mismatch_raises_naming_the_coordinate(self):
+        dc = xd.DataCollection(
+            {"SHZ": trace("SHZ"), "SHN": trace("SHN", start=2.0)}, "channel"
+        )
+        with pytest.raises(ValueError, match="coordinate 'time' differs"):
+            xd.stack(dc, "channel")
+
+    def test_the_mismatch_error_points_at_the_join(self):
+        dc = xd.DataCollection(
+            {"SHZ": trace("SHZ"), "SHN": trace("SHN", start=2.0)}, "channel"
+        )
+        with pytest.raises(ValueError, match="pass join='inner' or join='outer'"):
+            xd.stack(dc, "channel")
+
+    def test_the_mismatch_error_names_where_it_happened(self):
+        dc = xd.DataCollection(
+            {
+                "SHZ": xd.DataCollection([trace("SHZ")], "acquisition"),
+                "SHN": xd.DataCollection([trace("SHN", start=2.0)], "acquisition"),
+            },
+            "channel",
+        )
+        with pytest.raises(ValueError, match="at acquisition=0"):
+            xd.stack(dc, "channel")
+
+    def test_an_unjoinable_mismatch_gets_no_join_hint(self):
+        dc = xd.DataCollection(
+            {"SHZ": trace("SHZ"), "SHN": trace("SHN").drop_coords("network")},
+            "channel",
+        )
+        with pytest.raises(ValueError) as excinfo:
+            xd.stack(dc, "channel")
+        assert "join=" not in str(excinfo.value)
+
+    # --- joining ---
+
+    def test_inner_join_keeps_the_shared_span(self):
+        dc = xd.DataCollection(
+            {
+                "SX01": trace(station="SX01", start=0.0, npts=5),
+                "SX02": trace(station="SX02", start=2.0, npts=5),
+            },
+            "station",
+        )
+        da = xd.stack(dc, "station", join="inner")
+        assert da.dims == ("station", "time")
+        assert da["time"].values.tolist() == [2.0, 3.0, 4.0]
+        npt.assert_array_equal(da.values, [[2.0, 3.0, 4.0], [0.0, 1.0, 2.0]])
+
+    def test_outer_join_pads_with_nan(self):
+        dc = xd.DataCollection(
+            {
+                "SX01": trace(station="SX01", start=0.0, npts=5),
+                "SX02": trace(station="SX02", start=2.0, npts=5),
+            },
+            "station",
+        )
+        da = xd.stack(dc, "station", join="outer")
+        assert da["time"].values.tolist() == [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        npt.assert_array_equal(
+            da.values,
+            [
+                [0.0, 1.0, 2.0, 3.0, 4.0, np.nan, np.nan],
+                [np.nan, np.nan, 0.0, 1.0, 2.0, 3.0, 4.0],
+            ],
+        )
+
+    def test_outer_join_promotes_an_integer_dtype(self):
+        dc = xd.DataCollection(
+            {
+                "SX01": trace(
+                    station="SX01", npts=3, values=np.arange(3, dtype="int16")
+                ),
+                "SX02": trace(
+                    station="SX02",
+                    start=2.0,
+                    npts=3,
+                    values=np.arange(3, dtype="int16"),
+                ),
+            },
+            "station",
+        )
+        da = xd.stack(dc, "station", join="outer")
+        assert np.issubdtype(da.dtype, np.floating)
+        assert np.isnan(da.values).any()
+
+    def test_inner_join_indexes_when_the_overlap_is_not_contiguous(self):
+        common = xd.DataArray(
+            np.arange(3.0), {"time": [0.0, 2.0, 3.0], "station": (None, "SX02")}
+        )
+        dc = xd.DataCollection(
+            {
+                "SX01": xd.DataArray(
+                    np.arange(4.0),
+                    {"time": [0.0, 1.0, 2.0, 3.0], "station": (None, "SX01")},
+                ),
+                "SX02": common,
+            },
+            "station",
+        )
+        da = xd.stack(dc, "station", join="inner")
+        assert da["time"].values.tolist() == [0.0, 2.0, 3.0]
+        npt.assert_array_equal(da.values, [[0.0, 2.0, 3.0], [0.0, 1.0, 2.0]])
+
+    def test_join_reconciles_equivalent_coordinate_representations(self):
+        from xdas.coordinates import InterpCoordinate
+
+        redundant = trace("SHN")
+        redundant["time"] = InterpCoordinate(
+            {"tie_indices": [0, 2, 4], "tie_values": [0.0, 2.0, 4.0]}, "time"
+        )
+        dc = xd.DataCollection({"SHZ": trace("SHZ"), "SHN": redundant}, "channel")
+        # structurally different tie points describe the same grid: strict
+        # equality says no, the join says yes
+        with pytest.raises(ValueError, match="coordinate 'time' differs"):
+            xd.stack(dc, "channel")
+        da = xd.stack(dc, "channel", join="inner")
+        assert da.shape == (2, 5)
+        assert da["time"].values.tolist() == [0.0, 1.0, 2.0, 3.0, 4.0]
+
+    def test_leaves_sharing_no_coordinate_value_raise(self):
+        dc = xd.DataCollection(
+            {
+                "SX01": trace(station="SX01", start=0.0, npts=3),
+                "SX02": trace(station="SX02", start=10.0, npts=3),
+            },
+            "station",
+        )
+        with pytest.raises(ValueError, match="share no coordinate value"):
+            xd.stack(dc, "station", join="inner")
+
+    def test_repeated_coordinate_values_refuse_to_align(self):
+        dc = xd.DataCollection(
+            {
+                "SX01": xd.DataArray(
+                    np.arange(3.0), {"time": [0.0, 0.0, 1.0], "station": (None, "A")}
+                ),
+                "SX02": xd.DataArray(
+                    np.arange(2.0), {"time": [0.0, 1.0], "station": (None, "B")}
+                ),
+            },
+            "station",
+        )
+        with pytest.raises(ValueError, match="repeats coordinate values"):
+            xd.stack(dc, "station", join="inner")
+
+    def test_padding_refuses_a_second_coordinate_along_the_dimension(self):
+        dc = xd.DataCollection(
+            {
+                "SX01": xd.DataArray(
+                    np.arange(3.0),
+                    {"time": [0.0, 1.0, 2.0], "quality": ("time", [1, 1, 1])},
+                ),
+                "SX02": xd.DataArray(
+                    np.arange(3.0),
+                    {"time": [2.0, 3.0, 4.0], "quality": ("time", [1, 1, 1])},
+                ),
+            },
+            "station",
+        )
+        with pytest.raises(ValueError, match="cannot pad along 'time'"):
+            xd.stack(dc, "station", join="outer")
+
+    def test_a_join_that_does_not_reconcile_still_raises(self):
+        # aligning `time` cannot make the second coordinate agree
+        dc = xd.DataCollection(
+            {
+                "SX01": xd.DataArray(
+                    np.arange(3.0),
+                    {"time": [0.0, 1.0, 2.0], "quality": ("time", [1, 1, 1])},
+                ),
+                "SX02": xd.DataArray(
+                    np.arange(4.0),
+                    {"time": [0.0, 1.0, 2.0, 3.0], "quality": ("time", [2, 2, 2, 2])},
+                ),
+            },
+            "station",
+        )
+        with pytest.raises(ValueError, match="coordinate 'quality' differs"):
+            xd.stack(dc, "station", join="inner")
+
+    # --- grid snapping ---
+
+    def test_a_subsample_offset_is_the_same_coordinate(self):
+        # 1e-3 of a sample apart: one grid, two roundings of it
+        dc = xd.DataCollection(
+            {"SHZ": regular_trace("SHZ"), "SHN": regular_trace("SHN", start=1e-3)},
+            "channel",
+        )
+        da = xd.stack(dc, "channel")
+        assert da.shape == (2, 5)
+        assert da["time"].values.tolist() == [0.0, 1.0, 2.0, 3.0, 4.0]
+        npt.assert_array_equal(da.values, np.tile(np.arange(5.0), (2, 1)))
+
+    def test_the_first_leaf_of_the_level_wins_the_grid(self):
+        # the offset leaf comes first here, so its rounding is the one kept —
+        # the level's own key order decides, not the sorted output order
+        dc = xd.DataCollection(
+            {"SHN": regular_trace("SHN", start=1e-3), "SHZ": regular_trace("SHZ")},
+            "channel",
+        )
+        da = xd.stack(dc, "channel")
+        npt.assert_allclose(da["time"].values, np.arange(5.0) + 1e-3)
+
+    def test_a_full_sample_offset_still_raises(self):
+        dc = xd.DataCollection(
+            {"SHZ": regular_trace("SHZ"), "SHN": regular_trace("SHN", start=1.0)},
+            "channel",
+        )
+        with pytest.raises(ValueError, match="coordinate 'time' differs"):
+            xd.stack(dc, "channel")
+
+    def test_a_half_sample_offset_still_raises(self):
+        dc = xd.DataCollection(
+            {"SHZ": regular_trace("SHZ"), "SHN": regular_trace("SHN", start=0.5)},
+            "channel",
+        )
+        with pytest.raises(ValueError, match="coordinate 'time' differs"):
+            xd.stack(dc, "channel")
+
+    def test_tolerance_false_restores_strict_equality(self):
+        dc = xd.DataCollection(
+            {"SHZ": regular_trace("SHZ"), "SHN": regular_trace("SHN", start=1e-3)},
+            "channel",
+        )
+        with pytest.raises(ValueError, match="coordinate 'time' differs"):
+            xd.stack(dc, "channel", tolerance=False)
+
+    def test_an_undeclared_grid_is_not_snapped_by_default(self):
+        # `trace` ties values to indices without declaring a sampling interval:
+        # there is no grid to snap to, and a fraction of a sample means nothing
+        dc = xd.DataCollection(
+            {"SHZ": trace("SHZ"), "SHN": trace("SHN", start=1e-3)}, "channel"
+        )
+        with pytest.raises(ValueError, match="coordinate 'time' differs"):
+            xd.stack(dc, "channel")
+        da = xd.stack(dc, "channel", tolerance=1e-2)
+        assert da["time"].values.tolist() == [0.0, 1.0, 2.0, 3.0, 4.0]
+
+    def test_an_explicit_tolerance_is_absolute(self):
+        dc = xd.DataCollection(
+            {"SHZ": regular_trace("SHZ"), "SHN": regular_trace("SHN", start=0.4)},
+            "channel",
+        )
+        with pytest.raises(ValueError, match="coordinate 'time' differs"):
+            xd.stack(dc, "channel", tolerance=0.1)
+        assert xd.stack(dc, "channel", tolerance=0.5).shape == (2, 5)
+
+    def test_datetime_grids_snap_within_a_fraction_of_a_sample(self):
+        def datetime_trace(channel, start):
+            return xd.DataArray(
+                np.arange(4.0),
+                {
+                    "channel": (None, channel),
+                    "time": {
+                        "tie_indices": [0, 3],
+                        "tie_values": [
+                            np.datetime64(start, "ns"),
+                            np.datetime64(start, "ns") + np.timedelta64(75, "ms"),
+                        ],
+                        "sampling_interval": np.timedelta64(25, "ms"),
+                    },
+                },
+            )
+
+        # the reference dataset's own mismatch: one nanosecond at 40 Hz
+        dc = xd.DataCollection(
+            {
+                "SHE": datetime_trace("SHE", "2026-05-20T00:00:00.000000000"),
+                "SHZ": datetime_trace("SHZ", "2026-05-19T23:59:59.999999999"),
+            },
+            "channel",
+        )
+        da = xd.stack(dc, "channel")
+        assert da.shape == (2, 4)
+        assert da["time"][0].values == np.datetime64("2026-05-20T00:00:00.000000000")
+        # an explicit tolerance is in seconds, as everywhere else
+        with pytest.raises(ValueError, match="coordinate 'time' differs"):
+            xd.stack(dc, "channel", tolerance=1e-12)
+
+    def test_a_dense_coordinate_snaps_onto_a_declared_grid(self):
+        dense = xd.DataArray(
+            np.arange(5.0),
+            {"channel": (None, "SHN"), "time": (np.arange(5.0) + 1e-3).tolist()},
+        )
+        dc = xd.DataCollection({"SHZ": regular_trace("SHZ"), "SHN": dense}, "channel")
+        da = xd.stack(dc, "channel")
+        assert da["time"].values.tolist() == [0.0, 1.0, 2.0, 3.0, 4.0]
+        assert da["time"].isregular()
+
+    def test_the_budget_can_come_from_the_snapped_leaf(self):
+        # the reference declares no spacing; the other one does, and that is
+        # the grid the tolerance is a fraction of
+        dense = xd.DataArray(
+            np.arange(5.0),
+            {"channel": (None, "SHE"), "time": (np.arange(5.0) + 1e-3).tolist()},
+        )
+        dc = xd.DataCollection({"SHE": dense, "SHZ": regular_trace("SHZ")}, "channel")
+        da = xd.stack(dc, "channel")
+        npt.assert_allclose(da["time"].values, np.arange(5.0) + 1e-3)
+        assert not da["time"].isregular()
+
+    def test_a_sampled_coordinate_snaps_segment_by_segment(self):
+        from xdas.coordinates import SampledCoordinate
+
+        def segmented(channel, start):
+            return xd.DataArray(
+                np.arange(10.0),
+                {
+                    "channel": (None, channel),
+                    "time": SampledCoordinate(
+                        {
+                            "tie_values": [start, start + 10.0],
+                            "tie_lengths": [5, 5],
+                            "sampling_interval": 1.0,
+                        },
+                        "time",
+                    ),
+                },
+            )
+
+        dc = xd.DataCollection(
+            {"SHZ": segmented("SHZ", 0.0), "SHN": segmented("SHN", 1e-3)}, "channel"
+        )
+        da = xd.stack(dc, "channel")
+        assert da.shape == (2, 10)
+        assert da["time"].values.tolist() == [0, 1, 2, 3, 4, 10, 11, 12, 13, 14]
+        # the gap between the two segments is part of the grid: move it and the
+        # coordinates are no longer the same one
+        moved = xd.DataCollection(
+            {"SHZ": segmented("SHZ", 0.0), "SHN": segmented("SHN", 0.0)}, "channel"
+        )
+        moved["SHN"]["time"] = SampledCoordinate(
+            {
+                "tie_values": [0.0, 11.0],
+                "tie_lengths": [5, 5],
+                "sampling_interval": 1.0,
+            },
+            "time",
+        )
+        with pytest.raises(ValueError, match="coordinate 'time' differs"):
+            xd.stack(moved, "channel")
+
+    def test_coordinates_of_different_length_are_not_snapped(self):
+        # snapping never changes a length; a ragged pair stays a join's business
+        dc = xd.DataCollection(
+            {
+                "SHZ": regular_trace("SHZ", npts=5),
+                "SHN": regular_trace("SHN", npts=4, start=1e-3),
+            },
+            "channel",
+        )
+        with pytest.raises(ValueError, match="coordinate 'time' differs"):
+            xd.stack(dc, "channel")
+
+    def test_a_string_coordinate_is_never_snapped(self):
+        def labelled(channel, labels):
+            return xd.DataArray(
+                np.arange(3.0),
+                {
+                    "channel": (None, channel),
+                    "time": [0.0, 1.0, 2.0],
+                    "label": ("time", labels),
+                },
+            )
+
+        dc = xd.DataCollection(
+            {
+                "SHZ": labelled("SHZ", ["a", "b", "c"]),
+                "SHN": labelled("SHN", ["a", "b", "d"]),
+            },
+            "channel",
+        )
+        with pytest.raises(ValueError, match="coordinate 'label' differs"):
+            xd.stack(dc, "channel")
+
+    def test_a_datetime_and_a_numeric_coordinate_are_never_snapped(self):
+        dc = xd.DataCollection(
+            {
+                "SHZ": xd.DataArray(np.arange(3.0), {"time": [0.0, 1.0, 2.0]}),
+                "SHN": xd.DataArray(
+                    np.arange(3.0),
+                    {"time": np.arange("2026-01-01", 3, dtype="datetime64[s]")},
+                ),
+            },
+            "channel",
+        )
+        with pytest.raises(ValueError, match="coordinate 'time' differs"):
+            xd.stack(dc, "channel")
+
+    def test_outer_join_refuses_to_interleave_grids(self):
+        dc = xd.DataCollection(
+            {"SHZ": regular_trace("SHZ"), "SHN": regular_trace("SHN", start=0.5)},
+            "channel",
+        )
+        with pytest.raises(ValueError, match="would interleave 10 samples"):
+            xd.stack(dc, "channel", join="outer")
+
+    def test_outer_join_still_extends_a_shared_grid(self):
+        dc = xd.DataCollection(
+            {"SHZ": regular_trace("SHZ"), "SHN": regular_trace("SHN", start=2.0)},
+            "channel",
+        )
+        da = xd.stack(dc, "channel", join="outer")
+        assert da.shape == (2, 7)
+        assert da["time"].values.tolist() == [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+
+    # --- laziness ---
+
+    def test_tile_backed_leaves_stay_virtual(self, tmp_path):
+        from xdas.virtual import TileArray
+
+        expected = xd.testing.dummy(dims=("time", "space"), shape=(10, 5))
+        expected.to_netcdf(tmp_path / "chunk.nc")
+        dc = xd.DataCollection(
+            {
+                code: xd.open_dataarray(
+                    tmp_path / "chunk.nc", engine="xdas", vtype="tiles"
+                )
+                for code in ("SHZ", "SHN")
+            },
+            "channel",
+        )
+        da = xd.stack(dc, "channel")
+        assert isinstance(da.data, TileArray)
+        assert da.dims == ("channel", "time", "space")
+        assert da["channel"].values.tolist() == ["SHN", "SHZ"]
+        npt.assert_array_equal(np.asarray(da.data)[0], expected.values)
+
+
+class TestConcatNewDimVirtual:
+    def test_a_new_dimension_over_virtual_sources_loads_instead_of_raising(
+        self, tmp_path
+    ):
+        # `expand_dims` cannot follow a `VirtualSource` — a stack of sources is
+        # a longer axis, never an extra one — so the result is dense
+        expected = xd.testing.dummy(dims=("time", "space"), shape=(10, 5))
+        expected.to_netcdf(tmp_path / "chunk.nc")
+        objs = [xd.open_dataarray(tmp_path / "chunk.nc") for _ in range(2)]
+        assert all(isinstance(da.data, VirtualSource) for da in objs)
+        da = xd.concat(objs, "channel")
+        assert da.dims == ("channel", "time", "space")
+        assert isinstance(da.data, np.ndarray)

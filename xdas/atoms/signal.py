@@ -1,19 +1,18 @@
 """
-Signal-processing atoms: stateful wrappers around filtering and resampling.
+Composite signal-processing atoms with physical (Hz) parameters.
 
-Includes :class:`ResamplePoly`, :class:`IIRFilter`, :class:`FIRFilter`,
-:class:`LFilter`, :class:`SOSFilter`, :class:`DownSample`, :class:`UpSample`.
+Includes :class:`ResamplePoly`, :class:`IIRFilter`, :class:`FIRFilter`. The
+stateful machine-parameter primitives they orchestrate live in
+:mod:`xdas.atoms.kernel`.
 """
 
 from fractions import Fraction
 
-import numpy as np
 import scipy.signal as sp
 
-from ..coordinates import Coordinate, get_sampling_interval
-from ..core import DataArray, concat, split
-from ..parallel import parallelize
+from ..coordinates import get_sampling_interval
 from .core import Atom, State
+from .kernel import LFilter, Polyphase, SOSFilter
 
 
 class ResamplePoly(Atom):
@@ -91,9 +90,7 @@ class ResamplePoly(Atom):
         self.maxfactor = maxfactor
         self.window = window
         self.dim = dim
-        self.upsampling = UpSample(..., dim=self.dim)
         self.firfilter = FIRFilter(..., ..., "lowpass", self.window, dim=self.dim)
-        self.downsampling = DownSample(..., self.dim)
         self.fs = State(...)
 
     def initialize(self, da, **flags):
@@ -111,19 +108,16 @@ class ResamplePoly(Atom):
         cutoff = min(self.target / 2, self.fs / 2)
         max_rate = max(up, down)
         numtaps = 20 * max_rate + 1
-        self.upsampling.factor = up
         self.firfilter.numtaps = numtaps
         self.firfilter.cutoff = cutoff
-        self.downsampling.factor = down
+        self.firfilter.up = up
+        self.firfilter.down = down
 
     def call(self, da, **flags):
-        """Apply polyphase resampling (upsample → FIR filter → downsample) to *da*."""
-        if self.upsampling.factor == 1 and self.downsampling.factor == 1:
+        """Apply polyphase resampling to *da*."""
+        if self.firfilter.up == 1 and self.firfilter.down == 1:
             return da
-        da = self.upsampling(da, **flags)
-        da = self.firfilter(da, **flags)
-        da = self.downsampling(da, **flags)
-        return da
+        return self.firfilter(da, **flags)
 
 
 class IIRFilter(Atom):
@@ -286,6 +280,11 @@ class FIRFilter(Atom):
         Default: ``None``
     scale : bool
         Default: ``True``
+    up, down : int
+        Machine parameters of the polyphase form: the taps are designed at the
+        upsampled rate ``up * fs`` and applied by :class:`Polyphase`, which
+        keeps one output sample in ``down``. Both default to 1, i.e. plain
+        filtering.
     dim : str or int
         The dimension along which the downsampling is applied.
         This is either an index, ``time`` or ``distance``, or ``last``.
@@ -350,6 +349,8 @@ class FIRFilter(Atom):
         window="hamming",
         width=None,
         scale=True,
+        up=1,
+        down=1,
         dim="last",
     ):
         super().__init__()
@@ -359,8 +360,10 @@ class FIRFilter(Atom):
         self.window = window
         self.width = width
         self.scale = scale
+        self.up = up
+        self.down = down
         self.dim = dim
-        self.lfilter = LFilter(..., [1.0], self.dim)
+        self.polyphase = Polyphase(..., self.up, self.down, self.dim)
         self.fs = State(...)
 
     def initialize(self, da, **flags):
@@ -369,7 +372,7 @@ class FIRFilter(Atom):
         self.initialize_from_state()
 
     def initialize_from_state(self):
-        """Recompute the FIR taps and lag from the current design parameters."""
+        """Recompute the FIR taps from the current design parameters."""
         taps = sp.firwin(
             self.numtaps,
             self.cutoff,
@@ -377,214 +380,14 @@ class FIRFilter(Atom):
             window=self.window,
             pass_zero=self.btype,
             scale=self.scale,
-            fs=self.fs,
+            fs=self.fs * self.up,
         )
-        self.lag = (len(taps) - 1) // 2
-        self.lfilter.b = taps
+        # Interpolation spreads the energy of one input sample over `up`
+        # upsampled ones, which the taps must compensate.
+        self.polyphase.taps = self.up * taps
+        self.polyphase.up = self.up
+        self.polyphase.down = self.down
 
     def call(self, da, **flags):
-        """Apply the FIR taps to *da* and correct the time coordinate for filter lag."""
-        da = self.lfilter(da, **flags)
-        da[self.dim] -= get_sampling_interval(da, self.dim, cast=False) * self.lag
-        return da
-
-
-class LFilter(Atom):
-    """
-    Stateful direct-form IIR/FIR filter using :func:`scipy.signal.lfilter`.
-
-    Parameters
-    ----------
-    b : array-like
-        Numerator polynomial coefficients.
-    a : array-like
-        Denominator polynomial coefficients.
-    dim : str or int, optional
-        Dimension to filter along.  Defaults to ``"last"``.
-    parallel : int, bool, or None, optional
-        Worker count for parallelisation.
-    """
-
-    def __init__(self, b, a, dim="last", parallel=None):
-        super().__init__()
-        self.b = b
-        self.a = a
-        self.dim = dim
-        self.parallel = parallel
-        self.axis = State(...)
-        self.zi = State(...)
-
-    def initialize(self, da, chunk_dim=None, **flags):
-        """Set the filter axis and allocate the initial conditions buffer."""
-        self.axis = State(da.get_axis_num(self.dim))
-        if self.dim == chunk_dim:
-            n_sections = max(len(self.a), len(self.b)) - 1
-            shape = tuple(
-                n_sections if name == self.dim else size
-                for name, size in da.sizes.items()
-            )
-            self.zi = State(np.zeros(shape))
-        else:
-            self.zi = State(None)
-
-    def call(self, da, **flags):
-        """Apply the filter to *da*, updating the state if chunked."""
-        across = int(self.axis == 0)
-        if self.zi is None:
-            func = parallelize((None, None, across), across, self.parallel)(sp.lfilter)
-            data = func(self.b, self.a, da.values, self.axis)
-        else:
-            func = parallelize(
-                (None, None, across, None, across), (across, across), self.parallel
-            )(sp.lfilter)
-            data, zf = func(self.b, self.a, da.values, self.axis, self.zi)
-            self.zi = State(zf)
-        return da.copy(data=data)
-
-
-class SOSFilter(Atom):
-    """
-    Stateful second-order-sections IIR filter using :func:`scipy.signal.sosfilt`.
-
-    Parameters
-    ----------
-    sos : array-like, shape (n_sections, 6)
-        SOS filter coefficients as returned by e.g. :func:`scipy.signal.iirfilter`.
-    dim : str or int, optional
-        Dimension to filter along.  Defaults to ``"last"``.
-    parallel : int, bool, or None, optional
-        Worker count for parallelisation.
-    """
-
-    def __init__(self, sos, dim="last", parallel=None):
-        super().__init__()
-        self.sos = sos
-        self.dim = dim
-        self.parallel = parallel
-        self.axis = State(...)
-        self.zi = State(...)
-
-    def initialize(self, da, chunk_dim=None, **flags):
-        """Set the filter axis and allocate the SOS initial-conditions buffer."""
-        self.axis = State(da.get_axis_num(self.dim))
-        if self.dim == chunk_dim:
-            n_sections = self.sos.shape[0]
-            shape = (n_sections,) + tuple(
-                2 if index == self.axis else element
-                for index, element in enumerate(da.shape)
-            )
-            self.zi = State(np.zeros(shape))
-        else:
-            self.zi = State(None)
-
-    def call(self, da, **flags):
-        """Apply the SOS filter to *da*, updating the state if chunked."""
-        across = int(self.axis == 0)
-        if self.zi is None:
-            func = parallelize((None, across), across, self.parallel)(sp.sosfilt)
-            data = func(self.sos, da.values, self.axis)
-        else:
-            func = parallelize(
-                (None, across, None, across + 1), (across, across + 1), self.parallel
-            )(sp.sosfilt)
-            data, zf = func(self.sos, da.values, self.axis, self.zi)
-            self.zi = State(zf)
-        return da.copy(data=data)
-
-
-class DownSample(Atom):
-    """
-    Stateful integer downsampling by selecting every *factor*-th sample.
-
-    Parameters
-    ----------
-    factor : int
-        Downsampling factor.
-    dim : str or int, optional
-        Dimension to downsample along.  Defaults to ``"last"``.
-    """
-
-    def __init__(self, factor, dim="last"):
-        super().__init__()
-        self.factor = factor
-        self.dim = dim
-        self.buffer = State(...)
-
-    def initialize(self, da, chunk_dim=None, **flags):
-        """Initialise the carry-over buffer for chunked operation."""
-        if chunk_dim == self.dim:
-            self.buffer = State(da.isel({self.dim: slice(0, 0)}))
-        else:
-            self.buffer = State(None)
-
-    def call(self, da, **flags):
-        """Downsample *da*, buffering the trailing partial stride when chunked."""
-        if self.factor == 1:
-            return da
-        if self.buffer is not None:
-            da = concat([self.buffer, da], self.dim)
-            divpoint = da.sizes[self.dim] - da.sizes[self.dim] % self.factor
-            da, buffer = split(da, [divpoint], self.dim)
-            self.buffer = State(buffer)
-        return da.isel({self.dim: slice(None, None, self.factor)})
-
-
-class UpSample(Atom):
-    """
-    Integer upsampling by zero-insertion (and optional energy scaling).
-
-    Parameters
-    ----------
-    factor : int
-        Upsampling factor.
-    scale : bool, optional
-        If ``True``, scale inserted samples so energy is preserved.
-    dim : str or int, optional
-        Dimension to upsample along.  Defaults to ``"last"``.
-    """
-
-    def __init__(self, factor, scale=True, dim="last"):
-        super().__init__()
-        self.factor = factor
-        self.scale = scale
-        self.dim = dim
-
-    def call(self, da, **flags):
-        """Upsample *da* by inserting zeros between every original sample."""
-        if self.factor == 1:
-            return da
-        shape = tuple(
-            self.factor * size if dim == self.dim else size
-            for dim, size in da.sizes.items()
-        )
-        slc = tuple(
-            slice(None, None, self.factor) if dim == self.dim else slice(None)
-            for dim in da.dims
-        )
-        data = np.zeros(shape, dtype=da.dtype)
-        if self.scale:
-            data[slc] = da.values * self.factor
-        else:
-            data[slc] = da.values
-        coords = da.coords.copy()
-        delta = get_sampling_interval(da, self.dim, cast=False)
-        new_delta = delta / self.factor
-        coord = coords[self.dim]
-        tie_indices = coord.tie_indices * self.factor
-        tie_values = coord.tie_values
-        tie_indices[-1] += self.factor - 1
-        tie_values[-1] += (self.factor - 1) * new_delta
-        data_coord = {"tie_indices": tie_indices, "tie_values": tie_values}
-        if coord.isregular():
-            # The derived rate may not be exactly representable (integer datetime
-            # resolutions truncate), so declare the representation error as jitter
-            # on top of the inherited one; chunk seams then stay within tolerance.
-            data_coord["sampling_interval"] = new_delta
-            data_coord["tolerance"] = coord.tolerance + np.abs(
-                delta - new_delta * self.factor
-            )
-        # An irregular input gives no rate to inherit and no jitter bound to
-        # derive one from, so the result stays irregular rather than claiming a
-        # precision the source never declared.
-        coords[self.dim] = Coordinate(data_coord, self.dim)
-        return DataArray(data, coords, da.dims, da.name, da.attrs)
+        """Apply the FIR taps to *da*, delay-corrected and resampled."""
+        return self.polyphase(da, **flags)
