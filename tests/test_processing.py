@@ -248,7 +248,6 @@ class TestDataFrameWriter:
     def test_init(self, tmp_path):
         dw = xp.DataFrameWriter(tmp_path / "output.csv")
         assert dw.path == str(tmp_path / "output.csv")
-        assert dw.parse_dates is None
 
     def test_single_dataframe(self, tmp_path):
         dw = xp.DataFrameWriter(tmp_path / "output.csv")
@@ -318,13 +317,6 @@ class TestDataFrameWriter:
         assert result.equals(expected)
         assert pd.api.types.is_datetime64_any_dtype(result["time"])
         assert pd.api.types.is_datetime64_any_dtype(result["detection"])
-
-    def test_explicit_parse_dates_overrides_auto_detection(self, tmp_path):
-        dw = xp.DataFrameWriter(tmp_path / "output.csv", parse_dates=False)
-        df = pd.DataFrame({"time": pd.to_datetime(["2020-01-01T00:00:00"])})
-        dw.submit(df)
-        result = dw.result()
-        assert not pd.api.types.is_datetime64_any_dtype(result["time"])
 
     def test_missing_directory(self, tmp_path):
         with pytest.raises(OSError):

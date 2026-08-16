@@ -1239,13 +1239,6 @@ class DataFrameWriter:
     ----------
     path : str
         The path to the csv file.
-    parse_dates : bool, int, list, optional
-        Which columns to parse as dates when reopening the csv file at the end
-        of the process. By default (None), any column that was datetime-typed
-        in the submitted DataFrames is detected automatically and restored on
-        read, since `to_csv` writes datetimes as plain strings with no dtype
-        metadata. Pass an explicit value to opt out of this and control date
-        parsing yourself.
     create_dirs : bool, optional
         Whether to create parent directories if they do not exist. Default is False.
 
@@ -1264,15 +1257,13 @@ class DataFrameWriter:
 
     """
 
-    def __init__(self, path, parse_dates=None, create_dirs=False):
+    def __init__(self, path, create_dirs=False):
         dirpath = os.path.dirname(path)
         if create_dirs and dirpath:
             os.makedirs(dirpath, exist_ok=True)
         if dirpath and not os.path.exists(dirpath):
             raise OSError(f"no directory {dirpath}")
         self.path = str(path) if isinstance(path, Path) else path
-        self.parse_dates = parse_dates
-        self._auto_parse_dates = parse_dates is None
         self._datetime_columns = []
         self._executor = ThreadPoolExecutor(1)
         self._future = None
@@ -1299,13 +1290,12 @@ class DataFrameWriter:
         return self.submit(df)
 
     def _write(self, df):
-        if self._auto_parse_dates:
-            for column in df.columns:
-                if (
-                    column not in self._datetime_columns
-                    and pd.api.types.is_datetime64_any_dtype(df[column])
-                ):
-                    self._datetime_columns.append(column)
+        for column in df.columns:
+            if (
+                column not in self._datetime_columns
+                and pd.api.types.is_datetime64_any_dtype(df[column])
+            ):
+                self._datetime_columns.append(column)
         # A run appends to the table it finds, which is what lets a restarted
         # acquisition keep filling the day's file.
         if os.path.exists(self.path):
@@ -1322,11 +1312,8 @@ class DataFrameWriter:
         if self._future is not None:
             self._future.result()
         self.shutdown()
-        parse_dates = (
-            self._datetime_columns if self._auto_parse_dates else self.parse_dates
-        )
         try:
-            return pd.read_csv(self.path, parse_dates=parse_dates)
+            return pd.read_csv(self.path, parse_dates=self._datetime_columns)
         except (FileNotFoundError, pd.errors.EmptyDataError):
             return pd.DataFrame()
 
