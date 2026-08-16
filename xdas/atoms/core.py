@@ -850,7 +850,7 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
         --------
         >>> import numpy as np
         >>> import xdas as xd
-        >>> pipeline = xd.decimate(..., target=50.0) >> np.square
+        >>> pipeline = xd.resample(..., 50.0) >> np.square
         >>> pipeline.process(da_virtual, out="results/")  # doctest: +SKIP
         >>> pipeline.process("archive/*.h5", out="results/")  # doctest: +SKIP
         >>> pipeline.process(xd.watch("/incoming"), out="sds/")  # doctest: +SKIP

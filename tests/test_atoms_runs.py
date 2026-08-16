@@ -17,11 +17,11 @@ import xdas as xd
 from xdas.atoms import (
     STFT,
     Atom,
-    Decimate,
     DownSample,
     Filter,
     Integrate,
     Rechunk,
+    Resample,
     Sequential,
     State,
 )
@@ -61,10 +61,12 @@ class TestCommutation:
         lambda: Rechunk({"time": 7}),
         lambda: Filter((1.0, 10.0)),
         lambda: Filter((None, 10.0), ftype="fir"),
-        lambda: Decimate(25.0),
+        lambda: Resample(25.0, dim="time"),
         lambda: STFT(0.16),  # expander: 16-sample windows, 8-sample hops
         lambda: Integrate(),
-        lambda: Sequential([Decimate(25.0), Filter((1.0, 10.0)), np.square]),
+        lambda: Sequential(
+            [Resample(25.0, dim="time"), Filter((1.0, 10.0)), np.square]
+        ),
     ]
 
     @pytest.mark.parametrize("split", splits)
@@ -372,9 +374,9 @@ class TestCollections:
 
 class TestIterChunks:
     def test_matches_eager(self, da):
-        pipeline = Sequential([Decimate(25.0), Filter((1.0, 10.0))])
+        pipeline = Sequential([Resample(25.0, dim="time"), Filter((1.0, 10.0))])
         outs = list(pipeline.iter_chunks(xd.split(da, 5, "time")))
-        expected = Sequential([Decimate(25.0), Filter((1.0, 10.0))])(da)
+        expected = Sequential([Resample(25.0, dim="time"), Filter((1.0, 10.0))])(da)
         result = xd.concat(outs, "time")
         assert np.allclose(result.values, expected.values, atol=1e-15, rtol=1e-9)
 

@@ -56,7 +56,7 @@ import xdas as xd
 da = xd.synthetics.wavelet_wavefronts()
 
 pipeline = (
-    xd.decimate(..., 0.02, dim="distance")
+    xd.resample(..., down=2, dim="distance")
     >> xd.filter(..., (5.0, None), dim="time")
     >> np.square
 )

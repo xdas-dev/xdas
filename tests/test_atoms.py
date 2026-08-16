@@ -236,7 +236,8 @@ class TestResamplePoly:
         chunks = xd.split(da, 6, "time")
 
         expected = xs.resample_poly(da, 5, 2, "time")
-        atom = ResamplePoly(125, maxfactor=10, dim="time")
+        with pytest.warns(DeprecationWarning):
+            atom = ResamplePoly(125, maxfactor=10, dim="time")
         result = atom(da)
         result_chunked = xd.concat(
             [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
@@ -259,7 +260,8 @@ class TestResamplePoly:
     def test_nothing_to_do(self):
         da = xd.testing.dummy()
         fs = 1 / xd.get_sampling_interval(da, "time")
-        atom = ResamplePoly(fs, maxfactor=10, dim="time")
+        with pytest.warns(DeprecationWarning):
+            atom = ResamplePoly(fs, maxfactor=10, dim="time")
         result = atom(da)
         assert result.equals(da)
 
@@ -365,13 +367,16 @@ class TestRepr:
     def test_the_nested_atoms_an_atom_designs_stay_out_of_it(self):
         # they are computed from the parameters above them and only restate
         # them; the atom is still there to be reached
-        atom = ResamplePoly(50.0, dim="time")
+        with pytest.warns(DeprecationWarning):
+            atom = ResamplePoly(50.0, dim="time")
         assert "FIRFilter" not in repr(atom)
-        assert isinstance(atom.firfilter, FIRFilter)
+        assert isinstance(atom.child, FIRFilter)
 
     def test_parameters_left_at_their_default_are_dropped(self):
-        assert repr(ResamplePoly(50.0)) == "ResamplePoly(target=50.0)"
-        assert "maxfactor" in repr(ResamplePoly(50.0, maxfactor=5))
+        with pytest.warns(DeprecationWarning):
+            assert repr(ResamplePoly(50.0)) == "ResamplePoly(target=50.0)"
+        with pytest.warns(DeprecationWarning):
+            assert "maxfactor" in repr(ResamplePoly(50.0, maxfactor=5))
 
     def test_derived_attributes_are_dropped(self):
         # `btype` and `cutoff` are computed from `freq`, which is shown
@@ -584,7 +589,9 @@ class TestLegacyIrregularCoordinates:
     def test_resample_poly_atom_on_irregular_coordinate(self):
         da = self.legacy(shape=(100, 3))
         target = 1.0 / (2.0 * xd.get_sampling_interval(da, "time"))
-        result = ResamplePoly(target=target, dim="time")(da)
+        with pytest.warns(DeprecationWarning):
+            atom = ResamplePoly(target=target, dim="time")
+        result = atom(da)
         assert result.sizes["time"] == da.sizes["time"] // 2
         assert not result["time"].isregular()
 
