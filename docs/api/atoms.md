@@ -99,7 +99,6 @@ Public processing vocabulary with physical parameters only.
 .. autosummary::
    :toctree: ../_autosummary
 
-   Decimate
    Differentiate
    Filter
    Integrate
@@ -121,7 +120,6 @@ data it applies eagerly, called on `...` it returns the atom.
    :toctree: ../_autosummary
 
    annotate
-   decimate
    detrend
    differentiate
    filter
