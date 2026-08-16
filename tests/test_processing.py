@@ -299,6 +299,33 @@ class TestDataFrameWriter:
         result = pd.read_csv(tmp_path / "output.csv")
         assert result.equals(expected)
 
+    def test_datetime_column_survives_roundtrip(self, tmp_path):
+        # to_csv writes datetimes as plain strings with no dtype metadata;
+        # DataFrameWriter must detect and restore them on read, for any
+        # datetime-typed column, not just one named "time".
+        dw = xp.DataFrameWriter(tmp_path / "output.csv")
+        expected = pd.DataFrame(
+            {
+                "time": pd.to_datetime(["2020-01-01T00:00:00", "2020-01-01T00:00:01"]),
+                "channel": [1, 2],
+                "detection": pd.to_datetime(
+                    ["2020-01-01T00:00:02", "2020-01-01T00:00:03"]
+                ),
+            }
+        )
+        dw.submit(expected)
+        result = dw.result()
+        assert result.equals(expected)
+        assert pd.api.types.is_datetime64_any_dtype(result["time"])
+        assert pd.api.types.is_datetime64_any_dtype(result["detection"])
+
+    def test_explicit_parse_dates_overrides_auto_detection(self, tmp_path):
+        dw = xp.DataFrameWriter(tmp_path / "output.csv", parse_dates=False)
+        df = pd.DataFrame({"time": pd.to_datetime(["2020-01-01T00:00:00"])})
+        dw.submit(df)
+        result = dw.result()
+        assert not pd.api.types.is_datetime64_any_dtype(result["time"])
+
     def test_missing_directory(self, tmp_path):
         with pytest.raises(OSError):
             xp.DataFrameWriter(tmp_path / "not_a_directory" / "output.csv")
