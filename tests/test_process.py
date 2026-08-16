@@ -31,7 +31,7 @@ def da():
 
 @pytest.fixture
 def pipeline():
-    return xd.decimate(..., target=25.0) >> xd.filter(..., (1.0, 10.0)) >> np.square
+    return xd.resample(..., rate=25.0) >> xd.filter(..., (1.0, 10.0)) >> np.square
 
 
 def gappy(da, at=50, gap=10):

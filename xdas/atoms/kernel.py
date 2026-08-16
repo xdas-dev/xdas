@@ -474,16 +474,27 @@ class Polyphase(Atom):
         size = stop - first
         # Output `index` sits `index * down - lag` upsampled samples after the
         # start of the run, hence that many minus `start * up` after this chunk.
-        shifts = np.array([first, stop - 1]) * self.down - self.lag - start * self.up
-        grid = coord.start + self._upsampled(shifts, delta)
-        origin, last = grid[0], grid[1]
+        shift = first * self.down - self.lag - start * self.up
+        origin = coord.start + self._upsampled(shift, delta)
         step = self._upsampled(self.down, delta)
-        if size > 1:
-            tie_indices, tie_values = [0, size - 1], [origin, last]
-            drift = abs((last - origin) - (size - 1) * step)
-        else:
+        if size <= 1:
             tie_indices, tie_values = [0], [origin]
             drift = 0 * step
+        elif self.up == 1:
+            # No interpolation: output index k sits, by construction of the
+            # FIR taps (lag is always a multiple of `down`), exactly on input
+            # sample k*down. Deriving the far tie as `origin + (size-1)*step`
+            # — the same arithmetic basis as `step` itself, rather than an
+            # independently rounded second point — makes the two tie values
+            # agree on the step *exactly*, not merely within a jitter budget.
+            last = origin + (size - 1) * step
+            tie_indices, tie_values = [0, size - 1], [origin, last]
+            drift = 0 * step
+        else:
+            last_shift = (stop - 1) * self.down - self.lag - start * self.up
+            last = coord.start + self._upsampled(last_shift, delta)
+            tie_indices, tie_values = [0, size - 1], [origin, last]
+            drift = abs((last - origin) - (size - 1) * step)
         data = {"tie_indices": tie_indices, "tie_values": tie_values}
         if coord.isregular():
             # A rate that the coordinate resolution cannot represent exactly

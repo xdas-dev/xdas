@@ -1761,7 +1761,7 @@ class TestPickerStages:
     def test_the_resampling_targets_the_weight_sets_own_rate(self, name, rate):
         # It is not always 100: `diting` runs at 50.
         picker = Picker(picker_model(name), device="cpu")
-        assert picker[0].target == rate
+        assert picker[0].rate == rate
 
     def test_the_resampling_is_a_no_op_on_data_already_at_that_rate(self):
         da = component_array(["SHZ", "SHN", "SHE"])  # 100 Hz, as the model wants

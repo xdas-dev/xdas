@@ -1,123 +1,16 @@
 """
 Composite signal-processing atoms with physical (Hz) parameters.
 
-Includes :class:`ResamplePoly`, :class:`IIRFilter`, :class:`FIRFilter`. The
-stateful machine-parameter primitives they orchestrate live in
+Includes :class:`IIRFilter`, :class:`FIRFilter`. The stateful
+machine-parameter primitives they orchestrate live in
 :mod:`xdas.atoms.kernel`.
 """
-
-from fractions import Fraction
 
 import scipy.signal as sp
 
 from ..coordinates import get_sampling_interval
 from .core import Atom, State
 from .kernel import LFilter, Polyphase, SOSFilter
-
-
-class ResamplePoly(Atom):
-    """
-    Pipeline implementation of polyphase-filter resampling.
-
-    Resamples from the original sampling rate to the ``target`` sampling rate.
-    This is achieved by an upsampling of the data,
-    followed by the application of a low-pass FIR filter,
-    and finally by downsampling of the data. The ratio of the
-    up and downsampling factors equals the target sampling rate over
-    the original sampling rate.
-
-    Parameters
-    ----------
-    target : float
-        The target sampling rate of the new data
-    maxfactor : int
-        Limit the initial upsampling by this factor, to avoid
-        accidental memory overflow. Default: 100
-    window : str or tuple of string and parameter values
-        The window function to apply befor FIR filtering. If a
-        tuple is given, it needs to be compatible with ``scipy.signal.get_window``.
-        Default: ``("kaiser", 5.0)``
-    dim : str or int
-        The dimension along which the downsampling is applied.
-        This is either an index, ``time`` or ``distance``, or ``last``.
-        Default: ``last``
-
-    Examples
-    --------
-    >>> from xdas.synthetics import wavelet_wavefronts
-    >>> from xdas.atoms import Sequential, ResamplePoly
-    >>> da = wavelet_wavefronts()
-
-    Using ``ResamplePoly`` directly:
-
-    >>> # Downsample time to 1 Hz
-    >>> da2 = ResamplePoly(target=1., dim="time")(da)
-    >>> da2["time"].values
-    array(['2022-12-31T23:59:50.000000000', '2022-12-31T23:59:51.000000000',
-        '2022-12-31T23:59:52.000000000', '2022-12-31T23:59:53.000000000',
-        '2022-12-31T23:59:54.000000000', '2022-12-31T23:59:55.000000000'],
-        dtype='datetime64[ns]')
-
-    Using ``ResamplePoly`` as an atom in ``Sequential``:
-
-    >>> # Downsample distance to 100m spacing
-    >>> sequence = Sequential([
-    ...    ResamplePoly(target=1/100., window=("tukey", 0.1), dim="distance")
-    ... ])
-    >>> result = sequence(da)
-    >>> result["distance"].values
-    array([-1000.,  -900.,  -800.,  -700.,  -600.,  -500.,  -400.,  -300.,
-            -200.,  -100.,     0.,   100.,   200.,   300.,   400.,   500.,
-            600.,   700.,   800.,   900.,  1000.,  1100.,  1200.,  1300.,
-            1400.,  1500.,  1600.,  1700.,  1800.,  1900.,  2000.,  2100.,
-            2200.,  2300.,  2400.,  2500.,  2600.,  2700.,  2800.,  2900.,
-            3000.,  3100.,  3200.,  3300.,  3400.,  3500.,  3600.,  3700.,
-            3800.,  3900.,  4000.,  4100.,  4200.,  4300.,  4400.,  4500.,
-            4600.,  4700.,  4800.,  4900.,  5000.,  5100.,  5200.,  5300.,
-            5400.,  5500.,  5600.,  5700.,  5800.,  5900.,  6000.,  6100.,
-            6200.,  6300.,  6400.,  6500.,  6600.,  6700.,  6800.,  6900.,
-            7000.,  7100.,  7200.,  7300.,  7400.,  7500.,  7600.,  7700.,
-            7800.,  7900.,  8000.,  8100.,  8200.,  8300.,  8400.,  8500.,
-            8600.,  8700.,  8800.,  8900.,  9000.])
-
-    .. warning::
-        The default ``dim`` value ``last`` does not work...
-    """
-
-    def __init__(self, target, maxfactor=100, window=("kaiser", 5.0), dim="last"):
-        super().__init__()
-        self.target = target
-        self.maxfactor = maxfactor
-        self.window = window
-        self.dim = dim
-        self.firfilter = FIRFilter(..., ..., "lowpass", self.window, dim=self.dim)
-        self.fs = State(...)
-
-    def initialize(self, da, **flags):
-        """Measure the current sampling rate from *da* and compute resampling ratios."""
-        self.fs = State(1.0 / get_sampling_interval(da, self.dim))
-        self.initialize_from_state()
-
-    def initialize_from_state(self):
-        """Recompute the up/down factors and FIR cut-off from the stored sampling rate."""
-        fraction = Fraction(self.target / self.fs)
-        fraction = fraction.limit_denominator(self.maxfactor)
-        fraction = 1 / (1 / fraction).limit_denominator(self.maxfactor)
-        up = fraction.numerator
-        down = fraction.denominator
-        cutoff = min(self.target / 2, self.fs / 2)
-        max_rate = max(up, down)
-        numtaps = 20 * max_rate + 1
-        self.firfilter.numtaps = numtaps
-        self.firfilter.cutoff = cutoff
-        self.firfilter.up = up
-        self.firfilter.down = down
-
-    def call(self, da, **flags):
-        """Apply polyphase resampling to *da*."""
-        if self.firfilter.up == 1 and self.firfilter.down == 1:
-            return da
-        return self.firfilter(da, **flags)
 
 
 class IIRFilter(Atom):

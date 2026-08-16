@@ -61,7 +61,6 @@ __all__ = [  # noqa: RUF022 - grouped by kind, not alphabetically
     "trim_overlaps",
     # task atoms (function forms)
     "annotate",
-    "decimate",
     "detrend",
     "differentiate",
     "filter",
@@ -102,7 +101,6 @@ from .atoms.detect import trigger
 from .atoms.kernel import rechunk
 from .atoms.ml import annotate, mlpicker, pick
 from .atoms.tasks import (
-    decimate,
     detrend,
     differentiate,
     filter,
