@@ -991,8 +991,8 @@ def combine_by_field(
         The combined data collection.
 
     """
-    leaves = [dc for dc in objs if isinstance(dc, list)]
-    nodes = [dc for dc in objs if isinstance(dc, dict)]
+    leaves = [dc for dc in objs if isinstance(dc, DataSequence)]
+    nodes = [dc for dc in objs if isinstance(dc, DataMapping)]
     if leaves and not nodes:
         objs = [da for dc in leaves for da in dc]
         # the level is named for what its elements are: whatever the inputs

@@ -5,6 +5,7 @@ Includes :class:`DataCollection`, :class:`DataSequence`, and
 :class:`DataMapping`.
 """
 
+from collections.abc import MutableMapping, MutableSequence
 from fnmatch import fnmatch
 from pathlib import Path
 
@@ -16,6 +17,11 @@ from .dataarray import DataArray
 #: printed where a branch has no key at all for a depth, as opposed to the
 #: blank that repeats the key of the row above
 ABSENT = "-"
+
+
+def _wrap(value):
+    """Coerce *value* into a DataCollection leaf/node, as construction does."""
+    return value if isinstance(value, DataCollection) else DataCollection(value)
 
 
 class DataCollection:
@@ -61,10 +67,10 @@ class DataCollection:
     def __new__(cls, data, name=None):
         """Dispatch to :class:`DataSequence` or :class:`DataMapping` based on *data* type."""
         data, name = parse(data, name)
-        if isinstance(data, list):
-            return list.__new__(DataSequence)
-        elif isinstance(data, dict):
-            return dict.__new__(DataMapping)
+        if isinstance(data, (list, DataSequence)):
+            return object.__new__(DataSequence)
+        elif isinstance(data, (dict, DataMapping)):
+            return object.__new__(DataMapping)
         elif isinstance(data, DataArray):
             if name is not None:
                 data = data.rename(name)
@@ -236,26 +242,37 @@ class DataCollection:
         return as_sequence_if_positional(DataMapping.from_netcdf(fname, group))
 
 
-class DataMapping(DataCollection, dict):
+class DataMapping(DataCollection, MutableMapping):
     """
     A Mapping of dataarrays.
 
-    A data mapping is a dictionary whose keys are any user defined identifiers and
-    values are dataarray objects.
+    A data mapping is a dict-like container whose keys are any user defined
+    identifiers and values are dataarray objects.
     """
 
     def __new__(cls, data, name=None):
-        """Allocate a new dict-backed DataMapping instance."""
-        return dict.__new__(cls)
+        """Allocate a new DataMapping instance."""
+        return object.__new__(cls)
 
     def __init__(self, data, name=None):
         data, name = parse(data, name)
-        data = {
-            key: (value if isinstance(value, DataCollection) else DataCollection(value))
-            for key, value in data.items()
-        }
-        dict.__init__(self, data)
+        self._data = {key: _wrap(value) for key, value in data.items()}
         self.name = name
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def __setitem__(self, key, value):
+        self._data[key] = _wrap(value)
+
+    def __delitem__(self, key):
+        del self._data[key]
+
+    def __len__(self):
+        return len(self._data)
+
+    def __iter__(self):
+        return iter(self._data)
 
     def __repr__(self):
         return format_collection(self)
@@ -424,25 +441,59 @@ class DataMapping(DataCollection, dict):
         )
 
 
-class DataSequence(DataCollection, list):
+class DataSequence(DataCollection, MutableSequence):
     """
     A collection of dataarrays.
 
-    A data sequence is a list whose values are dataarray objects.
+    A data sequence is a list-like container whose values are dataarray objects.
     """
 
     def __new__(cls, data, name=None):
-        """Allocate a new list-backed DataSequence instance."""
-        return list.__new__(cls)
+        """Allocate a new DataSequence instance."""
+        return object.__new__(cls)
 
     def __init__(self, data, name=None):
         data, name = parse(data, name)
-        data = [
-            (value if isinstance(value, DataCollection) else DataCollection(value))
-            for value in data
-        ]
-        list.__init__(self, data)
+        self._data = [_wrap(value) for value in data]
         self.name = name
+
+    def __getitem__(self, key):
+        if isinstance(key, slice):
+            return self.__class__(self._data[key], self.name)
+        return self._data[key]
+
+    def __setitem__(self, key, value):
+        if isinstance(key, slice):
+            self._data[key] = [_wrap(v) for v in value]
+        else:
+            self._data[key] = _wrap(value)
+
+    def __delitem__(self, key):
+        del self._data[key]
+
+    def __len__(self):
+        return len(self._data)
+
+    def insert(self, index, value):
+        """Insert *value* before *index*, wrapping it into a DataCollection leaf/node."""
+        self._data.insert(index, _wrap(value))
+
+    def __eq__(self, other):
+        # content-only, like the old `list.__eq__`; `.equals()` also checks
+        # `.name` and exact type for a stricter comparison
+        if not isinstance(other, (list, DataSequence)):
+            return NotImplemented
+        return list(self) == list(other)
+
+    def __add__(self, other):
+        if not isinstance(other, (list, DataSequence)):
+            return NotImplemented
+        return self.__class__(list(self) + list(other), self.name)
+
+    def __radd__(self, other):
+        if not isinstance(other, (list, DataSequence)):
+            return NotImplemented
+        return self.__class__(list(other) + list(self), self.name)
 
     def __repr__(self):
         return format_collection(self)

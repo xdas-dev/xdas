@@ -464,7 +464,7 @@ class TestDataCollection:
         da = xd.testing.dummy()
         dm = DataMapping({"good": da}, "test")
         # bypass validation to inject an invalid item
-        dict.__setitem__(dm, "bad", "not_a_dataarray")
+        dm._data["bad"] = "not_a_dataarray"
         atom = xs.decimate(..., 2, ftype="fir")
         with pytest.raises(TypeError, match="encountered in the collection"):
             dm.map(atom)
@@ -475,7 +475,7 @@ class TestDataCollection:
         da = xd.testing.dummy()
         ds = DataSequence([da], "test")
         # bypass validation to inject an invalid item
-        list.append(ds, "not_a_dataarray")
+        ds._data.append("not_a_dataarray")
         atom = xs.decimate(..., 2, ftype="fir")
         with pytest.raises(TypeError, match="encountered in the collection"):
             ds.map(atom)
@@ -513,6 +513,84 @@ class TestDataCollection:
         dc = xd.DataCollection([da_near, da_far], "instrument")
         result = dc.sel(distance=slice(-100, -1))
         assert len(result) == 0
+
+    def test_mapping_delitem(self):
+        da = xd.testing.dummy()
+        dm = xd.DataCollection({"a": da, "b": da}, "test")
+        del dm["a"]
+        assert list(dm) == ["b"]
+
+    def test_sequence_getitem_slice_preserves_type(self):
+        da = xd.testing.dummy()
+        ds = xd.DataCollection([da, da, da], "seq")
+        result = ds[1:3]
+        assert isinstance(result, type(ds))
+        assert result.name == "seq"
+        assert len(result) == 2
+
+    def test_sequence_setitem_index(self):
+        da = xd.testing.dummy()
+        da2 = xd.testing.dummy()
+        da2.data[:] = 0
+        ds = xd.DataCollection([da, da], "seq")
+        ds[0] = da2
+        assert ds[0].equals(da2)
+
+    def test_sequence_setitem_slice(self):
+        da = xd.testing.dummy()
+        ds = xd.DataCollection([da, da, da], "seq")
+        ds[0:2] = [da, da]
+        assert len(ds) == 3
+
+    def test_sequence_delitem(self):
+        da = xd.testing.dummy()
+        ds = xd.DataCollection([da, da], "seq")
+        del ds[0]
+        assert len(ds) == 1
+
+    def test_sequence_insert(self):
+        da = xd.testing.dummy()
+        ds = xd.DataCollection([da], "seq")
+        ds.insert(0, da)
+        assert len(ds) == 2
+
+    def test_sequence_eq_ignores_name(self):
+        # content-only equality, like the old `list.__eq__`; `.equals()` is
+        # the strict form that also checks `.name`
+        da = xd.testing.dummy()
+        ds1 = xd.DataCollection([da], "seq1")
+        ds2 = xd.DataCollection([da], "seq2")
+        assert ds1 == ds2
+        assert not ds1.equals(ds2)
+
+    def test_sequence_eq_false_for_unrelated_type(self):
+        da = xd.testing.dummy()
+        ds = xd.DataCollection([da], "seq")
+        assert (ds == 5) is False
+        assert ds != 5
+
+    def test_sequence_add_concatenates(self):
+        da = xd.testing.dummy()
+        ds1 = xd.DataCollection([da], "seq")
+        ds2 = xd.DataCollection([da, da], "seq")
+        result = ds1 + ds2
+        assert isinstance(result, type(ds1))
+        assert len(result) == 3
+
+    def test_sequence_radd_with_plain_list(self):
+        da = xd.testing.dummy()
+        ds = xd.DataCollection([da], "seq")
+        result = [da, da] + ds
+        assert isinstance(result, type(ds))
+        assert len(result) == 3
+
+    def test_sequence_add_type_error_for_unsupported_operand(self):
+        da = xd.testing.dummy()
+        ds = xd.DataCollection([da], "seq")
+        with pytest.raises(TypeError):
+            ds + 5
+        with pytest.raises(TypeError):
+            5 + ds
 
 
 class TestDataFrameLeaves:
