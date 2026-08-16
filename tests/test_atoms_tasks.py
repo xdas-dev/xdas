@@ -3,6 +3,7 @@ import inspect
 import numpy as np
 import numpy.testing as npt
 import pytest
+import scipy.signal as sp
 
 import xdas as xd
 import xdas.signal as xs
@@ -10,12 +11,14 @@ import xdas.spectral
 from xdas.atoms import (
     STFT,
     Differentiate,
+    DownSample,
     Filter,
     Integrate,
     Partial,
     Resample,
     ResamplePoly,
     Sequential,
+    SOSFilter,
 )
 from xdas.atoms.tasks import (
     _edge_resample,
@@ -504,9 +507,13 @@ class TestResample:
         "kwargs",
         [
             {"numtaps": 5, "method": "iir"},
+            {"numtaps": 5, "method": "fft"},
             {"order": 4, "method": "fir"},
+            {"order": 4, "method": "fft"},
             {"zerophase": True, "method": "fir"},
+            {"zerophase": True, "method": "fft"},
             {"edge": "mirror", "method": "fir"},
+            {"edge": "mirror", "method": "iir"},
             {"window": "hann", "method": "iir"},
         ],
     )
@@ -721,6 +728,170 @@ class TestResample:
         da = dummy(shape=(20, 10000), step=(0.02, 1.021975))
         with pytest.raises(ValueError, match="quantisation floor"):
             xd.resample(da, interval=10.0, method="fft", dim="distance", tolerance=1e-6)
+
+    def test_fft_lands_within_tolerance_where_snap_does_not(self):
+        # The flagship distance case: fft's quantisation floor is far finer
+        # than a nested grid's, so it lands two orders of magnitude closer.
+        da = dummy(shape=(20, 10000), step=(0.02, 1.021975))
+        fft_result = xd.resample(da, interval=10.0, method="fft", dim="distance")
+        snap_result = xd.resample(da, interval=10.0, snap=True, dim="distance")
+        fft_interval = xd.get_sampling_interval(fft_result, "distance")
+        snap_interval = xd.get_sampling_interval(snap_result, "distance")
+        assert abs(fft_interval - 10.0) / 10.0 < 1e-4
+        assert snap_interval == pytest.approx(10.21975)
+        assert abs(snap_interval - 10.0) / 10.0 == pytest.approx(0.022, abs=1e-3)
+
+    def test_target_between_grid_points_raises_with_the_three_ways_out(self):
+        da = dummy(shape=(20, 10000), step=(0.02, 1.021975))
+        with pytest.raises(ValueError, match="Ways out") as info:
+            xd.resample(da, interval=10.2, dim="distance")
+        assert "snap=True" in str(info.value)
+        assert 'method="fft"' in str(info.value)
+        assert "maxup" in str(info.value)
+
+    def test_target_between_grid_points_snap_lands_on_the_nested_grid(self):
+        da = dummy(shape=(20, 10000), step=(0.02, 1.021975))
+        result = xd.resample(da, interval=10.2, snap=True, dim="distance")
+        assert xd.get_sampling_interval(result, "distance") == pytest.approx(10.21975)
+
+    def test_interval_an_exact_multiple_of_an_inexact_delta_resolves_exactly(self):
+        # delta's own reciprocal is inexact, but interval=2*delta is exactly
+        # reachable: the solver must not treat this as a tolerance failure.
+        delta = 1.021975
+        da = dummy(shape=(20, 5000), step=(0.02, delta))
+        atom = xd.resample(..., interval=2 * delta, dim="distance", tolerance=0)
+        atom(da)
+        assert (atom.up_, atom.down_) == (1, 2)
+
+    @pytest.mark.parametrize(
+        "rate, expected_up_down",
+        [(50.0, (1, 1)), (100.0, (1, 2))],
+    )
+    def test_timedelta64_interval_resolves_through_the_integer_path(
+        self, rate, expected_up_down
+    ):
+        da = dummy(shape=(200, 5), step=(1 / rate, 10.0))
+        atom = xd.resample(
+            ..., interval=np.timedelta64(20, "ms"), dim="time", tolerance=0
+        )
+        atom(da)
+        assert (atom.up_, atom.down_) == expected_up_down
+
+    def test_timedelta64_interval_on_a_float_coordinate_raises(self):
+        da = dummy(shape=(20, 5000), step=(0.02, 1.021975))
+        with pytest.raises(ValueError, match="datetime coordinate"):
+            xd.resample(da, interval=np.timedelta64(20, "ms"), dim="distance")
+
+    def test_datetime_timedelta_interval_on_a_float_coordinate_raises(self):
+        import datetime
+
+        da = dummy(shape=(20, 5000), step=(0.02, 1.021975))
+        with pytest.raises(ValueError, match="datetime coordinate"):
+            xd.resample(
+                da, interval=datetime.timedelta(milliseconds=20), dim="distance"
+            )
+
+    @pytest.mark.parametrize(
+        "rate, target_rate",
+        [(1000.0, 1.0), (44100.0, 100.0), (5000.0, 20.0)],
+    )
+    def test_no_false_refusal_at_exact_high_ratios(self, rate, target_rate):
+        # p=1 reaches any depth with no cap needed: these are all exact.
+        # A float (non-datetime) coordinate, to isolate the solver from the
+        # nanosecond quantisation a datetime axis would otherwise add.
+        da = dummy(shape=(2000, 3), step=(1 / rate, 10.0), datetime=False)
+        atom = xd.resample(..., target_rate, dim="time")
+        atom(da)
+        assert (atom.up_, atom.down_) == (1, round(rate / target_rate))
+
+    @pytest.mark.parametrize(
+        "rate, target_rate",
+        [(1000.0, 1.0), (44100.0, 100.0), (5000.0, 20.0)],
+    )
+    def test_maxdown_below_the_exact_factor_refuses(self, rate, target_rate):
+        da = dummy(shape=(2000, 3), step=(1 / rate, 10.0), datetime=False)
+        down = round(rate / target_rate)
+        with pytest.raises(ValueError, match="maxdown"):
+            xd.resample(da, target_rate, dim="time", maxdown=down - 1)
+
+    def test_iir_grid_matches_the_sliced_input_to_float_precision(self):
+        # DownSample slices with isel: unlike the FIR path, no group delay is
+        # removed from the coordinate, so the causal iir grid literally is
+        # the input grid, thinned.
+        da = dummy(shape=(300, 5000), step=(0.02, 1.021975))
+        result = xd.resample(da, down=10, method="iir", dim="distance")
+        expected = da["distance"].values[::10]
+        np.testing.assert_allclose(result["distance"].values, expected, atol=1e-6)
+
+    def test_iir_upsampled_input_positions_land_on_the_output_grid(self):
+        # The symmetric f < 1 case: input samples stay reachable, every up
+        # positions apart, in the interpolated output.
+        da = dummy(shape=(300, 5000), step=(0.02, 1.021975))
+        result = xd.resample(da, up=3, down=1, method="iir", dim="distance")
+        np.testing.assert_allclose(
+            result["distance"].values[::3], da["distance"].values, atol=1e-9
+        )
+
+    def test_grid_property_chunked_equals_eager_for_iir(self):
+        da = dummy(shape=(300, 5000), step=(0.02, 1.021975))
+        eager = xd.resample(da, down=10, method="iir", dim="distance")
+        atom = Resample(down=10, method="iir", dim="distance")
+        chunks = xd.split(da, 6, "time")
+        chunked = xd.concat([atom(c, chunk_dim="time") for c in chunks], "time")
+        assert eager.coords.equals(chunked.coords)
+
+    def test_dlti_style_custom_filter_recipe_matches_the_iir_method(self):
+        # The documented escape hatch for a caller-supplied filter: compose
+        # the kernel layer directly rather than going through the task atom.
+        da = wavelet_wavefronts()
+        sos = sp.cheby1(8, 0.05, 0.8 / 2, output="sos")
+        recipe = Sequential([SOSFilter(sos, dim="time"), DownSample(2, dim="time")])
+        result = recipe(da)
+        expected = xd.resample(da, down=2, method="iir", dim="time")
+        assert result.equals(expected)
+
+    def test_state_round_trip_through_a_data_collection_walk(self):
+        # Same heterogeneous fleet as the eager round trip, but through a
+        # DataCollection: the per-leaf reset() is what is under test here.
+        atom = Resample(interval=10.0, snap=True, dim="distance")
+        first = dummy(shape=(20, 500), step=(0.01, 1.021975))
+        second = dummy(shape=(20, 500), step=(0.01, 2.04395))
+        dc = xd.DataCollection([first, second], "record")
+        out1, out2 = atom(dc)
+        np.testing.assert_allclose(
+            xd.get_sampling_interval(out1, "distance"),
+            xd.get_sampling_interval(out2, "distance"),
+        )
+
+    def test_chunk_invariant_fir(self):
+        da = dummy(shape=(400, 5), step=(0.01, 10.0))
+        xd.testing.assert_chunk_invariant(
+            Resample(down=2, dim="time"), da, {"time": 50}, gaps=2, atol=1e-10
+        )
+
+    def test_chunk_invariant_causal_iir(self):
+        # Regression: Resample.flush() must cascade into the child Sequential
+        # (DownSample buffers a trailing partial stride, drained only by an
+        # explicit flush); a bare no-op flush silently drops one sample at
+        # every seam a chunked, gappy stream crosses.
+        da = dummy(shape=(400, 5), step=(0.01, 10.0))
+        xd.testing.assert_chunk_invariant(
+            Resample(down=2, method="iir", dim="time"),
+            da,
+            {"time": 50},
+            gaps=2,
+            atol=1e-10,
+        )
+
+    def test_chunk_invariant_fft_along_distance_when_chunked_along_time(self):
+        da = wavelet_wavefronts()
+        xd.testing.assert_chunk_invariant(
+            Resample(down=2, method="fft", dim="distance"),
+            da,
+            {"time": 50},
+            gaps=2,
+            atol=1e-10,
+        )
 
 
 class TestResamplePolyDeprecated:
@@ -999,3 +1170,11 @@ class TestLabelsFollowTheSamples:
         da = self.labelled()
         result = xd.resample(da, 25.0, dim="time")
         npt.assert_array_equal(result["station"].values, da["station"].values)
+
+    def test_the_iir_path_carries_them_through_downsample(self):
+        # DownSample slices with isel; this must be asserted, not assumed
+        # (the label carry regressed once already for Polyphase, in 35b1616).
+        da = self.labelled()
+        result = xd.resample(da, down=2, method="iir", dim="distance")
+        assert result.sizes["distance"] == 60
+        npt.assert_array_equal(result["station"].values, da["station"].values[::2])

@@ -610,6 +610,12 @@ class Resample(Atom):
         ways_out.append('method="fft", which lands within half an output sample')
         return ValueError(f"{cause} Ways out: " + "; ".join(ways_out))
 
+    def flush(self):
+        """Drain the causal iir child's buffered tail; fir and fft never buffer."""
+        if self.method == "iir":
+            return self.child.flush()
+        return []
+
     def call(self, da, **flags):
         """Apply the designed FIR/IIR pipeline, or resample in place for FFT."""
         if self.method == "fft":
