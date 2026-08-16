@@ -46,6 +46,8 @@ class TestSampledCoordinateBasics:
         assert len(coord) == 3
         assert coord.start == 0.0
         assert coord.end == 2.0
+        with pytest.warns(FutureWarning, match="issampled"):
+            assert coord.issampled() is True
         assert coord.get_sampling_interval() == 1.0
 
         # mismatched lengths

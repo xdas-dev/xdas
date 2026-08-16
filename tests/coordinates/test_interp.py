@@ -104,6 +104,11 @@ class TestInterpCoordinate:
         coord2 = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert coord1.equals(coord2)
 
+    def test_isinterp(self):
+        coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
+        with pytest.warns(FutureWarning, match="isinterp"):
+            assert coord.isinterp() is True
+
     def test_getitem(self):
         coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert isinstance(coord[0], ScalarCoordinate)

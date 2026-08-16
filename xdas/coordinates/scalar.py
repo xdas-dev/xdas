@@ -86,6 +86,12 @@ class ScalarCoordinate(Coordinate, ctype="scalar"):
     def __repr__(self):
         return np.array2string(self.data, threshold=0, edgeitems=1)
 
+    def __add__(self, other):
+        return self.__class__(self.data + other)
+
+    def __sub__(self, other):
+        return self.__class__(self.data - other)
+
     @override
     def _to_dataset(self, dataset, attrs):
         if self.name is None:

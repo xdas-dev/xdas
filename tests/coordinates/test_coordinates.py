@@ -280,6 +280,17 @@ class TestCoordinateBase:
         expected = DenseCoordinate([0.0, 1.0, 2.0], "x")
         assert result.equals(expected)
 
+    def test_deprecated_type_queries_default_false(self):
+        coord = ScalarCoordinate(1)
+        for name in ("isdense", "isinterp", "issampled"):
+            with pytest.warns(FutureWarning, match=name):
+                assert getattr(coord, name)() is False
+
+    def test_get_value_deprecated(self):
+        coord = DenseCoordinate([1.0, 2.0, 3.0], "x")
+        with pytest.warns(FutureWarning, match="get_value"):
+            assert coord.get_value(1) == 2.0
+
     def test_array_with_dtype(self):
         coord = DenseCoordinate([1.0, 2.0, 3.0], "x")
         result = coord.__array__(dtype=np.float32)

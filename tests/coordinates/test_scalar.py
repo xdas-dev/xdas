@@ -100,6 +100,23 @@ class TestScalarCoordinate:
         dataset, _attrs = sc._to_dataset(dataset, {})
         assert "meta" in dataset.coords
 
+    def test_add(self):
+        result = ScalarCoordinate(1.0) + 1.0
+        assert isinstance(result, ScalarCoordinate)
+        assert result.data == 2.0
+
+    def test_sub(self):
+        result = ScalarCoordinate(2.0) - 1.0
+        assert isinstance(result, ScalarCoordinate)
+        assert result.data == 1.0
+
+    def test_sub_scalar_coordinate(self):
+        t0 = ScalarCoordinate(np.datetime64("2026-01-01T00:00:01"))
+        t1 = ScalarCoordinate(np.datetime64("2026-01-01T00:00:02"))
+        result = t1 - t0
+        assert isinstance(result, ScalarCoordinate)
+        assert result.values / np.timedelta64(1, "s") == 1.0
+
 
 class TestScalarCoordinateRegularity:
     def test_never_regular(self):

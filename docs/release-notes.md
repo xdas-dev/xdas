@@ -40,6 +40,8 @@
 ### Deprecations
 - `MLPicker` and `xdas.mlpicker` are deprecated in favour of `Annotate` and `Picker`; they remain as aliases until 0.4 (@atrabattoni).
 - `ResamplePoly` is deprecated in favour of `Resample` (`method="fir"`, its `maxfactor` renamed `maxup`); it remains as a thin subclass until 0.3 (@atrabattoni).
+- `Coordinate.isdense`, `isinterp` and `issampled`, removed earlier in 0.2.9 development, are restored as deprecated aliases for `isinstance(coord, DenseCoordinate)` / `InterpCoordinate` / `SampledCoordinate` — seisbench's DAS models (`xdas>=0.2.3`) still call them (@atrabattoni).
+- `AxisCoordinate.get_value(index)`, renamed private (`_get_value`) earlier in 0.2.9 development, is restored as a deprecated public alias in favour of `coord[index].values` — seisbench's DAS models call it too (@atrabattoni).
 
 ### Breaking Changes
 - Python 3.10 support is dropped and the numpy requirement is raised to 2.3 (@atrabattoni).
@@ -58,6 +60,7 @@
 - Fix resampling losing track of the *other* coordinates of the dimension it resamples: decimating a DAS acquisition left its `station` coordinate at full length, labelling every lane with the code of the lane at its own index. Labels now follow the samples they name (@atrabattoni).
 - Fix `DataCollection` coercing a `pandas.DataFrame` leaf into a broken `DataArray`: a table is now a leaf of its own kind (@atrabattoni).
 - Fix a data collection keyed by zero-padded codes — a SEED location such as `"00"` — reading back from netCDF with its keys lost (@atrabattoni).
+- Fix `ScalarCoordinate` raising `TypeError` on `+`/`-`, unlike every other coordinate class: `time_coords[1] - time_coords[0]`, as seisbench's DAS models compute a sampling interval, now returns a scalar coordinate instead of failing (@atrabattoni).
 - Fix a directory sink joining its chunks along the wrong dimension when the pipeline's output does not lead with the chunked one (@atrabattoni).
 - Fix the numpy dispatch overriding explicitly passed arguments with its registered defaults: `np.cumsum(da, 0)` accumulated along the last axis whatever the caller said (@atrabattoni).
 

@@ -476,6 +476,48 @@ class Coordinate(ABC):
         """
         return False
 
+    def isdense(self):
+        """Return ``True`` if this is a :class:`DenseCoordinate` (explicit numpy array).
+
+        .. deprecated:: 0.2.9
+            Use ``isinstance(coord, DenseCoordinate)`` instead.
+        """
+        warnings.warn(
+            "Coordinate.isdense() is deprecated; use "
+            "isinstance(coord, DenseCoordinate) instead.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        return False
+
+    def isinterp(self):
+        """Return ``True`` if this is an :class:`InterpCoordinate` (piecewise-linear).
+
+        .. deprecated:: 0.2.9
+            Use ``isinstance(coord, InterpCoordinate)`` instead.
+        """
+        warnings.warn(
+            "Coordinate.isinterp() is deprecated; use "
+            "isinstance(coord, InterpCoordinate) instead.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        return False
+
+    def issampled(self):
+        """Return ``True`` if this is a :class:`SampledCoordinate` (regularly sampled).
+
+        .. deprecated:: 0.2.9
+            Use ``isinstance(coord, SampledCoordinate)`` instead.
+        """
+        warnings.warn(
+            "Coordinate.issampled() is deprecated; use "
+            "isinstance(coord, SampledCoordinate) instead.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        return False
+
     def equals(self, other):
         """Return ``True`` if *other* is the same coordinate type with identical dim and data.
 
@@ -814,6 +856,19 @@ class AxisCoordinate(Coordinate, ABC):
     def end(self):
         """Value at the last element."""
         return self._get_value(len(self) - 1)
+
+    def get_value(self, index):
+        """Return the coordinate value(s) at integer *index*.
+
+        .. deprecated:: 0.2.9
+            Use ``coord[index].values`` instead.
+        """
+        warnings.warn(
+            "Coordinate.get_value() is deprecated; use coord[index].values instead.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        return self._get_value(index)
 
     # --- dunders logic ---
 
