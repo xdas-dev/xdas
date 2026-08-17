@@ -1,5 +1,7 @@
 """:class:`DenseCoordinate`: coordinate backed by a full numpy array."""
 
+import warnings
+
 import numpy as np
 import pandas as pd
 from typing_extensions import override
@@ -143,6 +145,20 @@ class DenseCoordinate(AxisCoordinate, ctype="dense"):
 
     def __sub__(self, other):
         return self.__class__(self.data - other, self.dim)
+
+    def isdense(self):
+        """Return ``True`` (this is a :class:`DenseCoordinate`).
+
+        .. deprecated:: 0.2.9
+            Use ``isinstance(coord, DenseCoordinate)`` instead.
+        """
+        warnings.warn(
+            "Coordinate.isdense() is deprecated; use "
+            "isinstance(coord, DenseCoordinate) instead.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        return True
 
     @override
     def get_sampling_interval(self, cast=True):

@@ -5,6 +5,7 @@ Described by tie points and a fixed ``sampling_interval`` between them.
 """
 
 import re
+import warnings
 
 import numpy as np
 from typing_extensions import override
@@ -417,6 +418,20 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
             },
             self.dim,
         )
+
+    def issampled(self):
+        """Return ``True`` (this is a :class:`SampledCoordinate`).
+
+        .. deprecated:: 0.2.9
+            Use ``isinstance(coord, SampledCoordinate)`` instead.
+        """
+        warnings.warn(
+            "Coordinate.issampled() is deprecated; use "
+            "isinstance(coord, SampledCoordinate) instead.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        return True
 
     @override
     def get_sampling_interval(self, cast=True):

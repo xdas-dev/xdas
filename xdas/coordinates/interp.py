@@ -7,6 +7,7 @@ coordinate *regular* and providing a clean sample rate for signal-processing rou
 """
 
 import re
+import warnings
 
 import numpy as np
 from numba import njit
@@ -394,6 +395,20 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
                 "tolerance": self.tolerance,
             }
         return self.__class__(data, self.dim)
+
+    def isinterp(self):
+        """Return ``True`` (this is an :class:`InterpCoordinate`).
+
+        .. deprecated:: 0.2.9
+            Use ``isinstance(coord, InterpCoordinate)`` instead.
+        """
+        warnings.warn(
+            "Coordinate.isinterp() is deprecated; use "
+            "isinstance(coord, InterpCoordinate) instead.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        return True
 
     @override
     def get_sampling_interval(self, cast=True):

@@ -97,6 +97,10 @@ class TestDenseCoordinate:
         assert DenseCoordinate(["a", "b"]).equals(DenseCoordinate(["a", "b"]))
         assert not DenseCoordinate(["a", "b"]).equals(DenseCoordinate(["a", "c"]))
 
+    def test_isdense(self):
+        with pytest.warns(FutureWarning, match="isdense"):
+            assert DenseCoordinate([1, 2, 3]).isdense() is True
+
     def test_get_indexer(self):
         assert DenseCoordinate([1, 2, 3])._get_indexer(2) == 1
         assert np.array_equiv(DenseCoordinate([1, 2, 3])._get_indexer([2, 3]), [1, 2])
