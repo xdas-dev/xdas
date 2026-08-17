@@ -32,7 +32,10 @@
    concatenate
    concat_coords
    get_sampling_interval
+   sortby
    split
+   stack
+   trim_overlaps
    plot_availability
 ```
 
@@ -152,6 +155,7 @@ Methods
 .. autosummary::
    :toctree: ../_autosummary
 
+   DataCollection.select
    DataCollection.query
    DataCollection.issequence
    DataCollection.ismapping

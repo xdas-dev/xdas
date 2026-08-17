@@ -2,7 +2,14 @@ import numpy as np
 import pytest
 import scipy.signal as sp
 
-from xdas.parallel import concatenate, get_workers_count, parallelize
+import xdas
+import xdas.parallel as xp
+from xdas.parallel import (
+    BYTES_PER_WORKER,
+    concatenate,
+    get_workers_count,
+    parallelize,
+)
 
 
 class TestParallelize:
@@ -174,3 +181,119 @@ class TestGetWorkersCount:
     def test_invalid_type_raises(self):
         with pytest.raises(TypeError, match="must be either None, bool or int"):
             get_workers_count("invalid")
+
+    def test_the_count_follows_the_work(self):
+        previous = xdas.config.get("n_workers")
+        xdas.config.set("n_workers", 16)
+        try:
+            # Splitting costs more than it saves until there is real work per
+            # thread, so a small array is not split at all.
+            assert get_workers_count(None, nbytes=0) == 1
+            assert get_workers_count(None, nbytes=BYTES_PER_WORKER - 1) == 1
+            assert get_workers_count(None, nbytes=4 * BYTES_PER_WORKER) == 4
+            # The configured value stays the ceiling however large the array.
+            assert get_workers_count(None, nbytes=1000 * BYTES_PER_WORKER) == 16
+        finally:
+            xdas.config.set("n_workers", previous)
+
+    def test_an_explicit_request_ignores_the_work(self):
+        assert get_workers_count(4, nbytes=0) == 4
+        assert get_workers_count(False, nbytes=10**12) == 1
+
+
+class FakeExecutor:
+    """A pool that records how it was built instead of spawning anything."""
+
+    built = []
+
+    def __init__(self, max_workers, timeout=None, initializer=None):
+        self.max_workers = max_workers
+        self.timeout = timeout
+        self.initializer = initializer
+        self.alive = True
+        FakeExecutor.built.append(self)
+
+    def shutdown(self, kill_workers=False):
+        self.alive = False
+        self.killed = kill_workers
+
+
+@pytest.fixture
+def fake(monkeypatch):
+    """Stub out the loky executor, and leave no pool standing either way."""
+    xp.shutdown_scan_pool()
+    FakeExecutor.built = []
+    monkeypatch.setattr(xp, "ProcessPoolExecutor", FakeExecutor)
+    yield FakeExecutor
+    xp.shutdown_scan_pool()
+
+
+class TestGetScanWorkers:
+    def test_a_small_scan_stays_in_the_calling_process(self):
+        # Starting the pool costs more than scanning this few files ever does.
+        assert xp.get_scan_workers(None, 1) == 1
+        assert xp.get_scan_workers(None, xp.SCAN_THRESHOLD - 1) == 1
+
+    def test_a_large_scan_takes_the_configured_pool(self):
+        assert xp.get_scan_workers(None, xp.SCAN_THRESHOLD) == xdas.config.get(
+            "scan_workers"
+        )
+
+    def test_the_pool_size_follows_the_configured_worker_count(self):
+        previous = xdas.config.get("scan_workers")
+        xdas.config.set("scan_workers", 3)
+        try:
+            assert xp.get_scan_workers(None, 1000) == 3
+        finally:
+            xdas.config.set("scan_workers", previous)
+
+    def test_an_explicit_request_is_honoured_however_few_the_files(self):
+        # The threshold is a default, not a veto on what the caller asked for.
+        assert xp.get_scan_workers(4, 1) == 4
+        assert xp.get_scan_workers(False, 10_000) == 1
+
+    def test_an_explicit_request_refuses_nonsense(self):
+        with pytest.raises(TypeError):
+            xp.get_scan_workers("invalid", 1000)
+
+
+class TestGetScanPool:
+    def test_it_builds_a_pool_that_warms_and_expires(self, fake):
+        pool = xp.get_scan_pool(4)
+        assert pool.max_workers == 4
+        # A finite timeout is the only thing that reaps workers orphaned by a
+        # parent killed with SIGKILL, which atexit never sees.
+        assert pool.timeout == xp.SCAN_TIMEOUT
+        assert pool.timeout is not None
+        # Workers import xdas at spawn, so they warm concurrently.
+        assert pool.initializer is xp._warm
+
+    def test_the_same_pool_is_shared_across_scans(self, fake):
+        assert xp.get_scan_pool(4) is xp.get_scan_pool(4)
+        assert len(fake.built) == 1
+
+    def test_a_different_worker_count_replaces_the_pool(self, fake):
+        first = xp.get_scan_pool(4)
+        second = xp.get_scan_pool(8)
+        assert second is not first
+        assert not first.alive
+        assert second.max_workers == 8
+
+    def test_warming_a_worker_imports_xdas(self):
+        # Runs in a worker in real use, so it is exercised here on its own.
+        xp._warm()
+
+
+class TestShutdownScanPool:
+    def test_it_kills_the_workers_and_forgets_the_pool(self, fake):
+        pool = xp.get_scan_pool(4)
+        xp.shutdown_scan_pool()
+        assert not pool.alive
+        assert pool.killed
+        assert xp._pool is None
+        assert xp._pool_workers is None
+
+    def test_it_is_harmless_when_no_pool_is_up(self, fake):
+        xp.shutdown_scan_pool()
+        xp.shutdown_scan_pool()
+        assert fake.built == []

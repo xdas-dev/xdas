@@ -201,7 +201,9 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
     @override
     def _is_monotonic_increasing(self):
-        return not self.get_split_indices("overlaps", tolerance=False).size
+        # every step is a tie-value difference divided by a positive index
+        # difference, so the whole axis increases exactly when the tie values do
+        return bool(is_monotonic_increasing(self.tie_values))
 
     @override
     def _get_value(self, index):
@@ -222,7 +224,10 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
                     "jitter in the tie values, consider smoothing the coordinate by "
                     "including some tolerance. This can be done by "
                     "`da[dim] = da[dim].simplify(tolerance)`, or by specifying a "
-                    "tolerance when opening multiple files."
+                    "tolerance when opening multiple files. If the overlaps are "
+                    "genuine, resolve them with `xdas.trim_overlaps(da)`, which "
+                    "drops the duplicated samples, or cut them apart with "
+                    "`xdas.split(da, 'overlaps')`, which keeps every copy."
                 )
             else:  # pragma: no cover
                 raise
@@ -309,7 +314,9 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
     @override
     def _to_dataset(self, dataset, attrs):
-        mapping = f"{self.name}: {self.name}_indices {self.name}_values"
+        # CF-1.13: a group names its tie point coordinate variables and
+        # ends with the interpolation variable describing them
+        mapping = f"{self.name}_values: {self.name}_interpolation"
         if "coordinate_interpolation" in attrs:
             attrs["coordinate_interpolation"] += " " + mapping
         else:
@@ -322,7 +329,10 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         )
         interp_attrs = {
             "interpolation_name": "linear",
-            "tie_points_mapping": f"{self.name}_points: {self.name}_indices {self.name}_values",
+            # interpolated dimension: index variable, subsampled dimension
+            "tie_point_mapping": f"{self.dim}: {self.name}_indices {self.name}_points",
+            # xdas reconstructs in float64 (int64 nanoseconds for datetimes)
+            "computational_precision": "64",
         }
         if self.sampling_interval is not None:
             interp_attrs.update(
@@ -345,18 +355,24 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         coords = {}
         mapping = dataset[name].attrs.pop("coordinate_interpolation", None)
         if mapping is not None:
-            for dim, indices, values in re.findall(r"(\w+): (\w+) (\w+)", mapping):
+            for coord, dim, indices, values in _parse_interpolation(mapping, dataset):
                 data = {
                     "tie_indices": dataset[indices].values,
                     "tie_values": dataset[values].values,
                 }
-                interp_attrs = dataset[f"{dim}_interpolation"].attrs
+                # the oldest files spelled the mapping without writing an
+                # interpolation variable at all
+                interp_attrs = (
+                    dataset[f"{coord}_interpolation"].attrs
+                    if f"{coord}_interpolation" in dataset
+                    else {}
+                )
                 if "sampling_interval" in interp_attrs:
                     data["sampling_interval"] = decode_delta(
                         "sampling_interval", interp_attrs
                     )
                     data["tolerance"] = decode_delta("tolerance", interp_attrs)
-                coords[dim] = Coordinate(data, dim)
+                coords[coord] = Coordinate(data, dim)
         return coords
 
     def __add__(self, other):
@@ -571,13 +587,14 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
     def simplify(self, tolerance=None, *, reduce=True, regularize=False):
         """Canonicalise within *tolerance*: drop tie points, then promote to regular.
 
-        The *reduce* stage runs Douglas-Peucker to drop tie points whose removal
-        shifts the curve by no more than *tolerance*. The CF 8.3 structure is
-        preserved as an emergent property of that bound: real discontinuities are
-        kept (any spanning line crosses them by far more than *tolerance*), soft
-        ones are fused into a single ramp, and synchronisation tie points survive
-        because removing them would, by definition, drift more than *tolerance*.
-        Surviving values are never moved.
+        The *reduce* stage runs a one-pass greedy sleeve (see :func:`_sleeve`)
+        to drop tie points whose removal shifts the curve by no more than
+        *tolerance*. The CF 8.3 structure is preserved as an emergent property
+        of that bound: real discontinuities are kept (any spanning line crosses
+        them by far more than *tolerance*), soft ones are fused into a single
+        ramp, and synchronisation tie points survive because removing them
+        would, by definition, drift more than *tolerance*. Surviving values
+        are never moved.
 
         The *regularize* stage promotes the result to *regular* when the
         surviving continuous segments admit a single ``sampling_interval`` within
@@ -597,7 +614,7 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             tolerance = self.tolerance
         tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
         if reduce:
-            tie_indices, tie_values = _douglas_peucker(
+            tie_indices, tie_values = _sleeve(
                 self.tie_indices, self.tie_values, tolerance
             )
         else:
@@ -672,12 +689,77 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         return num[mask], den[mask]
 
 
-def _douglas_peucker(x, y, epsilon):
+def _parse_interpolation(mapping, dataset):
     """
-    Reduce the piecewise-linear curve *(x, y)* using the Douglas-Peucker algorithm.
+    Yield ``(name, dim, indices, values)`` per group of *mapping*.
 
-    Points are dropped when they deviate less than *epsilon* from the simplified
-    line connecting their neighbours.
+    Reads a ``coordinate_interpolation`` attribute in either spelling.
+    CF-1.13 words each group ``tie_point_coordinate_variable: [...]
+    interpolation_variable``, the coordinate name and the interpolated
+    dimension then coming from the interpolation variable and its
+    ``tie_point_mapping``; xdas wrote ``dimension: index_variable
+    value_variable`` before the format break. Only the CF spelling ends
+    a group with a variable carrying ``interpolation_name``, which is
+    what tells the two apart. The tie point coordinate variable name is
+    taken from the group as written, whatever it is.
+
+    Parameters
+    ----------
+    mapping : str
+        The attribute value to parse.
+    dataset : xarray.Dataset
+        The dataset the named variables live in.
+
+    Yields
+    ------
+    tuple of str
+        Coordinate name, interpolated dimension, tie point index
+        variable and tie point coordinate variable.
+    """
+    groups, tie_points = [], []
+    for word in mapping.split():
+        if word.endswith(":"):
+            tie_points.append(word[:-1])
+        else:
+            groups.append((tie_points, word))
+            tie_points = []
+    if all(
+        len(tie_points) == 1
+        and word in dataset
+        and "interpolation_name" in dataset[word].attrs
+        for tie_points, word in groups
+    ):
+        for (values,), interpolation in groups:
+            name = interpolation.removesuffix("_interpolation")
+            dim, indices, _ = re.match(
+                r"(\w+): (\w+) (\w+)",
+                dataset[interpolation].attrs["tie_point_mapping"],
+            ).groups()
+            yield name, dim, indices, values
+    else:
+        for dim, indices, values in re.findall(r"(\w+): (\w+) (\w+)", mapping):
+            yield dim, dim, indices, values
+
+
+def _sleeve(x, y, epsilon):
+    """
+    Reduce the piecewise-linear curve *(x, y)* with a one-pass greedy sleeve.
+
+    Points are dropped when the segment connecting the surviving neighbours
+    passes within *epsilon* of them. The walk is left to right (the direction
+    acquisition produces tie points): from the current anchor it maintains the
+    intersection of every dropped point's ±*epsilon* slope cone — the sleeve —
+    and emits a knot exactly when a candidate leaves it. Knots are original
+    points, so surviving values are never moved, and any point whose removal
+    would drift the curve by more than *epsilon* (a discontinuity edge, a
+    synchronisation tie) empties the sleeve and survives. One pass, O(n)
+    whatever the number of surviving points — where Douglas-Peucker
+    degenerates quadratically once discontinuities or jitter make many
+    points survive.
+
+    Integer and datetime values are compared with exact (arbitrary-precision)
+    cross-multiplied integer arithmetic, so a zero *epsilon* drops exactly the
+    collinear points; float values use float arithmetic.
 
     Parameters
     ----------
@@ -693,25 +775,56 @@ def _douglas_peucker(x, y, epsilon):
     x_simplified : numpy.ndarray
     y_simplified : numpy.ndarray
     """
-    mask = np.ones(len(x), dtype=bool)
-    stack = [(0, len(x))]
-    while stack:
-        start, stop = stack.pop()
-        ysimple = forward(
-            x[start:stop],
-            x[[start, stop - 1]],
-            y[[start, stop - 1]],
-        )
-        d = np.abs(y[start:stop] - ysimple)
-        index = np.argmax(d)
-        dmax = d[index]
-        index += start
-        if dmax > epsilon:
-            stack.append([start, index + 1])
-            stack.append([index, stop])
+    if len(x) < 3:
+        return x, y
+    if np.issubdtype(y.dtype, np.datetime64):
+        # exact integer arithmetic, with epsilon brought to the finer of the
+        # two time units so sub-unit tolerances are not truncated
+        unit, count = np.datetime_data(y.dtype)
+        one = np.timedelta64(count, unit)
+        common = np.promote_types(one.dtype, epsilon.dtype)
+        scale = int(one.astype(common).view("i8"))
+        values = (y.view("i8") * scale).tolist()
+        eps = int(epsilon.astype(common).view("i8"))
+        margin = one
+    else:
+        values = y.tolist()
+        eps = epsilon
+        margin = 1 if np.issubdtype(y.dtype, np.integer) else 0.0
+    # fast path: one chord spans the whole curve (the fully continuous case,
+    # resolved vectorized). `forward` rounds to the value unit, so the chord
+    # is only trusted beyond a one-unit margin; near the boundary the exact
+    # loop below decides
+    deviation = np.abs(y - forward(x, x[[0, -1]], y[[0, -1]]))
+    if deviation.max() + margin <= epsilon:
+        return x[[0, -1]], y[[0, -1]]
+    positions = x.tolist()
+    keep = np.zeros(len(x), dtype=bool)
+    keep[0] = keep[-1] = True
+    ax, ay = positions[0], values[0]
+    # the sleeve: feasible slope interval from the anchor, as exact
+    # (numerator, positive denominator) rationals; None while unbounded
+    lo = hi = None
+    for i in range(1, len(positions)):
+        dx = positions[i] - ax
+        dy = values[i] - ay
+        if (lo is None or lo[0] * dx <= dy * lo[1]) and (
+            hi is None or dy * hi[1] <= hi[0] * dx
+        ):
+            # the chord anchor -> i passes within epsilon of every dropped
+            # point; tighten the sleeve with this point's own cone
+            if lo is None or (dy - eps) * lo[1] > lo[0] * dx:
+                lo = (dy - eps, dx)
+            if hi is None or (dy + eps) * hi[1] < hi[0] * dx:
+                hi = (dy + eps, dx)
         else:
-            mask[start + 1 : stop - 1] = False
-    return x[mask], y[mask]
+            keep[i - 1] = True
+            ax, ay = positions[i - 1], values[i - 1]
+            dx = positions[i] - ax
+            dy = values[i] - ay
+            lo = (dy - eps, dx)
+            hi = (dy + eps, dx)
+    return x[keep], y[keep]
 
 
 def _chebyshev_center_pair(num, den):

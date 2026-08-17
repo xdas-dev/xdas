@@ -392,7 +392,7 @@ class TestInterpCoordinate:
         )
 
     def test_simplify_keeps_kink(self):
-        # A genuine kink inside a continuous area forces Douglas-Peucker to keep
+        # A genuine kink inside a continuous area forces the reduction to keep
         # the deviating interior point.
         coord = InterpCoordinate(
             {"tie_indices": [0, 5, 10], "tie_values": [0.0, 100.0, 0.0]}
@@ -546,6 +546,28 @@ class TestInterpCoordinateExtra:
             }
         )
         assert coord._is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_subsample_overlap(self):
+        # the axis advances by 0.4 of a 1.0 sampling interval: an overlap, but
+        # the values keep increasing, so the axis stays sorted
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 5, 9], "tie_values": [0.0, 4.0, 4.4, 8.4]}
+        )
+        np.testing.assert_array_equal(coord.get_split_indices("overlaps"), [5])
+        assert coord._is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_smooth_decrease(self):
+        # no discontinuity anywhere — the axis simply turns around inside a
+        # segment, which no boundary can report
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 8], "tie_values": [0.0, 4.0, 2.0]}
+        )
+        np.testing.assert_array_equal(coord.get_split_indices("discontinuities"), [])
+        assert coord._is_monotonic_increasing() is False
+
+    def test_is_monotonic_increasing_single_decreasing_segment(self):
+        coord = InterpCoordinate({"tie_indices": [0, 4], "tie_values": [4.0, 0.0]})
+        assert coord._is_monotonic_increasing() is False
 
     def test_slice_step_collision(self):
         coord = InterpCoordinate(
@@ -775,6 +797,22 @@ class TestInterpCoordinateExtra:
         dataset, attrs = coord._to_dataset(dataset, attrs)
         assert "time_indices" in dataset
         assert dataset["time_values"].dtype == np.dtype("datetime64[ns]")
+
+    def test_collect_legacy_spelling(self):
+        # the pre-break grammar, written without any interpolation variable
+        dataset = xr.Dataset(
+            {
+                "x_indices": ("x_points", np.array([0, 8])),
+                "x_values": ("x_points", np.array([100.0, 900.0])),
+                "__values__": (
+                    ("x",),
+                    np.zeros(9),
+                    {"coordinate_interpolation": "x: x_indices x_values"},
+                ),
+            }
+        )
+        recovered = InterpCoordinate._collect_from_dataset(dataset, "__values__")
+        assert np.allclose(recovered["x"].tie_values, [100.0, 900.0])
 
 
 class TestInterpCoordinateRegular:
@@ -1122,7 +1160,7 @@ class TestSimplifyToleranceDefaults:
         assert result._is_valid_sampling_interval(s, result.tolerance)
 
     def test_widening_beyond_the_budget_never_raises(self):
-        # Douglas-Peucker bounds how far values move, not how much drift fusing
+        # The reduction bounds how far values move, not how much drift fusing
         # a discontinuity exposes, so the required tolerance can exceed the
         # budget. Real OptoDAS seams: 2 ms late every 10 s at 125 Hz.
         t0 = np.datetime64("2021-10-27T15:44:10.721999872", "ns")
@@ -1215,3 +1253,74 @@ class TestFromBlockShort:
         coord = InterpCoordinate.from_block(0.0, 0, 2.0, dim="x")
         assert coord.empty
         assert coord.sampling_interval == 2.0
+
+
+class TestSleeve:
+    """The one-pass reduce stage: same deviation guarantee as the former
+    Douglas-Peucker, O(n) whatever survives."""
+
+    def test_deviation_bound_holds_on_jitter(self):
+        rng = np.random.default_rng(0)
+        n = 200
+        starts = np.arange(n, dtype="int64") * 10
+        jitter = rng.integers(-1_500_000, 1_500_000, n)
+        t0 = np.datetime64("2026-01-01", "ns").astype("i8")
+        seg = t0 + np.arange(n) * 100_000_000 + jitter
+        tie_indices = np.empty(2 * n, dtype="int64")
+        tie_indices[0::2] = starts
+        tie_indices[1::2] = starts + 9
+        tie_values = np.empty(2 * n, dtype="i8")
+        tie_values[0::2] = seg
+        tie_values[1::2] = seg + 90_000_000
+        coord = InterpCoordinate(
+            {"tie_indices": tie_indices, "tie_values": tie_values.astype("M8[ns]")},
+            "time",
+        )
+        tolerance = np.timedelta64(1_000_000, "ns")
+        result = coord.simplify(tolerance)
+        # dropped points stay within tolerance of the simplified curve, and
+        # surviving values are never moved
+        deviation = np.abs(result._get_value(coord.tie_indices) - coord.tie_values)
+        assert deviation.max() <= tolerance
+        kept = np.isin(result.tie_indices, coord.tie_indices)
+        assert kept.all()
+
+    def test_every_gap_survives(self):
+        n = 50
+        tie_indices = np.arange(2 * n, dtype="int64")
+        tie_indices[1::2] = tie_indices[0::2] + 1
+        tie_indices = np.cumsum(np.where(np.arange(2 * n) % 2, 1, 9))
+        tie_indices -= tie_indices[0]
+        values = np.arange(2 * n) * 1_000_000_000
+        coord = InterpCoordinate(
+            {"tie_indices": tie_indices, "tie_values": values.astype("M8[ns]")},
+            "time",
+        )
+        result = coord.simplify(np.timedelta64(1, "ms"))
+        assert len(result.tie_indices) == len(coord.tie_indices)
+
+    def test_subunit_tolerance_is_not_truncated(self):
+        # microsecond values with a nanosecond tolerance: a 1 us seam jitter
+        # needs a sub-microsecond budget to survive (400 ns keeps it) and a
+        # 1100 ns one to fuse — both unrepresentable in truncated us
+        values = np.array([0, 999, 1001, 2000], dtype="M8[us]")
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 999, 1000, 1999], "tie_values": values}, "time"
+        )
+        kept = coord.simplify(np.timedelta64(400, "ns"))
+        fused = coord.simplify(np.timedelta64(1100, "ns"))
+        assert len(kept.tie_indices) == 4
+        assert len(fused.tie_indices) == 2
+
+    def test_float_values(self):
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 9, 10, 19], "tie_values": [0.0, 9.0, 10.5, 19.5]},
+            "x",
+        )
+        assert len(coord.simplify(1.0).tie_indices) == 2
+        assert len(coord.simplify(0.1).tie_indices) == 4
+
+    def test_two_ties_pass_through(self):
+        coord = InterpCoordinate({"tie_indices": [0, 9], "tie_values": [0.0, 9.0]})
+        result = coord.simplify(0.0)
+        assert len(result.tie_indices) == 2

@@ -4,9 +4,20 @@
 
 # xdas.virtual
 
+## VirtualBackend
+
+Marker base and `vtype` registry for the virtual array backends.
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../_autosummary
+
+   VirtualBackend
+```
+
 ## VirtualArray
 
-Base class for all virtual array types.
+Base class of the HDF5 virtual dataset backend (`vtype="hdf5"`).
 
 Attributes
 
@@ -28,6 +39,7 @@ Methods
 .. autosummary::
    :toctree: ../_autosummary
 
+   VirtualArray.from_variable
    VirtualArray.to_dataset
 ```
 

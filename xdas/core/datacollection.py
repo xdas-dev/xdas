@@ -5,12 +5,23 @@ Includes :class:`DataCollection`, :class:`DataSequence`, and
 :class:`DataMapping`.
 """
 
+from collections.abc import MutableMapping, MutableSequence
 from fnmatch import fnmatch
 from pathlib import Path
 
 import h5py
+import pandas as pd
 
 from .dataarray import DataArray
+
+#: printed where a branch has no key at all for a depth, as opposed to the
+#: blank that repeats the key of the row above
+ABSENT = "-"
+
+
+def _wrap(value):
+    """Coerce *value* into a DataCollection leaf/node, as construction does."""
+    return value if isinstance(value, DataCollection) else DataCollection(value)
 
 
 class DataCollection:
@@ -37,35 +48,37 @@ class DataCollection:
     >>> da = wavelet_wavefronts()
     >>> dc = xd.DataCollection(
     ...     {
-    ...         "das1": ("acquisition", [da, da]),
-    ...         "das2": ("acquisition", [da, da, da]),
+    ...         "das1": ("record", [da, da]),
+    ...         "das2": ("record", [da, da, da]),
     ...     },
     ...     "instrument",
     ... )
     >>> dc
-    Instrument:
-      das1:
-        Acquisition:
-          0: <xdas.DataArray (time: 300, distance: 401)>
-          1: <xdas.DataArray (time: 300, distance: 401)>
-      das2:
-        Acquisition:
-          0: <xdas.DataArray (time: 300, distance: 401)>
-          1: <xdas.DataArray (time: 300, distance: 401)>
-          2: <xdas.DataArray (time: 300, distance: 401)>
+    <xdas.DataCollection: 5 leaves, 4.6 MB>
+    instrument  record
+    das1             0  (time: 300, distance: 401)  939.8 KB
+                     1  (time: 300, distance: 401)  939.8 KB
+    das2             0  (time: 300, distance: 401)  939.8 KB
+                     1  (time: 300, distance: 401)  939.8 KB
+                     2  (time: 300, distance: 401)  939.8 KB
 
     """
 
     def __new__(cls, data, name=None):
         """Dispatch to :class:`DataSequence` or :class:`DataMapping` based on *data* type."""
         data, name = parse(data, name)
-        if isinstance(data, list):
-            return list.__new__(DataSequence)
-        elif isinstance(data, dict):
-            return dict.__new__(DataMapping)
+        if isinstance(data, (list, DataSequence)):
+            return object.__new__(DataSequence)
+        elif isinstance(data, (dict, DataMapping)):
+            return object.__new__(DataMapping)
         elif isinstance(data, DataArray):
             if name is not None:
                 data = data.rename(name)
+            return data
+        elif isinstance(data, pd.DataFrame):
+            # A table is a leaf of its own kind: atoms emitting pick tables
+            # walk collections like any other, and coercing their result into
+            # a `DataArray` would silently destroy it.
             return data
         else:
             return DataArray(data, name=name)
@@ -75,12 +88,29 @@ class DataCollection:
         """``True`` if the collection contains no elements."""
         return len(self) == 0
 
+    @property
+    def fields(self):
+        """Ordered, deduplicated tuple of the node names of the whole subtree."""
+        values = self.values() if self.ismapping() else self
+        out = (self.name,) + tuple(
+            name
+            for value in values
+            if isinstance(value, DataCollection)
+            for name in value.fields
+        )
+        return uniquifiy(out)
+
     def query(self, indexers=None, **indexers_kwargs):
         """
         Query a given subset from a data collection.
 
         The data collection is walked through, if any node name corresponds to a key of
         the `indexers`, the corresponding value is used to select a subset of that node.
+
+        Each indexer must name a level of the collection, i.e. be one of `fields`.
+        This is what distinguishes querying from `sel`: `query` chooses *which*
+        leaves are kept by their position in the hierarchy, while `sel` trims
+        *inside* each leaf by coordinate label.
 
         Parameters
         ----------
@@ -95,6 +125,11 @@ class DataCollection:
         DataCollection:
             The queried data.
 
+        Raises
+        ------
+        KeyError
+            If an indexer does not name any level of the collection.
+
         Examples
         --------
         >>> import xdas as xd
@@ -102,60 +137,79 @@ class DataCollection:
         >>> da = wavelet_wavefronts()
         >>> dc = xd.DataCollection(
         ...     {
-        ...         "das1": ("acquisition", [da, da]),
-        ...         "das2": ("acquisition", [da, da, da]),
+        ...         "das1": ("record", [da, da]),
+        ...         "das2": ("record", [da, da, da]),
         ...     },
         ...     "instrument",
         ... )
-        >>> dc.query(instrument="das1", acquisition=0)
-        Instrument:
-          das1:
-            Acquisition:
-            0: <xdas.DataArray (time: 300, distance: 401)>
+        >>> dc.query(instrument="das1", record=0)
+        <xdas.DataCollection: 1 leaf, 939.8 KB>
+        instrument  record
+        das1             0  (time: 300, distance: 401)  939.8 KB
 
         """
-        if indexers is None:
-            indexers = {}
+        indexers = {} if indexers is None else dict(indexers)
         indexers.update(indexers_kwargs)
-        if self.name in indexers:
-            key = indexers[self.name]
-            if self.issequence():
+        fields = self.fields
+        unknown = [key for key in indexers if key not in fields]
+        if unknown:
+            raise KeyError(
+                f"{unknown} do not name any level of the collection; "
+                f"available: {list(fields)}"
+            )
+        return self._query(indexers)
+
+    def select(self, indexers=None, **indexers_kwargs):
+        """
+        Select a given subset from a data collection.
+
+        Alias of `query`, named after `obspy.Stream.select`. See `query`.
+        """
+        return self.query(indexers, **indexers_kwargs)
+
+    def _query(self, indexers):
+        """Recursive half of `query`, with the indexers already validated.
+
+        Every level is walked, whether or not it is named in *indexers*: an
+        indexer applies wherever its level sits in the tree, not only at the
+        root.
+        """
+        key = indexers.get(self.name)
+        if self.issequence():
+            data = list(self)
+            if self.name in indexers:
                 if isinstance(key, int):
-                    data = [self[key]]
+                    data = [data[key]]
                 elif isinstance(key, slice):
-                    data = self[key]
+                    data = data[key]
                 else:
-                    raise ValueError(f"{self.name} query must be a string")
-                data = [
-                    (
-                        value.query(indexers)
-                        if isinstance(value, DataCollection)
-                        else value
-                    )
-                    for value in data
-                ]
-            elif self.ismapping():
+                    raise ValueError(f"{self.name} query must be an integer or a slice")
+            data = [
+                (value._query(indexers) if isinstance(value, DataCollection) else value)
+                for value in data
+            ]
+        elif self.ismapping():
+            data = dict(self)
+            if self.name in indexers:
                 if isinstance(key, str):
                     data = {
                         name: value
-                        for name, value in self.items()
+                        for name, value in data.items()
                         if fnmatch(name, key)
                     }
                 else:
                     raise ValueError(f"{self.name} query must be a string")
-                data = {
-                    name: (
-                        value.query(indexers)
-                        if isinstance(value, DataCollection)
-                        else value
-                    )
-                    for name, value in data.items()
-                }
-            else:  # pragma: no cover
-                raise TypeError("unknown type of data collection")
-            return DataCollection(data, self.name)
-        else:
-            return self
+            data = {
+                name: (
+                    value._query(indexers)
+                    if isinstance(value, DataCollection)
+                    else value
+                )
+                for name, value in data.items()
+            }
+        else:  # pragma: no cover
+            raise TypeError("unknown type of data collection")
+        return DataCollection(data, self.name)
 
     def issequence(self):
         """Return ``True`` if this is a :class:`DataSequence`."""
@@ -185,66 +239,46 @@ class DataCollection:
         """
         if isinstance(fname, Path):
             fname = str(fname)
-        self = DataMapping.from_netcdf(fname, group)
-        try:
-            keys = [int(key) for key in self.keys()]
-            if keys == list(range(len(keys))):
-                return DataSequence.from_mapping(self)
-            else:
-                return self
-        except ValueError:
-            return self
+        return as_sequence_if_positional(DataMapping.from_netcdf(fname, group))
 
 
-class DataMapping(DataCollection, dict):
+class DataMapping(DataCollection, MutableMapping):
     """
     A Mapping of dataarrays.
 
-    A data mapping is a dictionary whose keys are any user defined identifiers and
-    values are dataarray objects.
+    A data mapping is a dict-like container whose keys are any user defined
+    identifiers and values are dataarray objects.
     """
 
     def __new__(cls, data, name=None):
-        """Allocate a new dict-backed DataMapping instance."""
-        return dict.__new__(cls)
+        """Allocate a new DataMapping instance."""
+        return object.__new__(cls)
 
     def __init__(self, data, name=None):
         data, name = parse(data, name)
-        data = {
-            key: (value if isinstance(value, DataCollection) else DataCollection(value))
-            for key, value in data.items()
-        }
-        dict.__init__(self, data)
+        self._data = {key: _wrap(value) for key, value in data.items()}
         self.name = name
 
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def __setitem__(self, key, value):
+        self._data[key] = _wrap(value)
+
+    def __delitem__(self, key):
+        del self._data[key]
+
+    def __len__(self):
+        return len(self._data)
+
+    def __iter__(self):
+        return iter(self._data)
+
     def __repr__(self):
-        if len(self) == 0:
-            return "Empty"
-        width = max([len(str(key)) for key in self])
-        name = self.name if self.name is not None else "collection"
-        s = f"{name.capitalize()}:\n"
-        for key, value in self.items():
-            if isinstance(key, int):
-                label = f"  {key:{width}}: "
-            else:
-                label = f"  {key + ':':{width + 1}} "
-            if isinstance(value, DataArray):
-                s += label + repr(value).split("\n")[0] + "\n"
-            else:
-                s += label + "\n"
-                s += "\n".join(f"    {e}" for e in repr(value).split("\n")[:-1]) + "\n"
-        return s
+        return format_collection(self)
 
     def __reduce__(self):
         return self.__class__, (dict(self), self.name)
-
-    @property
-    def fields(self):
-        """Ordered, deduplicated tuple of node names at this level and its immediate children."""
-        out = (self.name,) + tuple(
-            value.name for value in self.values() if isinstance(value, DataCollection)
-        )
-        return uniquifiy(out)
 
     def to_netcdf(
         self,
@@ -407,39 +441,65 @@ class DataMapping(DataCollection, dict):
         )
 
 
-class DataSequence(DataCollection, list):
+class DataSequence(DataCollection, MutableSequence):
     """
     A collection of dataarrays.
 
-    A data sequence is a list whose values are dataarray objects.
+    A data sequence is a list-like container whose values are dataarray objects.
     """
 
     def __new__(cls, data, name=None):
-        """Allocate a new list-backed DataSequence instance."""
-        return list.__new__(cls)
+        """Allocate a new DataSequence instance."""
+        return object.__new__(cls)
 
     def __init__(self, data, name=None):
         data, name = parse(data, name)
-        data = [
-            (value if isinstance(value, DataCollection) else DataCollection(value))
-            for value in data
-        ]
-        list.__init__(self, data)
+        self._data = [_wrap(value) for value in data]
         self.name = name
 
+    def __getitem__(self, key):
+        if isinstance(key, slice):
+            return self.__class__(self._data[key], self.name)
+        return self._data[key]
+
+    def __setitem__(self, key, value):
+        if isinstance(key, slice):
+            self._data[key] = [_wrap(v) for v in value]
+        else:
+            self._data[key] = _wrap(value)
+
+    def __delitem__(self, key):
+        del self._data[key]
+
+    def __len__(self):
+        return len(self._data)
+
+    def insert(self, index, value):
+        """Insert *value* before *index*, wrapping it into a DataCollection leaf/node."""
+        self._data.insert(index, _wrap(value))
+
+    def __eq__(self, other):
+        # content-only, like the old `list.__eq__`; `.equals()` also checks
+        # `.name` and exact type for a stricter comparison
+        if not isinstance(other, (list, DataSequence)):
+            return NotImplemented
+        return list(self) == list(other)
+
+    def __add__(self, other):
+        if not isinstance(other, (list, DataSequence)):
+            return NotImplemented
+        return self.__class__(list(self) + list(other), self.name)
+
+    def __radd__(self, other):
+        if not isinstance(other, (list, DataSequence)):
+            return NotImplemented
+        return self.__class__(list(other) + list(self), self.name)
+
     def __repr__(self):
-        return repr(self.to_mapping())
+        return format_collection(self)
 
     def __reduce__(self):
         return self.__class__, (list(self), self.name)
-
-    @property
-    def fields(self):
-        """Ordered, deduplicated tuple of node names at this level and its immediate children."""
-        out = (self.name,) + tuple(
-            value.name for value in self if isinstance(value, DataCollection)
-        )
-        return uniquifiy(out)
 
     def to_mapping(self):
         """Convert to an integer-keyed :class:`DataMapping`."""
@@ -609,6 +669,148 @@ class DataSequence(DataCollection, list):
         return self.__class__([value.copy() for value in self], self.name)
 
 
+def format_collection(dc):
+    """
+    Render a data collection as a flat table, one row per leaf.
+
+    Each row spells out the keys that address a leaf, then that leaf's shape
+    and the memory it takes once loaded. Repeated keys are blanked so that a
+    row shows only what changed from the one above.
+
+    Parameters
+    ----------
+    dc : DataCollection
+        The collection to render.
+
+    Returns
+    -------
+    str
+        The representation, starting with a summary line.
+
+    """
+    rows = get_leaves(dc)
+    header = (
+        f"<xdas.DataCollection: {len(rows)} {'leaf' if len(rows) == 1 else 'leaves'}, "
+        f"{to_human(sum(get_nbytes(leaf) for _, leaf in rows))}>"
+    )
+    if not rows:
+        return header
+
+    keys = [[key for _, key in path] for path, _ in rows]
+    ncolumns = max(len(row) for row in keys)
+    # a column is a depth, so a branch that stops short has no key to put in
+    # the deeper ones and says so, rather than leaving a blank that would read
+    # as "as in the row above"
+    grid = [row + [ABSENT] * (ncolumns - len(row)) for row in keys]
+    body = [
+        [
+            (
+                ""
+                if index
+                and key != ABSENT
+                and all(grid[index][j] == grid[index - 1][j] for j in range(d + 1))
+                else key
+            )
+            for d, key in enumerate(row)
+        ]
+        + [get_shape(leaf), to_human(get_nbytes(leaf))]
+        for index, (row, (_, leaf)) in enumerate(zip(grid, rows))
+    ]
+
+    fields = get_fields(rows)
+    heads = (fields if fields else [""] * ncolumns) + ["", ""]
+    # positional keys and the memory column are right aligned so that they
+    # can be compared down the column
+    columns = zip(*[row + cells[-2:] for row, cells in zip(grid, body)])
+    right = [
+        all(cell.isdigit() or cell == ABSENT or not cell for cell in column)
+        for column in columns
+    ]
+    right[-1] = True
+    widths = [
+        max(len(heads[d]), *(len(row[d]) for row in body)) for d in range(len(heads))
+    ]
+
+    lines = [header]
+    if any(heads):
+        lines.append(format_row(heads, widths, right))
+    lines.extend(format_row(row, widths, right) for row in body)
+    return "\n".join(lines)
+
+
+def format_row(cells, widths, right):
+    """Pad *cells* to *widths*, right justifying those flagged in *right*."""
+    return "  ".join(
+        cell.rjust(width) if flag else cell.ljust(width)
+        for cell, width, flag in zip(cells, widths, right)
+    ).rstrip()
+
+
+def get_leaves(dc):
+    """Return one ``(path, leaf)`` per leaf, *path* being ``[(field, key), ...]``."""
+    leaves = []
+
+    def walk(node, path):
+        items = enumerate(node) if node.issequence() else node.items()
+        for key, value in items:
+            row = path + [(node.name, str(key))]
+            if isinstance(value, DataCollection):
+                walk(value, row)
+            else:
+                leaves.append((row, value))
+
+    walk(dc, [])
+    return leaves
+
+
+def get_fields(rows):
+    """Return the name of each depth, empty where the branches disagree.
+
+    A field name belongs to a node, not to a depth: two branches can name
+    the same depth differently or not at all, and only some of them reach
+    the deepest ones. Such a depth is left unheaded rather than headed with
+    a name that speaks for one branch only, but the depths that do agree are
+    still worth naming.
+    """
+    ncolumns = max(len(path) for path, _ in rows)
+    heads = []
+    for depth in range(ncolumns):
+        found = {path[depth][0] for path, _ in rows if depth < len(path)}
+        name = next(iter(found)) if len(found) == 1 else None
+        heads.append(name if name is not None else "")
+    return heads
+
+
+def get_shape(leaf):
+    """Describe the extent of *leaf*, naming its axes."""
+    if isinstance(leaf, pd.DataFrame):
+        return f"(rows: {len(leaf)}, columns: {len(leaf.columns)})"
+    sizes = ", ".join(f"{dim}: {size}" for dim, size in leaf.sizes.items())
+    return f"({sizes})"
+
+
+def get_nbytes(leaf):
+    """Return what *leaf* occupies in memory once loaded.
+
+    `nbytes` covers every array backing, virtual sources included, and gives
+    the loaded size without reading anything. A dataframe has no such
+    attribute: it is measured shallowly and without its index, which is O(1)
+    and counts data but not labels, as `DataArray.nbytes` does.
+    """
+    if hasattr(leaf, "nbytes"):
+        return leaf.nbytes
+    return int(leaf.memory_usage(index=False, deep=False).sum())
+
+
+def to_human(nbytes):
+    """Format a byte count with the largest unit that keeps it above one."""
+    for unit in ("B", "KB", "MB", "GB"):
+        if nbytes < 1024:
+            return f"{nbytes:.1f} {unit}" if unit != "B" else f"{nbytes} B"
+        nbytes /= 1024
+    return f"{nbytes:.1f} TB"
+
+
 def parse(data, name=None):
     """
     Normalise *(data, name)* inputs accepted by :class:`DataCollection` constructors.
@@ -624,6 +826,19 @@ def parse(data, name=None):
     if isinstance(data, DataCollection) and name is None:
         name = data.name
     return data, name
+
+
+def as_sequence_if_positional(dm):
+    """Return :class:`DataMapping` *dm* as a sequence if its keys are its positions.
+
+    A sequence is written under the canonical decimal spelling of its
+    positions, so that is what is compared: parsing the keys as integers
+    instead would read a mapping keyed by a zero-padded code — a SEED
+    location, say — back as a sequence, losing the keys.
+    """
+    if list(dm) == [str(index) for index in range(len(dm))]:
+        return DataSequence.from_mapping(dm)
+    return dm
 
 
 def get_depth(group):

@@ -1,9 +1,12 @@
 import numpy as np
+import numpy.testing as npt
 import obspy
 import pytest
 
 import xdas as xd
+from xdas.coordinates import Coordinate
 from xdas.io.miniseed import MiniSEEDEngine, get_band_code, to_stream
+from xdas.virtual import TileArray
 
 
 def make_network(dirpath, gap=False, samples=100):
@@ -78,6 +81,10 @@ def test_miniseed(tmp_path):
     assert da.coords["station"].values == "CH001"
     assert da.coords["location"].values == "00"
     assert da.coords["channel"].values.tolist() == ["HHZ", "HHN", "HHE"]
+
+    # the ctype engine parameter drives the time coordinate flavor
+    da = xd.open(paths[0], engine="miniseed", ctype="dense")
+    assert isinstance(da.coords["time"], Coordinate["dense"])
 
     # read one file with gaps
     make_network(tmp_path, gap=True, samples=100)
@@ -176,15 +183,138 @@ def test_miniseed(tmp_path):
     assert values_gap_trimmed.shape == (3, 89)
 
 
+def test_miniseed_tile_backend(tmp_path):
+    make_network(tmp_path, samples=100)
+
+    # single files open lazily, tile-backed
+    paths = sorted(tmp_path.glob("*00.mseed"))
+    da = xd.open(paths[0], engine="miniseed")
+    assert isinstance(da.data, TileArray)
+    assert da.data.engine == {
+        "name": "miniseed",
+        "method": "synchronized",
+        "ignore_last_sample": False,
+    }
+
+    # concatenation along a new dimension stays lazy and reads correctly
+    objs = [xd.open(path, engine="miniseed") for path in paths]
+    stacked = xd.concat(objs, "station")
+    assert isinstance(stacked.data, TileArray)
+    npt.assert_array_equal(stacked.values, np.stack([obj.values for obj in objs]))
+
+    # single-trace files fold the channel axis to a scalar coordinate
+    single = tmp_path / "single.mseed"
+    st = obspy.Stream([obspy.Trace(np.random.rand(50), make_header(1, "Z", 0))])
+    st.write(str(single))
+    da = xd.open(single, engine="miniseed")
+    assert da.dims == ("time",)
+    assert da.shape == (50,)
+    npt.assert_allclose(da.values, st[0].data, rtol=1e-6)
+
+    # round trip through the native format
+    da = xd.open(paths[0], engine="miniseed")
+    da.to_netcdf(tmp_path / "view.nc")
+    reopened = xd.open_dataarray(tmp_path / "view.nc")
+    assert isinstance(reopened.data, TileArray)
+    npt.assert_array_equal(reopened.values, da.values)
+
+
 def test_miniseed_helpers(tmp_path):
-    # get_band_code with out-of-range sampling rate
+    # the stream converters and the band-code table moved to the obspy engine
+    # and are re-exported here, so imports written against this module still
+    # resolve
+    from xdas.io import obspy as obspy_engine
+
+    assert to_stream is obspy_engine.to_stream
+    assert get_band_code is obspy_engine.get_band_code
     assert get_band_code(0.0) == "X"
-    assert get_band_code(6000.0) == "X"
 
     # to_stream raises on non-2D data
     da_3d = xd.DataArray(np.zeros((2, 3, 4)), dims=("a", "b", "c"))
     with pytest.raises(ValueError, match="2D"):
         to_stream(da_3d)
+
+
+def test_compressed_element_type_comes_from_the_encoding(tmp_path):
+    # `headonly=True` leaves `tr.data` an empty float64 array whatever the file
+    # holds, so a STEIM-compressed int32 file used to be scanned as float64 and
+    # the tile array then rejected the int32 it decoded
+    path = str(tmp_path / "steim.mseed")
+    tr = obspy.Trace(np.arange(100, dtype="int32"), make_header(1, "Z", 0))
+    obspy.Stream([tr]).write(path, format="MSEED", encoding="STEIM2", reclen=512)
+    assert obspy.read(path)[0].stats.mseed["encoding"] == "STEIM2"
+
+    da = xd.open_dataarray(path, engine="miniseed")
+    assert da.dtype == np.int32
+    npt.assert_array_equal(da.values, tr.data)
+
+
+def test_obspy_engine_is_preferred_by_auto_detection(tmp_path):
+    # both engines read the same files, so registration order settles which
+    # one auto-detection reaches first
+    from xdas.io import Engine
+
+    names = list(Engine._registry)
+    assert names.index("obspy") < names.index("miniseed")
+
+    make_network(tmp_path, samples=100)
+    path = min(tmp_path.glob("*00.mseed"))
+    # `open` asks for a collection first, which only the obspy engine provides
+    dc = xd.open(path)
+    assert dc.fields == ("network", "station", "location", "channel", "record")
+    # `open_dataarray` asks for a single array, which the obspy engine cannot
+    # give for a three-component file; the legacy engine stacks it
+    da = xd.open_dataarray(path)
+    assert da.shape == (3, 100)
+    assert da.data.engine["name"] == "miniseed"
+
+
+def test_pre_rename_manifest_still_decodes(tmp_path):
+    from xdas.virtual import TileArray
+
+    make_network(tmp_path, samples=100)
+    path = str(min(tmp_path.glob("*00.mseed")))
+    expected = np.array(obspy.read(path))
+
+    data = TileArray.from_tiles(
+        path,
+        (3, 100),
+        np.dtype("float64"),
+        {"name": "miniseed", "method": "synchronized", "ignore_last_sample": False},
+    )
+    npt.assert_allclose(np.asarray(data), expected)
+
+    trimmed = TileArray.from_tiles(
+        path,
+        (3, 99),
+        np.dtype("float64"),
+        {"name": "miniseed", "method": "synchronized", "ignore_last_sample": True},
+    )
+    npt.assert_allclose(np.asarray(trimmed), expected[:, :-1])
+
+
+def test_pre_rename_unsynchronized_manifest(tmp_path):
+    from xdas.virtual import TileArray
+
+    # one channel cut in two segments: the old engine folded the channel axis
+    # out of the scanned shape and could drop each segment's last sample
+    path = tmp_path / "gap.mseed"
+    st = obspy.Stream(
+        [
+            obspy.Trace(np.arange(50.0), make_header(1, "Z", 0)),
+            obspy.Trace(np.arange(100.0, 150.0), make_header(1, "Z", 100)),
+        ]
+    )
+    st.write(str(path), format="MSEED")
+    expected = np.concatenate([tr.data for tr in obspy.read(str(path))])
+
+    data = TileArray.from_tiles(
+        str(path),
+        (99,),
+        np.dtype("float64"),
+        {"name": "miniseed", "method": "unsynchronized", "ignore_last_sample": True},
+    )
+    npt.assert_allclose(np.asarray(data), expected[:-1])
 
 
 def test_miniseed_unsynchronized_traces(tmp_path):
@@ -204,4 +334,4 @@ def test_miniseed_unsynchronized_traces(tmp_path):
     )
     st.write(str(path), format="MSEED")
     with pytest.raises(ValueError, match="synchronized"):
-        MiniSEEDEngine().read_header(str(path), False, "interpolated")
+        MiniSEEDEngine().read_header(str(path))

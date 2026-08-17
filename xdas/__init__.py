@@ -6,7 +6,7 @@ types for physical axes, multi-threaded signal processing pipelines, and I/O eng
 for common DAS instrument formats.
 """
 
-__version__ = "0.2.8"
+__version__ = "0.2.9.dev0"
 
 __all__ = [  # noqa: RUF022 - grouped by kind, not alphabetically
     # submodules
@@ -55,7 +55,28 @@ __all__ = [  # noqa: RUF022 - grouped by kind, not alphabetically
     "open_mfdatacollection",
     "open_mfdatatree",
     "plot_availability",
+    "sortby",
     "split",
+    "stack",
+    "trim_overlaps",
+    # task atoms (function forms)
+    "annotate",
+    "detrend",
+    "differentiate",
+    "filter",
+    "hilbert",
+    "integrate",
+    "medfilt",
+    "mlpicker",
+    "pick",
+    "rechunk",
+    "resample",
+    "sliding_mean_removal",
+    "stft",
+    "taper",
+    "trigger",
+    # streaming
+    "watch",
 ]
 
 from . import (
@@ -70,6 +91,26 @@ from . import (
     synthetics,
     testing,
     virtual,
+)
+
+# The compat module first, so that a later `import xdas.trigger` finds it in
+# `sys.modules` and does not rebind the attribute: the lowercase twin below
+# stays `xdas.trigger` for everyone.
+from . import trigger as _trigger_module  # noqa: F401  isort: skip
+from .atoms.detect import trigger
+from .atoms.kernel import rechunk
+from .atoms.ml import annotate, mlpicker, pick
+from .atoms.tasks import (
+    detrend,
+    differentiate,
+    filter,
+    hilbert,
+    integrate,
+    medfilt,
+    resample,
+    sliding_mean_removal,
+    stft,
+    taper,
 )
 from .coordinates import (
     Coordinate,
@@ -106,6 +147,10 @@ from .core import (
     open_mfdatatree,
     plot_availability,
     routines,
+    sortby,
     split,
+    stack,
+    trim_overlaps,
 )
 from .core.methods import *
+from .processing.core import watch

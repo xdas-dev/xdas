@@ -1,6 +1,7 @@
 import tempfile
 
 import numpy as np
+import numpy.testing as npt
 import pandas as pd
 import pytest
 
@@ -528,13 +529,12 @@ class TestSampledCoordinateConcat:
 
 class TestSampledCoordinateDiscontinuitiesAvailabilities:
     def test_discontinuities_and_availabilities(self):
-        # tie_lengths set to create 2 segments
+        # two segments, [0, 1, 2] then [5, 6]: one 2.0 gap between them
         coord = SampledCoordinate(
             {"tie_values": [0.0, 5.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
         )
         dis = coord.get_discontinuities()
         avail = coord.get_availabilities()
-        # expect DataFrame with specific columns
         for df in (dis, avail):
             assert isinstance(df, pd.DataFrame)
             assert set(df.columns) >= {
@@ -545,8 +545,17 @@ class TestSampledCoordinateDiscontinuitiesAvailabilities:
                 "delta",
                 "type",
             }
-        # availabilities should list segments (2 segments -> 2 records)
-        assert len(avail) >= 1
+        # the discontinuity straddles the two segments, which the
+        # availabilities bound on either side
+        npt.assert_array_equal(dis["start_index"], [2])
+        npt.assert_array_equal(dis["end_index"], [3])
+        npt.assert_array_equal(dis["start_value"], [2.0])
+        npt.assert_array_equal(dis["end_value"], [5.0])
+        npt.assert_array_equal(dis["delta"], [2.0])
+        npt.assert_array_equal(dis["type"], ["gap"])
+        npt.assert_array_equal(avail["start_index"], [0, 3])
+        npt.assert_array_equal(avail["end_index"], [2, 4])
+        npt.assert_array_equal(avail["type"], ["data", "data"])
 
 
 class TestSampledCoordinateSlicing:
@@ -813,6 +822,62 @@ class TestSampledCoordinateToNetCDF:
             result = xd.open(file.name)
             assert result.equals(expected)
 
+    def test_collect_legacy_spelling(self):
+        # the spelling that predates the CF-shaped grammar: the group named the
+        # coordinate, the mapping listed both tie point variables, and the
+        # interval was the sampling variable's own value
+        import xarray as xr
+
+        dataset = xr.Dataset(
+            {
+                "time_values": ("time_points", np.array([0, 1_000_000_000])),
+                "time_lengths": ("time_points", np.array([100, 100])),
+                "time_sampling": (
+                    (),
+                    8,
+                    {
+                        "tie_point_mapping": "time: time_values time_lengths",
+                        "dtype": "timedelta64[ns]",
+                        "units": "milliseconds",
+                    },
+                ),
+                "__values__": (
+                    ("time",),
+                    np.zeros(200),
+                    {"coordinate_sampling": "time: time_sampling"},
+                ),
+            }
+        )
+        recovered = SampledCoordinate._collect_from_dataset(dataset, "__values__")
+        coord = recovered["time"]
+        assert coord.dim == "time"
+        assert coord.sampling_interval == np.timedelta64(8, "ms")
+        npt.assert_array_equal(coord.tie_lengths, [100, 100])
+
+    def test_collect_legacy_spelling_numeric(self):
+        # the same, on a numeric axis: no units/dtype attributes to decode, the
+        # sampling variable's value is the interval as it stands
+        import xarray as xr
+
+        dataset = xr.Dataset(
+            {
+                "distance_values": ("distance_points", np.array([0.0])),
+                "distance_lengths": ("distance_points", np.array([30])),
+                "distance_sampling": (
+                    (),
+                    2.5,
+                    {"tie_point_mapping": "distance: distance_values distance_lengths"},
+                ),
+                "__values__": (
+                    ("distance",),
+                    np.zeros(30),
+                    {"coordinate_sampling": "distance: distance_sampling"},
+                ),
+            }
+        )
+        recovered = SampledCoordinate._collect_from_dataset(dataset, "__values__")
+        assert recovered["distance"].sampling_interval == 2.5
+
 
 class TestGetSplitIndices:
     def test_no_tolerance(self):
@@ -946,6 +1011,38 @@ class TestSampledCoordinateMissingBranches:
             }
         )
         assert coord._is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_subsample_overlap(self):
+        # the seam advances by 0.4 of a 1.0 sampling interval: an overlap, but
+        # the values keep increasing, so the axis stays sorted
+        coord = SampledCoordinate(
+            {"tie_values": [0.0, 4.4], "tie_lengths": [5, 5], "sampling_interval": 1.0}
+        )
+        npt.assert_array_equal(coord.get_split_indices("overlaps"), [5])
+        assert coord._is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_negative_interval(self):
+        # a regular axis running backwards has no seam to report it
+        coord = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [5], "sampling_interval": -1.0}
+        )
+        npt.assert_array_equal(coord.get_split_indices("discontinuities"), [])
+        assert coord._is_monotonic_increasing() is False
+
+    def test_is_monotonic_increasing_single_sample_segments(self):
+        # segments of one sample have no interior, so the interval never falls
+        # between two samples and its sign cannot disorder anything
+        coord = SampledCoordinate(
+            {
+                "tie_values": [0.0, 1.0, 2.0],
+                "tie_lengths": [1, 1, 1],
+                "sampling_interval": -1.0,
+            }
+        )
+        assert coord._is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_empty(self):
+        assert SampledCoordinate()._is_monotonic_increasing() is True
 
     def test_get_sampling_interval_singleton(self):
         coord = SampledCoordinate(

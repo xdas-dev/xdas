@@ -156,29 +156,36 @@ class TdmsReader:
         # TODO: Error if file not big enough to hold header
         # handle outlives __init__ on purpose: reads are lazy, closed in __exit__
         self._tdms_file = open(filename, "rb")  # noqa: SIM115
-        # Read lead in (28 bytes):
-        lead_in = self._tdms_file.read(LEAD_IN_LENGTH)
-        # lead_in is 28 bytes:
-        # [string of length 4][int32][int32][int64][int64]
-        fields = struct.unpack("<4siiQQ", lead_in)
+        try:
+            # Read lead in (28 bytes):
+            lead_in = self._tdms_file.read(LEAD_IN_LENGTH)
+            # lead_in is 28 bytes:
+            # [string of length 4][int32][int32][int64][int64]
+            fields = struct.unpack("<4siiQQ", lead_in)
 
-        # TODO: validate file
-        if fields[0].decode() not in "TDSm":
-            msg = "Not a TDMS file (TDSm tag not found)"
-            raise (TypeError, msg)
+            # TODO: validate file
+            if fields[0].decode() not in "TDSm":
+                msg = "Not a TDMS file (TDSm tag not found)"
+                raise (TypeError, msg)
 
-        self.fileinfo = dict(zip(FILEINFO_NAMES, fields))
-        self.fileinfo["decimated"] = not bool(self.fileinfo["toc"] & DECIMATE_MASK)
-        # Make offsets relative to beginning of file:
-        self.fileinfo["next_segment_offset"] += LEAD_IN_LENGTH
-        self.fileinfo["raw_data_offset"] += LEAD_IN_LENGTH
-        self.fileinfo["file_size"] = os.path.getsize(self._tdms_file.name)
+            self.fileinfo = dict(zip(FILEINFO_NAMES, fields))
+            self.fileinfo["decimated"] = not bool(self.fileinfo["toc"] & DECIMATE_MASK)
+            # Make offsets relative to beginning of file:
+            self.fileinfo["next_segment_offset"] += LEAD_IN_LENGTH
+            self.fileinfo["raw_data_offset"] += LEAD_IN_LENGTH
+            self.fileinfo["file_size"] = os.path.getsize(self._tdms_file.name)
 
-        # TODO: Validate lead in:
-        self.fileinfo["next_segment_offset"] = min(
-            self.fileinfo["next_segment_offset"], self.file_size
-        )
-        # raise(ValueError, "Next Segment Offset too large in TDMS header")
+            # TODO: Validate lead in:
+            self.fileinfo["next_segment_offset"] = min(
+                self.fileinfo["next_segment_offset"], self.file_size
+            )
+            # raise(ValueError, "Next Segment Offset too large in TDMS header")
+        except Exception:
+            # A reader that fails to build is never handed to ``with``, so its
+            # ``__exit__`` never runs and the handle would be left open. Every
+            # auto-detection sniff of a file that is not TDMS lands here.
+            self._tdms_file.close()
+            raise
 
     def __enter__(self):
         return self

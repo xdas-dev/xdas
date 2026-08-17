@@ -1,17 +1,19 @@
 import h5py
+import numpy as np
+import pandas as pd
 import pytest
 
 import xdas as xd
 import xdas.signal as xs
-from xdas.core.datacollection import get_depth
+from xdas.core.datacollection import get_depth, to_human
 
 
 class TestDataCollection:
     def nest(self, da):
         return xd.DataCollection(
             {
-                "das1": xd.DataCollection([da, da], "acquisition"),
-                "das2": xd.DataCollection([da, da, da], "acquisition"),
+                "das1": xd.DataCollection([da, da], "record"),
+                "das2": xd.DataCollection([da, da, da], "record"),
             },
             "instrument",
         )
@@ -22,8 +24,8 @@ class TestDataCollection:
         data = (
             "instrument",
             {
-                "das1": ("acquisition", [da, da]),
-                "das2": ("acquisition", [da, da, da]),
+                "das1": ("record", [da, da]),
+                "das2": ("record", [da, da, da]),
             },
         )
         result = xd.DataCollection(data)
@@ -49,8 +51,8 @@ class TestDataCollection:
         assert result.equals(dc)
         dc = xd.DataCollection(
             {
-                "das1": xd.DataCollection([da, da], "acquisition"),
-                "das2": xd.DataCollection([da, da, da], "acquisition"),
+                "das1": xd.DataCollection([da, da], "record"),
+                "das2": xd.DataCollection([da, da, da], "record"),
             },
             "instrument",
         )
@@ -87,10 +89,10 @@ class TestDataCollection:
             assert get_depth(file) > 0
             assert get_depth(file["instrument"]) > 0
             assert get_depth(file["instrument/das1"]) > 0
-            assert get_depth(file["instrument/das1/acquisition"]) > 0
-            assert get_depth(file["instrument/das1/acquisition/0"]) == 0
+            assert get_depth(file["instrument/das1/record"]) > 0
+            assert get_depth(file["instrument/das1/record/0"]) == 0
             with pytest.raises(ValueError):
-                get_depth(file["instrument/das1/acquisition/0/da"])
+                get_depth(file["instrument/das1/record/0/da"])
 
     def test_isel(self):
         da = xd.testing.dummy()
@@ -115,23 +117,78 @@ class TestDataCollection:
     def test_query(self):
         da = xd.testing.dummy()
         dc = self.nest(da)
-        result = dc.query(instrument="das1", acquisition=0)
+        result = dc.query(instrument="das1", record=0)
         expected = xd.DataCollection(
             {
-                "das1": xd.DataCollection([da], "acquisition"),
+                "das1": xd.DataCollection([da], "record"),
             },
             "instrument",
         )
         assert result.equals(expected)
         result = dc.query(instrument="das*")
         assert result.equals(dc)
-        result = dc.query(acquisition=slice(0, 2))
-        assert result.equals(dc)
+        # an indexer applies wherever its level sits, not only at the root:
+        # das2 holds three acquisitions and keeps the first two
+        result = dc.query(record=slice(0, 2))
+        assert [len(result[key]) for key in result] == [2, 2]
+        assert result["das1"].equals(dc["das1"])
 
     def test_fields(self):
         da = xd.testing.dummy()
         dc = self.nest(da)
-        assert dc.fields == ("instrument", "acquisition")
+        assert dc.fields == ("instrument", "record")
+
+    def test_fields_recursive(self):
+        da = xd.testing.dummy()
+        dc = xd.DataCollection(
+            {
+                "DX": xd.DataCollection(
+                    {
+                        "CH001": xd.DataCollection(
+                            {
+                                "00": xd.DataCollection(
+                                    {"HHZ": xd.DataCollection([da], "record")},
+                                    "channel",
+                                )
+                            },
+                            "location",
+                        )
+                    },
+                    "station",
+                )
+            },
+            "network",
+        )
+        assert dc.fields == (
+            "network",
+            "station",
+            "location",
+            "channel",
+            "record",
+        )
+
+    def test_query_is_strict(self):
+        da = xd.testing.dummy()
+        dc = self.nest(da)
+        with pytest.raises(KeyError, match="do not name any level"):
+            dc.query(nonexistent="das1")
+        # a dimension name is not a level name: `sel` trims inside leaves,
+        # `query` chooses leaves
+        with pytest.raises(KeyError, match="do not name any level"):
+            dc.query(time=slice(0, 5))
+
+    def test_select_is_query(self):
+        da = xd.testing.dummy()
+        dc = self.nest(da)
+        assert dc.select(instrument="das1").equals(dc.query(instrument="das1"))
+        assert dc.select({"instrument": "das1"}).equals(dc.query(instrument="das1"))
+
+    def test_query_does_not_mutate_indexers(self):
+        da = xd.testing.dummy()
+        dc = self.nest(da)
+        indexers = {"instrument": "das1"}
+        dc.query(indexers, record=0)
+        assert indexers == {"instrument": "das1"}
 
     def test_map(self):
         da = xd.testing.dummy()
@@ -175,7 +232,7 @@ class TestDataCollection:
         from xdas.core.datacollection import DataMapping
 
         dm = DataMapping({}, "empty")
-        assert repr(dm) == "Empty"
+        assert repr(dm) == "<xdas.DataCollection: 0 leaves, 0 B>"
 
     def test_mapping_reduce(self):
         import pickle
@@ -278,7 +335,7 @@ class TestDataCollection:
     def test_query_invalid_key_in_sequence(self):
         da = xd.testing.dummy()
         dc = xd.DataCollection([da, da], "seq")
-        with pytest.raises(ValueError, match="query must be a string"):
+        with pytest.raises(ValueError, match="query must be an integer or a slice"):
             dc.query(seq="bad_string_key")
 
     def test_query_invalid_key_in_mapping(self):
@@ -298,6 +355,20 @@ class TestDataCollection:
         result = xd.DataCollection.from_netcdf(path)
         # Keys 0 and 2 are not a sequential range → returns as-is DataMapping
         assert isinstance(result, xd.DataCollection)
+
+    def test_zero_padded_keys_survive_every_read_path(self, tmp_path):
+        # a SEED location such as "00" is a mapping key, not a position: every
+        # way in must compare the canonical decimal spelling, not parse ints
+        da = xd.testing.dummy()
+        dc = xd.DataCollection({"00": da, "01": da}, "location")
+        path = tmp_path / "padded.nc"
+        dc.to_netcdf(path)
+        for result in (
+            xd.open_datacollection(path),
+            xd.DataCollection.from_netcdf(path),
+            xd.open_datacollection(path, engine="xdas"),
+        ):
+            assert list(result) == ["00", "01"]
 
     def test_sequence_from_netcdf_direct(self, tmp_path):
         from xdas.core.datacollection import DataSequence
@@ -393,7 +464,7 @@ class TestDataCollection:
         da = xd.testing.dummy()
         dm = DataMapping({"good": da}, "test")
         # bypass validation to inject an invalid item
-        dict.__setitem__(dm, "bad", "not_a_dataarray")
+        dm._data["bad"] = "not_a_dataarray"
         atom = xs.decimate(..., 2, ftype="fir")
         with pytest.raises(TypeError, match="encountered in the collection"):
             dm.map(atom)
@@ -404,7 +475,7 @@ class TestDataCollection:
         da = xd.testing.dummy()
         ds = DataSequence([da], "test")
         # bypass validation to inject an invalid item
-        list.append(ds, "not_a_dataarray")
+        ds._data.append("not_a_dataarray")
         atom = xs.decimate(..., 2, ftype="fir")
         with pytest.raises(TypeError, match="encountered in the collection"):
             ds.map(atom)
@@ -442,3 +513,376 @@ class TestDataCollection:
         dc = xd.DataCollection([da_near, da_far], "instrument")
         result = dc.sel(distance=slice(-100, -1))
         assert len(result) == 0
+
+    def test_mapping_delitem(self):
+        da = xd.testing.dummy()
+        dm = xd.DataCollection({"a": da, "b": da}, "test")
+        del dm["a"]
+        assert list(dm) == ["b"]
+
+    def test_sequence_getitem_slice_preserves_type(self):
+        da = xd.testing.dummy()
+        ds = xd.DataCollection([da, da, da], "seq")
+        result = ds[1:3]
+        assert isinstance(result, type(ds))
+        assert result.name == "seq"
+        assert len(result) == 2
+
+    def test_sequence_setitem_index(self):
+        da = xd.testing.dummy()
+        da2 = xd.testing.dummy()
+        da2.data[:] = 0
+        ds = xd.DataCollection([da, da], "seq")
+        ds[0] = da2
+        assert ds[0].equals(da2)
+
+    def test_sequence_setitem_slice(self):
+        da = xd.testing.dummy()
+        ds = xd.DataCollection([da, da, da], "seq")
+        ds[0:2] = [da, da]
+        assert len(ds) == 3
+
+    def test_sequence_delitem(self):
+        da = xd.testing.dummy()
+        ds = xd.DataCollection([da, da], "seq")
+        del ds[0]
+        assert len(ds) == 1
+
+    def test_sequence_insert(self):
+        da = xd.testing.dummy()
+        ds = xd.DataCollection([da], "seq")
+        ds.insert(0, da)
+        assert len(ds) == 2
+
+    def test_sequence_eq_ignores_name(self):
+        # content-only equality, like the old `list.__eq__`; `.equals()` is
+        # the strict form that also checks `.name`
+        da = xd.testing.dummy()
+        ds1 = xd.DataCollection([da], "seq1")
+        ds2 = xd.DataCollection([da], "seq2")
+        assert ds1 == ds2
+        assert not ds1.equals(ds2)
+
+    def test_sequence_eq_false_for_unrelated_type(self):
+        da = xd.testing.dummy()
+        ds = xd.DataCollection([da], "seq")
+        assert (ds == 5) is False
+        assert ds != 5
+
+    def test_sequence_add_concatenates(self):
+        da = xd.testing.dummy()
+        ds1 = xd.DataCollection([da], "seq")
+        ds2 = xd.DataCollection([da, da], "seq")
+        result = ds1 + ds2
+        assert isinstance(result, type(ds1))
+        assert len(result) == 3
+
+    def test_sequence_radd_with_plain_list(self):
+        da = xd.testing.dummy()
+        ds = xd.DataCollection([da], "seq")
+        result = [da, da] + ds
+        assert isinstance(result, type(ds))
+        assert len(result) == 3
+
+    def test_sequence_add_type_error_for_unsupported_operand(self):
+        da = xd.testing.dummy()
+        ds = xd.DataCollection([da], "seq")
+        with pytest.raises(TypeError):
+            ds + 5
+        with pytest.raises(TypeError):
+            5 + ds
+
+
+class TestDataFrameLeaves:
+    def test_a_dataframe_stays_a_dataframe(self):
+        # the rebuild used to wrap every non-DataArray leaf in DataArray(...),
+        # silently destroying a table.
+        df = pd.DataFrame({"time": [1.0, 2.0], "value": [0.5, 0.9]})
+        dc = xd.DataCollection({"ST01": df, "ST02": df.copy()}, "station")
+        assert isinstance(dc["ST01"], pd.DataFrame)
+        pd.testing.assert_frame_equal(dc["ST01"], df)
+
+    def test_repr_shows_the_table(self):
+        df = pd.DataFrame({"time": [1.0, 2.0], "value": [0.5, 0.9]})
+        dc = xd.DataCollection(
+            {"das": xd.DataCollection({"ST01": df}, "station")}, "instrument"
+        )
+        text = repr(dc)
+        assert "ST01" in text
+        assert "das" in text
+
+    def test_repr_measures_a_table_by_its_columns(self):
+        # rows x columns, and a size that ignores the index, as DataArray.nbytes
+        # ignores coordinates
+        df = pd.DataFrame({"time": [1.0, 2.0], "value": [0.5, 0.9]})
+        dc = xd.DataCollection({"ST01": df}, "station")
+        assert "(rows: 2, columns: 2)" in repr(dc)
+        assert repr(dc).splitlines()[0] == "<xdas.DataCollection: 1 leaf, 32 B>"
+
+
+class TestCollectionRepr:
+    def array(self, **sizes):
+        data = np.zeros(tuple(sizes.values()), dtype="float32")
+        return xd.DataArray(data, dims=tuple(sizes))
+
+    def test_levels_head_the_columns_when_homogeneous(self):
+        dc = xd.DataCollection(
+            {
+                "CCN": (
+                    "cable",
+                    {"N": ("record", [self.array(time=4, distance=3)])},
+                )
+            },
+            "node",
+        )
+        lines = repr(dc).splitlines()
+        assert lines[0] == "<xdas.DataCollection: 1 leaf, 48 B>"
+        assert lines[1] == "node  cable  record"
+        assert lines[2] == "CCN   N           0  (time: 4, distance: 3)  48 B"
+
+    def test_a_depth_a_branch_never_reaches_is_marked_absent(self):
+        # the marker distinguishes "no such level here" from the blank that
+        # repeats the key above
+        dc = xd.DataCollection(
+            {
+                "CCN": ("cable", {"N": ("record", [self.array(time=4)])}),
+                "SER": ("cable", {"S": self.array(time=4)}),
+            },
+            "node",
+        )
+        assert repr(dc).splitlines()[1:] == [
+            "node  cable  record",
+            "CCN   N           0  (time: 4)  16 B",
+            "SER   S           -  (time: 4)  16 B",
+        ]
+
+    def test_an_unnamed_depth_leaves_its_column_unheaded(self):
+        # the named depths are still worth heading
+        dc = xd.DataCollection({"CCN": {"N": [self.array(time=4)]}}, "node")
+        assert repr(dc).splitlines()[1:] == [
+            "node",
+            "CCN   N  0  (time: 4)  16 B",
+        ]
+
+    def test_a_disputed_depth_leaves_its_column_unheaded(self):
+        # one branch calls it a cable, the other a record: neither speaks for
+        # the column, but the root still does
+        dc = xd.DataCollection(
+            {
+                "CCN": ("cable", [self.array(time=4)]),
+                "SER": ("record", [self.array(time=4)]),
+            },
+            "node",
+        )
+        assert repr(dc).splitlines()[1:] == [
+            "node",
+            "CCN   0  (time: 4)  16 B",
+            "SER   0  (time: 4)  16 B",
+        ]
+
+    def test_no_header_when_nothing_is_named(self):
+        dc = xd.DataCollection([self.array(time=4), self.array(time=4)])
+        assert repr(dc).splitlines()[1:] == [
+            "0  (time: 4)  16 B",
+            "1  (time: 4)  16 B",
+        ]
+
+    def test_repeated_keys_are_blanked(self):
+        dc = xd.DataCollection(
+            {"CCN": ("cable", [self.array(time=4), self.array(time=4)])}, "node"
+        )
+        assert repr(dc).splitlines()[2:] == [
+            "CCN       0  (time: 4)  16 B",
+            "          1  (time: 4)  16 B",
+        ]
+
+    def test_size_is_what_loading_would_cost(self):
+        # a lazily opened array reports its full size without being read
+        da = xd.synthetics.wavelet_wavefronts()
+        dc = xd.DataCollection([da], "record")
+        assert to_human(da.nbytes) in repr(dc)
+
+    def test_human_sizes_reach_terabytes(self):
+        assert to_human(0) == "0 B"
+        assert to_human(1024) == "1.0 KB"
+        assert to_human(1024**4) == "1.0 TB"
+
+
+class TestMergeCollectionResults:
+    """
+    W8: the walk labels each leaf's result with its own tree path as the
+    result is produced, then folds the results through the atom's `merge`
+    hook on the way back up.
+    """
+
+    thresh = {"P": 0.5, "S": 0.5}
+
+    def cft(self, t0=0.0, quiet=False, **scalars):
+        """A characteristic function peaking on P and S at ``t0 + 1``."""
+        lane = [0.0, 0.0, 0.0] if quiet else [0.0, 0.8, 0.0]
+        da = xd.DataArray(
+            data=[[0.0, 0.0, 0.0], lane, lane],
+            coords={
+                "phase": ["N", "P", "S"],
+                "time": {
+                    "tie_indices": [0, 2],
+                    "tie_values": [t0, t0 + 2.0],
+                    "sampling_interval": 1.0,
+                },
+            },
+        )
+        for name, value in scalars.items():
+            da = da.assign_coords(**{name: value})
+        return da
+
+    def tree(self):
+        """A ``network / station / location`` collection of pick-able leaves."""
+        return xd.DataCollection(
+            {
+                "IA": xd.DataCollection(
+                    {
+                        "DBNFM": xd.DataCollection({"--": self.cft()}, "location"),
+                        "LBFI": xd.DataCollection({"00": self.cft(10.0)}, "location"),
+                    },
+                    "station",
+                )
+            },
+            "network",
+        )
+
+    def test_leaves_carry_their_tree_path_and_merge_into_one_table(self):
+        result = xd.trigger(self.tree(), thresh=self.thresh)
+        assert isinstance(result, pd.DataFrame)
+        # identity leads, then the dimension coordinates, then the value
+        assert list(result.columns) == [
+            "network",
+            "station",
+            "location",
+            "phase",
+            "time",
+            "value",
+        ]
+        assert list(result["network"]) == ["IA"] * 4
+        assert list(result["station"]) == ["DBNFM", "DBNFM", "LBFI", "LBFI"]
+        assert list(result["location"]) == ["--", "--", "00", "00"]
+        assert list(result["time"]) == [1.0, 1.0, 11.0, 11.0]
+        assert list(result.index) == [0, 1, 2, 3]
+
+    def test_annotation_happens_at_production_time(self):
+        # every leaf of the un-merged tree already carries the full path, so a
+        # streaming walk can hand a leaf straight to a sink and keep its
+        # identity
+        tree = xd.trigger(..., thresh=self.thresh)(self.tree(), merge=False)
+        leaf = tree["IA"]["DBNFM"]["--"]
+        assert isinstance(leaf, pd.DataFrame)
+        assert list(leaf.columns)[:3] == ["network", "station", "location"]
+        assert set(leaf["location"]) == {"--"}
+
+    def test_merge_false_keeps_the_tree(self):
+        tree = xd.trigger(..., thresh=self.thresh)(self.tree(), merge=False)
+        assert isinstance(tree, xd.DataCollection)
+        assert tree.name == "network"
+        assert tree["IA"].name == "station"
+        assert list(tree["IA"]) == ["DBNFM", "LBFI"]
+
+    def test_an_atom_without_a_merge_hook_rebuilds_the_tree(self):
+        da = xd.testing.dummy()
+        dc = xd.DataCollection({"das1": da, "das2": da}, "instrument")
+        atom = xd.atoms.Partial(np.square)
+        assert atom.merge is None
+        result = atom(dc)
+        assert isinstance(result, xd.DataCollection)
+        assert list(result) == ["das1", "das2"]
+
+    def test_sequence_levels_contribute_their_position(self):
+        dc = xd.DataCollection(
+            {"node": xd.DataCollection([self.cft(0.0), self.cft(10.0)], "record")},
+            "cable",
+        )
+        result = xd.trigger(dc, thresh=self.thresh)
+        assert list(result.columns)[:2] == ["cable", "record"]
+        assert list(result["cable"]) == ["node"] * 4
+        assert list(result["record"]) == [0, 0, 1, 1]
+
+    def test_an_unnamed_level_contributes_no_column(self):
+        dc = xd.DataCollection({"a": self.cft(), "b": self.cft()})
+        result = xd.trigger(dc, thresh=self.thresh)
+        assert list(result.columns) == ["phase", "time", "value"]
+        assert len(result) == 4
+
+    def test_a_single_leaf_collection_still_merges(self):
+        dc = xd.DataCollection({"DBNFM": self.cft()}, "station")
+        result = xd.trigger(dc, thresh=self.thresh)
+        assert isinstance(result, pd.DataFrame)
+        assert list(result["station"]) == ["DBNFM"] * 2
+
+    def test_a_leaf_without_a_pick_contributes_no_row(self):
+        dc = xd.DataCollection(
+            {"DBNFM": self.cft(), "QUIET": self.cft(quiet=True)}, "station"
+        )
+        result = xd.trigger(dc, thresh=self.thresh)
+        assert set(result["station"]) == {"DBNFM"}
+
+    def test_a_collection_without_any_pick_gives_an_empty_table(self):
+        dc = xd.DataCollection(
+            {"A": self.cft(quiet=True), "B": self.cft(quiet=True)}, "station"
+        )
+        result = xd.trigger(dc, thresh=self.thresh)
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) == 0
+
+    def test_an_empty_collection_gives_an_empty_table(self):
+        result = xd.trigger(xd.DataCollection({}, "station"), thresh=self.thresh)
+        assert isinstance(result, pd.DataFrame)
+        assert result.empty
+
+    @pytest.mark.filterwarnings("error::UserWarning")
+    def test_an_agreeing_scalar_coordinate_dedupes_silently(self):
+        # what the obspy engine produces: every leaf carries its four SEED
+        # identifiers as scalar coordinates, and the tree keys hold the very
+        # same values
+        dc = xd.DataCollection(
+            {
+                "DBNFM": self.cft(station="DBNFM"),
+                "LBFI": self.cft(station="LBFI"),
+            },
+            "station",
+        )
+        result = xd.trigger(dc, thresh=self.thresh)
+        assert list(result.columns) == ["station", "phase", "time", "value"]
+        assert list(result["station"]) == ["DBNFM", "DBNFM", "LBFI", "LBFI"]
+
+    def test_a_disagreeing_scalar_coordinate_warns_and_the_tree_path_wins(self):
+        dc = xd.DataCollection({"DBNFM": self.cft(station="ST01")}, "station")
+        with pytest.warns(UserWarning, match="disagrees with the tree path"):
+            result = xd.trigger(dc, thresh=self.thresh)
+        assert list(result.columns) == ["station", "phase", "time", "value"]
+        assert list(result["station"]) == ["DBNFM", "DBNFM"]
+
+    def test_sequential_delegates_to_its_last_merging_stage(self):
+        pipeline = xd.atoms.Partial(np.abs) >> xd.trigger(..., thresh=self.thresh)
+        assert pipeline.merge is not None
+        result = pipeline(self.tree())
+        assert isinstance(result, pd.DataFrame)
+        assert list(result.columns)[:3] == ["network", "station", "location"]
+
+    def test_sequential_without_a_merging_stage_has_none(self):
+        pipeline = xd.atoms.Partial(np.abs) >> xd.atoms.Partial(np.square)
+        assert pipeline.merge is None
+
+    def test_unjoinable_leaf_chunks_are_annotated_one_by_one(self):
+        class TableAndArray(xd.atoms.Atom):
+            """Emits two chunks of different types, which cannot be joined."""
+
+            def initialize(self, x, **flags):
+                pass
+
+            def call(self, x, **flags):
+                return [x, pd.DataFrame({"value": [1.0]})]
+
+        dc = xd.DataCollection({"DBNFM": self.cft()}, "station")
+        leaf = TableAndArray()(dc)["DBNFM"]
+        assert isinstance(leaf, xd.DataCollection)
+        assert isinstance(leaf[0], xd.DataArray)
+        assert list(leaf[1].columns) == ["station", "value"]
+        assert list(leaf[1]["station"]) == ["DBNFM"]

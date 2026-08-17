@@ -5,19 +5,17 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "xdas"
 dynamic = ["version"]
-requires-python = ">= 3.10"
+requires-python = ">= 3.11"
 authors = [
     { name = "Alister Trabattoni", email = "alister.trabattoni@gmail.com" },
 ]
 dependencies = [
-    "dask<2025.4.0",
     "h5netcdf",
     "h5py",
     "hdf5plugin",
     "loky",
-    "msgpack",
     "numba",
-    "numpy",
+    "numpy>=2.3",
     "obspy",
     "pandas",
     "plotly",
@@ -42,7 +40,7 @@ docs = [
     "sphinx-copybutton",
     "sphinx",
 ]
-tests = ["dascore", "psutil", "seisbench", "torch"]
+tests = ["dascore", "dask<2025.4.0", "psutil", "seisbench", "torch"]
 
 # Single source of truth for the version: xdas/__init__.py
 [tool.setuptools.dynamic]
