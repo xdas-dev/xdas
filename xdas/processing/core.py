@@ -1126,8 +1126,8 @@ class DataArrayWriter:
     Parameters
     ----------
     dirpath : str or Path
-        The directory to store the output of a processing pipeline. The directory needs
-        to exist and be empty.
+        The directory to store the output of a processing pipeline. The
+        directory needs to exist.
     encoding : dict
         The encoding to use when dumping the DataArrays to bytes.
     max_buffers : int, default=1
@@ -1148,6 +1148,12 @@ class DataArrayWriter:
         through the shared-memory object store — one memcpy at memory
         bandwidth — in exchange for parallel compression. Requires the
         optional ``ray`` dependency. See :func:`get_pool`.
+    mode : {"overwrite", "append"}, default="overwrite"
+        With ``"overwrite"``, chunk files a previous writer left in
+        `dirpath` are cleared before this one writes, so rerunning a
+        pipeline at the same `dirpath` reflects only the new run. With
+        ``"append"``, existing chunk files are kept and new ones continue
+        the numbering, so a rerun accumulates onto the previous output.
 
     Examples
     --------
@@ -1165,6 +1171,8 @@ class DataArrayWriter:
 
     """
 
+    _CHUNK_NAME_RE = re.compile(r"^\d{9}$")
+
     def __init__(
         self,
         dirpath,
@@ -1174,22 +1182,35 @@ class DataArrayWriter:
         create_dirs=False,
         dim="first",
         pool="threads",
+        mode="overwrite",
     ):
         dirpath = str(dirpath) if isinstance(dirpath, Path) else dirpath
         if create_dirs:
             os.makedirs(dirpath, exist_ok=True)
         if not os.path.exists(dirpath):
             raise OSError(f"no directory {dirpath}")
+        if mode not in ("overwrite", "append"):
+            raise ValueError(f"`mode` must be 'overwrite' or 'append', got {mode!r}")
+        existing = sorted(
+            name for name in os.listdir(dirpath) if self._CHUNK_NAME_RE.match(name)
+        )
+        if mode == "overwrite":
+            for name in existing:
+                os.remove(os.path.join(dirpath, name))
+            count = 0
+        else:
+            count = int(existing[-1]) + 1 if existing else 0
         self.dirpath = dirpath
         self.dim = dim
         self.encoding = encoding
         self.max_buffers = max_buffers
         self.max_workers = max_workers
         self.pool = pool
+        self.mode = mode
         self._executor = get_pool(pool, self.max_workers, self.max_buffers)
         self._futures = []
         self._results = []
-        self._count = 0
+        self._count = count
 
     def submit(self, chunk):
         """
@@ -1239,10 +1260,14 @@ class DataFrameWriter:
     ----------
     path : str
         The path to the csv file.
-    parse_dates : bool, int, optional
-        Whether to parse dates when reopening the csv file at the end of the process
     create_dirs : bool, optional
         Whether to create parent directories if they do not exist. Default is False.
+    mode : {"overwrite", "append"}, default="overwrite"
+        With ``"overwrite"``, an existing file at `path` is replaced by this
+        run's output, so rerunning a pipeline at the same `path` reflects
+        only the new run. With ``"append"``, rows are added to whatever the
+        file already contains, letting a restarted acquisition keep filling
+        the same table.
 
     Examples
     --------
@@ -1259,14 +1284,18 @@ class DataFrameWriter:
 
     """
 
-    def __init__(self, path, parse_dates=None, create_dirs=False):
+    def __init__(self, path, create_dirs=False, mode="overwrite"):
         dirpath = os.path.dirname(path)
         if create_dirs and dirpath:
             os.makedirs(dirpath, exist_ok=True)
         if dirpath and not os.path.exists(dirpath):
             raise OSError(f"no directory {dirpath}")
+        if mode not in ("overwrite", "append"):
+            raise ValueError(f"`mode` must be 'overwrite' or 'append', got {mode!r}")
         self.path = str(path) if isinstance(path, Path) else path
-        self.parse_dates = parse_dates
+        self.mode = mode
+        self._started = False
+        self._datetime_columns = []
         self._executor = ThreadPoolExecutor(1)
         self._future = None
 
@@ -1292,12 +1321,21 @@ class DataFrameWriter:
         return self.submit(df)
 
     def _write(self, df):
-        # A run appends to the table it finds, which is what lets a restarted
-        # acquisition keep filling the day's file.
-        if os.path.exists(self.path):
-            df.to_csv(self.path, mode="a", header=False, index=False)
-        else:
+        for column in df.columns:
+            if (
+                column not in self._datetime_columns
+                and pd.api.types.is_datetime64_any_dtype(df[column])
+            ):
+                self._datetime_columns.append(column)
+        # Only the first write of a run may need to start a fresh table;
+        # every later write in the same run appends to what it just wrote.
+        if not self._started and not (
+            self.mode == "append" and os.path.exists(self.path)
+        ):
             df.to_csv(self.path, mode="w", header=True, index=False)
+        else:
+            df.to_csv(self.path, mode="a", header=False, index=False)
+        self._started = True
 
     def shutdown(self):
         """Shut down the internal thread pool."""
@@ -1309,7 +1347,7 @@ class DataFrameWriter:
             self._future.result()
         self.shutdown()
         try:
-            return pd.read_csv(self.path, parse_dates=self.parse_dates)
+            return pd.read_csv(self.path, parse_dates=self._datetime_columns)
         except (FileNotFoundError, pd.errors.EmptyDataError):
             return pd.DataFrame()
 
@@ -1337,6 +1375,11 @@ class StreamWriter:
         If "SDS", the miniseed files will be written in the SDS file structure.
         For more information about SDS see:
         https://www.seiscomp.de/seiscomp3/doc/applications/slarchive/SDS.html
+    mode : {"overwrite", "append"}, default="overwrite"
+        With ``"overwrite"``, an existing destination file (the flat file,
+        or an SDS day file this run touches) is replaced by this run's
+        output. With ``"append"``, this run's data is merged with whatever
+        the destination already holds before it is rewritten.
 
     Examples
     --------
@@ -1398,7 +1441,13 @@ class StreamWriter:
     """
 
     def __init__(
-        self, path, dataquality, kw_merge=None, kw_write=None, output_format="SDS"
+        self,
+        path,
+        dataquality,
+        kw_merge=None,
+        kw_write=None,
+        output_format="SDS",
+        mode="overwrite",
     ):
         path = str(path) if isinstance(path, Path) else path
         if output_format == "SDS":
@@ -1416,12 +1465,26 @@ class StreamWriter:
                 "output_format must be either 'SDS' or 'flat'. "
                 f"Got {output_format} instead."
             )
+        if mode not in ("overwrite", "append"):
+            raise ValueError(f"`mode` must be 'overwrite' or 'append', got {mode!r}")
         self.dataquality = dataquality
         self.kw_merge = kw_merge if kw_merge is not None else {}
         self.kw_write = kw_write if kw_write is not None else {}
         self.output_format = output_format
+        self.mode = mode
         self._executor = ThreadPoolExecutor(1)
         self._future = None
+
+    @staticmethod
+    def _split_and_fill(st):
+        """Break any masked (gapped) trace into filled, contiguous pieces."""
+        result = obspy.Stream()
+        for tr in st:
+            for piece in tr.split():
+                if isinstance(piece.data, np.ma.masked_array):  # pragma: no cover
+                    piece.data = piece.data.filled()
+                result += piece
+        return result
 
     def _to_SDS(self, st):
         for tr in st:
@@ -1444,6 +1507,9 @@ class StreamWriter:
             os.makedirs(dirpath, exist_ok=True)
             fname = f"{network}.{station}.{location}.{channel}.D.{year}.{julday:03d}"
             sds_path = os.path.join(dirpath, fname)
+            if self.mode == "append" and os.path.exists(sds_path):
+                merged = (obspy.read(sds_path) + new_st).merge(**self.kw_merge)
+                new_st = self._split_and_fill(merged)
             new_st.write(sds_path, format="MSEED", **self.kw_write)
 
     def _to_flat(self, st):
@@ -1456,7 +1522,11 @@ class StreamWriter:
                 if isinstance(new_tr.data, np.ma.masked_array):  # pragma: no cover
                     new_tr.data = new_tr.data.filled()
                 new_st += new_tr
-        new_st.write(os.path.join(self.dirpath, self.fname), **self.kw_write)
+        path = os.path.join(self.dirpath, self.fname)
+        if self.mode == "append" and os.path.exists(path):
+            merged = (obspy.read(path) + new_st).merge(**self.kw_merge)
+            new_st = self._split_and_fill(merged)
+        new_st.write(path, **self.kw_write)
 
     def submit(self, st):
         """

@@ -79,8 +79,7 @@ energy
 | | |
 | --- | --- |
 | {py:func}`~xdas.filter` | band, low- or high-pass, from a corner pair in Hz |
-| {py:func}`~xdas.resample` | to a target rate, by any rational ratio |
-| {py:func}`~xdas.decimate` | to a target rate, when the ratio is an integer |
+| {py:func}`~xdas.resample` | to a target `rate`, `interval` or `up`/`down` ratio, by `method="fir"` (default), `"iir"` or `"fft"` |
 | {py:func}`~xdas.integrate`, {py:func}`~xdas.differentiate` | in the coordinate's own units |
 | {py:func}`~xdas.stft` | window and hop in seconds |
 | {py:func}`~xdas.detrend`, {py:func}`~xdas.taper` | whole-record shaping |

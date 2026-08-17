@@ -196,9 +196,9 @@ def nest(tree, levels):
         data = {key: nest(value, rest) for key, value in tree.items()}
     else:
         # one element per ObsPy `Trace`: this is the faithful `obspy.read`
-        # mirror. Once combined, each element is an acquisition epoch instead
-        # and `combine_by_coords` renames the level accordingly.
-        data = {key: DataCollection(value, "trace") for key, value in tree.items()}
+        # mirror. Each one is already a continuous record, and combining only
+        # fuses them into longer ones, so the level keeps its name throughout.
+        data = {key: DataCollection(value, "record") for key, value in tree.items()}
     return DataCollection(data, name)
 
 

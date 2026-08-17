@@ -36,6 +36,7 @@ purpose, so the pin is split in two, and the split is the point:
 """
 
 import pickle
+from types import SimpleNamespace
 
 import numpy as np
 import numpy.testing as npt
@@ -1492,7 +1493,7 @@ class TestAnnotateGathersItsComponentLevel:
         dc = xd.DataCollection(
             {
                 "N1": xd.DataCollection(
-                    {"C1": xd.DataCollection(acquisitions, "acquisition")}, "cable"
+                    {"C1": xd.DataCollection(acquisitions, "record")}, "cable"
                 )
             },
             "node",
@@ -1761,7 +1762,7 @@ class TestPickerStages:
     def test_the_resampling_targets_the_weight_sets_own_rate(self, name, rate):
         # It is not always 100: `diting` runs at 50.
         picker = Picker(picker_model(name), device="cpu")
-        assert picker[0].target == rate
+        assert picker[0].rate == rate
 
     def test_the_resampling_is_a_no_op_on_data_already_at_that_rate(self):
         da = component_array(["SHZ", "SHN", "SHE"])  # 100 Hz, as the model wants
@@ -1971,7 +1972,11 @@ class TestPickerPicks:
         assert len(picks) == 4  # one P and one S per run
 
 
-DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
+DEVICES = ["cpu"] + (
+    [torch.accelerator.current_accelerator().type]
+    if torch.accelerator.is_available()
+    else []
+)
 
 
 class TestAnnotateAsyncOutputs:
@@ -2037,5 +2042,24 @@ class TestAnnotateAsyncOutputs:
 class TestAnnotateDeviceDefault:
     def test_the_device_defaults_to_what_is_available(self):
         atom = Annotate(annotate_model())
-        expected = "cuda" if torch.cuda.is_available() else "cpu"
+        expected = (
+            torch.accelerator.current_accelerator().type
+            if torch.accelerator.is_available()
+            else "cpu"
+        )
         assert atom.device.type == expected
+
+    def test_torch_accelerator_is_deferred_to_when_available(self, monkeypatch):
+        monkeypatch.setattr(torch.accelerator, "is_available", lambda: True)
+        monkeypatch.setattr(
+            torch.accelerator,
+            "current_accelerator",
+            lambda: SimpleNamespace(type="mps"),
+        )
+        atom = Annotate(annotate_model())
+        assert atom.device.type == "mps"
+
+    def test_cpu_is_the_fallback(self, monkeypatch):
+        monkeypatch.setattr(torch.accelerator, "is_available", lambda: False)
+        atom = Annotate(annotate_model())
+        assert atom.device.type == "cpu"

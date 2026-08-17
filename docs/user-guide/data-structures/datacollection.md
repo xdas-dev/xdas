@@ -25,7 +25,7 @@ A {py:class}`xdas.DataCollection` can be viewed as a flexible way of organizing 
 - 1rst (mapping) level: can be the "Network" code, relative to the experience name.
 - 2nd (mapping) level: contains the "Node" codes relative to the places where the fibers/cables are.
 - 3rd (mapping) level: concerns the fibers/cables names.
-- 4th (sequence) level: is related to the number of acquisitions with changing parameters.
+- 4th (sequence) level: is related to the number of records, one per continuous acquisition.
 
 ![](/_static/datacollection.svg)
 
@@ -80,25 +80,20 @@ Several dict placeholders with different names can be provided. They must be fol
 
 In this example, for the 19th of November 2023, our network REKA featured 2 cables (RK1 and RK2), with the RK1 cable having 3 different acquisitions and RK2 one acquisition. 
 
-If your data paths are something like: "/data/REKA/RK1/20231119/proc/*.hdf5" and "/data/REKA/RK2/20231119/proc/*.hdf5", you can define your data path as "/data/{network}/{cable}/20231119/proc/[acquisition].hdf5". You free to choose other words to define "network" and "cable", you juste have to replace them.
+If your data paths are something like: "/data/REKA/RK1/20231119/proc/*.hdf5" and "/data/REKA/RK2/20231119/proc/*.hdf5", you can define your data path as "/data/{network}/{cable}/20231119/proc/[record].hdf5". You free to choose other words to define "network" and "cable", you juste have to replace them.
 
 ```python
-path = "/data/{network}/{cable}/20231119/proc/[acquisition].hdf5"
+path = "/data/{network}/{cable}/20231119/proc/[record].hdf5"
 dc = xd.open(path, engine="asn")
 dc
 ```
 ```text
-Network:
-  REKA:
-    Cable:
-        RK1: 
-        Acquisition:
-            0: <xdas.DataArray (time: 54000, distance: 10000)>
-            1: <xdas.DataArray (time: 10000, distance: 5000)>
-            2: <xdas.DataArray (time: 9000, distance: 10000)>
-        RK2: 
-        Acquisition:
-            0: <xdas.DataArray (time: 54000, distance: 10000)>
+<xdas.DataCollection: 4 leaves, 4.5 GB>
+network  cable  record
+REKA     RK1         0  (time: 54000, distance: 10000)    2.0 GB
+                     1  (time: 10000, distance: 5000)   190.7 MB
+                     2  (time: 9000, distance: 10000)   343.3 MB
+         RK2         0  (time: 54000, distance: 10000)    2.0 GB
 ```
 ```python
 # Write it as your global DataCollection in .nc with the virtual argument True
@@ -111,24 +106,19 @@ dc = xd.open("datacollection.nc")
 dc
 ```
 ```text
-Network:
-  REKA:
-    Cable:
-        RK1: 
-        Acquisition:
-            0: <xdas.DataArray (time: 54000, distance: 10000)>
-            1: <xdas.DataArray (time: 10000, distance: 5000)>
-            2: <xdas.DataArray (time: 9000, distance: 10000)>
-        RK2: 
-        Acquisition:
-            0: <xdas.DataArray (time: 54000, distance: 10000)>
+<xdas.DataCollection: 4 leaves, 4.5 GB>
+network  cable  record
+REKA     RK1         0  (time: 54000, distance: 10000)    2.0 GB
+                     1  (time: 10000, distance: 5000)   190.7 MB
+                     2  (time: 9000, distance: 10000)   343.3 MB
+         RK2         0  (time: 54000, distance: 10000)    2.0 GB
 ```
 
 If you have several DataCollections, you can gather them in one file using {py:func}`xdas.open` and write it to one single DataCollection.
 
 ### Extend your DataCollection
 
-You can extend your {py:class}`xdas.DataCollection` by inserting new {py:class}`xdas.DataArray` to the acquisitons list.
+You can extend your {py:class}`xdas.DataCollection` by inserting new {py:class}`xdas.DataArray` to the records list.
 
 ```python
 # Read your global DataCollection with open_datacollection
@@ -147,23 +137,18 @@ Coordinates:
 ```
 
 ```python
-# Add the dataarray to the datacollection at the acquisition number 0
+# Add the dataarray to the datacollection at the record number 0
 dc["REKA"]["RK2"].insert(0, da)
 dc
 ```
 ```text
-Network:
-  REKA:
-    Cable:
-        RK1: 
-        Acquisition:
-            0: <xdas.DataArray (time: 54000, distance: 10000)>
-            1: <xdas.DataArray (time: 10000, distance: 5000)>
-            2: <xdas.DataArray (time: 9000, distance: 10000)>
-        RK2: 
-        Acquisition:
-            0: <xdas.DataArray (time: 68577, distance: 50000)>
-            1: <xdas.DataArray (time: 54000, distance: 10000)>
+<xdas.DataCollection: 5 leaves, 17.3 GB>
+network  cable  record
+REKA     RK1         0  (time: 54000, distance: 10000)    2.0 GB
+                     1  (time: 10000, distance: 5000)   190.7 MB
+                     2  (time: 9000, distance: 10000)   343.3 MB
+         RK2         0  (time: 68577, distance: 50000)   12.8 GB
+                     1  (time: 54000, distance: 10000)    2.0 GB
 ```
 
-You now have 2 acquisitions in your acquisitions list.
+You now have 2 records in your records list.

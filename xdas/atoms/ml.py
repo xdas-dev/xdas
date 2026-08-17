@@ -647,7 +647,8 @@ class Annotate(Atom):
         With a component dimension, present components always go to the slot
         their label names and the remaining slots are zeroed.
     device : str or torch.device, optional
-        Torch device. Defaults to CUDA if available, else CPU.
+        Torch device. Defaults to the accelerator torch itself would pick
+        (CUDA, MPS, ...), else CPU.
     tolerance : scalar, None or False, optional
         Grid-snapping budget forwarded to :func:`xdas.stack` when a component
         level is gathered (see :meth:`gather`). ``None`` (default) spends a
@@ -663,8 +664,10 @@ class Annotate(Atom):
         allows late emission — so the CPU keeps feeding the model while
         results cross back; :meth:`flush` drains whatever is still in
         flight. At most `max_buffers` transfers are left pending (default
-        2); ``0`` restores fully synchronous emission. On the CPU the
-        transfers complete immediately and the queue changes nothing.
+        2); ``0`` restores fully synchronous emission. Pinned, non-blocking
+        transfers are a CUDA feature: on CPU and MPS every transfer
+        completes synchronously on submission, so the queue changes
+        nothing there either.
     **annotate_kwargs
         SeisBench annotate arguments (``overlap``, ``stacking``, ``blinding``,
         ...) overriding what the weight set declares in ``default_args``.
@@ -731,7 +734,11 @@ class Annotate(Atom):
     ):
         super().__init__()
         if device is None:
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            device = torch.device(
+                torch.accelerator.current_accelerator().type
+                if torch.accelerator.is_available()
+                else "cpu"
+            )
         else:
             device = torch.device(device)
         valid = {"auto", "clone", "pad", "strict", *model.component_order}
@@ -1198,8 +1205,10 @@ class Annotate(Atom):
         non-blocking, with an event marking its completion; the source
         tensor rides along in the queue so it outlives the copy. At most
         `max_buffers` transfers are left pending — the older ones are
-        synchronized — which is what bounds the staging memory. On the CPU
-        there is nothing to wait for and the item is complete on arrival.
+        synchronized — which is what bounds the staging memory. Every other
+        device (CPU, or an accelerator like MPS with no pinned-async path)
+        transfers synchronously here instead, so :meth:`_realize` always
+        finds a CPU tensor to call ``.numpy()`` on.
         """
         if self.device.type == "cuda":  # pragma: no cover
             values = torch.empty(data.shape, dtype=data.dtype, pin_memory=True)
@@ -1207,7 +1216,7 @@ class Annotate(Atom):
             event = torch.cuda.Event()
             event.record()
         else:
-            values, event = data, None
+            values, event = data.cpu(), None
         self.inflight.append((event, values, data, meta))
         excess = len(self.inflight) - self.max_buffers
         if excess > 0:
@@ -1717,7 +1726,8 @@ class Picker(Sequential):
         if thresh is None:
             thresh = _model_thresholds(model, **annotate_kwargs)
         stages.append(Trigger(thresh, dim=dim, coords=coords))
-        super().__init__(stages, name="picker")
+        # named so that composing a picker nests it rather than flattening it
+        super().__init__(stages, name="Picker")
 
 
 class MLPicker(Annotate):

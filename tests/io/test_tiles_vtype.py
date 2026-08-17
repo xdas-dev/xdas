@@ -254,7 +254,7 @@ def test_tiles_datacollection_roundtrip(tmp_path):
         paths.append(path)
     tiled = [xd.open_dataarray(path, engine="xdas", vtype="tiles") for path in paths]
 
-    sequence = xd.DataCollection(tiled, name="acquisition")
+    sequence = xd.DataCollection(tiled, name="record")
     fname = str(tmp_path / "sequence.nc")
     sequence.to_netcdf(fname, virtual=True)
     result = xd.open_datacollection(fname)

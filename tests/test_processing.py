@@ -198,6 +198,46 @@ class TestDataArrayWriter:
             dw.submit(chunk)
         assert dw.result().equals(expected)
 
+    def test_overwrite_is_the_default_and_clears_previous_chunks(self, tmp_path):
+        first = xd.testing.dummy(shape=(1000, 100))
+        dw1 = xp.DataArrayWriter(tmp_path, dim="time")
+        for chunk in xd.split(first, 10, dim="time"):
+            dw1.submit(chunk)
+        dw1.result()
+
+        second = xd.testing.dummy(shape=(100, 100))
+        dw2 = xp.DataArrayWriter(tmp_path, dim="time")
+        assert dw2.mode == "overwrite"
+        for chunk in xd.split(second, 2, dim="time"):
+            dw2.submit(chunk)
+        result = dw2.result()
+
+        assert result.equals(second)
+        assert sorted(os.listdir(tmp_path)) == [f"{i:09d}" for i in range(2)]
+
+    def test_append_continues_numbering_onto_previous_chunks(self, tmp_path):
+        # `result()` only joins what *this* writer instance submitted; the
+        # point of "append" is that a fresh instance's chunk files land
+        # after the previous instance's, rather than clobbering them.
+        first = xd.testing.dummy(shape=(1000, 100))
+        dw1 = xp.DataArrayWriter(tmp_path, dim="time")
+        for chunk in xd.split(first, 10, dim="time"):
+            dw1.submit(chunk)
+        dw1.result()
+
+        second = xd.testing.dummy(shape=(100, 100))
+        dw2 = xp.DataArrayWriter(tmp_path, dim="time", mode="append")
+        for chunk in xd.split(second, 2, dim="time"):
+            dw2.submit(chunk)
+        result = dw2.result()
+
+        assert result.equals(second)
+        assert sorted(os.listdir(tmp_path)) == [f"{i:09d}" for i in range(12)]
+
+    def test_invalid_mode_raises(self, tmp_path):
+        with pytest.raises(ValueError):
+            xp.DataArrayWriter(tmp_path, mode="invalid")
+
 
 class TestProcessing:
     def test_stateful(self, tmp_path):
@@ -248,7 +288,6 @@ class TestDataFrameWriter:
     def test_init(self, tmp_path):
         dw = xp.DataFrameWriter(tmp_path / "output.csv")
         assert dw.path == str(tmp_path / "output.csv")
-        assert dw.parse_dates is None
 
     def test_single_dataframe(self, tmp_path):
         dw = xp.DataFrameWriter(tmp_path / "output.csv")
@@ -283,13 +322,13 @@ class TestDataFrameWriter:
         assert result.equals(expected)
         assert not Path(dw.path).exists()
 
-    def test_with_existing_file(self, tmp_path):
+    def test_with_existing_file_and_append_mode(self, tmp_path):
         dw1 = xp.DataFrameWriter(tmp_path / "output.csv")
         df1 = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
         dw1.submit(df1)
         result = dw1.result()
 
-        dw2 = xp.DataFrameWriter(tmp_path / "output.csv")
+        dw2 = xp.DataFrameWriter(tmp_path / "output.csv", mode="append")
         df2 = pd.DataFrame({"A": [7, 8, 9], "B": [10, 11, 12]})
         dw2.submit(df2)
         result = dw2.result()
@@ -298,6 +337,46 @@ class TestDataFrameWriter:
         assert result.equals(expected)
         result = pd.read_csv(tmp_path / "output.csv")
         assert result.equals(expected)
+
+    def test_overwrite_is_the_default_and_replaces_existing_file(self, tmp_path):
+        dw1 = xp.DataFrameWriter(tmp_path / "output.csv")
+        df1 = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
+        dw1.submit(df1)
+        dw1.result()
+
+        dw2 = xp.DataFrameWriter(tmp_path / "output.csv")
+        assert dw2.mode == "overwrite"
+        df2 = pd.DataFrame({"A": [7, 8, 9], "B": [10, 11, 12]})
+        dw2.submit(df2)
+        result = dw2.result()
+
+        assert result.equals(df2)
+        result = pd.read_csv(tmp_path / "output.csv")
+        assert result.equals(df2)
+
+    def test_invalid_mode_raises(self, tmp_path):
+        with pytest.raises(ValueError):
+            xp.DataFrameWriter(tmp_path / "output.csv", mode="invalid")
+
+    def test_datetime_column_survives_roundtrip(self, tmp_path):
+        # to_csv writes datetimes as plain strings with no dtype metadata;
+        # DataFrameWriter must detect and restore them on read, for any
+        # datetime-typed column, not just one named "time".
+        dw = xp.DataFrameWriter(tmp_path / "output.csv")
+        expected = pd.DataFrame(
+            {
+                "time": pd.to_datetime(["2020-01-01T00:00:00", "2020-01-01T00:00:01"]),
+                "channel": [1, 2],
+                "detection": pd.to_datetime(
+                    ["2020-01-01T00:00:02", "2020-01-01T00:00:03"]
+                ),
+            }
+        )
+        dw.submit(expected)
+        result = dw.result()
+        assert result.equals(expected)
+        assert pd.api.types.is_datetime64_any_dtype(result["time"])
+        assert pd.api.types.is_datetime64_any_dtype(result["detection"])
 
     def test_missing_directory(self, tmp_path):
         with pytest.raises(OSError):
@@ -585,6 +664,184 @@ class TestStreamWriter:
         st = obspy.read(path)
         assert len(st) == 10
 
+    def test_sds_overwrite_is_the_default_and_replaces_existing_day_file(
+        self, tmp_path
+    ):
+        def make_da(starttime, seed):
+            rng = np.random.default_rng(seed)
+            data = rng.integers(-1000, 1000, size=(100, 10), dtype=np.int32)
+            endtime = starttime + np.timedelta64(10, "ms") * (data.shape[0] - 1)
+            return xd.DataArray(
+                data=data,
+                coords={
+                    "time": {
+                        "tie_indices": [0, data.shape[0] - 1],
+                        "tie_values": [starttime, endtime],
+                        "sampling_interval": np.timedelta64(10, "ms"),
+                    },
+                    "distance": 5.0 * np.arange(data.shape[1]),
+                },
+            )
+
+        def atom(da, **kwargs):
+            return da.to_stream(
+                network="NT",
+                station="ST{:03}",
+                channel="HN1",
+                location="00",
+                dim={"distance": "time"},
+            )
+
+        starttime = np.datetime64("2023-01-01T00:00:00")
+        first = make_da(starttime, seed=0)
+        second = make_da(starttime, seed=1)
+
+        path = (
+            tmp_path / "2023" / "NT" / "ST001" / "HN1.D" / "NT.ST001.00.HN1.D.2023.001"
+        )
+
+        writer1 = xp.StreamWriter(tmp_path, "M", output_format="SDS")
+        assert writer1.mode == "overwrite"
+        xp.process(atom, xp.DataArrayLoader(first, chunks={"time": 50}), writer1)
+        st = obspy.read(path)
+        assert np.array_equal(st[0].data, first.values[:, 0])
+
+        writer2 = xp.StreamWriter(tmp_path, "M", output_format="SDS")
+        xp.process(atom, xp.DataArrayLoader(second, chunks={"time": 50}), writer2)
+        st = obspy.read(path)
+        assert len(st) == 1
+        assert np.array_equal(st[0].data, second.values[:, 0])
+
+    def test_sds_append_merges_with_existing_day_file(self, tmp_path):
+        def make_da(starttime, seed):
+            rng = np.random.default_rng(seed)
+            data = rng.integers(-1000, 1000, size=(100, 10), dtype=np.int32)
+            endtime = starttime + np.timedelta64(10, "ms") * (data.shape[0] - 1)
+            return xd.DataArray(
+                data=data,
+                coords={
+                    "time": {
+                        "tie_indices": [0, data.shape[0] - 1],
+                        "tie_values": [starttime, endtime],
+                        "sampling_interval": np.timedelta64(10, "ms"),
+                    },
+                    "distance": 5.0 * np.arange(data.shape[1]),
+                },
+            )
+
+        def atom(da, **kwargs):
+            return da.to_stream(
+                network="NT",
+                station="ST{:03}",
+                channel="HN1",
+                location="00",
+                dim={"distance": "time"},
+            )
+
+        starttime = np.datetime64("2023-01-01T00:00:00")
+        first = make_da(starttime, seed=0)
+        gap_start = starttime + np.timedelta64(10, "ms") * 200
+        second = make_da(gap_start, seed=1)
+
+        path = (
+            tmp_path / "2023" / "NT" / "ST001" / "HN1.D" / "NT.ST001.00.HN1.D.2023.001"
+        )
+
+        writer1 = xp.StreamWriter(tmp_path, "M", output_format="SDS")
+        xp.process(atom, xp.DataArrayLoader(first, chunks={"time": 50}), writer1)
+
+        writer2 = xp.StreamWriter(tmp_path, "M", output_format="SDS", mode="append")
+        xp.process(atom, xp.DataArrayLoader(second, chunks={"time": 50}), writer2)
+
+        st = obspy.read(path)
+        assert st[0].stats.npts + st[1].stats.npts == 200
+
+    def test_flat_overwrite_is_the_default_and_replaces_existing_file(self, tmp_path):
+        def make_da(seed):
+            rng = np.random.default_rng(seed)
+            data = rng.integers(-1000, 1000, size=(100, 10), dtype=np.int32)
+            starttime = np.datetime64("2023-01-01T00:00:00")
+            endtime = starttime + np.timedelta64(10, "ms") * (data.shape[0] - 1)
+            return xd.DataArray(
+                data=data,
+                coords={
+                    "time": {
+                        "tie_indices": [0, data.shape[0] - 1],
+                        "tie_values": [starttime, endtime],
+                        "sampling_interval": np.timedelta64(10, "ms"),
+                    },
+                    "distance": 5.0 * np.arange(data.shape[1]),
+                },
+            )
+
+        def atom(da, **kwargs):
+            return da.to_stream(
+                network="NT",
+                station="ST{:03}",
+                channel="HN1",
+                location="00",
+                dim={"distance": "time"},
+            )
+
+        first = make_da(seed=0)
+        second = make_da(seed=1)
+        path = tmp_path / "flat_output.mseed"
+
+        writer1 = xp.StreamWriter(path, "M", output_format="flat")
+        assert writer1.mode == "overwrite"
+        xp.process(atom, xp.DataArrayLoader(first, chunks={"time": 50}), writer1)
+
+        writer2 = xp.StreamWriter(path, "M", output_format="flat")
+        xp.process(atom, xp.DataArrayLoader(second, chunks={"time": 50}), writer2)
+
+        st = obspy.read(path)
+        assert len(st) == 10
+        assert np.array_equal(st[0].data, second.values[:, 0])
+
+    def test_flat_append_merges_with_existing_file(self, tmp_path):
+        def make_da(starttime, seed):
+            rng = np.random.default_rng(seed)
+            data = rng.integers(-1000, 1000, size=(100, 10), dtype=np.int32)
+            endtime = starttime + np.timedelta64(10, "ms") * (data.shape[0] - 1)
+            return xd.DataArray(
+                data=data,
+                coords={
+                    "time": {
+                        "tie_indices": [0, data.shape[0] - 1],
+                        "tie_values": [starttime, endtime],
+                        "sampling_interval": np.timedelta64(10, "ms"),
+                    },
+                    "distance": 5.0 * np.arange(data.shape[1]),
+                },
+            )
+
+        def atom(da, **kwargs):
+            return da.to_stream(
+                network="NT",
+                station="ST{:03}",
+                channel="HN1",
+                location="00",
+                dim={"distance": "time"},
+            )
+
+        starttime = np.datetime64("2023-01-01T00:00:00")
+        first = make_da(starttime, seed=0)
+        # Immediately continues where `first` left off, so the merge stays
+        # one contiguous trace instead of a masked/gapped one.
+        second_start = starttime + np.timedelta64(10, "ms") * first.sizes["time"]
+        second = make_da(second_start, seed=1)
+        path = tmp_path / "flat_output.mseed"
+
+        writer1 = xp.StreamWriter(path, "M", output_format="flat")
+        xp.process(atom, xp.DataArrayLoader(first, chunks={"time": 50}), writer1)
+
+        writer2 = xp.StreamWriter(path, "M", output_format="flat", mode="append")
+        xp.process(atom, xp.DataArrayLoader(second, chunks={"time": 50}), writer2)
+
+        st = obspy.read(path)
+        assert len(st) == 10
+        assert st[0].stats.npts == 200
+
 
 class TestProcessNoNbytes:
     def test_loader_without_nbytes(self, tmp_path):
@@ -640,6 +897,10 @@ class TestStreamWriterEdgeCases:
     def test_invalid_output_format_raises(self, tmp_path):
         with pytest.raises(ValueError, match="output_format"):
             xp.StreamWriter(tmp_path, "M", output_format="invalid")
+
+    def test_invalid_mode_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="mode"):
+            xp.StreamWriter(tmp_path, "M", mode="invalid")
 
     def test_submit_wrong_type_raises(self, tmp_path):
         sw = xp.StreamWriter(tmp_path, "M")

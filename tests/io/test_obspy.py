@@ -39,7 +39,7 @@ class TestScan:
             ],
         )
         dc = ObsPyEngine().open_datacollection(path)
-        assert dc.fields == ("network", "station", "location", "channel", "trace")
+        assert dc.fields == ("network", "station", "location", "channel", "record")
         assert list(dc) == ["DX"]
         assert list(dc["DX"]) == ["CH001"]
         assert list(dc["DX"]["CH001"]) == ["00"]
@@ -316,7 +316,7 @@ class TestOpenRouting:
                 "station",
                 "location",
                 "channel",
-                "acquisition",
+                "record",
             )
         assert glob.equals(listed)
         assert one.equals(listed)
@@ -354,7 +354,7 @@ class TestOpenRouting:
         dc = xd.open(str(tmp_path / "*.mseed"), engine="obspy")
         sequence = dc["DX"]["CH001"]["00"]["HHZ"]
         assert len(sequence) == 2
-        assert sequence.name == "acquisition"
+        assert sequence.name == "record"
 
     def test_select_globs_like_obspy(self, tmp_path):
         self.make_network(tmp_path, stations=3, chunks=1)

@@ -16,6 +16,7 @@ from xdas.atoms import (
     Polyphase,
     ResamplePoly,
     Sequential,
+    SOSFilter,
     UpSample,
     atomized,
 )
@@ -235,7 +236,8 @@ class TestResamplePoly:
         chunks = xd.split(da, 6, "time")
 
         expected = xs.resample_poly(da, 5, 2, "time")
-        atom = ResamplePoly(125, maxfactor=10, dim="time")
+        with pytest.warns(DeprecationWarning):
+            atom = ResamplePoly(125, maxfactor=10, dim="time")
         result = atom(da)
         result_chunked = xd.concat(
             [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
@@ -258,7 +260,8 @@ class TestResamplePoly:
     def test_nothing_to_do(self):
         da = xd.testing.dummy()
         fs = 1 / xd.get_sampling_interval(da, "time")
-        atom = ResamplePoly(fs, maxfactor=10, dim="time")
+        with pytest.warns(DeprecationWarning):
+            atom = ResamplePoly(fs, maxfactor=10, dim="time")
         result = atom(da)
         assert result.equals(da)
 
@@ -355,15 +358,92 @@ class TestPolyphase:
         assert result.sizes["time"] == 3
 
 
+class TestRepr:
+    def test_an_atom_is_one_line_naming_its_class(self):
+        assert repr(IIRFilter(4, 10.0, "lowpass", dim="time")) == (
+            "IIRFilter(order=4, cutoff=10.0, btype='lowpass', dim='time')"
+        )
+
+    def test_the_nested_atoms_an_atom_designs_stay_out_of_it(self):
+        # they are computed from the parameters above them and only restate
+        # them; the atom is still there to be reached
+        with pytest.warns(DeprecationWarning):
+            atom = ResamplePoly(50.0, dim="time")
+        assert "FIRFilter" not in repr(atom)
+        assert isinstance(atom.child, FIRFilter)
+
+    def test_parameters_left_at_their_default_are_dropped(self):
+        with pytest.warns(DeprecationWarning):
+            assert repr(ResamplePoly(50.0)) == "ResamplePoly(target=50.0)"
+        with pytest.warns(DeprecationWarning):
+            assert "maxfactor" in repr(ResamplePoly(50.0, maxfactor=5))
+
+    def test_derived_attributes_are_dropped(self):
+        # `btype` and `cutoff` are computed from `freq`, which is shown
+        assert repr(xd.filter(..., (None, 10.0))) == "Filter(freq=(None, 10.0))"
+
+    def test_an_atom_not_following_its_signature_falls_back_to_its_config(self):
+        # `Rechunk` takes a `chunks` mapping and stores a dim and a size
+        assert repr(xd.rechunk(..., {"time": 100})) == "Rechunk(dim='time', size=100)"
+
+    def test_a_bulky_value_collapses_to_its_type(self):
+        assert repr(SOSFilter(np.zeros((2, 6)))) == "SOSFilter(sos=<ndarray>)"
+
+    def test_a_value_the_atom_will_design_is_shown_as_written(self):
+        assert "numtaps=..." in repr(FIRFilter(..., 10.0, "lowpass"))
+
+    def test_a_sequence_lists_its_stages(self):
+        seq = Sequential([np.abs, IIRFilter(4, 10.0, "lowpass"), np.square])
+        assert repr(seq) == (
+            "Sequential:\n"
+            "  0: absolute(...)\n"
+            "  1: IIRFilter(order=4, cutoff=10.0, btype='lowpass')\n"
+            "  2: square(...)"
+        )
+
+    def test_a_nested_sequence_keeps_every_one_of_its_lines(self):
+        inner = Sequential([np.abs, np.square], name="inner")
+        assert repr(Sequential([np.negative, inner])) == (
+            "Sequential:\n"
+            "  0: negative(...)\n"
+            "  1: inner:\n"
+            "       0: absolute(...)\n"
+            "       1: square(...)"
+        )
+
+    def test_a_sequence_is_named_by_its_name_then_by_its_class(self):
+        assert repr(Sequential([], name="my pipeline")).startswith("my pipeline:")
+        assert repr(Sequential([])) == "Sequential:"
+
+    def test_stage_numbers_stay_aligned_past_ten(self):
+        lines = repr(Sequential([np.abs] * 11)).split("\n")
+        assert lines[1].startswith("   0: ") and lines[11].startswith("  10: ")
+
+    def test_a_partial_is_named_by_its_function_or_by_its_name(self):
+        assert repr(Partial(np.abs, axis=0)) == "absolute(..., axis=0)"
+        assert repr(Partial(np.abs, name="energy")) == "energy(...)"
+
+    def test_a_stateful_partial_says_so(self):
+        atom = Partial(lfilter, [1.0], [0.5], ..., dim="time", zi=...)
+        assert repr(atom) == "lfilter([1.0], [0.5], ..., dim='time') [stateful]"
+
+    def test_partial_repr_long_kwarg(self):
+        assert "<ndarray>" in repr(Partial(np.abs, axis=np.arange(10)))
+
+    def test_a_value_that_cannot_be_compared_to_its_default_is_shown(self):
+        # `taps == default` is an array, whose truth value is an error: a repr
+        # must not be the thing that raises
+        class Custom(Atom):
+            def __init__(self, taps=np.zeros(3)):
+                super().__init__()
+                self.taps = taps
+
+        assert repr(Custom(np.ones(3))) == "Custom(taps=array([1., 1., 1.]))"
+        assert repr(Custom(np.zeros(9))) == "Custom(taps=<ndarray>)"
+        assert repr(Custom()) == "Custom()"
+
+
 class TestAtomCoreMissingBranches:
-    def test_repr_with_nested_atoms(self):
-
-        a = [1, 1]
-        b = [1, 1]
-        atom = IIRFilter(a, b, 10.0, "lowpass", dim="time")
-        s = repr(atom)
-        assert "IIRFilter" in s
-
     def test_sequential_wraps_non_atom(self):
         seq = Sequential([np.abs, np.square])
         assert all(isinstance(a, Partial) for a in seq)
@@ -455,11 +535,6 @@ class TestAtomCoreMissingBranches:
         # TODO: should be Dataarray.equals comparison
         np.testing.assert_array_equal(outer.inner.val, state)
 
-    def test_partial_repr_long_kwarg(self):
-        atom = Partial(np.abs, axis=np.arange(10))
-        r = repr(atom)
-        assert "<ndarray>" in r
-
 
 class TestAtomSignalMissingBranches:
     def test_iirfilter_invalid_stype(self):
@@ -514,7 +589,9 @@ class TestLegacyIrregularCoordinates:
     def test_resample_poly_atom_on_irregular_coordinate(self):
         da = self.legacy(shape=(100, 3))
         target = 1.0 / (2.0 * xd.get_sampling_interval(da, "time"))
-        result = ResamplePoly(target=target, dim="time")(da)
+        with pytest.warns(DeprecationWarning):
+            atom = ResamplePoly(target=target, dim="time")
+        result = atom(da)
         assert result.sizes["time"] == da.sizes["time"] // 2
         assert not result["time"].isregular()
 

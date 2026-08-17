@@ -261,7 +261,7 @@ def test_obspy_engine_is_preferred_by_auto_detection(tmp_path):
     path = min(tmp_path.glob("*00.mseed"))
     # `open` asks for a collection first, which only the obspy engine provides
     dc = xd.open(path)
-    assert dc.fields == ("network", "station", "location", "channel", "acquisition")
+    assert dc.fields == ("network", "station", "location", "channel", "record")
     # `open_dataarray` asks for a single array, which the obspy engine cannot
     # give for a three-component file; the legacy engine stacks it
     da = xd.open_dataarray(path)

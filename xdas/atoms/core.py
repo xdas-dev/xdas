@@ -167,6 +167,72 @@ def _iter_results(tree):
         yield tree
 
 
+#: Longest value a repr spells out before falling back to its type name.
+REPR_MAXLEN = 30
+
+
+def _format_value(value):
+    """
+    Render a configuration *value* for a repr, summarising the bulky ones.
+
+    A model, a filter kernel or a coordinate array says nothing useful when
+    spelled out and buries the line it sits on, so anything long or
+    multi-line collapses to its type name. ``...`` is kept as written: it is
+    how an atom spells a parameter it will design from the first chunk.
+    """
+    if value is ...:
+        return "..."
+    text = repr(value)
+    if "\n" in text or len(text) > REPR_MAXLEN:
+        return f"<{type(value).__name__}>"
+    return text
+
+
+def _is_default(value, default):
+    """Whether *value* is what the constructor would have used anyway."""
+    if default is inspect.Parameter.empty:
+        return False
+    if value is default:
+        return True
+    try:
+        return type(value) is type(default) and bool(value == default)
+    except (TypeError, ValueError):
+        return False
+
+
+def _iter_params(atom):
+    """
+    Yield the ``(name, value)`` pairs describing *atom*, defaults omitted.
+
+    The constructor signature is the description of an atom: it names what
+    was chosen, in the order it was chosen, and leaves out what the atom
+    derived for itself — the ``btype`` and ``cutoff`` a
+    :class:`~xdas.atoms.Filter` computes from its corner frequencies restate
+    the band it was already given. Parameters left at their default are
+    dropped too, so a repr shows what makes this atom different rather than
+    the whole signature.
+
+    An atom whose configuration does not follow its signature — one taking a
+    ``chunks`` mapping and storing a ``dim`` and a ``size``, say — falls back
+    to its configuration as it stands, and one taking ``**kwargs`` shows the
+    leftovers as well, since they are what the caller passed.
+    """
+    signature = inspect.signature(type(atom).__init__)
+    names = {}
+    variadic = False
+    for parameter in list(signature.parameters.values())[1:]:
+        if parameter.kind is parameter.VAR_KEYWORD:
+            variadic = True
+        elif parameter.name in atom._config:
+            names[parameter.name] = parameter.default
+    if variadic or not names:
+        for key in atom._config:
+            names.setdefault(key, inspect.Parameter.empty)
+    for name, default in names.items():
+        if not _is_default(atom._config[name], default):
+            yield name, atom._config[name]
+
+
 class State:
     """
     A class to declare a new state or to update a preexisting one into an Atom object.
@@ -301,14 +367,12 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
     __hash__ = object.__hash__
 
     def __repr__(self):
-        name = self.__class__.__name__
-        sig = ", ".join(
-            f"{key}={value}" for key, value in self._config.items() if value is not None
+        # One atom, one line: the nested atoms an atom builds for itself are
+        # designed from the parameters above them and only restate them.
+        params = ", ".join(
+            f"{key}={_format_value(value)}" for key, value in _iter_params(self)
         )
-        s = f"{name}({sig})"
-        for name, filter in self._atoms.items():
-            s += "\n" + "\n".join(f"  {e}" for e in repr(filter).split("\n"))
-        return s
+        return f"{self.__class__.__name__}({params})"
 
     def __setattr__(self, name, value):
         match value:
@@ -786,7 +850,7 @@ class Atom(np.lib.mixins.NDArrayOperatorsMixin):
         --------
         >>> import numpy as np
         >>> import xdas as xd
-        >>> pipeline = xd.decimate(..., target=50.0) >> np.square
+        >>> pipeline = xd.resample(..., 50.0) >> np.square
         >>> pipeline.process(da_virtual, out="results/")  # doctest: +SKIP
         >>> pipeline.process("archive/*.h5", out="results/")  # doctest: +SKIP
         >>> pipeline.process(xd.watch("/incoming"), out="sds/")  # doctest: +SKIP
@@ -973,8 +1037,8 @@ class Sequential(Atom, list):
     ... )
     >>> seq
     Low frequency energy:
-      0: taper(..., dim=time)
-      1: lfilter([1.0], [0.5], ..., dim=time)  [stateful]
+      0: taper(..., dim='time')
+      1: lfilter([1.0], [0.5], ..., dim='time') [stateful]
       2: square(...)
 
     Nested sequences:
@@ -986,13 +1050,12 @@ class Sequential(Atom, list):
     ...     ]
     ... )
     >>> seq
-    Sequence:
-      0: decimate(..., 16, dim=distance)
-      1:
-        Low frequency energy:
-          0: taper(..., dim=time)
-          1: lfilter([1.0], [0.5], ..., dim=time)  [stateful]
-          2: square(...)
+    Sequential:
+      0: decimate(..., 16, dim='distance')
+      1: Low frequency energy:
+           0: taper(..., dim='time')
+           1: lfilter([1.0], [0.5], ..., dim='time') [stateful]
+           2: square(...)
 
     Applying the sequence to data:
 
@@ -1127,17 +1190,16 @@ class Sequential(Atom, list):
         return clone
 
     def __repr__(self) -> str:
-        width = len(str(len(self)))
-        name = self.name if self.name is not None else "sequence"
-        s = f"{name.capitalize()}:\n"
-        for idx, value in enumerate(self):
-            label = f"  {idx:{width}}: "
-            if isinstance(value, Partial):
-                s += label + repr(value) + "\n"
-            else:
-                s += label + "\n"
-                s += "\n".join(f"    {e}" for e in repr(value).split("\n")[:-1]) + "\n"
-        return s
+        name = self.name if self.name is not None else self.__class__.__name__
+        width = len(str(max(len(self) - 1, 0)))
+        lines = [f"{name}:"]
+        for index, atom in enumerate(self):
+            label = f"  {index:>{width}}: "
+            # a nested sequence keeps its own lines, aligned under its label
+            head, *rest = repr(atom).split("\n")
+            lines.append(label + head)
+            lines.extend(" " * len(label) + line for line in rest)
+        return "\n".join(lines)
 
 
 class Partial(Atom):
@@ -1187,7 +1249,7 @@ class Partial(Atom):
     Examples of a stateless atom:
 
     >>> Partial(xs.decimate, 2, dim="time")
-    decimate(..., 2, dim=time)
+    decimate(..., 2, dim='time')
 
     >>> Partial(np.square)
     square(...)
@@ -1196,7 +1258,12 @@ class Partial(Atom):
 
     >>> sos = sp.iirfilter(4, 0.1, btype="lowpass", output="sos")
     >>> Partial(xs.sosfilt, sos, ..., dim="time", zi=...)
-    sosfilt(<ndarray>, ..., dim=time)  [stateful]
+    sosfilt(<ndarray>, ..., dim='time') [stateful]
+
+    A `name` renames the atom in a pipeline listing:
+
+    >>> Partial(np.square, name="energy")
+    energy(...)
 
     """
 
@@ -1268,22 +1335,11 @@ class Partial(Atom):
             return self.func(*args, **self.kwargs)
 
     def __repr__(self) -> str:
-        func = getattr(self.func, "__name__", "<function>")
-        args = []
-        for value in self.args:
-            if value is ...:
-                args.append("...")
-            elif len(str(value)) > 10:
-                args.append(f"<{type(value).__name__}>")
-            else:
-                args.append(str(value))
-        kwargs = []
-        for key, value in self.kwargs.items():
-            if len(str(value)) > 10:
-                value = f"<{type(value).__name__}>"
-            kwargs.append(f"{key}={value}")
+        func = self.name or getattr(self.func, "__name__", "<function>")
+        args = [_format_value(value) for value in self.args]
+        kwargs = [f"{key}={_format_value(value)}" for key, value in self.kwargs.items()]
         params = ", ".join(args + kwargs)
-        return f"{func}({params})" + ("  [stateful]" if self.stateful else "")
+        return f"{func}({params})" + (" [stateful]" if self.stateful else "")
 
     def __reduce__(self):
         return self.from_state, (self.get_state(),)
@@ -1396,7 +1452,7 @@ def atomized(func):
     Passing an Atom object as input:
 
     >>> square(square(...))
-    Sequence:
+    Sequential:
       0: square(...)
       1: square(...)
 

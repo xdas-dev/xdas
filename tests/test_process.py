@@ -31,7 +31,7 @@ def da():
 
 @pytest.fixture
 def pipeline():
-    return xd.decimate(..., target=25.0) >> xd.filter(..., (1.0, 10.0)) >> np.square
+    return xd.resample(..., rate=25.0) >> xd.filter(..., (1.0, 10.0)) >> np.square
 
 
 def gappy(da, at=50, gap=10):
@@ -584,7 +584,7 @@ def das_tree():
     return xd.DataCollection(
         {
             "N1": xd.DataCollection(
-                {"C1": xd.DataCollection([cft(0.0), cft(10.0)], "acquisition")}, "cable"
+                {"C1": xd.DataCollection([cft(0.0), cft(10.0)], "record")}, "cable"
             )
         },
         "node",
@@ -638,7 +638,7 @@ class TestCollectionWalk:
         dc = das_tree()
         expected = picker()(dc)
         result = picker().process(dc, out=None, chunks=chunks)
-        assert list(result["acquisition"]) == [0, 0, 1, 1]
+        assert list(result["record"]) == [0, 0, 1, 1]
         assert result.equals(expected)
 
     def test_an_array_atom_rebuilds_the_walked_tree(self, da, pipeline):
@@ -652,16 +652,16 @@ class TestCollectionWalk:
             assert np.allclose(result[key].values, expected[key].values)
 
     def test_a_bare_sequence_folds_like_the_eager_call(self):
-        dc = xd.DataCollection([cft(0.0), cft(10.0)], "acquisition")
+        dc = xd.DataCollection([cft(0.0), cft(10.0)], "record")
         expected = picker()(dc)
         result = picker().process(dc, out=None)
         assert result.equals(expected)
 
     def test_the_flushed_tail_goes_to_the_last_element(self):
-        dc = xd.DataCollection([cft(0.0), cft(10.0, open_ended=True)], "acquisition")
+        dc = xd.DataCollection([cft(0.0), cft(10.0, open_ended=True)], "record")
         expected = picker()(dc)
         result = picker().process(dc, out=None)
-        assert list(result["acquisition"]) == [0, 0, 1, 1]
+        assert list(result["record"]) == [0, 0, 1, 1]
         assert result.equals(expected)
 
     def test_a_sequence_with_nothing_to_fold_along_walks_element_by_element(self, da):
@@ -672,7 +672,7 @@ class TestCollectionWalk:
         assert np.allclose(result[0].values, np.square(da).values)
 
     def test_a_bare_callable_walks_a_collection_too(self, da):
-        dc = xd.DataCollection({"a": xd.DataCollection([da], "acquisition")}, "node")
+        dc = xd.DataCollection({"a": xd.DataCollection([da], "record")}, "node")
         result = xp.process(np.square, dc)
         assert np.allclose(result["a"][0].values, np.square(da).values)
 
@@ -749,7 +749,7 @@ class TestCollectionSinks:
         assert np.allclose(result["N1"]["C1"].values, expected["N1"]["C1"].values)
 
     def test_a_folded_sequence_writes_to_one_directory(self, da, pipeline, tmp_path):
-        dc = xd.DataCollection({"C1": xd.DataCollection([da], "acquisition")}, "cable")
+        dc = xd.DataCollection({"C1": xd.DataCollection([da], "record")}, "cable")
         out = tmp_path / "results"
         result = pipeline.process(dc, out=str(out), chunks={"time": 30})
         assert [path.name for path in out.iterdir()] == ["C1"]
