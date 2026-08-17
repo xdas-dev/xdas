@@ -8,6 +8,12 @@ from xdas.coordinates import (
     ScalarCoordinate,
 )
 from xdas.coordinates.core import Coordinate
+from xdas.coordinates.interp import (
+    _epsilon_ratio,
+    _shear,
+    _sleeve_kernel,
+    _sleeve_loop,
+)
 
 
 class TestInterpCoordinate:
@@ -1300,10 +1306,11 @@ class TestSleeve:
         assert len(result.tie_indices) == len(coord.tie_indices)
 
     def test_subunit_tolerance_is_not_truncated(self):
-        # microsecond values with a nanosecond tolerance: a 1 us seam jitter
-        # needs a sub-microsecond budget to survive (400 ns keeps it) and a
-        # 1100 ns one to fuse — both unrepresentable in truncated us
-        values = np.array([0, 999, 1001, 2000], dtype="M8[us]")
+        # microsecond values with a nanosecond tolerance: a 4 us seam deviates
+        # ~1.5 us from the spanning chord, so it needs a sub-microsecond budget
+        # to survive (400 ns keeps it) and a 1100 ns one to fuse — both
+        # unrepresentable in truncated us
+        values = np.array([0, 998, 1002, 2000], dtype="M8[us]")
         coord = InterpCoordinate(
             {"tie_indices": [0, 999, 1000, 1999], "tie_values": values}, "time"
         )
@@ -1311,6 +1318,19 @@ class TestSleeve:
         fused = coord.simplify(np.timedelta64(1100, "ns"))
         assert len(kept.tie_indices) == 4
         assert len(fused.tie_indices) == 2
+
+    def test_seam_below_the_storage_resolution_is_fused(self):
+        # A 1 us seam here reconstructs bit-identically from two tie points:
+        # `forward` rounds to the microsecond and lands on the same values, so
+        # the interior ties carry no information and a zero budget drops them.
+        values = np.array([0, 999, 1001, 2000], dtype="M8[us]")
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 999, 1000, 1999], "tie_values": values}, "time"
+        )
+        result = coord.simplify(np.timedelta64(0, "ns"))
+        assert len(result.tie_indices) == 2
+        index = np.arange(len(coord))
+        np.testing.assert_array_equal(coord[index].values, result[index].values)
 
     def test_float_values(self):
         coord = InterpCoordinate(
@@ -1324,3 +1344,101 @@ class TestSleeve:
         coord = InterpCoordinate({"tie_indices": [0, 9], "tie_values": [0.0, 9.0]})
         result = coord.simplify(0.0)
         assert len(result.tie_indices) == 2
+
+
+class TestSleeveResolution:
+    """A tie point may sit half a tick off the exact line and still be the only
+    representable value there, so collinearity is judged with that slack."""
+
+    T0 = np.datetime64("2020-01-01", "us")
+
+    def test_unrepresentable_rate_still_collapses(self):
+        # 999 samples over 30 s is 30030.030030... us: the midpoint tie is half
+        # a microsecond off the true line, which no integer value can fix.
+        values = [
+            self.T0,
+            self.T0 + np.timedelta64(1_501_502, "us"),
+            self.T0 + np.timedelta64(30_000_000, "us"),
+        ]
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 50, 999], "tie_values": values}, "time"
+        )
+        result = coord.simplify(np.timedelta64(0, "us"))
+        assert len(result.tie_indices) == 2
+        index = np.arange(len(coord))
+        drift = np.abs(coord[index].values - result[index].values)
+        # within the one tick the representation itself carries
+        assert drift.max() <= np.timedelta64(1, "us")
+
+    def test_real_discontinuities_still_survive(self):
+        for jump in (2, 1_000_000):
+            values = [
+                self.T0,
+                self.T0 + np.timedelta64(50_000, "us"),
+                self.T0 + np.timedelta64(50_100 + jump, "us"),
+                self.T0 + np.timedelta64(100_000 + jump, "us"),
+            ]
+            coord = InterpCoordinate(
+                {"tie_indices": [0, 500, 501, 1000], "tie_values": values}, "time"
+            )
+            assert len(coord.simplify(np.timedelta64(0, "us")).tie_indices) == 4
+
+    def test_subtick_epsilon_does_not_overflow_the_prescale(self):
+        # A picosecond budget on a microsecond axis used to wrap int64 while
+        # scaling the values; the budget is a rational now, so nothing scales.
+        values = [
+            self.T0,
+            self.T0 + np.timedelta64(1_501_502, "us"),
+            self.T0 + np.timedelta64(30_000_000, "us"),
+        ]
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 50, 999], "tie_values": values}, "time"
+        )
+        assert len(coord.simplify(np.timedelta64(1, "ps")).tie_indices) == 2
+
+
+class TestSleeveKernel:
+    """The compiled machine-integer walk and the arbitrary-precision one must
+    agree; the magnitude bound decides which runs, never the answer."""
+
+    def test_kernel_matches_loop_on_random_curves(self):
+        rng = np.random.default_rng(0)
+        epoch = np.datetime64("2020-01-01", "us").view("i8")
+        for _ in range(200):
+            size = int(rng.integers(3, 30))
+            indices = np.array(
+                [0]
+                + sorted(
+                    rng.choice(
+                        np.arange(1, 3000), size=size - 1, replace=False
+                    ).tolist()
+                )
+            )
+            rate = int(rng.integers(1, 10**5))
+            values = indices * rate + rng.integers(-4, 5, size=size)
+            values = np.maximum.accumulate(values) + np.arange(size) + epoch
+            epsilon = np.timedelta64(int(rng.integers(0, 5)), "us")
+            numerator, denominator = _epsilon_ratio(np.dtype("M8[us]"), epsilon)
+            sheared = _shear(indices, values, int(indices[-1]))
+            np.testing.assert_array_equal(
+                _sleeve_kernel(indices, sheared, numerator, denominator),
+                _sleeve_loop(indices.tolist(), values.tolist(), numerator, denominator),
+            )
+
+    def test_cross_products_too_wide_for_int64_fall_back(self):
+        # 4e9 samples with a mid tie half the span away from the chord: the
+        # shear fits, its cross-products do not, so the walk runs in Python
+        # integers.
+        indices = np.array([0, 2 * 10**9, 4 * 10**9])
+        values = np.array([0, 5 * 10**17, 2 * 10**18], dtype="i8")
+        coord = InterpCoordinate({"tie_indices": indices, "tie_values": values}, "x")
+        assert len(coord.simplify(0).tie_indices) == 3
+
+    def test_shear_itself_too_wide_falls_back(self):
+        # Values within a hair of the int64 ceiling: even subtracting the rate
+        # would overflow, so no shear is attempted.
+        indices = np.array([0, 1, 2])
+        values = np.array([0, 10**18, 2**63 - 1], dtype="i8")
+        assert _shear(indices, values, 2) is None
+        coord = InterpCoordinate({"tie_indices": indices, "tie_values": values}, "x")
+        assert len(coord.simplify(0).tie_indices) == 3

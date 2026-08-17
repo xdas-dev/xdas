@@ -35,6 +35,7 @@
 - Acquisitions interleaved in time now group by compatibility, one array each, instead of splitting at every alternation (@atrabattoni).
 - Saving and opening a data collection is linear in its size again (#81): saving 1300 events went from ~53 min to ~35 s (@atrabattoni).
 - `simplify` runs in linear time whatever the number of gaps (@atrabattoni).
+- **`simplify` no longer asks a coordinate for precision it cannot hold.** An interpolated coordinate reconstructs its values by rounding an exact line to the storage resolution, so a tie point may sit half a tick off that line and still be the only representable value there. Judging collinearity exactly therefore made a zero tolerance a no-op on any acquisition whose rate is not a whole number of ticks — 999 samples over 30 s is 30030.030030... µs, so none of them — and left tie points behind that reconstruct bit-identically to no tie point at all. The budget now carries that half tick, which is exactly the reconstruction the coordinate performs; real discontinuities are unaffected, being orders of magnitude larger. The walk is also 12× faster on a million tie points and no longer wraps `int64` when the tolerance is finer than the values (@atrabattoni).
 - When no engine can open a file, the error now lists what each engine that recognised it said (@atrabattoni).
 
 ### Deprecations
