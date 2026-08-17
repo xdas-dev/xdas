@@ -741,6 +741,37 @@ def _parse_interpolation(mapping, dataset):
             yield dim, dim, indices, values
 
 
+def _epsilon_ratio(dtype, epsilon):
+    """
+    Express *epsilon* as an exact rational number of storage ticks.
+
+    An :class:`InterpCoordinate` reconstructs values as ``round(exact chord)``
+    at the storage resolution (:func:`xinterp.forward`), so a tie point can sit
+    up to half a tick off the exact line and still be the only representable
+    value there.  Collinearity must therefore be judged with half a tick of
+    slack, which is the ``+ 1`` and ``* 2`` below: the returned pair is
+    ``epsilon + 1/2`` in ticks for exact dtypes, and plain ``epsilon`` for
+    floats, which carry no tick.
+
+    Returns
+    -------
+    numerator, denominator
+        ``epsilon`` in ticks as ``numerator / denominator``, denominator
+        positive.
+    """
+    if np.issubdtype(dtype, np.datetime64):
+        unit, count = np.datetime_data(dtype)
+        one = np.timedelta64(count, unit)
+        # bring both to the finer unit so a sub-tick epsilon is not truncated
+        common = np.promote_types(one.dtype, epsilon.dtype)
+        ticks = int(one.astype(common).view("i8"))
+        eps = int(epsilon.astype(common).view("i8"))
+        return 2 * eps + ticks, 2 * ticks
+    if np.issubdtype(dtype, np.integer):
+        return 2 * int(epsilon) + 1, 2
+    return epsilon, 1.0
+
+
 def _sleeve(x, y, epsilon):
     """
     Reduce the piecewise-linear curve *(x, y)* with a one-pass greedy sleeve.
@@ -757,9 +788,16 @@ def _sleeve(x, y, epsilon):
     degenerates quadratically once discontinuities or jitter make many
     points survive.
 
-    Integer and datetime values are compared with exact (arbitrary-precision)
-    cross-multiplied integer arithmetic, so a zero *epsilon* drops exactly the
-    collinear points; float values use float arithmetic.
+    Integer and datetime values are compared with exact cross-multiplied
+    integer arithmetic, the budget widened by the half tick the storage
+    resolution costs (see :func:`_epsilon_ratio`), so a zero *epsilon* drops
+    exactly the points the coordinate cannot tell apart from collinear. Float
+    values use float arithmetic.
+
+    The walk keeps a point as soon as the chord to it leaves the running cone,
+    which is conservative: a curve that some single chord would fit within
+    *epsilon* may still keep interior points. It never moves or drops a point
+    the budget does not allow, only occasionally fewer than it could.
 
     Parameters
     ----------
@@ -777,29 +815,102 @@ def _sleeve(x, y, epsilon):
     """
     if len(x) < 3:
         return x, y
-    if np.issubdtype(y.dtype, np.datetime64):
-        # exact integer arithmetic, with epsilon brought to the finer of the
-        # two time units so sub-unit tolerances are not truncated
-        unit, count = np.datetime_data(y.dtype)
-        one = np.timedelta64(count, unit)
-        common = np.promote_types(one.dtype, epsilon.dtype)
-        scale = int(one.astype(common).view("i8"))
-        values = (y.view("i8") * scale).tolist()
-        eps = int(epsilon.astype(common).view("i8"))
-        margin = one
-    else:
-        values = y.tolist()
-        eps = epsilon
-        margin = 1 if np.issubdtype(y.dtype, np.integer) else 0.0
-    # fast path: one chord spans the whole curve (the fully continuous case,
-    # resolved vectorized). `forward` rounds to the value unit, so the chord
-    # is only trusted beyond a one-unit margin; near the boundary the exact
-    # loop below decides
+    # Fast path: one chord spans the whole curve (the fully continuous case,
+    # resolved vectorized). `forward` reconstructs exactly what the reduced
+    # coordinate would return, so this measures the real shift and needs no
+    # allowance of its own -- and being a global test it also catches curves
+    # the incremental walk below is too conservative to collapse.
     deviation = np.abs(y - forward(x, x[[0, -1]], y[[0, -1]]))
-    if deviation.max() + margin <= epsilon:
+    if deviation.max() <= epsilon:
         return x[[0, -1]], y[[0, -1]]
-    positions = x.tolist()
-    keep = np.zeros(len(x), dtype=bool)
+    en, ed = _epsilon_ratio(y.dtype, epsilon)
+    values = y.view("i8") if np.issubdtype(y.dtype, np.datetime64) else y
+    keep = _sleeve_walk(x, values, en, ed)
+    return x[keep], y[keep]
+
+
+def _sleeve_walk(positions, values, en, ed):
+    """
+    Walk the sleeve over *(positions, values)*, epsilon being ``en / ed``.
+
+    Dispatches between a compiled machine-integer kernel and an
+    arbitrary-precision Python loop. The cone compares slopes by
+    cross-multiplication, so its widest intermediate is
+    ``(ed * span_values + en) * (ed * span_positions)``; the kernel is used
+    only when that provably fits in an ``int64``, which shearing the values by
+    their integer rate (a transform that leaves vertical deviations, hence the
+    cone, untouched) makes the common case.
+    """
+    if np.issubdtype(values.dtype, np.integer):
+        span_x = int(positions[-1]) - int(positions[0])
+        sheared = _shear(positions, values, span_x)
+        if sheared is not None:
+            span_y = int(sheared.max()) - int(sheared.min())
+            if (ed * span_y + en) * ed * span_x < 2**63:
+                return _sleeve_kernel(positions, sheared, en, ed)
+    return _sleeve_loop(positions.tolist(), values.tolist(), en, ed)
+
+
+def _shear(positions, values, span_x):
+    """
+    Subtract the integer part of the curve's overall rate from *values*.
+
+    ``y - m * x`` is a shear: it preserves vertical distances exactly, so the
+    sleeve is unchanged, but it bounds the values by the *index* span rather
+    than the *value* span — the difference between a 35-bit and an 80-bit
+    cross-product on a million datetime tie points. Returns ``None`` when the
+    shear itself would not fit in an ``int64``, leaving the caller on the
+    arbitrary-precision path.
+    """
+    first, last = int(values[0]), int(values[-1])
+    rate = (last - first) // span_x
+    reach = abs(rate) * int(positions[-1]) + max(abs(int(values.min())), abs(last))
+    if reach >= 2**63:
+        return None
+    return values - rate * positions
+
+
+@njit(cache=True)
+def _sleeve_kernel(positions, values, en, ed):  # pragma: no cover
+    """Sleeve walk in machine arithmetic; see :func:`_sleeve_walk` for the bound."""
+    n = positions.size
+    keep = np.zeros(n, dtype=np.bool_)
+    keep[0] = True
+    keep[n - 1] = True
+    ax = positions[0]
+    ay = values[0]
+    bounded = False
+    lo_num = lo_den = hi_num = hi_den = ed  # placeholder, typed like the cone
+    for i in range(1, n):
+        dx = positions[i] - ax
+        dy = values[i] - ay
+        inside = not bounded or (
+            lo_num * dx <= dy * lo_den and dy * hi_den <= hi_num * dx
+        )
+        if not inside:
+            keep[i - 1] = True
+            ax = positions[i - 1]
+            ay = values[i - 1]
+            dx = positions[i] - ax
+            dy = values[i] - ay
+            bounded = False
+        num_lo = ed * dy - en
+        num_hi = ed * dy + en
+        den = ed * dx
+        if not bounded:
+            lo_num, lo_den, hi_num, hi_den = num_lo, den, num_hi, den
+            bounded = True
+        else:
+            if num_lo * lo_den > lo_num * den:
+                lo_num, lo_den = num_lo, den
+            if num_hi * hi_den < hi_num * den:
+                hi_num, hi_den = num_hi, den
+    return keep
+
+
+def _sleeve_loop(positions, values, en, ed):
+    """Sleeve walk in Python integers, exact whatever the magnitudes."""
+    keep = np.zeros(len(positions), dtype=bool)
     keep[0] = keep[-1] = True
     ax, ay = positions[0], values[0]
     # the sleeve: feasible slope interval from the anchor, as exact
@@ -808,23 +919,23 @@ def _sleeve(x, y, epsilon):
     for i in range(1, len(positions)):
         dx = positions[i] - ax
         dy = values[i] - ay
-        if (lo is None or lo[0] * dx <= dy * lo[1]) and (
-            hi is None or dy * hi[1] <= hi[0] * dx
-        ):
-            # the chord anchor -> i passes within epsilon of every dropped
-            # point; tighten the sleeve with this point's own cone
-            if lo is None or (dy - eps) * lo[1] > lo[0] * dx:
-                lo = (dy - eps, dx)
-            if hi is None or (dy + eps) * hi[1] < hi[0] * dx:
-                hi = (dy + eps, dx)
-        else:
+        if not (lo is None or (lo[0] * dx <= dy * lo[1] and dy * hi[1] <= hi[0] * dx)):
             keep[i - 1] = True
             ax, ay = positions[i - 1], values[i - 1]
             dx = positions[i] - ax
             dy = values[i] - ay
-            lo = (dy - eps, dx)
-            hi = (dy + eps, dx)
-    return x[keep], y[keep]
+            lo = None
+        # the chord anchor -> i passes within epsilon of every dropped point;
+        # tighten the sleeve with this point's own cone
+        num_lo, num_hi, den = ed * dy - en, ed * dy + en, ed * dx
+        if lo is None:
+            lo, hi = (num_lo, den), (num_hi, den)
+        else:
+            if num_lo * lo[1] > lo[0] * den:
+                lo = (num_lo, den)
+            if num_hi * hi[1] < hi[0] * den:
+                hi = (num_hi, den)
+    return keep
 
 
 def _chebyshev_center_pair(num, den):
