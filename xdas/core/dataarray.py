@@ -15,6 +15,7 @@ from dask.array import Array as DaskArray
 from numpy.lib.mixins import NDArrayOperatorsMixin
 
 from ..coordinates import AxisCoordinate, Coordinates
+from ..coordinates.core import array_equal_nan
 from ..virtual import _to_human
 
 HANDLED_NUMPY_FUNCTIONS = {}
@@ -283,7 +284,7 @@ class DataArray(NDArrayOperatorsMixin):
         if isinstance(other, self.__class__):
             if self.dtype != other.dtype:
                 return False
-            if not np.array_equal(self.values, other.values, equal_nan=True):
+            if not array_equal_nan(self.values, other.values):
                 return False
             if not self.coords.equals(other.coords):
                 return False

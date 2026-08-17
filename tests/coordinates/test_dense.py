@@ -86,6 +86,16 @@ class TestDenseCoordinate:
         assert DenseCoordinate([1, 2, 3]).equals(DenseCoordinate([1, 2, 3]))
         assert not DenseCoordinate([1, 2, 3]).equals(42)
 
+    def test_equals_nan(self):
+        assert DenseCoordinate([1.0, np.nan, 3.0]).equals(
+            DenseCoordinate([1.0, np.nan, 3.0])
+        )
+        assert not DenseCoordinate([1.0, np.nan, 3.0]).equals(
+            DenseCoordinate([1.0, 2.0, 3.0])
+        )
+        assert DenseCoordinate(["a", "b"]).equals(DenseCoordinate(["a", "b"]))
+        assert not DenseCoordinate(["a", "b"]).equals(DenseCoordinate(["a", "c"]))
+
     def test_get_indexer(self):
         assert DenseCoordinate([1, 2, 3])._get_indexer(2) == 1
         assert np.array_equiv(DenseCoordinate([1, 2, 3])._get_indexer([2, 3]), [1, 2])

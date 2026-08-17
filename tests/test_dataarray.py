@@ -730,6 +730,16 @@ class TestDataArrayMissingBranches:
         da2 = xd.DataArray(np.ones((3,)), {"x": [4, 5, 6]})
         assert not da1.equals(da2)
 
+    def test_equals_values_nan(self):
+        da1 = xd.DataArray(np.array([1.0, np.nan, 3.0]))
+        da2 = xd.DataArray(np.array([1.0, np.nan, 3.0]))
+        assert da1.equals(da2)
+
+    def test_equals_coords_nan(self):
+        da1 = xd.DataArray(np.ones((3,)), {"x": [1.0, np.nan, 3.0]})
+        da2 = xd.DataArray(np.ones((3,)), {"x": [1.0, np.nan, 3.0]})
+        assert da1.equals(da2)
+
     def test_equals_dims_mismatch(self):
         da1 = xd.DataArray(np.ones((3,)), dims=("x",))
         da2 = xd.DataArray(np.ones((3,)), dims=("y",))

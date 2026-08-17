@@ -31,6 +31,19 @@ CODE_TO_UNITS = {
 UNITS_TO_CODE = {v: k for k, v in CODE_TO_UNITS.items()}
 
 
+def array_equal_nan(x, y):
+    """Like :func:`numpy.array_equal` but treats NaNs as equal, when supported.
+
+    ``equal_nan=True`` raises ``TypeError`` on dtypes numpy's ``isnan`` does
+    not support (e.g. fixed-width string arrays); fall back to a plain
+    comparison there.
+    """
+    try:
+        return np.array_equal(x, y, equal_nan=True)
+    except TypeError:
+        return np.array_equal(x, y)
+
+
 def wraps_first_last(func):
     """Resolve ``"first"`` and ``"last"`` dim aliases before calling *func*."""
 
@@ -492,7 +505,7 @@ class Coordinate(ABC):
             pairs = [(a, b)]
         for x, y in pairs:
             x, y = np.asarray(x), np.asarray(y)
-            if x.dtype != y.dtype or not np.array_equal(x, y, equal_nan=False):
+            if x.dtype != y.dtype or not array_equal_nan(x, y):
                 return False
         return True
 
