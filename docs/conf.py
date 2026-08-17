@@ -111,6 +111,28 @@ for index, chunk in enumerate(chunks, start=1):
     chunk.to_netcdf(os.path.join(dirpath, f"00{index}.nc"))
 
 
+# -- Download the picking dataset ---------------------------------------------
+# One hour of the CX (IPOC) network during the 2014 Iquique aftershock
+# sequence, used by user-guide/pipeline/picking.md. The 100 Hz HH? channels are
+# what the page picks; the 20 Hz BH? channels of the same stations are there to
+# show what resampling costs. Cached, so only the first build needs the network.
+from obspy import UTCDateTime
+from obspy.clients.fdsn import Client
+
+starttime = UTCDateTime("2014-05-01T11:00:00")
+for band in ["HH", "BH"]:
+    seedpath = os.path.join(dirpath, f"CX_{band}")
+    if not os.path.exists(seedpath):
+        os.makedirs(seedpath)
+        st = Client("GFZ").get_waveforms(
+            "CX", "*", "*", f"{band}?", starttime, starttime + 3600
+        )
+        for station in sorted({tr.stats.station for tr in st}):
+            st.select(station=station).write(
+                os.path.join(seedpath, f"CX.{station}.mseed"), format="MSEED"
+            )
+
+
 data = np.random.rand(20, 10)
 with h5py.File(os.path.join(dirpath, "other_format.hdf5"), "w") as f:
     dset = f.create_dataset("dataset", data.shape, data=data, dtype="float32")
