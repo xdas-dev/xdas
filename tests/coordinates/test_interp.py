@@ -8,12 +8,6 @@ from xdas.coordinates import (
     ScalarCoordinate,
 )
 from xdas.coordinates.core import Coordinate
-from xdas.coordinates.interp import (
-    _epsilon_ratio,
-    _shear,
-    _sleeve_kernel,
-    _sleeve_loop,
-)
 
 
 class TestInterpCoordinate:
@@ -746,6 +740,19 @@ class TestInterpCoordinateExtra:
             sampling_interval=si_dt, tolerance=tol_dt
         ).isregular()
 
+        # Plain integer variant: same rates, exact-rational infer_step path,
+        # not the datetime or float branch.
+        coord_int = InterpCoordinate(
+            {
+                "tie_indices": [0, 10, 15],
+                "tie_values": np.array([0, 10, 15], dtype="int64") * 1000 + [0, 0, 550],
+            }
+        )
+        si_int, tol_int = coord_int._infer_regular()
+        assert si_int > 0
+        assert tol_int >= 0
+        assert coord_int._is_valid_sampling_interval(si_int, tol_int)
+
         # No continuous segment → nothing to infer.
         unit = InterpCoordinate(
             {"tie_indices": [0, 1, 2], "tie_values": [0.0, 1.0, 2.0]}
@@ -1403,10 +1410,15 @@ class TestSleeveResolution:
 
 
 class TestSleeveKernel:
-    """The compiled machine-integer walk and the arbitrary-precision one must
-    agree; the magnitude bound decides which runs, never the answer."""
+    """The wide-integer Rust kernel stays exact at magnitudes that would
+    overflow int64 cross-products; there is no fallback tier left to fall
+    back to."""
 
-    def test_kernel_matches_loop_on_random_curves(self):
+    def test_random_curves_stay_within_deviation_budget(self):
+        # No int64 machine-kernel/arbitrary-precision split remains to
+        # compare against itself; assert the walk's own contract instead --
+        # every dropped point stays within tolerance of the reduced curve,
+        # and surviving values are never moved.
         rng = np.random.default_rng(0)
         epoch = np.datetime64("2020-01-01", "us").view("i8")
         for _ in range(200):
@@ -1422,28 +1434,30 @@ class TestSleeveKernel:
             rate = int(rng.integers(1, 10**5))
             values = indices * rate + rng.integers(-4, 5, size=size)
             values = np.maximum.accumulate(values) + np.arange(size) + epoch
+            values = values.astype("M8[us]")
             epsilon = np.timedelta64(int(rng.integers(0, 5)), "us")
-            numerator, denominator = _epsilon_ratio(np.dtype("M8[us]"), epsilon)
-            sheared = _shear(indices, values, int(indices[-1]))
-            np.testing.assert_array_equal(
-                _sleeve_kernel(indices, sheared, numerator, denominator),
-                _sleeve_loop(indices.tolist(), values.tolist(), numerator, denominator),
-            )
+            coord = InterpCoordinate({"tie_indices": indices, "tie_values": values})
+            result = coord.simplify(epsilon)
+            deviation = np.abs(result._get_value(coord.tie_indices) - coord.tie_values)
+            # within the one tick the storage resolution itself carries, as
+            # in TestSleeveResolution
+            assert deviation.max() <= epsilon + np.timedelta64(1, "us")
+            kept = np.isin(result.tie_indices, coord.tie_indices)
+            assert kept.all()
 
-    def test_cross_products_too_wide_for_int64_fall_back(self):
+    def test_cross_products_too_wide_for_int64_stay_exact(self):
         # 4e9 samples with a mid tie half the span away from the chord: the
-        # shear fits, its cross-products do not, so the walk runs in Python
-        # integers.
+        # old int64 cross-product kernel could not represent this walk at
+        # all; the wide-integer kernel handles it directly.
         indices = np.array([0, 2 * 10**9, 4 * 10**9])
         values = np.array([0, 5 * 10**17, 2 * 10**18], dtype="i8")
         coord = InterpCoordinate({"tie_indices": indices, "tie_values": values}, "x")
         assert len(coord.simplify(0).tie_indices) == 3
 
-    def test_shear_itself_too_wide_falls_back(self):
-        # Values within a hair of the int64 ceiling: even subtracting the rate
-        # would overflow, so no shear is attempted.
+    def test_values_near_the_int64_ceiling_stay_exact(self):
+        # Values within a hair of the int64 ceiling: even the old shear
+        # prescale (subtracting the rate) would have overflowed here.
         indices = np.array([0, 1, 2])
         values = np.array([0, 10**18, 2**63 - 1], dtype="i8")
-        assert _shear(indices, values, 2) is None
         coord = InterpCoordinate({"tie_indices": indices, "tie_values": values}, "x")
         assert len(coord.simplify(0).tie_indices) == 3

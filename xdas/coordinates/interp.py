@@ -10,9 +10,8 @@ import re
 import warnings
 
 import numpy as np
-from numba import njit
 from typing_extensions import override
-from xinterp import forward, inverse
+from xinterp import forward_points, infer_step, inverse_points, simplify_points
 
 from .core import (
     AxisCoordinate,
@@ -208,7 +207,7 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
     @override
     def _get_value(self, index):
-        return forward(index, self.tie_indices, self.tie_values)
+        return forward_points(index, self.tie_indices, self.tie_values)
 
     @override
     def _get_indexer(self, value, method=None):
@@ -216,8 +215,17 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             value = np.datetime64(value)
         else:
             value = np.asarray(value)
+        tie_values = self.tie_values
+        # A label at finer datetime resolution than the tie values (e.g. a
+        # millisecond query against a second-resolution axis) would otherwise
+        # be rejected outright; compute in the common, finer resolution
+        # instead of truncating the query.
+        if np.issubdtype(self.dtype, np.datetime64) and value.dtype != self.dtype:
+            common = np.promote_types(self.dtype, value.dtype)
+            tie_values = tie_values.astype(common)
+            value = value.astype(common)
         try:
-            indexer = inverse(value, self.tie_indices, self.tie_values, method)
+            indexer = inverse_points(value, self.tie_indices, tie_values, method)
         except ValueError as e:
             if str(e) == "fp must be strictly increasing":
                 raise ValueError(
@@ -539,31 +547,44 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             si* = (num_i + num_j) / (den_i + den_j)
 
         That pair is found in ``O(n log n)`` via :func:`_chebyshev_center_pair`
-        rather than scanning all pairs. The matching tolerance is half the
-        worst drift, since validity compares the drift against
+        (for float ties) or via ``xinterp.infer_step`` (for integer and
+        datetime ties, in exact rational arithmetic). The matching tolerance
+        is half the worst drift, since validity compares the drift against
         ``2 * tolerance``.
         """
         num, den = self._continuous_segments()
         if num.size == 0:
             return None, None
-        # Float seconds for datetime axes pick the binding pair without
-        # integer/timedelta overflow; the final values stay in the native dtype.
+        if np.issubdtype(num.dtype, np.floating):
+            # xinterp.infer_step needs integer or datetime ties; float axes
+            # (distance, a few thousand channels at most) are too small to
+            # need a compiled kernel for the same Chebyshev-centre search.
+            pos_idx, neg_idx = _chebyshev_center_pair(num, den.astype(float))
+            sampling_interval = (num[pos_idx] + num[neg_idx]) / (
+                den[pos_idx] + den[neg_idx]
+            )
+            drift = np.abs(sampling_interval * den - num).max()
+            # A few ULPs of slack so re-validation cannot reject the value
+            # just derived from the same quantities.
+            tolerance = drift / 2 + 4 * np.spacing(np.abs(num).max())
+            return sampling_interval, tolerance
+        # Integer or datetime: reconstruct a synthetic continuous tie sequence
+        # from the (num, den) segments -- discontinuities (den == 1) carry no
+        # rate information and must stay excluded -- and let infer_step find
+        # the exact length-weighted Chebyshev centre in integer arithmetic.
         is_datetime = np.issubdtype(num.dtype, np.timedelta64)
-        num_seconds = num / np.timedelta64(1, "s") if is_datetime else num.astype(float)
-        pos_idx, neg_idx = _chebyshev_center_pair(num_seconds, den.astype(float))
-        sampling_interval = (num[pos_idx] + num[neg_idx]) / (
-            den[pos_idx] + den[neg_idx]
-        )
-        si_seconds = (
-            sampling_interval / np.timedelta64(1, "s")
-            if is_datetime
-            else float(sampling_interval)
-        )
-        drift = np.abs(si_seconds * den - num_seconds).max()
-        # A few ULPs of slack so re-validation cannot reject the returned pair.
-        tolerance = drift / 2 + 4 * np.spacing(np.abs(num_seconds).max())
+        x = np.concatenate(([0], np.cumsum(den))).astype("u8")
+        unit = np.datetime_data(num.dtype)[0] if is_datetime else None
+        f0 = np.timedelta64(0, unit) if is_datetime else np.zeros((), dtype=num.dtype)
+        tie_values = np.concatenate(([f0], f0 + np.cumsum(num)))
+        n, d, worst = infer_step(x, tie_values)
+        half = -(-int(worst) // 2)  # ceil(worst / 2), exact integer arithmetic
         if is_datetime:
-            tolerance = np.timedelta64(int(np.ceil(tolerance * 1e9)), "ns")
+            sampling_interval = np.timedelta64(int(n), unit) / d
+            tolerance = np.timedelta64(half, unit).astype("timedelta64[ns]")
+        else:
+            sampling_interval = n / d
+            tolerance = half
         return sampling_interval, tolerance
 
     @override
@@ -761,7 +782,7 @@ def _epsilon_ratio(dtype, epsilon):
     Express *epsilon* as an exact rational number of storage ticks.
 
     An :class:`InterpCoordinate` reconstructs values as ``round(exact chord)``
-    at the storage resolution (:func:`xinterp.forward`), so a tie point can sit
+    at the storage resolution (:func:`xinterp.forward_points`), so a tie point can sit
     up to half a tick off the exact line and still be the only representable
     value there.  Collinearity must therefore be judged with half a tick of
     slack, which is the ``+ 1`` and ``* 2`` below: the returned pair is
@@ -812,7 +833,9 @@ def _sleeve(x, y, epsilon):
     The walk keeps a point as soon as the chord to it leaves the running cone,
     which is conservative: a curve that some single chord would fit within
     *epsilon* may still keep interior points. It never moves or drops a point
-    the budget does not allow, only occasionally fewer than it could.
+    the budget does not allow, only occasionally fewer than it could. That is
+    why the fast path below is not redundant with the walk: it is a global
+    test the greedy walk cannot always reach on its own.
 
     Parameters
     ----------
@@ -831,126 +854,17 @@ def _sleeve(x, y, epsilon):
     if len(x) < 3:
         return x, y
     # Fast path: one chord spans the whole curve (the fully continuous case,
-    # resolved vectorized). `forward` reconstructs exactly what the reduced
-    # coordinate would return, so this measures the real shift and needs no
-    # allowance of its own -- and being a global test it also catches curves
-    # the incremental walk below is too conservative to collapse.
-    deviation = np.abs(y - forward(x, x[[0, -1]], y[[0, -1]]))
+    # resolved vectorized). `forward_points` reconstructs exactly what the
+    # reduced coordinate would return, so this measures the real shift and
+    # needs no allowance of its own -- and being a global test it also
+    # catches curves the incremental walk below is too conservative to
+    # collapse.
+    deviation = np.abs(y - forward_points(x, x[[0, -1]], y[[0, -1]]))
     if deviation.max() <= epsilon:
         return x[[0, -1]], y[[0, -1]]
     en, ed = _epsilon_ratio(y.dtype, epsilon)
-    values = y.view("i8") if np.issubdtype(y.dtype, np.datetime64) else y
-    keep = _sleeve_walk(x, values, en, ed)
+    keep = simplify_points(x, y, en, ed)
     return x[keep], y[keep]
-
-
-def _sleeve_walk(positions, values, en, ed):
-    """
-    Walk the sleeve over *(positions, values)*, epsilon being ``en / ed``.
-
-    Dispatches between a compiled machine-integer kernel and an
-    arbitrary-precision Python loop. The cone compares slopes by
-    cross-multiplication, so its widest intermediate is
-    ``(ed * span_values + en) * (ed * span_positions)``; the kernel is used
-    only when that provably fits in an ``int64``, which shearing the values by
-    their integer rate (a transform that leaves vertical deviations, hence the
-    cone, untouched) makes the common case.
-    """
-    if np.issubdtype(values.dtype, np.integer):
-        span_x = int(positions[-1]) - int(positions[0])
-        sheared = _shear(positions, values, span_x)
-        if sheared is not None:
-            span_y = int(sheared.max()) - int(sheared.min())
-            if (ed * span_y + en) * ed * span_x < 2**63:
-                return _sleeve_kernel(positions, sheared, en, ed)
-    return _sleeve_loop(positions.tolist(), values.tolist(), en, ed)
-
-
-def _shear(positions, values, span_x):
-    """
-    Subtract the integer part of the curve's overall rate from *values*.
-
-    ``y - m * x`` is a shear: it preserves vertical distances exactly, so the
-    sleeve is unchanged, but it bounds the values by the *index* span rather
-    than the *value* span — the difference between a 35-bit and an 80-bit
-    cross-product on a million datetime tie points. Returns ``None`` when the
-    shear itself would not fit in an ``int64``, leaving the caller on the
-    arbitrary-precision path.
-    """
-    first, last = int(values[0]), int(values[-1])
-    rate = (last - first) // span_x
-    reach = abs(rate) * int(positions[-1]) + max(abs(int(values.min())), abs(last))
-    if reach >= 2**63:
-        return None
-    return values - rate * positions
-
-
-@njit(cache=True)
-def _sleeve_kernel(positions, values, en, ed):  # pragma: no cover
-    """Sleeve walk in machine arithmetic; see :func:`_sleeve_walk` for the bound."""
-    n = positions.size
-    keep = np.zeros(n, dtype=np.bool_)
-    keep[0] = True
-    keep[n - 1] = True
-    ax = positions[0]
-    ay = values[0]
-    bounded = False
-    lo_num = lo_den = hi_num = hi_den = ed  # placeholder, typed like the cone
-    for i in range(1, n):
-        dx = positions[i] - ax
-        dy = values[i] - ay
-        inside = not bounded or (
-            lo_num * dx <= dy * lo_den and dy * hi_den <= hi_num * dx
-        )
-        if not inside:
-            keep[i - 1] = True
-            ax = positions[i - 1]
-            ay = values[i - 1]
-            dx = positions[i] - ax
-            dy = values[i] - ay
-            bounded = False
-        num_lo = ed * dy - en
-        num_hi = ed * dy + en
-        den = ed * dx
-        if not bounded:
-            lo_num, lo_den, hi_num, hi_den = num_lo, den, num_hi, den
-            bounded = True
-        else:
-            if num_lo * lo_den > lo_num * den:
-                lo_num, lo_den = num_lo, den
-            if num_hi * hi_den < hi_num * den:
-                hi_num, hi_den = num_hi, den
-    return keep
-
-
-def _sleeve_loop(positions, values, en, ed):
-    """Sleeve walk in Python integers, exact whatever the magnitudes."""
-    keep = np.zeros(len(positions), dtype=bool)
-    keep[0] = keep[-1] = True
-    ax, ay = positions[0], values[0]
-    # the sleeve: feasible slope interval from the anchor, as exact
-    # (numerator, positive denominator) rationals; None while unbounded
-    lo = hi = None
-    for i in range(1, len(positions)):
-        dx = positions[i] - ax
-        dy = values[i] - ay
-        if not (lo is None or (lo[0] * dx <= dy * lo[1] and dy * hi[1] <= hi[0] * dx)):
-            keep[i - 1] = True
-            ax, ay = positions[i - 1], values[i - 1]
-            dx = positions[i] - ax
-            dy = values[i] - ay
-            lo = None
-        # the chord anchor -> i passes within epsilon of every dropped point;
-        # tighten the sleeve with this point's own cone
-        num_lo, num_hi, den = ed * dy - en, ed * dy + en, ed * dx
-        if lo is None:
-            lo, hi = (num_lo, den), (num_hi, den)
-        else:
-            if num_lo * lo[1] > lo[0] * den:
-                lo = (num_lo, den)
-            if num_hi * hi[1] < hi[0] * den:
-                hi = (num_hi, den)
-    return keep
 
 
 def _chebyshev_center_pair(num, den):
@@ -987,9 +901,14 @@ def _chebyshev_center_pair(num, den):
     return _upper_envelope_min_pair(slopes, intercepts, idx, order)
 
 
-@njit(cache=True)
-def _upper_envelope_min_pair(slopes, intercepts, idx, order):  # pragma: no cover
-    """Binding (positive, negative) line indices at the upper-envelope minimum."""
+def _upper_envelope_min_pair(slopes, intercepts, idx, order):
+    """Binding (positive, negative) line indices at the upper-envelope minimum.
+
+    Plain Python, not compiled: only reached for float ``InterpCoordinate``
+    axes (``xinterp.infer_step`` handles integer and datetime ties in exact
+    arithmetic instead), which are distance axes of a few thousand channels
+    at most -- far too small to need a JIT kernel.
+    """
     n = order.size
     hull_s = np.empty(n, dtype=slopes.dtype)
     hull_b = np.empty(n, dtype=intercepts.dtype)

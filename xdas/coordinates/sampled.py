@@ -9,6 +9,7 @@ import warnings
 
 import numpy as np
 from typing_extensions import override
+from xinterp import simplify_step
 
 from .core import (
     UNITS_TO_CODE,
@@ -465,23 +466,59 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
         ``sampling_interval``), so *regularize* is a no-op; fusing happens only
         when *reduce* is set. See :meth:`Coordinate.simplify` for the parameter
         contract.
+
+        Integer and datetime axes fuse via ``xinterp.simplify_step`` (D5): a
+        run of segments merges while the spread of its junction offsets from
+        the shared rate stays within ``2 * tolerance``, then the run's tie
+        value is re-anchored to the Chebyshev centre of those offsets -- so a
+        surviving value may move by up to *tolerance*, twice what the former
+        anchor-pinned walk fused. Float axes (``simplify_step`` needs integer
+        or datetime ties) keep that anchor-pinned walk, values never moved.
         """
         if tolerance is False or not reduce:
             return self.copy()
         tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
-        tie_values = [self.tie_values[0]]
-        tie_lengths = [self.tie_lengths[0]]
-        for value, length in zip(self.tie_values[1:], self.tie_lengths[1:]):
-            delta = value - (tie_values[-1] + self.sampling_interval * tie_lengths[-1])
-            if np.abs(delta) <= tolerance:
-                tie_lengths[-1] += length
-            else:
-                tie_values.append(value)
-                tie_lengths.append(length)
+        if np.issubdtype(self.dtype, np.floating):
+            tie_values = [self.tie_values[0]]
+            tie_lengths = [self.tie_lengths[0]]
+            for value, length in zip(self.tie_values[1:], self.tie_lengths[1:]):
+                delta = value - (
+                    tie_values[-1] + self.sampling_interval * tie_lengths[-1]
+                )
+                if np.abs(delta) <= tolerance:
+                    tie_lengths[-1] += length
+                else:
+                    tie_values.append(value)
+                    tie_lengths.append(length)
+            tie_values = np.array(tie_values)
+            tie_lengths = np.array(tie_lengths)
+        else:
+            is_datetime = np.issubdtype(self.dtype, np.datetime64)
+            unit = np.datetime_data(self.dtype)[0] if is_datetime else None
+            # sampling_interval and tolerance may carry a coarser or finer
+            # timedelta64 unit than tie_values; align everything to the
+            # tie values' own unit before dropping to raw integer ticks.
+            td_dtype = f"timedelta64[{unit}]" if is_datetime else None
+            tie_values_ticks = (
+                self.tie_values.astype("i8") if is_datetime else self.tie_values
+            )
+            step = int(
+                self.sampling_interval.astype(td_dtype).astype("i8")
+                if is_datetime
+                else self.sampling_interval
+            )
+            tol_ticks = int(
+                tolerance.astype(td_dtype).astype("i8") if is_datetime else tolerance
+            )
+            keep, fused = simplify_step(
+                tie_values_ticks, self.tie_lengths, [step], [1], tol_ticks
+            )
+            tie_lengths = np.add.reduceat(self.tie_lengths, np.flatnonzero(keep))
+            tie_values = fused.astype(f"M8[{unit}]") if is_datetime else fused
         return self.__class__(
             {
-                "tie_values": np.array(tie_values),
-                "tie_lengths": np.array(tie_lengths),
+                "tie_values": tie_values,
+                "tie_lengths": tie_lengths,
                 "sampling_interval": self.sampling_interval,
             },
             self.dim,
