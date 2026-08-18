@@ -25,9 +25,12 @@ dependencies = [
     "typing_extensions",
     "watchdog",
     "xarray",
-    "xinterp",
+    "xinterp>=0.2.0",
     "pyzmq",
 ]
+
+[tool.uv.sources]
+xinterp = { path = "/home/trabatto/pkgs/xinterp", editable = true }
 
 [dependency-groups]
 dev = ["ruff", "pytest", "pytest-cov"]
