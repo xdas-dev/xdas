@@ -913,7 +913,9 @@ class TestSampledCoordinateToNetCDF:
         dataset, attrs = coord._to_dataset(dataset, {})
         assert dataset["time_sampling"].attrs["sampling_interval_denominator"] == 333
         dataset["__values__"] = xr.DataArray(np.zeros(1000), dims=["time"], attrs=attrs)
-        recovered = SampledCoordinate._collect_from_dataset(dataset, "__values__")["time"]
+        recovered = SampledCoordinate._collect_from_dataset(dataset, "__values__")[
+            "time"
+        ]
         assert recovered._sampling_ratio == coord._sampling_ratio
 
     def test_dataset_written_before_the_denominator_existed_loads_unchanged(self):
@@ -924,13 +926,18 @@ class TestSampledCoordinateToNetCDF:
         import xarray as xr
 
         coord = SampledCoordinate(
-            {"tie_values": [0.0], "tie_lengths": [30], "sampling_interval": 2.5}, "distance"
+            {"tie_values": [0.0], "tie_lengths": [30], "sampling_interval": 2.5},
+            "distance",
         )
         dataset = xr.Dataset()
         dataset, attrs = coord._to_dataset(dataset, {})
         assert "sampling_interval_denominator" not in dataset["distance_sampling"].attrs
-        dataset["__values__"] = xr.DataArray(np.zeros(30), dims=["distance"], attrs=attrs)
-        recovered = SampledCoordinate._collect_from_dataset(dataset, "__values__")["distance"]
+        dataset["__values__"] = xr.DataArray(
+            np.zeros(30), dims=["distance"], attrs=attrs
+        )
+        recovered = SampledCoordinate._collect_from_dataset(dataset, "__values__")[
+            "distance"
+        ]
         assert recovered.equals(coord)
 
     def test_to_netcdf_and_back(self):

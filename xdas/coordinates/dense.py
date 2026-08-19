@@ -5,7 +5,6 @@ import warnings
 import numpy as np
 import pandas as pd
 from typing_extensions import override
-
 from xinterp import forward_points
 
 from .core import AxisCoordinate, parse_data_dim, parse_scalar_delta

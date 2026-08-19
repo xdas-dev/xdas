@@ -349,7 +349,10 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             # kernel and cannot overflow however large the (unbounded, per
             # D2) denominators get.
             if np.issubdtype(self.dtype, np.datetime64):
-                lhs, rhs = int(numerator.astype("i8")), int(other_numerator.astype("i8"))
+                lhs, rhs = (
+                    int(numerator.astype("i8")),
+                    int(other_numerator.astype("i8")),
+                )
             elif not np.issubdtype(self.dtype, np.floating):
                 lhs, rhs = int(numerator), int(other_numerator)
             else:
@@ -536,15 +539,15 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             )
 
     def _is_valid_sampling_interval(self, numerator, denominator, tolerance):
-        """Whether the exact rate ``numerator / denominator`` fits every continuous
-        area within *tolerance*, judged without dividing.
+        """Whether the exact rate fits every continuous area within *tolerance*.
 
-        Cross-multiplies rather than computing ``numerator / denominator`` first:
-        validity is ``|denominator * num_seg - numerator * den_seg| <= 2 * tolerance
-        * denominator`` for every continuous segment -- the old ``dmin <=
-        sampling_interval <= dmax`` form divided first and so hid its own rounding
-        (F2). With no continuous area `np.all([])` is vacuously True, accepting an
-        explicit spacing as metadata (e.g. a two-tie-point block).
+        Judged without dividing: cross-multiplies rather than computing
+        ``numerator / denominator`` first, so validity is ``|denominator *
+        num_seg - numerator * den_seg| <= 2 * tolerance * denominator`` for
+        every continuous segment -- the old ``dmin <= sampling_interval <=
+        dmax`` form divided first and so hid its own rounding (F2). With no
+        continuous area `np.all([])` is vacuously True, accepting an explicit
+        spacing as metadata (e.g. a two-tie-point block).
         """
         num, den = self._continuous_segments()
         if num.size == 0:
@@ -631,9 +634,7 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             # need a compiled kernel for the same Chebyshev-centre search.
             # A float axis has no tick, so the denominator is always 1 (D2).
             pos_idx, neg_idx = _chebyshev_center_pair(num, den.astype(float))
-            numerator = (num[pos_idx] + num[neg_idx]) / (
-                den[pos_idx] + den[neg_idx]
-            )
+            numerator = (num[pos_idx] + num[neg_idx]) / (den[pos_idx] + den[neg_idx])
             drift = np.abs(numerator * den - num).max()
             # A few ULPs of slack so re-validation cannot reject the value
             # just derived from the same quantities.

@@ -1172,7 +1172,9 @@ class TestInterpCoordinateRegular:
         da = xd.DataArray(np.zeros(1000), {"time": coord})
         dataset = xr.Dataset()
         dataset, attrs = da.coords["time"]._to_dataset(dataset, {})
-        assert dataset["time_interpolation"].attrs["sampling_interval_denominator"] == 333
+        assert (
+            dataset["time_interpolation"].attrs["sampling_interval_denominator"] == 333
+        )
         dataset["__v__"] = xr.DataArray(np.zeros(1000), dims=["time"])
         dataset["__v__"].attrs.update(attrs)
         recovered = Coordinate._from_dataset(dataset, "__v__")["time"]
@@ -1184,7 +1186,11 @@ class TestInterpCoordinateRegular:
         # whole-tick rate (denominator 1) still writes today -- and must
         # load exactly as before, denominator implicitly 1.
         coord = InterpCoordinate(
-            {"tie_indices": [0, 8], "tie_values": [100.0, 900.0], "sampling_interval": 100.0},
+            {
+                "tie_indices": [0, 8],
+                "tie_values": [100.0, 900.0],
+                "sampling_interval": 100.0,
+            },
             dim="x",
         )
         dataset = xr.Dataset()

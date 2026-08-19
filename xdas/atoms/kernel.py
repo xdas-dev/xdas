@@ -283,7 +283,10 @@ class UpSample(Atom):
             if np.issubdtype(coord.dtype, np.floating):
                 new_numerator, new_denominator = numerator / self.factor, 1
             else:
-                new_numerator, new_denominator = numerator, int(denominator) * self.factor
+                new_numerator, new_denominator = (
+                    numerator,
+                    int(denominator) * self.factor,
+                )
             extended_value = step_value(
                 anchor_value,
                 extended_index - anchor_index,
@@ -528,7 +531,11 @@ class Polyphase(Atom):
             # at `coord.start`, so the two tie values agree as closely as
             # the coordinate's own resolution allows.
             last = step_value(
-                origin, (size - 1) * self.down, up_numerator, up_denominator, coord.dtype
+                origin,
+                (size - 1) * self.down,
+                up_numerator,
+                up_denominator,
+                coord.dtype,
             )
             tie_indices, tie_values = [0, size - 1], [origin, last]
         else:

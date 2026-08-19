@@ -1528,9 +1528,10 @@ def divide_sampling_ratio(numerator, denominator, dtype):
 
 
 def step_value(anchor, offset, numerator, denominator, dtype):
-    """`anchor` shifted by `offset` steps at the exact `numerator / denominator`
-    rate, rounding to the coordinate's own tick resolution (ties to even, the
-    same convention `xinterp`'s step kernels use). `offset` may be negative.
+    """`anchor` shifted by `offset` steps at the exact `numerator / denominator` rate.
+
+    Rounds to the coordinate's own tick resolution (ties to even, the same
+    convention `xinterp`'s step kernels use). `offset` may be negative.
     """
     if np.issubdtype(dtype, np.floating):
         return anchor + offset * numerator / denominator
@@ -1544,8 +1545,7 @@ def step_value(anchor, offset, numerator, denominator, dtype):
 
 
 def quantization_tolerance(tie_indices, tie_values, numerator, denominator, dtype):
-    """Smallest tolerance covering *tie_values*' own placement against the exact
-    ``numerator / denominator`` rate.
+    """Smallest tolerance covering *tie_values*' own placement against the rate.
 
     Rounding a tie value to the nearest representable tick is unavoidable
     whenever a continuous segment's index span is not a multiple of

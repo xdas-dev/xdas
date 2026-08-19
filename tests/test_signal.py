@@ -381,7 +381,9 @@ class TestResampleTolerance:
         coord = result["time"]
         assert coord.isregular()
         numerator, denominator = coord._sampling_ratio
-        assert coord._is_valid_sampling_interval(numerator, denominator, coord.tolerance)
+        assert coord._is_valid_sampling_interval(
+            numerator, denominator, coord.tolerance
+        )
         added = coord.tolerance - da["time"].tolerance
         assert np.timedelta64(0, "ns") <= added < np.timedelta64(1, "us")
 
