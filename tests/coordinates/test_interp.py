@@ -1159,6 +1159,42 @@ class TestInterpCoordinateRegular:
         assert recovered["time"].isregular()
         assert recovered["time"].sampling_interval == np.timedelta64(1, "s")
 
+    def test_dataset_roundtrip_preserves_the_denominator(self):
+        # F: a 999-sample rate has a denominator that does not reduce to 1;
+        # the round trip must carry the exact pair, not the floored scalar.
+        t0 = np.datetime64("2000-01-01T00:00:00", "ns")
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 999],
+                "tie_values": [t0, t0 + np.timedelta64(30_000_000_000, "ns")],
+            }
+        ).to_regular(tolerance=np.timedelta64(0, "ns"))
+        da = xd.DataArray(np.zeros(1000), {"time": coord})
+        dataset = xr.Dataset()
+        dataset, attrs = da.coords["time"]._to_dataset(dataset, {})
+        assert dataset["time_interpolation"].attrs["sampling_interval_denominator"] == 333
+        dataset["__v__"] = xr.DataArray(np.zeros(1000), dims=["time"])
+        dataset["__v__"].attrs.update(attrs)
+        recovered = Coordinate._from_dataset(dataset, "__v__")["time"]
+        assert recovered._sampling_ratio == coord._sampling_ratio
+
+    def test_dataset_written_before_the_denominator_existed_loads_unchanged(self):
+        # A file written before this round trip existed has no
+        # `sampling_interval_denominator` attribute at all -- exactly what a
+        # whole-tick rate (denominator 1) still writes today -- and must
+        # load exactly as before, denominator implicitly 1.
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 8], "tie_values": [100.0, 900.0], "sampling_interval": 100.0},
+            dim="x",
+        )
+        dataset = xr.Dataset()
+        dataset, attrs = coord._to_dataset(dataset, {})
+        assert "sampling_interval_denominator" not in dataset["x_interpolation"].attrs
+        dataset["__v__"] = xr.DataArray(np.zeros(9), dims=["x"])
+        dataset["__v__"].attrs.update(attrs)
+        recovered = Coordinate._from_dataset(dataset, "__v__")["x"]
+        assert recovered.equals(coord)
+
     def test_collect_mixed_plain_and_regular(self):
         da = xd.DataArray(
             np.zeros((20, 9)),

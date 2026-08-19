@@ -488,11 +488,19 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
             if np.issubdtype(self.tie_values.dtype, np.datetime64)
             else self.tie_values
         )
+        # The numerator, not the divided-down `sampling_interval`: a
+        # denominator of 1 (today's files, and every whole-tick rate) makes
+        # the two identical, so this is byte-for-byte what earlier versions
+        # wrote; a denominator > 1 is what makes the round trip exact
+        # instead of floored.
+        numerator, denominator = self._sampling_ratio
         sampling_attrs = {
             # interpolated dimension: segment length variable, subsampled dimension
             "tie_point_mapping": f"{self.dim}: {self.name}_lengths {self.name}_points",
-            **encode_delta("sampling_interval", self.sampling_interval),
+            **encode_delta("sampling_interval", numerator),
         }
+        if denominator != 1:
+            sampling_attrs["sampling_interval_denominator"] = int(denominator)
         dataset.update(
             {
                 f"{self.name}_sampling": ((), np.nan, sampling_attrs),
@@ -519,22 +527,29 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
                         first,
                         second,
                     )
-                    interval = decode_delta("sampling_interval", sampling_attrs)
+                    numerator = decode_delta("sampling_interval", sampling_attrs)
+                    # A missing denominator defaults to 1, so files written
+                    # before this round trip existed load unchanged.
+                    denominator = sampling_attrs.get("sampling_interval_denominator", 1)
                 else:
                     # the spelling that predates the CF-shaped grammar: the
                     # group named the coordinate rather than its tie point
                     # variable, the mapping listed both tie point variables,
-                    # and the interval was the sampling variable's own value
+                    # and the interval was the sampling variable's own value.
+                    # Predates the exact ratio too, so the denominator is
+                    # always 1 here.
                     coord, values, lengths = first, second, third
-                    interval = dataset[sampling].values[()]
+                    numerator = dataset[sampling].values[()]
                     if "units" in sampling_attrs and "dtype" in sampling_attrs:
-                        interval = np.timedelta64(
-                            interval, UNITS_TO_CODE[sampling_attrs["units"]]
+                        numerator = np.timedelta64(
+                            numerator, UNITS_TO_CODE[sampling_attrs["units"]]
                         ).astype(sampling_attrs["dtype"])
+                    denominator = 1
                 data = {
                     "tie_values": dataset[values].values,
                     "tie_lengths": dataset[lengths].values,
-                    "sampling_interval": interval,
+                    "sampling_numerator": numerator,
+                    "sampling_denominator": denominator,
                 }
                 coords[coord] = Coordinate(data, dim)
         return coords

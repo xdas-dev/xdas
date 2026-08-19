@@ -386,9 +386,15 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             "computational_precision": "64",
         }
         if self.sampling_interval is not None:
-            interp_attrs.update(
-                encode_delta("sampling_interval", self.sampling_interval)
-            )
+            # The numerator, not the divided-down `sampling_interval`: a
+            # denominator of 1 (today's files, and every whole-tick rate)
+            # makes the two identical, so this is byte-for-byte what earlier
+            # versions wrote; a denominator > 1 is what makes the round trip
+            # exact instead of floored.
+            numerator, denominator = self._sampling_ratio
+            interp_attrs.update(encode_delta("sampling_interval", numerator))
+            if denominator != 1:
+                interp_attrs["sampling_interval_denominator"] = int(denominator)
         if self.tolerance is not None:
             interp_attrs.update(encode_delta("tolerance", self.tolerance))
         dataset.update(
@@ -419,8 +425,13 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
                     else {}
                 )
                 if "sampling_interval" in interp_attrs:
-                    data["sampling_interval"] = decode_delta(
+                    # A missing denominator defaults to 1, so files written
+                    # before this round trip existed load unchanged.
+                    data["sampling_numerator"] = decode_delta(
                         "sampling_interval", interp_attrs
+                    )
+                    data["sampling_denominator"] = interp_attrs.get(
+                        "sampling_interval_denominator", 1
                     )
                     data["tolerance"] = decode_delta("tolerance", interp_attrs)
                 coords[coord] = Coordinate(data, dim)

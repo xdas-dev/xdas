@@ -894,6 +894,45 @@ class TestSampledCoordinateToNetCDF:
 
         assert coords.equals(da.coords)
 
+    def test_to_dataset_and_back_preserves_the_denominator(self):
+        # F: a 999-sample rate has a denominator that does not reduce to 1;
+        # the round trip must carry the exact pair, not the floored scalar.
+        import xarray as xr
+
+        coord = SampledCoordinate(
+            {
+                "tie_values": [0],
+                "tie_lengths": [1000],
+                "sampling_numerator": 30_000_000_000,
+                "sampling_denominator": 999,
+            },
+            "time",
+            dtype="timedelta64[ns]",
+        )
+        dataset = xr.Dataset()
+        dataset, attrs = coord._to_dataset(dataset, {})
+        assert dataset["time_sampling"].attrs["sampling_interval_denominator"] == 333
+        dataset["__values__"] = xr.DataArray(np.zeros(1000), dims=["time"], attrs=attrs)
+        recovered = SampledCoordinate._collect_from_dataset(dataset, "__values__")["time"]
+        assert recovered._sampling_ratio == coord._sampling_ratio
+
+    def test_dataset_written_before_the_denominator_existed_loads_unchanged(self):
+        # A file written before this round trip existed has no
+        # `sampling_interval_denominator` attribute at all -- exactly what a
+        # whole-tick rate (denominator 1) still writes today -- and must
+        # load exactly as before, denominator implicitly 1.
+        import xarray as xr
+
+        coord = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [30], "sampling_interval": 2.5}, "distance"
+        )
+        dataset = xr.Dataset()
+        dataset, attrs = coord._to_dataset(dataset, {})
+        assert "sampling_interval_denominator" not in dataset["distance_sampling"].attrs
+        dataset["__values__"] = xr.DataArray(np.zeros(30), dims=["distance"], attrs=attrs)
+        recovered = SampledCoordinate._collect_from_dataset(dataset, "__values__")["distance"]
+        assert recovered.equals(coord)
+
     def test_to_netcdf_and_back(self):
         expected = self.make_dataarray()
 
