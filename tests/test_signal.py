@@ -385,6 +385,19 @@ class TestResampleTolerance:
         added = coord.tolerance - da["time"].tolerance
         assert np.timedelta64(0, "ns") <= added < np.timedelta64(1, "us")
 
+    def test_resample_poly_on_regular_float_axis(self):
+        # A float (distance) axis exercises resample_poly's float branch,
+        # unreachable through "time" (always datetime64 here): the exact
+        # denominator is always 1 (D2), so the new rate is a plain division.
+        da = xd.testing.dummy(shape=(20, 120))
+        da["distance"] = da["distance"].to_regular(
+            da["distance"].sampling_interval, 0.0
+        )
+        result = xs.resample_poly(da, 1, 2, dim="distance")
+        coord = result["distance"]
+        assert coord.isregular()
+        assert coord._sampling_ratio[1] == 1
+
     def test_resample_carries_declared_tolerance(self):
         da = self.regular()
         result = xs.resample(da, da.sizes["time"] // 2, dim="time")

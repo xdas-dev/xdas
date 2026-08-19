@@ -1329,7 +1329,7 @@ class TestSimplifyToleranceDefaults:
         assert result.tolerance is None
 
     def test_regularity_refused_when_fusion_exceeds_tolerance_on_float_axis(self):
-        # Same refusal on a float axis: fusing the 4.0 seam leaves a
+        # D3, same refusal on a float axis: fusing the 4.0 seam leaves a
         # coordinate spanning 64.0 over 21 intervals, 1.0 off the nominal 3.0
         # grid, against a declared tolerance of 0.
         coord = InterpCoordinate(
