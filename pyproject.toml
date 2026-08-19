@@ -29,9 +29,6 @@ dependencies = [
     "pyzmq",
 ]
 
-[tool.uv.sources]
-xinterp = { path = "/home/trabatto/pkgs/xinterp", editable = true }
-
 [dependency-groups]
 dev = ["ruff", "pytest", "pytest-cov"]
 docs = [
