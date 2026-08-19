@@ -1439,9 +1439,11 @@ class TestSleeveKernel:
             coord = InterpCoordinate({"tie_indices": indices, "tie_values": values})
             result = coord.simplify(epsilon)
             deviation = np.abs(result._get_value(coord.tie_indices) - coord.tie_values)
-            # within the one tick the storage resolution itself carries, as
-            # in TestSleeveResolution
-            assert deviation.max() <= epsilon + np.timedelta64(1, "us")
+            # xinterp's simplify_points bounds every reconstructed sample by
+            # the declared tolerance exactly (its cone is `tol + 1/2` tick
+            # wide, closed on the reconstruction side); no extra tick of
+            # slack is needed here.
+            assert deviation.max() <= epsilon
             kept = np.isin(result.tie_indices, coord.tie_indices)
             assert kept.all()
 
