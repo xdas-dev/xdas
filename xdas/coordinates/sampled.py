@@ -16,10 +16,12 @@ from .core import (
     AxisCoordinate,
     Coordinate,
     decode_delta,
+    divide_sampling_ratio,
     encode_delta,
     is_monotonic_increasing,
     parse_data_dim,
     parse_scalar_delta,
+    reduce_sampling_ratio,
 )
 
 
@@ -42,7 +44,9 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
         ``sampling_interval`` : scalar
             Fixed step between consecutive samples, shared across all segments.
             Must be :class:`numpy.timedelta64` when ``tie_values`` are
-            :class:`numpy.datetime64`.
+            :class:`numpy.datetime64`. Stored internally as ``sampling_numerator``
+            / ``sampling_denominator`` (an exact, gcd-reduced ratio); either
+            spelling may be passed instead, provided together.
     dim : str, optional
         Name of the dimension this coordinate is associated with.
     dtype : dtype-like, optional
@@ -77,11 +81,28 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
         if not self._isvalid(data):
             raise ValueError(
                 "`data` must be dict-like and contain `tie_values`, `tie_lengths`, and "
-                "`sampling_interval`"
+                "`sampling_interval` (or `sampling_numerator` and "
+                "`sampling_denominator`)"
             )
         tie_values = np.asarray(data["tie_values"], dtype=dtype)
         tie_lengths = np.asarray(data["tie_lengths"])
-        sampling_interval = data["sampling_interval"]
+        has_ratio = "sampling_numerator" in data or "sampling_denominator" in data
+        if has_ratio and "sampling_interval" in data:
+            raise ValueError(
+                "cannot pass both `sampling_interval` and "
+                "`sampling_numerator`/`sampling_denominator`"
+            )
+        if has_ratio:
+            if ("sampling_numerator" in data) != ("sampling_denominator" in data):
+                raise ValueError(
+                    "`sampling_numerator` and `sampling_denominator` must be "
+                    "provided together"
+                )
+            sampling_interval = data["sampling_numerator"]
+            sampling_denominator = data["sampling_denominator"]
+        else:
+            sampling_interval = data["sampling_interval"]
+            sampling_denominator = 1 if sampling_interval is not None else None
 
         # check shapes
         if not tie_values.ndim == 1:
@@ -108,7 +129,7 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
             if not np.all(tie_lengths > 0):
                 raise ValueError("`tie_lengths` must be strictly positive integers")
 
-            # sampling_interval
+            # sampling_interval / sampling_numerator
             if not np.ndim(sampling_interval) == 0:
                 raise ValueError("`sampling_interval` must be a scalar value")
             sampling_interval = np.asarray(sampling_interval)[()]  # ensure numpy scalar
@@ -119,11 +140,25 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
                     "`sampling_interval` must be timedelta64 for datetime64 `tie_values`"
                 )
 
+            # sampling_denominator
+            if not np.ndim(sampling_denominator) == 0:
+                raise ValueError("`sampling_denominator` must be a scalar value")
+            sampling_denominator = int(sampling_denominator)
+            if not sampling_denominator > 0:
+                raise ValueError("`sampling_denominator` must be strictly positive")
+
+            sampling_numerator, sampling_denominator = reduce_sampling_ratio(
+                sampling_interval, sampling_denominator, tie_values.dtype
+            )
+        else:
+            sampling_numerator, sampling_denominator = None, None
+
         # store data
         self.data = {
             "tie_values": tie_values,
             "tie_lengths": tie_lengths,
-            "sampling_interval": sampling_interval,
+            "sampling_numerator": sampling_numerator,
+            "sampling_denominator": sampling_denominator,
         }
         self.dim = dim
 
@@ -138,9 +173,21 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
         return self.data["tie_lengths"]
 
     @property
+    def _sampling_ratio(self):
+        """``(numerator, denominator)`` pair backing :attr:`sampling_interval`.
+
+        Both are ``None`` together for an empty coordinate. This is the one place
+        (besides :func:`~.core.parse_scalar_delta`) that assumes the rate is a
+        single scalar rather than a per-segment array; per-segment intervals are
+        expected later.
+        """
+        return self.data["sampling_numerator"], self.data["sampling_denominator"]
+
+    @property
     def sampling_interval(self):
         """Fixed step between consecutive samples (shared across all segments)."""
-        return self.data["sampling_interval"]
+        numerator, denominator = self._sampling_ratio
+        return divide_sampling_ratio(numerator, denominator, self.dtype)
 
     @property
     def tie_indices(self):
@@ -170,10 +217,10 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
     @override
     def _isvalid(data):
         match data:
-            case {
-                "tie_values": _,
-                "tie_lengths": _,
-                "sampling_interval": _,
+            case {"tie_values": _, "tie_lengths": _, **rest} if rest and set(rest) <= {
+                "sampling_interval",
+                "sampling_numerator",
+                "sampling_denominator",
             }:
                 return True
             case _:
@@ -438,10 +485,14 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
     def get_sampling_interval(self, cast=True):
         if len(self) < 2:
             return None
-        delta = self.sampling_interval
-        if cast and np.issubdtype(delta.dtype, np.timedelta64):
-            delta = delta / np.timedelta64(1, "s")
-        return delta
+        numerator, denominator = self._sampling_ratio
+        if cast and np.issubdtype(self.dtype, np.datetime64):
+            # Divide last: converting the exact tick numerator to seconds
+            # before dividing by the denominator avoids rounding to a tick
+            # first, so signal processing receives the exact rate rather
+            # than a representation-truncated one.
+            return (numerator / np.timedelta64(1, "s")) / denominator
+        return divide_sampling_ratio(numerator, denominator, self.dtype)
 
     @override
     def to_regular(self, sampling_interval=None, tolerance=None):

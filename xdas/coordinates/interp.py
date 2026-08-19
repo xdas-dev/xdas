@@ -17,9 +17,11 @@ from .core import (
     AxisCoordinate,
     Coordinate,
     decode_delta,
+    divide_sampling_ratio,
     encode_delta,
     is_monotonic_increasing,
     parse_data_dim,
+    parse_sampling_ratio,
     parse_scalar_delta,
 )
 
@@ -53,6 +55,9 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         ``sampling_interval`` : scalar, optional
             Nominal sample spacing.  When provided the coordinate is
             *regular* and :meth:`get_sampling_interval` returns it directly.
+            Stored internally as ``sampling_numerator`` / ``sampling_denominator``
+            (an exact, gcd-reduced ratio); either spelling may be passed instead,
+            provided together.
         ``tolerance`` : scalar, optional
             Allowed jitter around ``sampling_interval``.  Checked for
             consistency with the tie points at construction.  Ignored when
@@ -101,6 +106,8 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         tie_indices = np.asarray(data["tie_indices"])
         tie_values = np.asarray(data["tie_values"], dtype=dtype)
         sampling_interval = data.get("sampling_interval", None)
+        sampling_numerator = data.get("sampling_numerator", None)
+        sampling_denominator = data.get("sampling_denominator", None)
         tolerance = data.get("tolerance", None)
 
         # check shapes
@@ -131,7 +138,9 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         self.dim = dim
 
         # optional regular sampling
-        self._assign_sampling_interval(sampling_interval, tolerance)
+        self._assign_sampling_interval(
+            sampling_interval, sampling_numerator, sampling_denominator, tolerance
+        )
 
     @property
     def tie_indices(self):
@@ -144,9 +153,21 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         return self.data["tie_values"]
 
     @property
+    def _sampling_ratio(self):
+        """``(numerator, denominator)`` pair backing :attr:`sampling_interval`.
+
+        Both are ``None`` together when the coordinate is not regular. This is the
+        one place (besides :func:`~.core.parse_scalar_delta`) that assumes the rate
+        is a single scalar rather than a per-segment array; per-segment intervals
+        are expected later.
+        """
+        return self.data["sampling_numerator"], self.data["sampling_denominator"]
+
+    @property
     def sampling_interval(self):
         """Nominal sample spacing, or ``None`` when the coordinate is not regular."""
-        return self.data["sampling_interval"]
+        numerator, denominator = self._sampling_ratio
+        return divide_sampling_ratio(numerator, denominator, self.dtype)
 
     @property
     def tolerance(self):
@@ -193,6 +214,8 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         match data:
             case {"tie_indices": _, "tie_values": _, **rest} if set(rest) <= {
                 "sampling_interval",
+                "sampling_numerator",
+                "sampling_denominator",
                 "tolerance",
             }:
                 return True
@@ -420,41 +443,56 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
     @override
     def get_sampling_interval(self, cast=True):
-        delta = self.sampling_interval
-        if delta is None:
+        numerator, denominator = self._sampling_ratio
+        if numerator is None:
             return None
-        if cast and np.issubdtype(delta.dtype, np.timedelta64):
-            delta = delta / np.timedelta64(1, "s")
-        return delta
+        if cast and np.issubdtype(self.dtype, np.datetime64):
+            # Divide last: converting the exact tick numerator to seconds
+            # before dividing by the denominator avoids rounding to a tick
+            # first, so signal processing receives the exact rate rather
+            # than a representation-truncated one.
+            return (numerator / np.timedelta64(1, "s")) / denominator
+        return divide_sampling_ratio(numerator, denominator, self.dtype)
 
-    def _assign_sampling_interval(self, sampling_interval, tolerance=None):
-        """Parse, validate and store the sampling interval and its tolerance.
+    def _assign_sampling_interval(
+        self,
+        sampling_interval,
+        sampling_numerator,
+        sampling_denominator,
+        tolerance=None,
+    ):
+        """Parse, validate and store the sampling ratio and its tolerance.
 
-        ``None`` clears both; a value is kept only if consistent with the tie
-        points (see :meth:`_is_valid_sampling_interval`).
+        ``None`` clears all three; a value is kept only if consistent with the
+        tie points (see :meth:`_is_valid_sampling_interval`).
         """
-        if sampling_interval is None:
+        numerator, denominator = parse_sampling_ratio(
+            sampling_interval, sampling_numerator, sampling_denominator, self.dtype
+        )
+        if numerator is None:
             if tolerance is not None:
                 raise ValueError(
                     "`tolerance` cannot be set without a `sampling_interval`"
                 )
-            self.data["sampling_interval"] = None
+            self.data["sampling_numerator"] = None
+            self.data["sampling_denominator"] = None
             self.data["tolerance"] = None
             return
 
-        sampling_interval = parse_scalar_delta(sampling_interval, self.dtype)
         tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
 
-        # Normalise datetime deltas to the tie-value resolution so an in-memory
+        # Normalise the tolerance to the tie-value resolution so an in-memory
         # coordinate matches the one read back after serialisation (which always
         # encodes timedeltas at the coordinate's datetime resolution).
+        # `parse_sampling_ratio` already does the same for `numerator`.
         if np.issubdtype(self.dtype, np.datetime64):
             unit = np.datetime_data(self.dtype)[0]
-            sampling_interval = sampling_interval.astype(f"timedelta64[{unit}]")
             tolerance = tolerance.astype(f"timedelta64[{unit}]")
 
+        sampling_interval = divide_sampling_ratio(numerator, denominator, self.dtype)
         if self._is_valid_sampling_interval(sampling_interval, tolerance):
-            self.data["sampling_interval"] = sampling_interval
+            self.data["sampling_numerator"] = numerator
+            self.data["sampling_denominator"] = denominator
             self.data["tolerance"] = tolerance
         else:
             raise ValueError(

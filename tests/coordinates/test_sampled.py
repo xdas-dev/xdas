@@ -131,6 +131,84 @@ class TestSampledCoordinateBasics:
             )
 
 
+class TestSamplingRatio:
+    """SampledCoordinate's numerator/denominator spelling, alongside the
+    legacy ``sampling_interval`` one it stays interchangeable with."""
+
+    def test_numerator_denominator_spelling_equals_legacy_spelling(self):
+        legacy = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [10], "sampling_interval": 2.0}
+        )
+        ratio = SampledCoordinate(
+            {
+                "tie_values": [0.0],
+                "tie_lengths": [10],
+                "sampling_numerator": 2.0,
+                "sampling_denominator": 1,
+            }
+        )
+        assert legacy.equals(ratio)
+        assert legacy._sampling_ratio == ratio._sampling_ratio
+
+    def test_integer_ratio_is_gcd_reduced(self):
+        coord = SampledCoordinate(
+            {
+                "tie_values": np.array([0], dtype="int64"),
+                "tie_lengths": [10],
+                "sampling_numerator": 14,
+                "sampling_denominator": 6,
+            }
+        )
+        numerator, denominator = coord._sampling_ratio
+        assert numerator == 7
+        assert denominator == 3
+        assert coord.sampling_interval == 7 // 3
+
+    def test_both_spellings_together_raise(self):
+        with pytest.raises(ValueError, match="cannot pass both"):
+            SampledCoordinate(
+                {
+                    "tie_values": [0.0],
+                    "tie_lengths": [10],
+                    "sampling_interval": 2.0,
+                    "sampling_numerator": 2.0,
+                    "sampling_denominator": 1,
+                }
+            )
+
+    def test_partial_pair_raises(self):
+        with pytest.raises(ValueError, match="provided together"):
+            SampledCoordinate(
+                {"tie_values": [0.0], "tie_lengths": [10], "sampling_numerator": 2.0}
+            )
+        with pytest.raises(ValueError, match="provided together"):
+            SampledCoordinate(
+                {"tie_values": [0.0], "tie_lengths": [10], "sampling_denominator": 1}
+            )
+
+    def test_non_scalar_denominator_raises(self):
+        with pytest.raises(ValueError, match="scalar value"):
+            SampledCoordinate(
+                {
+                    "tie_values": [0.0],
+                    "tie_lengths": [10],
+                    "sampling_numerator": 2.0,
+                    "sampling_denominator": [1, 2],
+                }
+            )
+
+    def test_non_positive_denominator_raises(self):
+        with pytest.raises(ValueError, match="strictly positive"):
+            SampledCoordinate(
+                {
+                    "tie_values": [0.0],
+                    "tie_lengths": [10],
+                    "sampling_numerator": 2.0,
+                    "sampling_denominator": 0,
+                }
+            )
+
+
 class TestSampledCoordinateIndexing:
     def make_coord(self):
         # Two segments: [0,1,2] and [10,11]

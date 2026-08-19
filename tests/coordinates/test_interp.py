@@ -833,6 +833,86 @@ class TestInterpCoordinateExtra:
         assert np.allclose(recovered["x"].tie_values, [100.0, 900.0])
 
 
+class TestSamplingRatio:
+    """InterpCoordinate's numerator/denominator spelling, alongside the legacy
+    ``sampling_interval`` one it stays interchangeable with."""
+
+    def test_numerator_denominator_spelling_equals_legacy_spelling(self):
+        legacy = InterpCoordinate(
+            {
+                "tie_indices": [0, 10],
+                "tie_values": [0.0, 10.0],
+                "sampling_interval": 1.0,
+            }
+        )
+        ratio = InterpCoordinate(
+            {
+                "tie_indices": [0, 10],
+                "tie_values": [0.0, 10.0],
+                "sampling_numerator": 1.0,
+                "sampling_denominator": 1,
+            }
+        )
+        assert legacy.equals(ratio)
+        assert legacy._sampling_ratio == ratio._sampling_ratio
+
+    def test_integer_ratio_is_gcd_reduced(self):
+        # tolerance=1 absorbs the floor-division gap between the exact 6/4
+        # rate and the tick-rounded 3//2 the property reports.
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 4],
+                "tie_values": np.array([0, 6], dtype="int64"),
+                "sampling_numerator": 6,
+                "sampling_denominator": 4,
+                "tolerance": 1,
+            }
+        )
+        numerator, denominator = coord._sampling_ratio
+        assert numerator == 3
+        assert denominator == 2
+        assert coord.sampling_interval == 3 // 2
+
+    def test_irregular_ratio_is_none_none(self):
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 1, 2], "tie_values": [0.0, 1.0, 2.0]}
+        )
+        assert coord._sampling_ratio == (None, None)
+
+    def test_both_spellings_together_raise(self):
+        with pytest.raises(ValueError, match="cannot pass both"):
+            InterpCoordinate(
+                {
+                    "tie_indices": [0, 1],
+                    "tie_values": [0.0, 1.0],
+                    "sampling_interval": 1.0,
+                    "sampling_numerator": 1.0,
+                    "sampling_denominator": 1,
+                }
+            )
+
+    def test_partial_pair_raises(self):
+        with pytest.raises(ValueError, match="provided together"):
+            InterpCoordinate(
+                {
+                    "tie_indices": [0, 1],
+                    "tie_values": [0.0, 1.0],
+                    "sampling_numerator": 1.0,
+                }
+            )
+
+    def test_non_positive_denominator_raises(self):
+        with pytest.raises(ValueError, match="strictly positive"):
+            InterpCoordinate(
+                {
+                    "tie_indices": [0, 1],
+                    "tie_values": [0.0, 1.0],
+                    "sampling_numerator": 1.0,
+                    "sampling_denominator": 0,
+                }
+            )
+
+
 class TestInterpCoordinateRegular:
     """Tests for InterpCoordinate with an enforced sampling_interval (regular mode)."""
 

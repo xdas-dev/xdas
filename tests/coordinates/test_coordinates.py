@@ -551,6 +551,83 @@ class TestEncodeDelta:
         assert encode_delta("tolerance", None) == {}
 
 
+class TestSamplingRatio:
+    """The (numerator, denominator) representation shared by InterpCoordinate
+    and SampledCoordinate, exercised directly at the ``core.py`` level -- the
+    denominator-1 float case in particular can never arise through either
+    class's public constructor (:func:`reduce_sampling_ratio` always forces
+    it), but the general contract still holds it."""
+
+    def test_legacy_spelling_normalises_to_value_one(self):
+        from xdas.coordinates.core import parse_sampling_ratio
+
+        numerator, denominator = parse_sampling_ratio(2.5, None, None, np.float64)
+        assert numerator == 2.5
+        assert denominator == 1
+
+    def test_no_rate_at_all_is_none_none(self):
+        from xdas.coordinates.core import parse_sampling_ratio
+
+        assert parse_sampling_ratio(None, None, None, np.float64) == (None, None)
+
+    def test_both_spellings_together_raise(self):
+        from xdas.coordinates.core import parse_sampling_ratio
+
+        with pytest.raises(ValueError, match="cannot pass both"):
+            parse_sampling_ratio(2.5, 5, 2, np.float64)
+
+    def test_partial_pair_raises(self):
+        from xdas.coordinates.core import parse_sampling_ratio
+
+        with pytest.raises(ValueError, match="provided together"):
+            parse_sampling_ratio(None, 5, None, np.float64)
+        with pytest.raises(ValueError, match="provided together"):
+            parse_sampling_ratio(None, None, 2, np.float64)
+
+    def test_non_positive_denominator_raises(self):
+        from xdas.coordinates.core import parse_sampling_ratio
+
+        with pytest.raises(ValueError, match="strictly positive"):
+            parse_sampling_ratio(None, 5, 0, np.float64)
+
+    def test_integer_pair_is_gcd_reduced(self):
+        from xdas.coordinates.core import parse_sampling_ratio
+
+        numerator, denominator = parse_sampling_ratio(None, 14, 6, np.dtype("int64"))
+        assert numerator == 7
+        assert denominator == 3
+
+    def test_datetime_pair_is_gcd_reduced_and_kept_at_its_own_resolution(self):
+        from xdas.coordinates.core import parse_sampling_ratio
+
+        numerator, denominator = parse_sampling_ratio(
+            None, np.timedelta64(14, "us"), 6, np.dtype("M8[us]")
+        )
+        assert numerator == np.timedelta64(7, "us")
+        assert denominator == 3
+
+    def test_float_pair_folds_the_denominator_to_one(self):
+        from xdas.coordinates.core import parse_sampling_ratio
+
+        numerator, denominator = parse_sampling_ratio(None, 5.0, 4, np.float64)
+        assert numerator == 1.25
+        assert denominator == 1
+
+    def test_divide_short_circuits_at_denominator_one(self):
+        from xdas.coordinates.core import divide_sampling_ratio
+
+        assert divide_sampling_ratio(None, None, np.float64) is None
+        assert divide_sampling_ratio(3.5, 1, np.float64) == 3.5
+
+    def test_divide_floors_for_exact_dtypes_and_true_divides_for_floats(self):
+        from xdas.coordinates.core import divide_sampling_ratio
+
+        # A 10.2 m distance interval floor-divided would silently truncate to
+        # 10.0 -- the bug the dtype branch exists to avoid.
+        assert divide_sampling_ratio(np.int64(7), 3, np.dtype("int64")) == 2
+        assert divide_sampling_ratio(10.2, 3, np.dtype("float64")) == pytest.approx(3.4)
+
+
 class TestGetSamplingIntervalHelperNonAxis:
     def test_scalar_coordinate_returns_none(self):
         from xdas.coordinates import get_sampling_interval
