@@ -12,6 +12,7 @@ import scipy.signal as sp
 
 from .atoms import atomized
 from .coordinates import InterpCoordinate, get_sampling_interval
+from .coordinates.core import quantization_tolerance, step_value
 from .core import DataArray
 from .parallel import parallelize
 from .spectral import stft  # noqa
@@ -353,22 +354,47 @@ def resample_poly(
     """
     axis = da.get_axis_num(dim)
     dim = da.dims[axis]
-    d = get_sampling_interval(da, dim, cast=False)
     across = int(axis == 0)
     func = parallelize(across, across, parallel)(sp.resample_poly)
     data = func(da.values, up, down, axis, window, padtype, cval)
     start = da[dim][0].values
-    step = d * down / up
     source = da.coords[dim]
-    new_coord = type(source).from_block(start, data.shape[axis], step, dim=dim)
-    # The derived rate may not be exactly representable (integer datetime
-    # resolutions truncate), so declare that error as jitter on top of the
-    # inherited one, as UpSample does; chunk seams then stay within tolerance.
-    if isinstance(source, InterpCoordinate):
-        tolerance = np.abs(d * down - step * up)
-        if source.tolerance is not None:
-            tolerance = source.tolerance + tolerance
-        new_coord = new_coord.to_regular(step, tolerance)
+    if isinstance(source, InterpCoordinate) and source.isregular():
+        # (numerator * down, denominator * up) is the exact output rate --
+        # nothing to round to get it, so nothing to launder into tolerance.
+        # The far tie is placed by rounding to the coordinate's own tick
+        # resolution, which costs at most a fraction of a tick, not up to a
+        # whole sample period; declare that quantization on top of the
+        # inherited jitter, rather than the old truncated-delta drift.
+        numerator, denominator = source._sampling_ratio
+        if np.issubdtype(source.dtype, np.floating):
+            new_numerator, new_denominator = numerator * down / up, 1
+        else:
+            new_numerator, new_denominator = numerator * down, int(denominator) * up
+        size = data.shape[axis]
+        tie_indices = [0, size - 1]
+        tie_values = [
+            start,
+            step_value(start, size - 1, new_numerator, new_denominator, source.dtype),
+        ]
+        base = source.tolerance
+        quantization = quantization_tolerance(
+            tie_indices, tie_values, new_numerator, new_denominator, source.dtype
+        )
+        new_coord = InterpCoordinate(
+            {
+                "tie_indices": tie_indices,
+                "tie_values": tie_values,
+                "sampling_numerator": new_numerator,
+                "sampling_denominator": new_denominator,
+                "tolerance": base + quantization,
+            },
+            dim,
+        )
+    else:
+        d = get_sampling_interval(da, dim, cast=False)
+        step = d * down / up
+        new_coord = type(source).from_block(start, data.shape[axis], step, dim=dim)
     coords = {
         name: new_coord if name == dim else coord
         for name, coord in da.coords.items()

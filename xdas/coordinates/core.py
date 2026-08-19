@@ -10,6 +10,7 @@ import warnings
 import weakref
 from abc import ABC, abstractmethod
 from copy import copy, deepcopy
+from fractions import Fraction
 from functools import wraps
 from itertools import pairwise
 from typing import ClassVar
@@ -1526,6 +1527,61 @@ def divide_sampling_ratio(numerator, denominator, dtype):
     return numerator // denominator
 
 
+def step_value(anchor, offset, numerator, denominator, dtype):
+    """`anchor` shifted by `offset` steps at the exact `numerator / denominator`
+    rate, rounding to the coordinate's own tick resolution (ties to even, the
+    same convention `xinterp`'s step kernels use). `offset` may be negative.
+    """
+    if np.issubdtype(dtype, np.floating):
+        return anchor + offset * numerator / denominator
+    is_datetime = np.issubdtype(dtype, np.datetime64)
+    ticks = int(numerator.astype("i8")) if is_datetime else int(numerator)
+    span = round(Fraction(int(offset) * ticks, int(denominator)))
+    if is_datetime:
+        unit = np.datetime_data(dtype)[0]
+        return anchor + np.timedelta64(span, unit)
+    return anchor + dtype.type(span)
+
+
+def quantization_tolerance(tie_indices, tie_values, numerator, denominator, dtype):
+    """Smallest tolerance covering *tie_values*' own placement against the exact
+    ``numerator / denominator`` rate.
+
+    Rounding a tie value to the nearest representable tick is unavoidable
+    whenever a continuous segment's index span is not a multiple of
+    `denominator` -- distinct from instrumental jitter, but still real, so it
+    must be declared rather than silently causing the coordinate to fail its
+    own validity check. Mirrors the cross-multiplied
+    ``|denominator * num - numerator * den| <= 2 * tolerance * denominator``
+    bound :meth:`~.interp.InterpCoordinate._is_valid_sampling_interval` checks,
+    solved for the least `tolerance` that satisfies it.
+    """
+    num = np.diff(tie_values)
+    den = np.diff(tie_indices)
+    mask = den != 1
+    num, den = num[mask], den[mask]
+    if num.size == 0:
+        return parse_scalar_delta(None, dtype, default_zero=True)
+    denominator = int(denominator)
+    if np.issubdtype(dtype, np.floating):
+        drift = np.abs(denominator * num - numerator * den).max()
+        return drift / (2 * denominator)
+    is_datetime = np.issubdtype(dtype, np.datetime64)
+    if is_datetime:
+        num = num.view("i8").astype(object)
+        p = int(numerator.astype("i8"))
+    else:
+        num = num.astype(object)
+        p = int(numerator)
+    den = den.astype(object)
+    drift = int(np.abs(denominator * num - p * den).max())
+    ticks = -(-drift // (2 * denominator))  # ceil division, exact
+    if is_datetime:
+        unit = np.datetime_data(dtype)[0]
+        return np.timedelta64(ticks, unit)
+    return dtype.type(ticks)
+
+
 def get_sampling_interval(da, dim, cast=True):
     """
     Return the nominal sample spacing along a given dimension.
@@ -1581,7 +1637,8 @@ def get_sampling_interval(da, dim, cast=True):
         f"tolerance"
     )
     if isinstance(coord, InterpCoordinate):
-        sampling_interval, tolerance = coord._infer_regular()
+        numerator, denominator, tolerance = coord._infer_regular()
+        sampling_interval = divide_sampling_ratio(numerator, denominator, coord.dtype)
     else:
         try:
             regular = coord.to_regular()

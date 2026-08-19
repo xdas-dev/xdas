@@ -286,7 +286,11 @@ def _target_ratio(rate, interval, up, down, delta):
     spelling : {"rate", "interval", "factor"}
         Which spelling was used, for phrasing error messages.
     up, down : int or None
-        The exact pair when ``spelling == "factor"``, else ``None``.
+        The exact pair when ``spelling == "factor"``, or when
+        ``spelling == "interval"`` and `delta` is a `timedelta64` (both
+        already exact integer tick counts, so their ratio needs no search).
+        ``None`` for a `rate` target or a float `interval`, where `delta`
+        itself has no exact tick to build a `Fraction` from.
     """
     named = [
         name
@@ -334,7 +338,8 @@ def _target_ratio(rate, interval, up, down, delta):
         if not target_ticks > 0:
             raise ValueError("`interval` must be positive")
         delta_ticks = int(delta.astype(np.int64))
-        return float(Fraction(delta_ticks, target_ticks)), "interval", None, None
+        fraction = Fraction(delta_ticks, target_ticks)
+        return float(fraction), "interval", fraction.numerator, fraction.denominator
     if not interval > 0:
         raise ValueError(f"`interval` must be positive, got {interval!r}")
     return _as_seconds(delta) / interval, "interval", None, None
@@ -551,6 +556,12 @@ class Resample(Atom):
             self.rate, self.interval, self.up, self.down, self.delta
         )
         if spelling == "factor":
+            pass
+        elif up is not None and not self.snap:
+            # spelling == "interval" on a datetime `delta`: already an exact
+            # `Fraction` of two tick counts, so searching for an
+            # approximation via `_solve_ratio` would only reintroduce the
+            # rounding this ratio never had.
             pass
         elif self.snap:
             up, down = _snap_factors(ratio)

@@ -330,14 +330,16 @@ class TestPolyphase:
         np.testing.assert_allclose(result.values, expected.values, rtol=1e-6)
 
     def test_rate_the_coordinate_cannot_represent_exactly(self):
-        # 100 Hz resampled by 3/10 is 10/3 nanoseconds per output sample: the
-        # truncated step must be declared as jitter, not silently drift.
+        # E: the output rate is an exact (numerator, denominator) pair --
+        # here 100000000/3 ns per output sample -- so there is no truncated
+        # delta left to launder into jitter. Re-baselines the pre-E
+        # assertion (`tolerance > 0`), which pinned exactly that laundering.
         da = xd.testing.dummy(shape=(101, 5))
         taps = sp.firwin(31, 0.4 / 10)
         result = Polyphase(3 * taps, 3, 10, "time")(da)
         coord = result.coords["time"]
         assert coord.isregular()
-        assert coord.tolerance > np.timedelta64(0, "ns")
+        assert coord.tolerance == np.timedelta64(0, "ns")
 
     def test_too_few_taps(self):
         da = xd.testing.dummy(shape=(20, 5))

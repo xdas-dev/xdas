@@ -711,14 +711,16 @@ class TestInterpCoordinateExtra:
 
     def test_infer_regular(self):
         # Numeric: rates 1.0 (den=10) and 1.0555 (den=5); the inferred spacing
-        # and tolerance must round-trip through `to_regular`.
+        # and tolerance must round-trip through `to_regular`. Float ties carry
+        # no tick, so the denominator is always 1 (D2).
         coord = InterpCoordinate(
             {"tie_indices": [0, 10, 15], "tie_values": [0.0, 10.0, 15.55]}
         )
-        si, tol = coord._infer_regular()
-        assert si > 0
+        num, den, tol = coord._infer_regular()
+        assert num > 0
+        assert den == 1
         assert tol > 0
-        reg = coord.to_regular(sampling_interval=si, tolerance=tol)
+        reg = coord.to_regular(sampling_interval=num / den, tolerance=tol)
         assert reg.isregular()
 
         # Datetime variant: tolerance comes back as a timedelta64.
@@ -733,31 +735,30 @@ class TestInterpCoordinateExtra:
                 ],
             }
         )
-        si_dt, tol_dt = coord_dt._infer_regular()
+        num_dt, den_dt, tol_dt = coord_dt._infer_regular()
         assert np.issubdtype(np.asarray(tol_dt).dtype, np.timedelta64)
         assert tol_dt > np.timedelta64(0)
-        assert coord_dt.to_regular(
-            sampling_interval=si_dt, tolerance=tol_dt
-        ).isregular()
+        assert coord_dt._is_valid_sampling_interval(num_dt, den_dt, tol_dt)
 
         # Plain integer variant: same rates, exact-rational infer_step path,
-        # not the datetime or float branch.
+        # not the datetime or float branch; the denominator need not be 1.
         coord_int = InterpCoordinate(
             {
                 "tie_indices": [0, 10, 15],
                 "tie_values": np.array([0, 10, 15], dtype="int64") * 1000 + [0, 0, 550],
             }
         )
-        si_int, tol_int = coord_int._infer_regular()
-        assert si_int > 0
+        num_int, den_int, tol_int = coord_int._infer_regular()
+        assert num_int > 0
+        assert den_int > 0
         assert tol_int >= 0
-        assert coord_int._is_valid_sampling_interval(si_int, tol_int)
+        assert coord_int._is_valid_sampling_interval(num_int, den_int, tol_int)
 
         # No continuous segment → nothing to infer.
         unit = InterpCoordinate(
             {"tie_indices": [0, 1, 2], "tie_values": [0.0, 1.0, 2.0]}
         )
-        assert unit._infer_regular() == (None, None)
+        assert unit._infer_regular() == (None, None, None)
 
     def test_add_sub(self):
         coord = InterpCoordinate({"tie_indices": [0, 4], "tie_values": [10.0, 50.0]})
@@ -1237,10 +1238,15 @@ class TestSimplifyToleranceDefaults:
         result = coord.simplify()
         assert result.equals(coord)
 
-    def test_widen_only_when_needed(self):
-        # Fusing a jump beyond the declared tolerance widens it to the least
-        # value that describes the surviving tie points: the fused coordinate
-        # spans 13 s over 11 intervals, so it drifts 2 s from the nominal grid.
+    def test_regularity_refused_when_fusion_exceeds_tolerance(self):
+        # D3: tolerance means instrumental jitter, set once, never widened
+        # afterwards -- so a reduce pass whose fused jump drifts further than
+        # the declared tolerance drops the coordinate's regularity instead of
+        # stretching the tolerance to cover it. The fused coordinate spans
+        # 13 s over 11 intervals, 2 s off the nominal 1 s grid, against a
+        # declared tolerance of 0: the fusion still happens (reduce is a
+        # function of the caller's budget, not of the declared rate) but the
+        # coordinate comes back irregular.
         t0 = np.datetime64("2000-01-01T00:00:00", "ns")
         s = np.timedelta64(1, "s").astype("m8[ns]")
         coord = InterpCoordinate(
@@ -1253,14 +1259,15 @@ class TestSimplifyToleranceDefaults:
         )
         result = coord.simplify(np.timedelta64(3, "s"))
         assert len(result.tie_indices) == 2
-        assert result.sampling_interval == s
-        assert result.tolerance == np.timedelta64(1, "s").astype("m8[ns]")
-        assert result._is_valid_sampling_interval(s, result.tolerance)
+        assert result.sampling_interval is None
+        assert result.tolerance is None
 
-    def test_widening_beyond_the_budget_never_raises(self):
-        # The reduction bounds how far values move, not how much drift fusing
-        # a discontinuity exposes, so the required tolerance can exceed the
-        # budget. Real OptoDAS seams: 2 ms late every 10 s at 125 Hz.
+    def test_regularity_refused_beyond_the_budget_never_raises(self):
+        # D3, same shape as above on real data: the reduction bounds how far
+        # values move, not how much drift fusing a discontinuity exposes, so
+        # a fusion that needs more than the declared tolerance to describe is
+        # refused rather than raising. Real OptoDAS seams: 2 ms late every
+        # 10 s at 125 Hz.
         t0 = np.datetime64("2021-10-27T15:44:10.721999872", "ns")
         offsets = [
             0,
@@ -1281,17 +1288,14 @@ class TestSimplifyToleranceDefaults:
             }
         )
         result = coord.simplify(np.timedelta64(1_000_000, "ns"))
-        assert result.isregular()
-        assert result.sampling_interval == np.timedelta64(8_000_000, "ns")
-        # Four times the 1 ms budget, and the smallest value that validates.
-        assert result.tolerance == np.timedelta64(2_000_128, "ns")
-        assert result._is_valid_sampling_interval(
-            result.sampling_interval, result.tolerance
-        )
+        assert not result.isregular()
+        assert result.sampling_interval is None
+        assert result.tolerance is None
 
-    def test_widen_only_when_needed_on_float_axis(self):
-        # Same widening on a float axis: fusing the 4.0 seam leaves a coordinate
-        # spanning 64.0 over 21 intervals, 1.0 off the nominal 3.0 grid.
+    def test_regularity_refused_when_fusion_exceeds_tolerance_on_float_axis(self):
+        # Same refusal on a float axis: fusing the 4.0 seam leaves a
+        # coordinate spanning 64.0 over 21 intervals, 1.0 off the nominal 3.0
+        # grid, against a declared tolerance of 0.
         coord = InterpCoordinate(
             {
                 "tie_indices": [0, 10, 11, 21],
@@ -1302,15 +1306,8 @@ class TestSimplifyToleranceDefaults:
         )
         result = coord.simplify(2.0)
         assert len(result.tie_indices) == 2
-        assert result.sampling_interval == 3.0
-        assert result.tolerance == pytest.approx(0.5, abs=1e-9)
-        assert result._is_valid_sampling_interval(3.0, result.tolerance)
-
-    def test_minimal_tolerance_without_continuous_area(self):
-        # Nothing to constrain the spacing: the zero-like default is enough.
-        coord = InterpCoordinate({"tie_indices": [0, 1], "tie_values": [0.0, 5.0]})
-        tolerance = coord._minimal_tolerance(1.0)
-        assert coord._is_valid_sampling_interval(1.0, tolerance)
+        assert result.sampling_interval is None
+        assert result.tolerance is None
 
 
 class TestSimplifyNoReduce:

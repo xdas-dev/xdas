@@ -367,15 +367,23 @@ class TestResampleTolerance:
         assert result["time"].tolerance >= da["time"].tolerance
 
     def test_resample_poly_declares_representation_error(self):
-        # 1/3 of a 10 ms step is not representable in whole nanoseconds, so the
-        # truncation must be declared as jitter on top of the inherited bound.
+        # E: the output rate is the exact (numerator * up, denominator * down)
+        # pair, so there is no truncated `delta` to launder into tolerance --
+        # only the far tie's own rounding to the nanosecond grid, bounded by a
+        # fraction of a tick, on top of the inherited budget. Re-baselines the
+        # pre-E formula (`abs(delta - step * 3)`, the truncated-delta drift
+        # this phase removes), which scaled with `delta` itself (here 10 ms)
+        # rather than with a tick: the added quantization must stay tiny by
+        # comparison, and the coordinate must validate at exactly what it
+        # declares.
         da = self.regular()
-        delta = da["time"].sampling_interval
         result = xs.resample_poly(da, 3, 1, dim="time")
-        step = result["time"].sampling_interval
-        assert result["time"].tolerance == da["time"].tolerance + np.abs(
-            delta - step * 3
-        )
+        coord = result["time"]
+        assert coord.isregular()
+        numerator, denominator = coord._sampling_ratio
+        assert coord._is_valid_sampling_interval(numerator, denominator, coord.tolerance)
+        added = coord.tolerance - da["time"].tolerance
+        assert np.timedelta64(0, "ns") <= added < np.timedelta64(1, "us")
 
     def test_resample_carries_declared_tolerance(self):
         da = self.regular()
