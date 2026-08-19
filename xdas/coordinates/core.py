@@ -10,6 +10,7 @@ import warnings
 import weakref
 from abc import ABC, abstractmethod
 from copy import copy, deepcopy
+from fractions import Fraction
 from functools import wraps
 from itertools import pairwise
 from typing import ClassVar
@@ -1386,6 +1387,201 @@ def parse_scalar_delta(value, dtype, default_zero=False):
     return value
 
 
+def parse_sampling_ratio(
+    sampling_interval, sampling_numerator, sampling_denominator, dtype
+):
+    """
+    Normalise a coordinate's declared rate to a canonical ``(numerator, denominator)`` pair.
+
+    Accepts either spelling: a scalar ``sampling_interval`` (normalised to
+    ``(value, 1)``), or an explicit ``sampling_numerator`` / ``sampling_denominator``
+    pair, which must be given together. No rate at all (all three ``None``) returns
+    ``(None, None)``. The pair is always reduced to lowest terms by ``gcd`` -- an
+    irreducible fraction is the canonical, comparable form, so two coordinates built
+    from either spelling store the same pair and compare equal.
+
+    Float dtypes have no tick, so the denominator is coerced to 1 -- an *enforced*
+    invariant rather than a convention: dividing first if a pair was passed, since a
+    float axis has no exact referent for the ratio to preserve.
+
+    Parameters
+    ----------
+    sampling_interval : scalar or None
+        Legacy spelling: the sampling interval itself.
+    sampling_numerator : scalar or None
+        Explicit numerator, paired with `sampling_denominator`.
+    sampling_denominator : int or None
+        Explicit denominator, paired with `sampling_numerator`. Must be strictly
+        positive.
+    dtype : numpy.dtype
+        The coordinate's own value dtype, used to normalise `numerator` (e.g. to a
+        timedelta64 unit) exactly as :func:`parse_scalar_delta` would.
+
+    Returns
+    -------
+    numerator : numpy scalar or None
+    denominator : numpy.int64 or None
+
+    Raises
+    ------
+    ValueError
+        If both spellings are given, if only one of `sampling_numerator` /
+        `sampling_denominator` is given, or if `sampling_denominator` is not
+        strictly positive.
+    """
+    if sampling_numerator is not None or sampling_denominator is not None:
+        if sampling_interval is not None:
+            raise ValueError(
+                "cannot pass both `sampling_interval` and "
+                "`sampling_numerator`/`sampling_denominator`"
+            )
+        if sampling_numerator is None or sampling_denominator is None:
+            raise ValueError(
+                "`sampling_numerator` and `sampling_denominator` must be "
+                "provided together"
+            )
+        numerator = parse_scalar_delta(sampling_numerator, dtype)
+        denominator = int(sampling_denominator)
+        if not denominator > 0:
+            raise ValueError("`sampling_denominator` must be strictly positive")
+    elif sampling_interval is not None:
+        numerator = parse_scalar_delta(sampling_interval, dtype)
+        denominator = 1
+    else:
+        return None, None
+
+    return reduce_sampling_ratio(numerator, denominator, dtype)
+
+
+def reduce_sampling_ratio(numerator, denominator, dtype):
+    """
+    Reduce an already-typed ``(numerator, denominator)`` pair to lowest terms.
+
+    Assumes `numerator` already carries a numpy scalar of the right dtype (see
+    :func:`parse_scalar_delta`) and `denominator` is a strictly positive ``int``;
+    callers are responsible for validating both before calling this. gcd-reduces
+    exact dtypes (timedelta64 and integer); float dtypes have no tick, so the
+    denominator is coerced to 1 -- an enforced invariant, dividing first.
+
+    Datetime numerators are also normalised to `dtype`'s own resolution, so an
+    in-memory coordinate matches the one read back after serialisation (which
+    always encodes timedeltas at the coordinate's own datetime resolution).
+
+    Returns
+    -------
+    numerator : numpy scalar
+    denominator : numpy.int64
+    """
+    # Dispatch on `numerator`'s own dtype rather than `dtype`: a coordinate read
+    # back from the pre-CF on-disk spelling can carry a numeric `tie_values`
+    # paired with a timedelta64 rate (see `SampledCoordinate._collect_from_dataset`),
+    # and that mismatch must round-trip unreduced rather than be forced into a
+    # kind it never claimed.
+    numerator_dtype = np.asarray(numerator).dtype
+    if np.issubdtype(numerator_dtype, np.floating):
+        if denominator != 1:
+            numerator = numerator / denominator
+        return numerator, np.int64(1)
+
+    if np.issubdtype(numerator_dtype, np.timedelta64):
+        # Align to the coordinate's own resolution only when it too is
+        # datetime64-flavoured; the legacy mismatch above keeps its own unit.
+        if np.issubdtype(dtype, np.datetime64):
+            unit = np.datetime_data(dtype)[0]
+            numerator = numerator.astype(f"timedelta64[{unit}]")
+        else:
+            unit = np.datetime_data(numerator_dtype)[0]
+        ticks = int(numerator.view("i8"))
+        g = int(np.gcd(abs(ticks), denominator)) or 1
+        numerator = np.timedelta64(ticks // g, unit)
+    else:
+        ticks = int(numerator)
+        g = int(np.gcd(abs(ticks), denominator)) or 1
+        numerator = numerator_dtype.type(ticks // g)
+    denominator //= g
+    return numerator, np.int64(denominator)
+
+
+def divide_sampling_ratio(numerator, denominator, dtype):
+    """
+    Derive the nominal sampling interval scalar from a ``(numerator, denominator)`` pair.
+
+    ``numerator // denominator`` for exact dtypes (timedelta64 and integer), which
+    reproduces the rounded, human-facing tick count; ``numerator / denominator`` for
+    floating dtypes, which carry no tick to floor to (``10.2 // 1 == 10.0`` would
+    silently truncate a 10.2 m distance interval). A denominator of 1 short-circuits
+    to `numerator` itself, whatever the dtype, so this is a true no-op wherever the
+    ratio has not moved past the legacy ``(value, 1)`` spelling.
+
+    Returns
+    -------
+    scalar or None
+        ``None`` when `numerator` is ``None`` (no declared rate).
+    """
+    if numerator is None:
+        return None
+    if denominator == 1:
+        return numerator
+    if np.issubdtype(dtype, np.floating):
+        return numerator / denominator
+    return numerator // denominator
+
+
+def step_value(anchor, offset, numerator, denominator, dtype):
+    """`anchor` shifted by `offset` steps at the exact `numerator / denominator` rate.
+
+    Rounds to the coordinate's own tick resolution (ties to even, the same
+    convention `xinterp`'s step kernels use). `offset` may be negative.
+    """
+    if np.issubdtype(dtype, np.floating):
+        return anchor + offset * numerator / denominator
+    is_datetime = np.issubdtype(dtype, np.datetime64)
+    ticks = int(numerator.astype("i8")) if is_datetime else int(numerator)
+    span = round(Fraction(int(offset) * ticks, int(denominator)))
+    if is_datetime:
+        unit = np.datetime_data(dtype)[0]
+        return anchor + np.timedelta64(span, unit)
+    return anchor + dtype.type(span)
+
+
+def quantization_tolerance(tie_indices, tie_values, numerator, denominator, dtype):
+    """Smallest tolerance covering *tie_values*' own placement against the rate.
+
+    Rounding a tie value to the nearest representable tick is unavoidable
+    whenever a continuous segment's index span is not a multiple of
+    `denominator` -- distinct from instrumental jitter, but still real, so it
+    must be declared rather than silently causing the coordinate to fail its
+    own validity check. Mirrors the cross-multiplied
+    ``|denominator * num - numerator * den| <= 2 * tolerance * denominator``
+    bound :meth:`~.interp.InterpCoordinate._is_valid_sampling_interval` checks,
+    solved for the least `tolerance` that satisfies it.
+    """
+    num = np.diff(tie_values)
+    den = np.diff(tie_indices)
+    mask = den != 1
+    num, den = num[mask], den[mask]
+    if num.size == 0:
+        return parse_scalar_delta(None, dtype, default_zero=True)
+    denominator = int(denominator)
+    if np.issubdtype(dtype, np.floating):
+        drift = np.abs(denominator * num - numerator * den).max()
+        return drift / (2 * denominator)
+    is_datetime = np.issubdtype(dtype, np.datetime64)
+    if is_datetime:
+        num = num.view("i8").astype(object)
+        p = int(numerator.astype("i8"))
+    else:
+        num = num.astype(object)
+        p = int(numerator)
+    den = den.astype(object)
+    drift = int(np.abs(denominator * num - p * den).max())
+    ticks = -(-drift // (2 * denominator))  # ceil division, exact
+    if is_datetime:
+        unit = np.datetime_data(dtype)[0]
+        return np.timedelta64(ticks, unit)
+    return dtype.type(ticks)
+
+
 def get_sampling_interval(da, dim, cast=True):
     """
     Return the nominal sample spacing along a given dimension.
@@ -1441,7 +1637,8 @@ def get_sampling_interval(da, dim, cast=True):
         f"tolerance"
     )
     if isinstance(coord, InterpCoordinate):
-        sampling_interval, tolerance = coord._infer_regular()
+        numerator, denominator, tolerance = coord._infer_regular()
+        sampling_interval = divide_sampling_ratio(numerator, denominator, coord.dtype)
     else:
         try:
             regular = coord.to_regular()

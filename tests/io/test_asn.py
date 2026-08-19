@@ -350,7 +350,8 @@ class TestZMQSubscriber:
         assert sub.distance == {
             "tie_indices": [0, 9],
             "tie_values": [0.0, 90.0],
-            "sampling_interval": 10.0,
+            "sampling_numerator": 90.0,
+            "sampling_denominator": 9,
         }
         assert sub.delta == np.timedelta64(100, "ms")
         result = next(sub)
@@ -376,7 +377,8 @@ class TestZMQSubscriber:
         assert sub.distance == {
             "tie_indices": [0, 9],
             "tie_values": [0.0, 90.0],
-            "sampling_interval": 10.0,
+            "sampling_numerator": 90.0,
+            "sampling_denominator": 9,
         }
         assert sub.delta == np.timedelta64(100, "ms")
         for chunk in chunks:
@@ -468,10 +470,14 @@ class TestZMQSubscriber:
         )
         sub._update_header(message)
         assert sub.shape == (10, 16002)
+        # Exact (numerator, denominator) pair rather than the pre-divided
+        # scalar, so a 999-style rate does not get rounded away before it
+        # even reaches the coordinate.
         assert sub.distance == {
             "tie_indices": [0, 16001],
             "tie_values": [0.0, 163418.2435258568],
-            "sampling_interval": 163418.2435258568 / 16001,
+            "sampling_numerator": 163418.2435258568,
+            "sampling_denominator": 16001,
         }
 
     def test_iter(self):

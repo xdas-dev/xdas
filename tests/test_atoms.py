@@ -210,6 +210,25 @@ class TestFilters:
 
         assert UpSample(1, dim="time")(da).equals(da)
 
+    def test_upsample_on_integer_axis(self):
+        # A plain integer (neither float nor datetime64) axis exercises
+        # step_value/quantization_tolerance's exact-integer branch, distinct
+        # from both the float and the datetime64 one.
+        da = xd.DataArray(
+            [1, 1, 1],
+            {
+                "channel": {
+                    "tie_indices": [0, 2],
+                    "tie_values": np.array([0, 5], dtype="int64"),
+                    "sampling_numerator": 5,
+                    "sampling_denominator": 2,
+                }
+            },
+        )
+        result = UpSample(3, dim="channel")(da)
+        assert result["channel"].isregular()
+        assert result["channel"]._sampling_ratio == (5, 6)
+
     def test_firfilter(self):
         da = xd.testing.dummy()
         chunks = xd.split(da, 6, "time")
@@ -330,14 +349,16 @@ class TestPolyphase:
         np.testing.assert_allclose(result.values, expected.values, rtol=1e-6)
 
     def test_rate_the_coordinate_cannot_represent_exactly(self):
-        # 100 Hz resampled by 3/10 is 10/3 nanoseconds per output sample: the
-        # truncated step must be declared as jitter, not silently drift.
+        # E: the output rate is an exact (numerator, denominator) pair --
+        # here 100000000/3 ns per output sample -- so there is no truncated
+        # delta left to launder into jitter. Re-baselines the pre-E
+        # assertion (`tolerance > 0`), which pinned exactly that laundering.
         da = xd.testing.dummy(shape=(101, 5))
         taps = sp.firwin(31, 0.4 / 10)
         result = Polyphase(3 * taps, 3, 10, "time")(da)
         coord = result.coords["time"]
         assert coord.isregular()
-        assert coord.tolerance > np.timedelta64(0, "ns")
+        assert coord.tolerance == np.timedelta64(0, "ns")
 
     def test_too_few_taps(self):
         da = xd.testing.dummy(shape=(20, 5))
@@ -600,6 +621,22 @@ class TestLegacyIrregularCoordinates:
         assert da["time"].isregular()
         result = UpSample(3, dim="time")(da)
         assert result["time"].isregular()
+
+    def test_polyphase_on_irregular_float_coordinate(self):
+        # A float (distance) axis exercises `_upsampled`'s non-timedelta64
+        # branch, unreachable through "time" (always datetime64 here).
+        da = xd.testing.dummy(shape=(101, 5))
+        da["distance"] = xd.Coordinate(
+            {
+                "tie_indices": da["distance"].tie_indices,
+                "tie_values": da["distance"].tie_values,
+            },
+            "distance",
+        )
+        assert not da["distance"].isregular()
+        taps = sp.firwin(21, 0.4 / 5)
+        result = Polyphase(taps, 2, 5, "distance")(da)
+        assert not result["distance"].isregular()
 
 
 class TestSequentialReset:

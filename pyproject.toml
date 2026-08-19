@@ -25,9 +25,15 @@ dependencies = [
     "typing_extensions",
     "watchdog",
     "xarray",
-    "xinterp",
+    "xinterp>=0.2.0",
     "pyzmq",
 ]
+
+# TEMPORARY, pending xinterp 0.2.0 on PyPI: `xinterp>=0.2.0` above cannot
+# resolve until that release exists. Remove this block the moment it does,
+# so dev stops depending on xinterp's own dev branch.
+[tool.uv.sources]
+xinterp = { git = "https://github.com/xdas-dev/xinterp.git", branch = "dev" }
 
 [dependency-groups]
 dev = ["ruff", "pytest", "pytest-cov"]

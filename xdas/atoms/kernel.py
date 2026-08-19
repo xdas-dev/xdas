@@ -17,7 +17,7 @@ import numpy as np
 import scipy.signal as sp
 
 from ..coordinates import Coordinate, get_sampling_interval
-from ..coordinates.core import parse_scalar_delta
+from ..coordinates.core import quantization_tolerance, step_value
 from ..core import DataArray, concat, split
 from ..parallel import parallelize
 from .core import Atom, State, atomized
@@ -265,34 +265,62 @@ class UpSample(Atom):
         else:
             data[slc] = da.values
         coords = da.coords.copy()
-        delta = get_sampling_interval(da, name, cast=False)
-        new_delta = delta / self.factor
         coord = coords[name]
         # Copies: the tie arrays are the input coordinate's own storage.
         tie_indices = np.asarray(coord.tie_indices) * self.factor
         tie_values = np.asarray(coord.tie_values).copy()
-        if tie_indices.size == 1:
-            # A one-sample chunk has a single tie, and the upsampled block
-            # still spans `factor` samples: it takes a second tie to say so.
-            tie_indices = np.append(tie_indices, self.factor - 1)
-            tie_values = np.append(
-                tie_values, tie_values[-1] + (self.factor - 1) * new_delta
+        anchor_index = int(tie_indices[-1])
+        anchor_value = tie_values[-1]
+        # A one-sample chunk has a single tie, and the upsampled block still
+        # spans `factor` samples: it takes a second tie to say so.
+        extended_index = anchor_index + self.factor - 1
+        if coord.isregular():
+            # Dividing the denominator rather than rounding the delta is
+            # exact -- (num, den * factor) is the new rate exactly, nothing
+            # to declare as jitter. Floats have no tick (D2: denominator
+            # always 1), so the division stays a plain float one.
+            numerator, denominator = coord._sampling_ratio
+            if np.issubdtype(coord.dtype, np.floating):
+                new_numerator, new_denominator = numerator / self.factor, 1
+            else:
+                new_numerator, new_denominator = (
+                    numerator,
+                    int(denominator) * self.factor,
+                )
+            extended_value = step_value(
+                anchor_value,
+                extended_index - anchor_index,
+                new_numerator,
+                new_denominator,
+                coord.dtype,
             )
         else:
-            tie_indices[-1] += self.factor - 1
-            tie_values[-1] += (self.factor - 1) * new_delta
+            # No declared rate to inherit, but the padded samples between
+            # this chunk's last real sample and its boundary still need a
+            # plausible placement; infer one exactly as any other
+            # signal-processing call would (may warn or raise).
+            delta = get_sampling_interval(da, name, cast=False)
+            extended_value = anchor_value + (self.factor - 1) * (delta / self.factor)
+        if tie_indices.size == 1:
+            tie_indices = np.append(tie_indices, extended_index)
+            tie_values = np.append(tie_values, extended_value)
+        else:
+            tie_indices[-1] = extended_index
+            tie_values[-1] = extended_value
         data_coord = {"tie_indices": tie_indices, "tie_values": tie_values}
         if coord.isregular():
-            # The derived rate may not be exactly representable (integer datetime
-            # resolutions truncate), so declare the representation error as jitter
-            # on top of the inherited one; chunk seams then stay within tolerance.
-            data_coord["sampling_interval"] = new_delta
-            data_coord["tolerance"] = coord.tolerance + np.abs(
-                delta - new_delta * self.factor
+            data_coord["sampling_numerator"] = new_numerator
+            data_coord["sampling_denominator"] = new_denominator
+            # The trailing tie was placed by rounding to the coordinate's own
+            # tick resolution, which -- unlike the old truncated-delta
+            # laundering -- costs at most a fraction of a tick, not up to a
+            # whole sample period.
+            quantization = quantization_tolerance(
+                tie_indices, tie_values, new_numerator, new_denominator, coord.dtype
             )
-        # An irregular input gives no rate to inherit and no jitter bound to
-        # derive one from, so the result stays irregular rather than claiming a
-        # precision the source never declared.
+            data_coord["tolerance"] = coord.tolerance + quantization
+        # An irregular input gives no rate to inherit, so the result stays
+        # irregular rather than claiming a precision the source never declared.
         coords[name] = Coordinate(data_coord, name)
         # Each inserted sample is drawn from the input sample it follows.
         positions = np.arange(shape[da.get_axis_num(name)]) // self.factor
@@ -470,40 +498,61 @@ class Polyphase(Atom):
         # `Coordinate` built below, so resolve it here.
         name = self._dim_name(da)
         coord = da.coords[name]
-        delta = get_sampling_interval(da, name, cast=False)
         size = stop - first
         # Output `index` sits `index * down - lag` upsampled samples after the
         # start of the run, hence that many minus `start * up` after this chunk.
         shift = first * self.down - self.lag - start * self.up
-        origin = coord.start + self._upsampled(shift, delta)
-        step = self._upsampled(self.down, delta)
+        if coord.isregular():
+            # (numerator, denominator * up) is the exact intermediate
+            # upsampled rate, and (numerator * down, denominator * up) the
+            # exact output rate -- nothing to round to get either.
+            numerator, denominator = coord._sampling_ratio
+            if np.issubdtype(coord.dtype, np.floating):
+                up_numerator, up_denominator = numerator / self.up, 1
+                new_numerator = numerator * self.down / self.up
+                new_denominator = 1
+            else:
+                up_numerator, up_denominator = numerator, int(denominator) * self.up
+                new_numerator, new_denominator = numerator * self.down, up_denominator
+            origin = step_value(
+                coord.start, shift, up_numerator, up_denominator, coord.dtype
+            )
+        else:
+            # No declared rate to inherit; infer one exactly as any other
+            # signal-processing call would (may warn or raise).
+            delta = get_sampling_interval(da, name, cast=False)
+            origin = coord.start + self._upsampled(shift, delta)
         if size <= 1:
             tie_indices, tie_values = [0], [origin]
-            drift = 0 * step
-        elif self.up == 1:
-            # No interpolation: output index k sits, by construction of the
-            # FIR taps (lag is always a multiple of `down`), exactly on input
-            # sample k*down. Deriving the far tie as `origin + (size-1)*step`
-            # — the same arithmetic basis as `step` itself, rather than an
-            # independently rounded second point — makes the two tie values
-            # agree on the step *exactly*, not merely within a jitter budget.
-            last = origin + (size - 1) * step
+        elif coord.isregular():
+            # Derive the far tie from `origin`, at the same upsampled rate
+            # over `(size - 1) * down` upsampled ticks -- one rounding
+            # relative to `origin`, not a second one independently anchored
+            # at `coord.start`, so the two tie values agree as closely as
+            # the coordinate's own resolution allows.
+            last = step_value(
+                origin,
+                (size - 1) * self.down,
+                up_numerator,
+                up_denominator,
+                coord.dtype,
+            )
             tie_indices, tie_values = [0, size - 1], [origin, last]
-            drift = 0 * step
         else:
             last_shift = (stop - 1) * self.down - self.lag - start * self.up
             last = coord.start + self._upsampled(last_shift, delta)
             tie_indices, tie_values = [0, size - 1], [origin, last]
-            drift = abs((last - origin) - (size - 1) * step)
         data = {"tie_indices": tie_indices, "tie_values": tie_values}
         if coord.isregular():
-            # A rate that the coordinate resolution cannot represent exactly
-            # makes the tie values drift from the nominal step; declare that
-            # drift as jitter rather than refusing to call the output regular.
-            tolerance = getattr(coord, "tolerance", None)
-            base = parse_scalar_delta(tolerance, coord.dtype, default_zero=True)
-            data["sampling_interval"] = step
-            data["tolerance"] = base + drift
+            # The tie values round to the coordinate's own tick resolution,
+            # which -- unlike the old truncated-delta laundering -- costs at
+            # most a fraction of a tick, not up to a whole sample period.
+            quantization = quantization_tolerance(
+                tie_indices, tie_values, new_numerator, new_denominator, coord.dtype
+            )
+            data["sampling_numerator"] = new_numerator
+            data["sampling_denominator"] = new_denominator
+            data["tolerance"] = coord.tolerance + quantization
         coords = da.coords.copy()
         coords[name] = Coordinate(data, name)
         # Output `index` is drawn from input sample `index * down // up`.

@@ -10,17 +10,18 @@ import re
 import warnings
 
 import numpy as np
-from numba import njit
 from typing_extensions import override
-from xinterp import forward, inverse
+from xinterp import forward_points, infer_step, inverse_points, simplify_points
 
 from .core import (
     AxisCoordinate,
     Coordinate,
     decode_delta,
+    divide_sampling_ratio,
     encode_delta,
     is_monotonic_increasing,
     parse_data_dim,
+    parse_sampling_ratio,
     parse_scalar_delta,
 )
 
@@ -54,6 +55,9 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         ``sampling_interval`` : scalar, optional
             Nominal sample spacing.  When provided the coordinate is
             *regular* and :meth:`get_sampling_interval` returns it directly.
+            Stored internally as ``sampling_numerator`` / ``sampling_denominator``
+            (an exact, gcd-reduced ratio); either spelling may be passed instead,
+            provided together.
         ``tolerance`` : scalar, optional
             Allowed jitter around ``sampling_interval``.  Checked for
             consistency with the tie points at construction.  Ignored when
@@ -67,9 +71,11 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
     -----
     Regularity is judged on the continuous areas only: a tie-point gap of one
     index (``den == 1``) is a CF discontinuity and carries no sampling-rate
-    information.  A ``sampling_interval`` is valid when, for every continuous
-    segment, the accumulated drift ``|sampling_interval * den - num|`` stays
-    within ``2 * tolerance`` (each tie value may jitter by ±``tolerance``).
+    information.  A ``sampling_interval`` (exactly, its underlying
+    ``numerator / denominator`` pair) is valid when, for every continuous
+    segment, the accumulated drift ``|denominator * num - numerator * den|``
+    stays within ``2 * tolerance * denominator`` (each tie value may jitter
+    by ±``tolerance``).
     A coordinate with no continuous area (e.g. ``tie_indices=[0, 1, 2]``) has no
     inferable spacing, so an explicitly provided one is stored as-is.  Use
     :meth:`simplify` to canonicalise a coordinate and acquire a spacing from
@@ -102,6 +108,8 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         tie_indices = np.asarray(data["tie_indices"])
         tie_values = np.asarray(data["tie_values"], dtype=dtype)
         sampling_interval = data.get("sampling_interval", None)
+        sampling_numerator = data.get("sampling_numerator", None)
+        sampling_denominator = data.get("sampling_denominator", None)
         tolerance = data.get("tolerance", None)
 
         # check shapes
@@ -132,7 +140,9 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         self.dim = dim
 
         # optional regular sampling
-        self._assign_sampling_interval(sampling_interval, tolerance)
+        self._assign_sampling_interval(
+            sampling_interval, sampling_numerator, sampling_denominator, tolerance
+        )
 
     @property
     def tie_indices(self):
@@ -145,9 +155,21 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         return self.data["tie_values"]
 
     @property
+    def _sampling_ratio(self):
+        """``(numerator, denominator)`` pair backing :attr:`sampling_interval`.
+
+        Both are ``None`` together when the coordinate is not regular. This is the
+        one place (besides :func:`~.core.parse_scalar_delta`) that assumes the rate
+        is a single scalar rather than a per-segment array; per-segment intervals
+        are expected later.
+        """
+        return self.data["sampling_numerator"], self.data["sampling_denominator"]
+
+    @property
     def sampling_interval(self):
         """Nominal sample spacing, or ``None`` when the coordinate is not regular."""
-        return self.data["sampling_interval"]
+        numerator, denominator = self._sampling_ratio
+        return divide_sampling_ratio(numerator, denominator, self.dtype)
 
     @property
     def tolerance(self):
@@ -194,6 +216,8 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         match data:
             case {"tie_indices": _, "tie_values": _, **rest} if set(rest) <= {
                 "sampling_interval",
+                "sampling_numerator",
+                "sampling_denominator",
                 "tolerance",
             }:
                 return True
@@ -208,7 +232,7 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
     @override
     def _get_value(self, index):
-        return forward(index, self.tie_indices, self.tie_values)
+        return forward_points(index, self.tie_indices, self.tie_values)
 
     @override
     def _get_indexer(self, value, method=None):
@@ -216,8 +240,17 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             value = np.datetime64(value)
         else:
             value = np.asarray(value)
+        tie_values = self.tie_values
+        # A label at finer datetime resolution than the tie values (e.g. a
+        # millisecond query against a second-resolution axis) would otherwise
+        # be rejected outright; compute in the common, finer resolution
+        # instead of truncating the query.
+        if np.issubdtype(self.dtype, np.datetime64) and value.dtype != self.dtype:
+            common = np.promote_types(self.dtype, value.dtype)
+            tie_values = tie_values.astype(common)
+            value = value.astype(common)
         try:
-            indexer = inverse(value, self.tie_indices, self.tie_values, method)
+            indexer = inverse_points(value, self.tie_indices, tie_values, method)
         except ValueError as e:
             if str(e) == "fp must be strictly increasing":
                 raise ValueError(
@@ -272,9 +305,14 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
             data = {"tie_indices": tie_indices, "tie_values": tie_values}
         if self.sampling_interval is not None:
+            # Scaling the exact numerator by the (integer) step is itself
+            # exact -- no division involved -- unlike the divided-down
+            # `sampling_interval` scalar this used to multiply.
+            numerator, denominator = self._sampling_ratio
             data = {
                 **data,
-                "sampling_interval": self.sampling_interval * step_index,
+                "sampling_numerator": numerator * step_index,
+                "sampling_denominator": denominator,
                 "tolerance": self.tolerance,
             }
         return self.__class__(data, self.dim)
@@ -302,15 +340,30 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         # and ``max(tolerance)`` bounds the union. Reconciling slightly
         # different rates is the job of user-facing routines (see
         # :func:`concat_coords`, which delegates to :meth:`simplify`).
-        if (
-            self.sampling_interval is not None
-            and self.sampling_interval == other.sampling_interval
-        ):
-            data = {
-                **data,
-                "sampling_interval": self.sampling_interval,
-                "tolerance": max(self.tolerance, other.tolerance),
-            }
+        numerator, denominator = self._sampling_ratio
+        other_numerator, other_denominator = other._sampling_ratio
+        if numerator is not None and other_numerator is not None:
+            # Cross-multiply rather than divide: two rates that only agree
+            # once rounded to a single stored value must compare unequal
+            # here. Python ints are arbitrary precision, so this needs no
+            # kernel and cannot overflow however large the (unbounded, per
+            # D2) denominators get.
+            if np.issubdtype(self.dtype, np.datetime64):
+                lhs, rhs = (
+                    int(numerator.astype("i8")),
+                    int(other_numerator.astype("i8")),
+                )
+            elif not np.issubdtype(self.dtype, np.floating):
+                lhs, rhs = int(numerator), int(other_numerator)
+            else:
+                lhs, rhs = numerator, other_numerator
+            if lhs * int(other_denominator) == rhs * int(denominator):
+                data = {
+                    **data,
+                    "sampling_numerator": numerator,
+                    "sampling_denominator": denominator,
+                    "tolerance": max(self.tolerance, other.tolerance),
+                }
         return self.__class__(data, self.dim)
 
     @override
@@ -336,9 +389,15 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             "computational_precision": "64",
         }
         if self.sampling_interval is not None:
-            interp_attrs.update(
-                encode_delta("sampling_interval", self.sampling_interval)
-            )
+            # The numerator, not the divided-down `sampling_interval`: a
+            # denominator of 1 (today's files, and every whole-tick rate)
+            # makes the two identical, so this is byte-for-byte what earlier
+            # versions wrote; a denominator > 1 is what makes the round trip
+            # exact instead of floored.
+            numerator, denominator = self._sampling_ratio
+            interp_attrs.update(encode_delta("sampling_interval", numerator))
+            if denominator != 1:
+                interp_attrs["sampling_interval_denominator"] = int(denominator)
         if self.tolerance is not None:
             interp_attrs.update(encode_delta("tolerance", self.tolerance))
         dataset.update(
@@ -369,8 +428,13 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
                     else {}
                 )
                 if "sampling_interval" in interp_attrs:
-                    data["sampling_interval"] = decode_delta(
+                    # A missing denominator defaults to 1, so files written
+                    # before this round trip existed load unchanged.
+                    data["sampling_numerator"] = decode_delta(
                         "sampling_interval", interp_attrs
+                    )
+                    data["sampling_denominator"] = interp_attrs.get(
+                        "sampling_interval_denominator", 1
                     )
                     data["tolerance"] = decode_delta("tolerance", interp_attrs)
                 coords[coord] = Coordinate(data, dim)
@@ -379,9 +443,13 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
     def __add__(self, other):
         data = {"tie_indices": self.tie_indices, "tie_values": self.tie_values + other}
         if self.sampling_interval is not None:
+            # A translation does not change the rate: pass the exact pair
+            # through unchanged rather than the divided-down scalar.
+            numerator, denominator = self._sampling_ratio
             data = {
                 **data,
-                "sampling_interval": self.sampling_interval,
+                "sampling_numerator": numerator,
+                "sampling_denominator": denominator,
                 "tolerance": self.tolerance,
             }
         return self.__class__(data, self.dim)
@@ -389,9 +457,11 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
     def __sub__(self, other):
         data = {"tie_indices": self.tie_indices, "tie_values": self.tie_values - other}
         if self.sampling_interval is not None:
+            numerator, denominator = self._sampling_ratio
             data = {
                 **data,
-                "sampling_interval": self.sampling_interval,
+                "sampling_numerator": numerator,
+                "sampling_denominator": denominator,
                 "tolerance": self.tolerance,
             }
         return self.__class__(data, self.dim)
@@ -412,41 +482,55 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
     @override
     def get_sampling_interval(self, cast=True):
-        delta = self.sampling_interval
-        if delta is None:
+        numerator, denominator = self._sampling_ratio
+        if numerator is None:
             return None
-        if cast and np.issubdtype(delta.dtype, np.timedelta64):
-            delta = delta / np.timedelta64(1, "s")
-        return delta
+        if cast and np.issubdtype(self.dtype, np.datetime64):
+            # Divide last: converting the exact tick numerator to seconds
+            # before dividing by the denominator avoids rounding to a tick
+            # first, so signal processing receives the exact rate rather
+            # than a representation-truncated one.
+            return (numerator / np.timedelta64(1, "s")) / denominator
+        return divide_sampling_ratio(numerator, denominator, self.dtype)
 
-    def _assign_sampling_interval(self, sampling_interval, tolerance=None):
-        """Parse, validate and store the sampling interval and its tolerance.
+    def _assign_sampling_interval(
+        self,
+        sampling_interval,
+        sampling_numerator,
+        sampling_denominator,
+        tolerance=None,
+    ):
+        """Parse, validate and store the sampling ratio and its tolerance.
 
-        ``None`` clears both; a value is kept only if consistent with the tie
-        points (see :meth:`_is_valid_sampling_interval`).
+        ``None`` clears all three; a value is kept only if consistent with the
+        tie points (see :meth:`_is_valid_sampling_interval`).
         """
-        if sampling_interval is None:
+        numerator, denominator = parse_sampling_ratio(
+            sampling_interval, sampling_numerator, sampling_denominator, self.dtype
+        )
+        if numerator is None:
             if tolerance is not None:
                 raise ValueError(
                     "`tolerance` cannot be set without a `sampling_interval`"
                 )
-            self.data["sampling_interval"] = None
+            self.data["sampling_numerator"] = None
+            self.data["sampling_denominator"] = None
             self.data["tolerance"] = None
             return
 
-        sampling_interval = parse_scalar_delta(sampling_interval, self.dtype)
         tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
 
-        # Normalise datetime deltas to the tie-value resolution so an in-memory
+        # Normalise the tolerance to the tie-value resolution so an in-memory
         # coordinate matches the one read back after serialisation (which always
         # encodes timedeltas at the coordinate's datetime resolution).
+        # `parse_sampling_ratio` already does the same for `numerator`.
         if np.issubdtype(self.dtype, np.datetime64):
             unit = np.datetime_data(self.dtype)[0]
-            sampling_interval = sampling_interval.astype(f"timedelta64[{unit}]")
             tolerance = tolerance.astype(f"timedelta64[{unit}]")
 
-        if self._is_valid_sampling_interval(sampling_interval, tolerance):
-            self.data["sampling_interval"] = sampling_interval
+        if self._is_valid_sampling_interval(numerator, denominator, tolerance):
+            self.data["sampling_numerator"] = numerator
+            self.data["sampling_denominator"] = denominator
             self.data["tolerance"] = tolerance
         else:
             raise ValueError(
@@ -454,45 +538,37 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
                 "the `tie_indices` and `tie_values`"
             )
 
-    def _is_valid_sampling_interval(self, sampling_interval, tolerance):
-        """Whether *sampling_interval* fits every continuous area within *tolerance*."""
-        num, den = self._continuous_segments()
-        # Bound the per-segment accumulated drift: each tie value may jitter by
-        # ±tolerance, so a segment span may be off by up to 2 * tolerance. With no
-        # continuous area `np.all([])` is vacuously True, accepting an explicit
-        # spacing as metadata (e.g. a two-tie-point block). Datetime bounds use
-        # integer division and are only accurate to the dtype resolution.
-        dmin = (num - 2 * tolerance) / den
-        dmax = (num + 2 * tolerance) / den
-        valid = np.all((dmin <= sampling_interval) & (sampling_interval <= dmax))
-        return bool(valid)
+    def _is_valid_sampling_interval(self, numerator, denominator, tolerance):
+        """Whether the exact rate fits every continuous area within *tolerance*.
 
-    def _minimal_tolerance(self, sampling_interval):
-        """Smallest tolerance for which *sampling_interval* validates, or ``None``.
-
-        Private helper behind :meth:`simplify`. Validity bounds the accumulated
-        drift of every continuous segment by ``2 * tolerance``, so the tightest
-        admissible value is half the worst drift, rounded up at the dtype
-        resolution. Returns ``None`` when even that value fails to validate,
-        which callers treat as "this spacing cannot be declared".
+        Judged without dividing: cross-multiplies rather than computing
+        ``numerator / denominator`` first, so validity is ``|denominator *
+        num_seg - numerator * den_seg| <= 2 * tolerance * denominator`` for
+        every continuous segment -- the old ``dmin <= sampling_interval <=
+        dmax`` form divided first and so hid its own rounding (F2). With no
+        continuous area `np.all([])` is vacuously True, accepting an explicit
+        spacing as metadata (e.g. a two-tie-point block).
         """
         num, den = self._continuous_segments()
         if num.size == 0:
-            # No continuous area: any tolerance is vacuously valid.
-            return parse_scalar_delta(None, self.dtype, default_zero=True)
-        drift = np.abs(num - sampling_interval * den).max()
-        if np.issubdtype(self.dtype, np.datetime64):
-            # Integer resolution: round up so the halved drift is not truncated.
-            unit = np.datetime_data(self.dtype)[0]
-            counts = int(drift / np.timedelta64(1, unit))
-            tolerance = np.timedelta64(-(-counts // 2), unit)
-        else:
-            # A few ULPs of slack so re-validation cannot reject the value we
-            # just derived from the same quantities (as in :meth:`_infer_regular`).
-            tolerance = drift / 2 + 4 * np.spacing(np.abs(num).max())
-        if not self._is_valid_sampling_interval(sampling_interval, tolerance):
-            return None  # pragma: no cover
-        return tolerance
+            return True
+        denominator = int(denominator)
+        if not np.issubdtype(self.dtype, np.floating):
+            # Exact dtypes: work in Python ints (arbitrary precision) so the
+            # cross-multiply cannot overflow however large the segment span or
+            # the (unbounded, per D2) denominator get.
+            if np.issubdtype(self.dtype, np.datetime64):
+                num = num.view("i8")
+                numerator = int(numerator.view("i8"))
+                tolerance = int(tolerance.view("i8"))
+            else:
+                numerator = int(numerator)
+                tolerance = int(tolerance)
+            num = num.astype(object)
+            den = den.astype(object)
+        drift = denominator * num - numerator * den
+        bound = 2 * tolerance * denominator
+        return bool(np.all(np.abs(drift) <= bound))
 
     def _infer_regular(self):
         """
@@ -505,15 +581,20 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
         Returns
         -------
-        sampling_interval : scalar or None
-            Spacing minimising ``max_i |sampling_interval * den_i - num_i|``
-            over the continuous segments. ``None`` when no continuous segment
-            is available (every tie-point gap is a ``den == 1`` CF
+        numerator : scalar or None
+            Exact-rate numerator minimising
+            ``max_i |(numerator / denominator) * den_i - num_i|`` over the
+            continuous segments. ``None`` when no continuous segment is
+            available (every tie-point gap is a ``den == 1`` CF
             discontinuity).
+        denominator : int or None
+            Exact-rate denominator paired with `numerator`. ``None`` exactly
+            when `numerator` is ``None``. Always 1 for float ties (D2: a float
+            axis has no tick for a denominator to refer to).
         tolerance : scalar or None
-            Half the worst residual drift at ``sampling_interval``, plus a few
-            ULPs so the value stays valid under re-validation. ``None`` when
-            ``sampling_interval`` is ``None``.
+            Half the worst residual drift at ``numerator / denominator``, plus
+            a few ULPs so the value stays valid under re-validation. ``None``
+            when `numerator` is ``None``.
 
         Notes
         -----
@@ -539,32 +620,44 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             si* = (num_i + num_j) / (den_i + den_j)
 
         That pair is found in ``O(n log n)`` via :func:`_chebyshev_center_pair`
-        rather than scanning all pairs. The matching tolerance is half the
-        worst drift, since validity compares the drift against
+        (for float ties) or via ``xinterp.infer_step`` (for integer and
+        datetime ties, in exact rational arithmetic). The matching tolerance
+        is half the worst drift, since validity compares the drift against
         ``2 * tolerance``.
         """
         num, den = self._continuous_segments()
         if num.size == 0:
-            return None, None
-        # Float seconds for datetime axes pick the binding pair without
-        # integer/timedelta overflow; the final values stay in the native dtype.
+            return None, None, None
+        if np.issubdtype(num.dtype, np.floating):
+            # xinterp.infer_step needs integer or datetime ties; float axes
+            # (distance, a few thousand channels at most) are too small to
+            # need a compiled kernel for the same Chebyshev-centre search.
+            # A float axis has no tick, so the denominator is always 1 (D2).
+            pos_idx, neg_idx = _chebyshev_center_pair(num, den.astype(float))
+            numerator = (num[pos_idx] + num[neg_idx]) / (den[pos_idx] + den[neg_idx])
+            drift = np.abs(numerator * den - num).max()
+            # A few ULPs of slack so re-validation cannot reject the value
+            # just derived from the same quantities.
+            tolerance = drift / 2 + 4 * np.spacing(np.abs(num).max())
+            return numerator, np.int64(1), tolerance
+        # Integer or datetime: reconstruct a synthetic continuous tie sequence
+        # from the (num, den) segments -- discontinuities (den == 1) carry no
+        # rate information and must stay excluded -- and let infer_step find
+        # the exact length-weighted Chebyshev centre in integer arithmetic.
         is_datetime = np.issubdtype(num.dtype, np.timedelta64)
-        num_seconds = num / np.timedelta64(1, "s") if is_datetime else num.astype(float)
-        pos_idx, neg_idx = _chebyshev_center_pair(num_seconds, den.astype(float))
-        sampling_interval = (num[pos_idx] + num[neg_idx]) / (
-            den[pos_idx] + den[neg_idx]
-        )
-        si_seconds = (
-            sampling_interval / np.timedelta64(1, "s")
-            if is_datetime
-            else float(sampling_interval)
-        )
-        drift = np.abs(si_seconds * den - num_seconds).max()
-        # A few ULPs of slack so re-validation cannot reject the returned pair.
-        tolerance = drift / 2 + 4 * np.spacing(np.abs(num_seconds).max())
+        x = np.concatenate(([0], np.cumsum(den))).astype("u8")
+        unit = np.datetime_data(num.dtype)[0] if is_datetime else None
+        f0 = np.timedelta64(0, unit) if is_datetime else np.zeros((), dtype=num.dtype)
+        tie_values = np.concatenate(([f0], f0 + np.cumsum(num)))
+        n, d, worst = infer_step(x, tie_values)
+        half = -(-int(worst) // 2)  # ceil(worst / 2), exact integer arithmetic
         if is_datetime:
-            tolerance = np.timedelta64(int(np.ceil(tolerance * 1e9)), "ns")
-        return sampling_interval, tolerance
+            numerator = np.timedelta64(int(n), unit)
+            tolerance = np.timedelta64(half, unit).astype("timedelta64[ns]")
+        else:
+            numerator = num.dtype.type(n)
+            tolerance = half
+        return numerator, np.int64(d), tolerance
 
     @override
     def to_regular(self, sampling_interval=None, tolerance=None):
@@ -577,15 +670,25 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         points within *tolerance*. See :meth:`AxisCoordinate.to_regular` for
         the parameter contract.
         """
-        # Default each unspecified argument to the stored regular config; an
-        # explicit value still overrides it.
-        if sampling_interval is None:
-            sampling_interval = self.sampling_interval
         if tolerance is None:
             tolerance = self.tolerance
-        if sampling_interval is None:
-            sampling_interval, _ = self._infer_regular()
-        if sampling_interval is None:
+        if sampling_interval is not None:
+            # Explicit spacing: the caller's own scalar, stored as given.
+            data = {
+                "tie_indices": self.tie_indices,
+                "tie_values": self.tie_values,
+                "sampling_interval": sampling_interval,
+                "tolerance": tolerance,
+            }
+            return self.__class__(data, self.dim)
+        # No explicit spacing: keep the coordinate's own exact ratio if it is
+        # already regular, else infer one -- both as an exact
+        # (numerator, denominator) pair, never the divided-down scalar, so a
+        # fractional-tick rate survives (see :meth:`_infer_regular`).
+        numerator, denominator = self._sampling_ratio
+        if numerator is None:
+            numerator, denominator, _ = self._infer_regular()
+        if numerator is None:
             raise ValueError(
                 "cannot infer a sampling interval: the coordinate has no "
                 "continuous area; pass `sampling_interval` explicitly"
@@ -593,7 +696,8 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         data = {
             "tie_indices": self.tie_indices,
             "tie_values": self.tie_values,
-            "sampling_interval": sampling_interval,
+            "sampling_numerator": numerator,
+            "sampling_denominator": denominator,
             "tolerance": tolerance,
         }
         return self.__class__(data, self.dim)
@@ -616,9 +720,13 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         *tolerance* (the internal Chebyshev fit's worst residual stays inside the
         budget). The promotion is per-continuous-segment and sign-agnostic, so
         two same-rate segments joined by a CF overlap are still described by one
-        spacing. An already-regular coordinate keeps its spacing regardless of
-        *regularize* and just widens its stored tolerance to absorb any jump
-        fused by the reduce stage.
+        spacing. An already-regular coordinate keeps its spacing only while the
+        surviving tie points still honour it within the coordinate's own
+        declared tolerance: tolerance means instrumental jitter and nothing
+        else, is set once at construction, and is never widened afterwards
+        (D3) -- a reduce pass whose fused jump exceeds the declared budget
+        drops the coordinate's regularity rather than stretching the number
+        that describes it.
 
         See :meth:`Coordinate.simplify` for the parameter contract.
         """
@@ -636,45 +744,30 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             tie_indices, tie_values = self.tie_indices, self.tie_values
         data = {"tie_indices": tie_indices, "tie_values": tie_values}
         if self.sampling_interval is not None:
-            # Already regular: keep the spacing. A reduce pass may fuse a soft
-            # discontinuity into a ramp whose absorbed jump exceeds the declared
-            # jitter; keep the declared tolerance when it still validates and
-            # only widen by the spent budget when it does not, so a lossless or
-            # seam-only reduction round-trips the exact regular metadata.
+            numerator, denominator = self._sampling_ratio
             reduced = self.__class__(data, self.dim)
-            if reduce and not reduced._is_valid_sampling_interval(
-                self.sampling_interval, self.tolerance
+            if not reduce or reduced._is_valid_sampling_interval(
+                numerator, denominator, self.tolerance
             ):
-                # Reduction fused a discontinuity, so the surviving tie points
-                # now drift further from the nominal grid than the declared
-                # jitter allows. Widen to the least value that describes them:
-                # the budget bounds how far *values* may move, not how much
-                # drift fusing a seam exposes, so it is no bound at all here.
-                new_tolerance = reduced._minimal_tolerance(self.sampling_interval)
-                if new_tolerance is None:  # pragma: no cover
-                    # Numerical safety net: the spacing cannot be declared for
-                    # the reduced tie points, so stay irregular rather than let
-                    # the constructor raise.
-                    return reduced
-            else:
-                new_tolerance = self.tolerance
-            data = {
-                **data,
-                "sampling_interval": self.sampling_interval,
-                "tolerance": new_tolerance,
-            }
+                data = {
+                    **data,
+                    "sampling_numerator": numerator,
+                    "sampling_denominator": denominator,
+                    "tolerance": self.tolerance,
+                }
             return self.__class__(data, self.dim)
         # Otherwise try to promote: infer the best spacing on the surviving
         # continuous segments and keep it only if it validates within the budget.
         if regularize:
             reduced = self.__class__(data, self.dim)
-            sampling_interval, _ = reduced._infer_regular()
-            if sampling_interval is not None and reduced._is_valid_sampling_interval(
-                sampling_interval, tolerance
+            numerator, denominator, _ = reduced._infer_regular()
+            if numerator is not None and reduced._is_valid_sampling_interval(
+                numerator, denominator, tolerance
             ):
                 data = {
                     **data,
-                    "sampling_interval": sampling_interval,
+                    "sampling_numerator": numerator,
+                    "sampling_denominator": denominator,
                     "tolerance": tolerance,
                 }
         return self.__class__(data, self.dim)
@@ -761,7 +854,7 @@ def _epsilon_ratio(dtype, epsilon):
     Express *epsilon* as an exact rational number of storage ticks.
 
     An :class:`InterpCoordinate` reconstructs values as ``round(exact chord)``
-    at the storage resolution (:func:`xinterp.forward`), so a tie point can sit
+    at the storage resolution (:func:`xinterp.forward_points`), so a tie point can sit
     up to half a tick off the exact line and still be the only representable
     value there.  Collinearity must therefore be judged with half a tick of
     slack, which is the ``+ 1`` and ``* 2`` below: the returned pair is
@@ -812,7 +905,9 @@ def _sleeve(x, y, epsilon):
     The walk keeps a point as soon as the chord to it leaves the running cone,
     which is conservative: a curve that some single chord would fit within
     *epsilon* may still keep interior points. It never moves or drops a point
-    the budget does not allow, only occasionally fewer than it could.
+    the budget does not allow, only occasionally fewer than it could. That is
+    why the fast path below is not redundant with the walk: it is a global
+    test the greedy walk cannot always reach on its own.
 
     Parameters
     ----------
@@ -831,126 +926,17 @@ def _sleeve(x, y, epsilon):
     if len(x) < 3:
         return x, y
     # Fast path: one chord spans the whole curve (the fully continuous case,
-    # resolved vectorized). `forward` reconstructs exactly what the reduced
-    # coordinate would return, so this measures the real shift and needs no
-    # allowance of its own -- and being a global test it also catches curves
-    # the incremental walk below is too conservative to collapse.
-    deviation = np.abs(y - forward(x, x[[0, -1]], y[[0, -1]]))
+    # resolved vectorized). `forward_points` reconstructs exactly what the
+    # reduced coordinate would return, so this measures the real shift and
+    # needs no allowance of its own -- and being a global test it also
+    # catches curves the incremental walk below is too conservative to
+    # collapse.
+    deviation = np.abs(y - forward_points(x, x[[0, -1]], y[[0, -1]]))
     if deviation.max() <= epsilon:
         return x[[0, -1]], y[[0, -1]]
     en, ed = _epsilon_ratio(y.dtype, epsilon)
-    values = y.view("i8") if np.issubdtype(y.dtype, np.datetime64) else y
-    keep = _sleeve_walk(x, values, en, ed)
+    keep = simplify_points(x, y, en, ed)
     return x[keep], y[keep]
-
-
-def _sleeve_walk(positions, values, en, ed):
-    """
-    Walk the sleeve over *(positions, values)*, epsilon being ``en / ed``.
-
-    Dispatches between a compiled machine-integer kernel and an
-    arbitrary-precision Python loop. The cone compares slopes by
-    cross-multiplication, so its widest intermediate is
-    ``(ed * span_values + en) * (ed * span_positions)``; the kernel is used
-    only when that provably fits in an ``int64``, which shearing the values by
-    their integer rate (a transform that leaves vertical deviations, hence the
-    cone, untouched) makes the common case.
-    """
-    if np.issubdtype(values.dtype, np.integer):
-        span_x = int(positions[-1]) - int(positions[0])
-        sheared = _shear(positions, values, span_x)
-        if sheared is not None:
-            span_y = int(sheared.max()) - int(sheared.min())
-            if (ed * span_y + en) * ed * span_x < 2**63:
-                return _sleeve_kernel(positions, sheared, en, ed)
-    return _sleeve_loop(positions.tolist(), values.tolist(), en, ed)
-
-
-def _shear(positions, values, span_x):
-    """
-    Subtract the integer part of the curve's overall rate from *values*.
-
-    ``y - m * x`` is a shear: it preserves vertical distances exactly, so the
-    sleeve is unchanged, but it bounds the values by the *index* span rather
-    than the *value* span — the difference between a 35-bit and an 80-bit
-    cross-product on a million datetime tie points. Returns ``None`` when the
-    shear itself would not fit in an ``int64``, leaving the caller on the
-    arbitrary-precision path.
-    """
-    first, last = int(values[0]), int(values[-1])
-    rate = (last - first) // span_x
-    reach = abs(rate) * int(positions[-1]) + max(abs(int(values.min())), abs(last))
-    if reach >= 2**63:
-        return None
-    return values - rate * positions
-
-
-@njit(cache=True)
-def _sleeve_kernel(positions, values, en, ed):  # pragma: no cover
-    """Sleeve walk in machine arithmetic; see :func:`_sleeve_walk` for the bound."""
-    n = positions.size
-    keep = np.zeros(n, dtype=np.bool_)
-    keep[0] = True
-    keep[n - 1] = True
-    ax = positions[0]
-    ay = values[0]
-    bounded = False
-    lo_num = lo_den = hi_num = hi_den = ed  # placeholder, typed like the cone
-    for i in range(1, n):
-        dx = positions[i] - ax
-        dy = values[i] - ay
-        inside = not bounded or (
-            lo_num * dx <= dy * lo_den and dy * hi_den <= hi_num * dx
-        )
-        if not inside:
-            keep[i - 1] = True
-            ax = positions[i - 1]
-            ay = values[i - 1]
-            dx = positions[i] - ax
-            dy = values[i] - ay
-            bounded = False
-        num_lo = ed * dy - en
-        num_hi = ed * dy + en
-        den = ed * dx
-        if not bounded:
-            lo_num, lo_den, hi_num, hi_den = num_lo, den, num_hi, den
-            bounded = True
-        else:
-            if num_lo * lo_den > lo_num * den:
-                lo_num, lo_den = num_lo, den
-            if num_hi * hi_den < hi_num * den:
-                hi_num, hi_den = num_hi, den
-    return keep
-
-
-def _sleeve_loop(positions, values, en, ed):
-    """Sleeve walk in Python integers, exact whatever the magnitudes."""
-    keep = np.zeros(len(positions), dtype=bool)
-    keep[0] = keep[-1] = True
-    ax, ay = positions[0], values[0]
-    # the sleeve: feasible slope interval from the anchor, as exact
-    # (numerator, positive denominator) rationals; None while unbounded
-    lo = hi = None
-    for i in range(1, len(positions)):
-        dx = positions[i] - ax
-        dy = values[i] - ay
-        if not (lo is None or (lo[0] * dx <= dy * lo[1] and dy * hi[1] <= hi[0] * dx)):
-            keep[i - 1] = True
-            ax, ay = positions[i - 1], values[i - 1]
-            dx = positions[i] - ax
-            dy = values[i] - ay
-            lo = None
-        # the chord anchor -> i passes within epsilon of every dropped point;
-        # tighten the sleeve with this point's own cone
-        num_lo, num_hi, den = ed * dy - en, ed * dy + en, ed * dx
-        if lo is None:
-            lo, hi = (num_lo, den), (num_hi, den)
-        else:
-            if num_lo * lo[1] > lo[0] * den:
-                lo = (num_lo, den)
-            if num_hi * hi[1] < hi[0] * den:
-                hi = (num_hi, den)
-    return keep
 
 
 def _chebyshev_center_pair(num, den):
@@ -987,9 +973,14 @@ def _chebyshev_center_pair(num, den):
     return _upper_envelope_min_pair(slopes, intercepts, idx, order)
 
 
-@njit(cache=True)
-def _upper_envelope_min_pair(slopes, intercepts, idx, order):  # pragma: no cover
-    """Binding (positive, negative) line indices at the upper-envelope minimum."""
+def _upper_envelope_min_pair(slopes, intercepts, idx, order):
+    """Binding (positive, negative) line indices at the upper-envelope minimum.
+
+    Plain Python, not compiled: only reached for float ``InterpCoordinate``
+    axes (``xinterp.infer_step`` handles integer and datetime ties in exact
+    arithmetic instead), which are distance axes of a few thousand channels
+    at most -- far too small to need a JIT kernel.
+    """
     n = order.size
     hull_s = np.empty(n, dtype=slopes.dtype)
     hull_b = np.empty(n, dtype=intercepts.dtype)

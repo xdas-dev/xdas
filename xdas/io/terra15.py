@@ -66,7 +66,8 @@ class Terra15Engine(Engine, name="terra15"):
         time = {
             "tie_indices": [0, nt - 1],
             "tie_values": [ti, tf],
-            "sampling_interval": (tf - ti) / (nt - 1),
+            "sampling_numerator": tf - ti,
+            "sampling_denominator": nt - 1,
         }
         distance = Coordinate[self.ctype["distance"]].from_block(
             d0, nd, dx, dim="distance"

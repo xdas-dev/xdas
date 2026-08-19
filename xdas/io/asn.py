@@ -272,7 +272,8 @@ class ZMQSubscriber(ZMQEndpoint):
         self.distance = {
             "tie_indices": [0, header["nChannels"] - 1],
             "tie_values": [di, de],
-            "sampling_interval": (de - di) / (header["nChannels"] - 1),
+            "sampling_numerator": de - di,
+            "sampling_denominator": header["nChannels"] - 1,
         }
         self.delta = float_to_timedelta(header["dt"], header["dtUnit"])
 

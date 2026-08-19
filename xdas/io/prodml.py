@@ -81,7 +81,8 @@ class ProdML(Engine, name="prodml", aliases=["optasense", "sintela"]):
         time = {
             "tie_indices": [0, nt - 1],
             "tie_values": [tstart, tend],
-            "sampling_interval": (tend - tstart) / (nt - 1),
+            "sampling_numerator": tend - tstart,
+            "sampling_denominator": nt - 1,
         }
 
         # distance
