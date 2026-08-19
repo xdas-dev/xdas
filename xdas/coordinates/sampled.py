@@ -9,7 +9,7 @@ import warnings
 
 import numpy as np
 from typing_extensions import override
-from xinterp import simplify_step
+from xinterp import deviation_step, forward_step, inverse_step, simplify_step
 
 from .core import (
     UNITS_TO_CODE,
@@ -234,18 +234,118 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
         # only, whatever the sign of the interval.
         if self.empty:
             return True
-        zero = self.sampling_interval - self.sampling_interval
-        if np.any(self.tie_lengths > 1) and not self.sampling_interval > zero:
+        numerator, _ = self._sampling_ratio
+        # the sign of the ratio is the sign of the numerator alone (the
+        # denominator is always strictly positive), so this avoids the
+        # exact-dtype floor division in `sampling_interval` rounding a small
+        # positive fraction down to zero and flipping the verdict
+        if np.any(self.tie_lengths > 1) and not numerator > numerator - numerator:
             return False
         _, deltas = self._split_candidates()
+        zero = self.sampling_interval - self.sampling_interval
         return bool(np.all(deltas + self.sampling_interval > zero))
+
+    def _step_rate(self):
+        """``(num, den)`` lists as consumed by the xinterp step kernels.
+
+        Float axes have no exact rate (D2): xinterp's float path takes the
+        step itself as ``num`` and requires ``den == 1``, which is always the
+        case here (Phase A forces a float denominator to 1). Integer and
+        datetime axes pass the exact tick ratio.
+        """
+        numerator, denominator = self._sampling_ratio
+        if np.issubdtype(self.dtype, np.floating):
+            return [float(numerator)], [1]
+        ticks = (
+            int(numerator.astype("i8"))
+            if np.issubdtype(self.dtype, np.datetime64)
+            else int(numerator)
+        )
+        return [ticks], [int(denominator)]
 
     @override
     def _get_value(self, index):
-        reference = np.searchsorted(self.tie_indices, index, side="right") - 1
-        return self.tie_values[reference] + (
-            (index - self.tie_indices[reference]) * self.sampling_interval
-        )
+        if np.size(index) == 0:
+            # nothing to evaluate: skip straight past forward_step, which
+            # (like `self.tie_values[-1]` just below) needs at least one
+            # real tie point even when there is nothing to look up
+            return np.empty(np.shape(index), dtype=self.dtype)
+        # each block is its own, independently anchored piece: extend the
+        # tie points with a final boundary at `len(self)` so xinterp's
+        # boundary-pair model (piece i spans tie_indices[i]:tie_indices[i+1])
+        # lines up with our blocks, one piece per block. The appended value
+        # is never evaluated -- valid indices stop one tick short of it.
+        tie_indices = np.append(self.tie_indices, len(self))
+        tie_values = np.append(self.tie_values, self.tie_values[-1])
+        num, den = self._step_rate()
+        return forward_step(index, tie_indices, tie_values, num, den)
+
+    def _resolve_offset(self, value, reference, method):
+        """Within-block offset for each already-resolved `reference` block.
+
+        `reference` (from the overlap/gap dance above) may point to
+        different blocks for different elements of `value`, and each block
+        has its own anchor -- so this resolves one block at a time, over the
+        elements referring to it, via `inverse_step` on that block's own
+        two boundary points (start, end). A single-sample block has no step
+        to invert; it is resolved directly against the method's semantics.
+        """
+        scalar = np.ndim(reference) == 0
+        value = np.atleast_1d(value)
+        reference = np.atleast_1d(reference)
+
+        numerator, denominator = self._sampling_ratio
+        is_float = np.issubdtype(self.dtype, np.floating)
+        is_datetime = np.issubdtype(self.dtype, np.datetime64)
+        if is_datetime:
+            # a query value may carry a finer datetime64 resolution than the
+            # axis itself (e.g. a millisecond timestamp against a
+            # second-rate axis); `inverse_step` truncates `f` down to
+            # `tie_values.dtype` internally, which would silently drop the
+            # sub-tick remainder, so widen everything to their common
+            # (always exact, never lossy) resolution first
+            common_dtype = np.result_type(value.dtype, self.dtype)
+            scale = int(
+                np.timedelta64(1, np.datetime_data(self.dtype)[0])
+                .astype(f"timedelta64[{np.datetime_data(common_dtype)[0]}]")
+                .astype("i8")
+            )
+            value = value.astype(common_dtype)
+            num = [int(numerator.astype("i8")) * scale]
+            den = [int(denominator)]
+        elif is_float:
+            num, den = [float(numerator)], [1]
+        else:
+            num, den = [int(numerator)], [int(denominator)]
+
+        offset = np.empty(reference.shape, dtype="int64")
+        for seg in np.unique(reference):
+            mask = reference == seg
+            length = int(self.tie_lengths[seg])
+            start = self.tie_values[seg]
+            local_value = value[mask]
+            if length == 1:
+                match method:
+                    case None:
+                        bad = local_value != start
+                    case "ffill":
+                        bad = local_value < start
+                    case "bfill":
+                        bad = local_value > start
+                    case _:  # "nearest"
+                        bad = np.zeros(local_value.shape, dtype=bool)
+                if np.any(bad):
+                    raise KeyError("index not found")
+                offset[mask] = 0
+                continue
+            end = self._get_value(self.tie_indices[seg] + length - 1)
+            if is_datetime:
+                start = start.astype(common_dtype)
+                end = end.astype(common_dtype)
+            offset[mask] = inverse_step(
+                local_value, [0, length - 1], [start, end], num, den, method=method
+            )
+        return offset[0] if scalar else offset
 
     @override
     def _get_indexer(self, value, method=None):
@@ -264,18 +364,14 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
 
         # overlaps
         before = np.maximum(reference - 1, 0)
-        end = (
-            self.tie_values[before]
-            + (self.tie_lengths[before] - 1) * self.sampling_interval
-        )
+        end = self._get_value(self.tie_indices[before] + self.tie_lengths[before] - 1)
         if np.any((reference > 0) & (value <= end)):
             raise KeyError("value is in an overlap region")
 
         # gap
         after = np.minimum(reference + 1, len(self.tie_values) - 1)
-        end = (
-            self.tie_values[reference]
-            + (self.tie_lengths[reference] - 1) * self.sampling_interval
+        end = self._get_value(
+            self.tie_indices[reference] + self.tie_lengths[reference] - 1
         )
         match method:
             case "nearest":
@@ -293,30 +389,7 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
                     "method must be one of `None`, 'nearest', 'ffill', or 'bfill'"
                 )
 
-        offset = (value - self.tie_values[reference]) / self.sampling_interval
-
-        match method:  # pragma: no branch
-            case None:
-                if np.any(
-                    (offset % 1 != 0)
-                    | (offset < 0)
-                    | (offset >= self.tie_lengths[reference])
-                ):
-                    raise KeyError("index not found")
-                offset = offset.astype(int)
-            case "nearest":
-                offset = np.round(offset).astype(int)
-                offset = np.clip(offset, 0, self.tie_lengths[reference] - 1)
-            case "ffill":
-                offset = np.floor(offset).astype(int)
-                if np.any(offset < 0):
-                    raise KeyError("index not found")
-                offset = np.minimum(offset, self.tie_lengths[reference] - 1)
-            case "bfill":  # pragma: no branch
-                offset = np.ceil(offset).astype(int)
-                if np.any(offset > self.tie_lengths[reference] - 1):
-                    raise KeyError("index not found")
-                offset = np.maximum(offset, 0)
+        offset = self._resolve_offset(value, reference, method)
         return self.tie_indices[reference] + offset
 
     @override
@@ -338,16 +411,22 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
         lo = lo[mask]
         hi = hi[mask]
 
-        # compute new tie values, tie lengths and sampling interval
-        tie_values = self.tie_values[mask] + lo * self.sampling_interval
+        # compute new tie values, tie lengths and sampling interval. The new
+        # anchor is read straight off the parent via `_get_value`, so it is
+        # bit-identical to what the parent reports at that same global index
+        # (D3): only samples *after* the anchor, re-stepped from a fresh
+        # local anchor, can land up to a tick away from a full re-derivation
+        # against the parent -- accepted as sub-resolution, per D3.
+        tie_values = self._get_value(self.tie_indices[mask] + lo)
         tie_lengths = (hi - lo) // step
-        sampling_interval = self.sampling_interval * step
+        numerator, denominator = self._sampling_ratio
 
         # build new coordinate
         data = {
             "tie_values": tie_values,
             "tie_lengths": tie_lengths,
-            "sampling_interval": sampling_interval,
+            "sampling_numerator": numerator * step,
+            "sampling_denominator": denominator,
         }
         return self.__class__(data, self.dim)
 
@@ -363,17 +442,30 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
             return self
         if not self.dtype == other.dtype:
             raise ValueError("cannot concatenate coordinate with different dtype")
-        if not self.sampling_interval == other.sampling_interval:
+        n1, d1 = self._sampling_ratio
+        n2, d2 = other._sampling_ratio
+        # cross-multiply rather than divide: two rates that only agree once
+        # rounded to a single stored value (F3) must compare unequal here.
+        # Python ints are arbitrary precision, so this needs no kernel and
+        # cannot overflow however large the (unbounded, per D2) denominators
+        # get.
+        if np.issubdtype(self.dtype, np.datetime64):
+            n1, n2 = int(n1.astype("i8")), int(n2.astype("i8"))
+        elif not np.issubdtype(self.dtype, np.floating):
+            n1, n2 = int(n1), int(n2)
+        if not n1 * int(d2) == n2 * int(d1):
             raise ValueError(
                 "cannot concatenate coordinate with different sampling intervals"
             )
         tie_values = np.concatenate([self.tie_values, other.tie_values])
         tie_lengths = np.concatenate([self.tie_lengths, other.tie_lengths])
+        numerator, denominator = self._sampling_ratio
         return self.__class__(
             {
                 "tie_values": tie_values,
                 "tie_lengths": tie_lengths,
-                "sampling_interval": self.sampling_interval,
+                "sampling_numerator": numerator,
+                "sampling_denominator": denominator,
             },
             self.dim,
         )
@@ -447,12 +539,22 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
                 coords[coord] = Coordinate(data, dim)
         return coords
 
+    def _ratio_data(self):
+        """Rate entries for a fresh ``data`` dict.
+
+        Preserves the exact ``sampling_numerator``/``sampling_denominator``
+        pair rather than rebuilding through the lossy, already-divided
+        ``sampling_interval`` spelling.
+        """
+        numerator, denominator = self._sampling_ratio
+        return {"sampling_numerator": numerator, "sampling_denominator": denominator}
+
     def __add__(self, other):
         return self.__class__(
             {
                 "tie_values": self.tie_values + other,
                 "tie_lengths": self.tie_lengths,
-                "sampling_interval": self.sampling_interval,
+                **self._ratio_data(),
             },
             self.dim,
         )
@@ -462,7 +564,7 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
             {
                 "tie_values": self.tie_values - other,
                 "tie_lengths": self.tie_lengths,
-                "sampling_interval": self.sampling_interval,
+                **self._ratio_data(),
             },
             self.dim,
         )
@@ -529,6 +631,7 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
         if tolerance is False or not reduce:
             return self.copy()
         tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
+        numerator, denominator = self._sampling_ratio
         if np.issubdtype(self.dtype, np.floating):
             tie_values = [self.tie_values[0]]
             tie_lengths = [self.tie_lengths[0]]
@@ -546,23 +649,21 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
         else:
             is_datetime = np.issubdtype(self.dtype, np.datetime64)
             unit = np.datetime_data(self.dtype)[0] if is_datetime else None
-            # sampling_interval and tolerance may carry a coarser or finer
-            # timedelta64 unit than tie_values; align everything to the
-            # tie values' own unit before dropping to raw integer ticks.
+            # tolerance may carry a coarser or finer timedelta64 unit than
+            # tie_values; align it before dropping to raw integer ticks. The
+            # rate itself is passed as the exact (numerator, denominator)
+            # pair -- not the possibly-floored `sampling_interval` -- so a
+            # fractional-tick rate does not silently launder here (D3).
             td_dtype = f"timedelta64[{unit}]" if is_datetime else None
             tie_values_ticks = (
                 self.tie_values.astype("i8") if is_datetime else self.tie_values
             )
-            step = int(
-                self.sampling_interval.astype(td_dtype).astype("i8")
-                if is_datetime
-                else self.sampling_interval
-            )
+            num, den = self._step_rate()
             tol_ticks = int(
                 tolerance.astype(td_dtype).astype("i8") if is_datetime else tolerance
             )
             keep, fused = simplify_step(
-                tie_values_ticks, self.tie_lengths, [step], [1], tol_ticks
+                tie_values_ticks, self.tie_lengths, num, den, tol_ticks
             )
             tie_lengths = np.add.reduceat(self.tie_lengths, np.flatnonzero(keep))
             tie_values = fused.astype(f"M8[{unit}]") if is_datetime else fused
@@ -570,14 +671,30 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
             {
                 "tie_values": tie_values,
                 "tie_lengths": tie_lengths,
-                "sampling_interval": self.sampling_interval,
+                "sampling_numerator": numerator,
+                "sampling_denominator": denominator,
             },
             self.dim,
         )
 
     @override
     def _split_candidates(self):
-        deltas = self.tie_values[1:] - (
-            self.tie_values[:-1] + self.sampling_interval * self.tie_lengths[:-1]
-        )
+        if np.issubdtype(self.dtype, np.floating):
+            # no exact rate to protect (D2): a float axis' denominator is
+            # always 1, so this multiplication carries no rounding to speak of
+            deltas = self.tie_values[1:] - (
+                self.tie_values[:-1] + self.sampling_interval * self.tie_lengths[:-1]
+            )
+        else:
+            num, den = self._step_rate()
+            # deviation_step(...)[i] is exactly `tie_values[i + 1] -
+            # forward_step(tie_indices[i + 1], ...)`, i.e. the junction jump
+            # this candidate reports, computed without materialising
+            # `sampling_interval * tie_lengths` (F1/F7's overflow)
+            raw = deviation_step(self.tie_indices, self.tie_values, num, den)
+            if np.issubdtype(self.dtype, np.datetime64):
+                unit = np.datetime_data(self.dtype)[0]
+                deltas = raw.astype(f"timedelta64[{unit}]")
+            else:
+                deltas = raw.astype(self.dtype)
         return self.tie_indices[1:], deltas
