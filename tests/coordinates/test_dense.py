@@ -460,3 +460,25 @@ class TestDenseCoordinateToRegular:
         reg = coord.to_regular()
         assert reg.get_sampling_interval() == 1.0
         np.testing.assert_array_equal(reg.values, coord.values)
+
+    def test_to_regular_999_axis_at_tolerance_zero(self):
+        # F6: an axis placed as exactly as the ticks allow (999 samples over
+        # 30 s is 30000000000/999 ns/sample, not a whole number of ticks)
+        # must regularise at tolerance=0 -- the pre-divided scalar rate used
+        # to round up to a worst deviation of tens of microseconds and
+        # spuriously fail its own check.
+        from xinterp import forward_points
+
+        t0 = np.datetime64("2000-01-01T00:00:00", "ns")
+        numerator, denominator = 30_000_000_000, 999
+        tf = t0 + np.timedelta64(numerator, "ns")
+        values = forward_points(
+            np.arange(denominator + 1), np.array([0, denominator]), np.array([t0, tf])
+        )
+        coord = DenseCoordinate(values, "time")
+        reg = coord.to_regular(tolerance=np.timedelta64(0, "ns"))
+        assert reg.isregular()
+        num, den = reg._sampling_ratio
+        # gcd-reduced (D2): 30000000000/999 reduces to 10000000000/333.
+        assert num == np.timedelta64(10_000_000_000, "ns")
+        assert den == 333
