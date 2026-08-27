@@ -400,6 +400,16 @@ class TestResampleTolerance:
         assert coord.isregular()
         assert coord._sampling_ratio[1] == 1
 
+    @pytest.mark.parametrize("size", [1, 2, 8])
+    def test_resample_poly_on_a_record_too_short_to_span_two_ties(self, size):
+        # A short record -- or a short tail chunk -- can leave one sample or
+        # none: `from_block` keeps that as a single tie point rather than an
+        # empty or backwards `[0, size - 1]` pair.
+        da = self.regular().isel(time=slice(0, size))
+        result = xs.resample_poly(da, 1, 8, dim="time")
+        assert result.sizes["time"] == -(-size // 8)
+        assert result["time"].isregular()
+
     def test_resample_carries_declared_tolerance(self):
         da = self.regular()
         result = xs.resample(da, da.sizes["time"] // 2, dim="time")

@@ -338,6 +338,18 @@ class TestDataFrameWriter:
         result = pd.read_csv(tmp_path / "output.csv")
         assert result.equals(expected)
 
+    def test_overwrite_clears_even_when_the_run_writes_nothing(self, tmp_path):
+        # Clearing on the first write would leave the previous run's rows in
+        # place for a run that submits nothing, or only empty frames.
+        dw1 = xp.DataFrameWriter(tmp_path / "output.csv")
+        dw1.submit(pd.DataFrame({"A": [1, 2, 3]}))
+        dw1.result()
+
+        dw2 = xp.DataFrameWriter(tmp_path / "output.csv")
+        dw2.submit(pd.DataFrame())
+        assert dw2.result().empty
+        assert not Path(dw2.path).exists()
+
     def test_overwrite_is_the_default_and_replaces_existing_file(self, tmp_path):
         dw1 = xp.DataFrameWriter(tmp_path / "output.csv")
         df1 = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})

@@ -1159,6 +1159,30 @@ class TestInterpCoordinateRegular:
         assert recovered["time"].isregular()
         assert recovered["time"].sampling_interval == np.timedelta64(1, "s")
 
+    @pytest.mark.parametrize(
+        "tolerance",
+        [
+            np.timedelta64(2, "ms"),
+            np.timedelta64(2000, "us"),
+            np.timedelta64(2_000_000, "ns"),
+        ],
+    )
+    def test_tolerance_verdict_does_not_depend_on_its_timedelta_unit(self, tolerance):
+        # The same real duration, spelled in three units, must judge the same
+        # drift the same way: a float tolerance is read as seconds and so
+        # arrives in nanoseconds whatever unit the axis itself carries.
+        t0 = np.datetime64("2020-01-01T00:00:00.000", "ms")
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 99],
+                "tie_values": [t0, t0 + np.timedelta64(995, "ms")],
+            },
+            "time",
+        )
+        assert not coord._is_valid_sampling_interval(
+            np.timedelta64(10, "ms"), 1, tolerance
+        )
+
     def test_dataset_roundtrip_preserves_the_denominator(self):
         # F: a 999-sample rate has a denominator that does not reduce to 1;
         # the round trip must carry the exact pair, not the floored scalar.
@@ -1172,9 +1196,13 @@ class TestInterpCoordinateRegular:
         da = xd.DataArray(np.zeros(1000), {"time": coord})
         dataset = xr.Dataset()
         dataset, attrs = da.coords["time"]._to_dataset(dataset, {})
-        assert (
-            dataset["time_interpolation"].attrs["sampling_interval_denominator"] == 333
-        )
+        attrs_written = dataset["time_interpolation"].attrs
+        assert attrs_written["sampling_denominator"] == 333
+        # `sampling_interval` keeps its legacy meaning, so a reader that
+        # predates the exact pair still reads the floored interval rather
+        # than silently taking the numerator for it.
+        assert attrs_written["sampling_interval"] == 30_030_030
+        assert attrs_written["sampling_numerator"] == 10_000_000_000
         dataset["__v__"] = xr.DataArray(np.zeros(1000), dims=["time"])
         dataset["__v__"].attrs.update(attrs)
         recovered = Coordinate._from_dataset(dataset, "__v__")["time"]
@@ -1182,7 +1210,7 @@ class TestInterpCoordinateRegular:
 
     def test_dataset_written_before_the_denominator_existed_loads_unchanged(self):
         # A file written before this round trip existed has no
-        # `sampling_interval_denominator` attribute at all -- exactly what a
+        # `sampling_denominator` attribute at all -- exactly what a
         # whole-tick rate (denominator 1) still writes today -- and must
         # load exactly as before, denominator implicitly 1.
         coord = InterpCoordinate(
@@ -1195,7 +1223,7 @@ class TestInterpCoordinateRegular:
         )
         dataset = xr.Dataset()
         dataset, attrs = coord._to_dataset(dataset, {})
-        assert "sampling_interval_denominator" not in dataset["x_interpolation"].attrs
+        assert "sampling_denominator" not in dataset["x_interpolation"].attrs
         dataset["__v__"] = xr.DataArray(np.zeros(9), dims=["x"])
         dataset["__v__"].attrs.update(attrs)
         recovered = Coordinate._from_dataset(dataset, "__v__")["x"]

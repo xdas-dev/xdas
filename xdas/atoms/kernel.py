@@ -16,8 +16,8 @@ import math
 import numpy as np
 import scipy.signal as sp
 
-from ..coordinates import Coordinate, get_sampling_interval
-from ..coordinates.core import quantization_tolerance, step_value
+from ..coordinates import Coordinate, InterpCoordinate, get_sampling_interval
+from ..coordinates.core import parse_scalar_delta, quantization_tolerance, step_value
 from ..core import DataArray, concat, split
 from ..parallel import parallelize
 from .core import Atom, State, atomized
@@ -318,7 +318,11 @@ class UpSample(Atom):
             quantization = quantization_tolerance(
                 tie_indices, tie_values, new_numerator, new_denominator, coord.dtype
             )
-            data_coord["tolerance"] = coord.tolerance + quantization
+            # A sampled coordinate is regular but carries no jitter of its own.
+            base = parse_scalar_delta(
+                getattr(coord, "tolerance", None), coord.dtype, default_zero=True
+            )
+            data_coord["tolerance"] = base + quantization
         # An irregular input gives no rate to inherit, so the result stays
         # irregular rather than claiming a precision the source never declared.
         coords[name] = Coordinate(data_coord, name)
@@ -522,39 +526,28 @@ class Polyphase(Atom):
             # signal-processing call would (may warn or raise).
             delta = get_sampling_interval(da, name, cast=False)
             origin = coord.start + self._upsampled(shift, delta)
-        if size <= 1:
-            tie_indices, tie_values = [0], [origin]
-        elif coord.isregular():
-            # Derive the far tie from `origin`, at the same upsampled rate
-            # over `(size - 1) * down` upsampled ticks -- one rounding
-            # relative to `origin`, not a second one independently anchored
-            # at `coord.start`, so the two tie values agree as closely as
-            # the coordinate's own resolution allows.
-            last = step_value(
-                origin,
-                (size - 1) * self.down,
-                up_numerator,
-                up_denominator,
-                coord.dtype,
-            )
-            tie_indices, tie_values = [0, size - 1], [origin, last]
-        else:
-            last_shift = (stop - 1) * self.down - self.lag - start * self.up
-            last = coord.start + self._upsampled(last_shift, delta)
-            tie_indices, tie_values = [0, size - 1], [origin, last]
-        data = {"tie_indices": tie_indices, "tie_values": tie_values}
-        if coord.isregular():
-            # The tie values round to the coordinate's own tick resolution,
-            # which -- unlike the old truncated-delta laundering -- costs at
-            # most a fraction of a tick, not up to a whole sample period.
-            quantization = quantization_tolerance(
-                tie_indices, tie_values, new_numerator, new_denominator, coord.dtype
-            )
-            data["sampling_numerator"] = new_numerator
-            data["sampling_denominator"] = new_denominator
-            data["tolerance"] = coord.tolerance + quantization
         coords = da.coords.copy()
-        coords[name] = Coordinate(data, name)
+        if coord.isregular():
+            # `from_block` lays the ties out from `origin` at the exact output
+            # rate and declares the tick quantization that placing the far one
+            # costs. A coordinate with no jitter of its own to inherit (a
+            # sampled one) carries no `tolerance`, hence the `getattr`.
+            coords[name] = InterpCoordinate.from_block(
+                origin,
+                size,
+                (new_numerator, new_denominator),
+                dim=name,
+                tolerance=getattr(coord, "tolerance", None),
+            )
+        else:
+            if size <= 1:
+                tie_indices, tie_values = [0][:size], [origin][:size]
+            else:
+                last_shift = (stop - 1) * self.down - self.lag - start * self.up
+                last = coord.start + self._upsampled(last_shift, delta)
+                tie_indices, tie_values = [0, size - 1], [origin, last]
+            data = {"tie_indices": tie_indices, "tie_values": tie_values}
+            coords[name] = Coordinate(data, name)
         # Output `index` is drawn from input sample `index * down // up`.
         # Flooring — never rounding — is what keeps the position inside this
         # chunk by construction: rounding a half-integer up can walk past the

@@ -12,7 +12,6 @@ import scipy.signal as sp
 
 from .atoms import atomized
 from .coordinates import InterpCoordinate, get_sampling_interval
-from .coordinates.core import quantization_tolerance, step_value
 from .core import DataArray
 from .parallel import parallelize
 from .spectral import stft  # noqa
@@ -371,25 +370,12 @@ def resample_poly(
             new_numerator, new_denominator = numerator * down / up, 1
         else:
             new_numerator, new_denominator = numerator * down, int(denominator) * up
-        size = data.shape[axis]
-        tie_indices = [0, size - 1]
-        tie_values = [
+        new_coord = InterpCoordinate.from_block(
             start,
-            step_value(start, size - 1, new_numerator, new_denominator, source.dtype),
-        ]
-        base = source.tolerance
-        quantization = quantization_tolerance(
-            tie_indices, tie_values, new_numerator, new_denominator, source.dtype
-        )
-        new_coord = InterpCoordinate(
-            {
-                "tie_indices": tie_indices,
-                "tie_values": tie_values,
-                "sampling_numerator": new_numerator,
-                "sampling_denominator": new_denominator,
-                "tolerance": base + quantization,
-            },
-            dim,
+            data.shape[axis],
+            (new_numerator, new_denominator),
+            dim=dim,
+            tolerance=source.tolerance,
         )
     else:
         d = get_sampling_interval(da, dim, cast=False)
