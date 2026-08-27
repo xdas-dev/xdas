@@ -23,6 +23,8 @@ from .core import (
     parse_data_dim,
     parse_sampling_ratio,
     parse_scalar_delta,
+    quantization_tolerance,
+    step_value,
 )
 
 
@@ -183,24 +185,34 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
 
     @classmethod
     @override
-    def from_block(cls, start, size, step, dim=None, dtype=None):
+    def from_block(cls, start, size, step, dim=None, dtype=None, tolerance=None):
         start = np.asarray(start, dtype=dtype)
-        step = parse_scalar_delta(step, start.dtype)
+        if isinstance(step, tuple):
+            numerator, denominator = parse_sampling_ratio(None, *step, start.dtype)
+        else:
+            numerator, denominator = parse_sampling_ratio(step, None, None, start.dtype)
         if size < 2:
             # A single (or zero) sample cannot span two tie points; keep the
             # declared spacing as metadata.
-            data = {
-                "tie_indices": [0][:size],
-                "tie_values": [start][:size],
-                "sampling_interval": step,
-            }
+            tie_indices, tie_values = [0][:size], [start][:size]
         else:
-            end = start + step * (size - 1)
-            data = {
-                "tie_indices": [0, size - 1],
-                "tie_values": [start, end],
-                "sampling_interval": step,
-            }
+            end = step_value(start, size - 1, numerator, denominator, start.dtype)
+            tie_indices, tie_values = [0, size - 1], [start, end]
+        data = {
+            "tie_indices": tie_indices,
+            "tie_values": tie_values,
+            "sampling_numerator": numerator,
+            "sampling_denominator": denominator,
+        }
+        # `end` rounds to the coordinate's own tick whenever the index span is
+        # not a multiple of `denominator`; declare that on top of any jitter
+        # inherited from the block this one was derived from.
+        quantization = quantization_tolerance(
+            tie_indices, tie_values, numerator, denominator, start.dtype
+        )
+        if tolerance is not None or quantization > quantization - quantization:
+            base = parse_scalar_delta(tolerance, start.dtype, default_zero=True)
+            data["tolerance"] = base + quantization
         return cls(data, dim=dim, dtype=dtype)
 
     @override
@@ -389,15 +401,18 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             "computational_precision": "64",
         }
         if self.sampling_interval is not None:
-            # The numerator, not the divided-down `sampling_interval`: a
-            # denominator of 1 (today's files, and every whole-tick rate)
-            # makes the two identical, so this is byte-for-byte what earlier
-            # versions wrote; a denominator > 1 is what makes the round trip
-            # exact instead of floored.
+            # `sampling_interval` keeps the meaning it has always had -- the
+            # interval itself -- so a reader predating the exact ratio still
+            # gets the (merely floored) rate it used to. The exact pair goes
+            # beside it under its own names, and only when it says something
+            # the interval alone does not.
             numerator, denominator = self._sampling_ratio
-            interp_attrs.update(encode_delta("sampling_interval", numerator))
+            interp_attrs.update(
+                encode_delta("sampling_interval", self.sampling_interval)
+            )
             if denominator != 1:
-                interp_attrs["sampling_interval_denominator"] = int(denominator)
+                interp_attrs.update(encode_delta("sampling_numerator", numerator))
+                interp_attrs["sampling_denominator"] = int(denominator)
         if self.tolerance is not None:
             interp_attrs.update(encode_delta("tolerance", self.tolerance))
         dataset.update(
@@ -427,14 +442,19 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
                     if f"{coord}_interpolation" in dataset
                     else {}
                 )
-                if "sampling_interval" in interp_attrs:
-                    # A missing denominator defaults to 1, so files written
-                    # before this round trip existed load unchanged.
+                if "sampling_denominator" in interp_attrs:
+                    # The exact pair, written only when it says more than
+                    # `sampling_interval` alone can.
                     data["sampling_numerator"] = decode_delta(
-                        "sampling_interval", interp_attrs
+                        "sampling_numerator", interp_attrs
                     )
-                    data["sampling_denominator"] = interp_attrs.get(
-                        "sampling_interval_denominator", 1
+                    data["sampling_denominator"] = interp_attrs["sampling_denominator"]
+                    data["tolerance"] = decode_delta("tolerance", interp_attrs)
+                elif "sampling_interval" in interp_attrs:
+                    # Whole-tick rates, and every file written before the
+                    # exact ratio existed, load unchanged.
+                    data["sampling_interval"] = decode_delta(
+                        "sampling_interval", interp_attrs
                     )
                     data["tolerance"] = decode_delta("tolerance", interp_attrs)
                 coords[coord] = Coordinate(data, dim)
@@ -558,9 +578,15 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             # cross-multiply cannot overflow however large the segment span or
             # the (unbounded, per D2) denominator get.
             if np.issubdtype(self.dtype, np.datetime64):
+                # tolerance may carry a coarser or finer timedelta64 unit than
+                # the tie values (a float tolerance is read as seconds, hence
+                # nanoseconds, whatever the axis); align it before dropping to
+                # raw integer ticks, or the budget is misread by the ratio
+                # between the two units.
+                unit = np.datetime_data(self.dtype)[0]
                 num = num.view("i8")
                 numerator = int(numerator.view("i8"))
-                tolerance = int(tolerance.view("i8"))
+                tolerance = int(tolerance.astype(f"timedelta64[{unit}]").view("i8"))
             else:
                 numerator = int(numerator)
                 tolerance = int(tolerance)

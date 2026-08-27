@@ -313,6 +313,28 @@ class TestPolyphase:
         np.testing.assert_allclose(result.values, expected.values, atol=1e-15)
         assert result.coords.equals(expected.coords)
 
+    @pytest.mark.parametrize("up, down", [(1, 2), (2, 5)])
+    def test_on_a_sampled_coordinate(self, up, down):
+        # A sampled coordinate is regular but, unlike an interpolated one,
+        # declares no `tolerance` of its own to inherit -- it has no jitter.
+        da = xd.testing.dummy(shape=(101, 5))
+        interp = da["time"]
+        da["time"] = xd.Coordinate(
+            {
+                "tie_values": [interp.tie_values[0]],
+                "tie_lengths": [da.sizes["time"]],
+                "sampling_interval": interp.sampling_interval,
+            },
+            "time",
+        )
+        taps = sp.firwin(20 * max(up, down) + 1, 0.4 / max(up, down))
+        result = Polyphase(up * taps, up, down, "time")(da)
+        expected = Polyphase(up * taps, up, down, "time")(
+            xd.testing.dummy(shape=(101, 5))
+        )
+        assert result.sizes["time"] == expected.sizes["time"]
+        np.testing.assert_array_equal(result["time"].values, expected["time"].values)
+
     @pytest.mark.parametrize("up, down", [(1, 2), (2, 5), (3, 10)])
     def test_pinned_against_upfirdn(self, up, down):
         # An eager call emits ceil(size * up / down) samples, the leading ones
@@ -637,6 +659,22 @@ class TestLegacyIrregularCoordinates:
         taps = sp.firwin(21, 0.4 / 5)
         result = Polyphase(taps, 2, 5, "distance")(da)
         assert not result["distance"].isregular()
+
+    def test_polyphase_on_irregular_coordinate_too_short_to_span_two_ties(self):
+        # The irregular counterpart of the short-record case: one output
+        # sample cannot span two tie points either.
+        da = xd.testing.dummy(shape=(4, 5))
+        da["time"] = xd.Coordinate(
+            {
+                "tie_indices": da["time"].tie_indices,
+                "tie_values": da["time"].tie_values,
+            },
+            "time",
+        )
+        assert not da["time"].isregular()
+        result = Polyphase(sp.firwin(9, 0.05), 1, 8, "time")(da)
+        assert result.sizes["time"] == 1
+        assert len(result["time"].tie_indices) == 1
 
 
 class TestSequentialReset:

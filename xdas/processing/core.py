@@ -1294,6 +1294,11 @@ class DataFrameWriter:
             raise ValueError(f"`mode` must be 'overwrite' or 'append', got {mode!r}")
         self.path = str(path) if isinstance(path, Path) else path
         self.mode = mode
+        # Clear eagerly, not on the first write: a run that submits nothing --
+        # or only empty frames, which `submit` drops -- must still leave the
+        # previous run's rows behind, as `DataArrayWriter` does.
+        if mode == "overwrite" and os.path.exists(self.path):
+            os.remove(self.path)
         self._started = False
         self._datetime_columns = []
         self._executor = ThreadPoolExecutor(1)

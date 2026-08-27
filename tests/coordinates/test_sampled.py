@@ -911,7 +911,13 @@ class TestSampledCoordinateToNetCDF:
         )
         dataset = xr.Dataset()
         dataset, attrs = coord._to_dataset(dataset, {})
-        assert dataset["time_sampling"].attrs["sampling_interval_denominator"] == 333
+        attrs_written = dataset["time_sampling"].attrs
+        assert attrs_written["sampling_denominator"] == 333
+        # `sampling_interval` keeps its legacy meaning, so a reader that
+        # predates the exact pair still reads the floored interval rather
+        # than silently taking the numerator for it.
+        assert attrs_written["sampling_interval"] == 30_030_030
+        assert attrs_written["sampling_numerator"] == 10_000_000_000
         dataset["__values__"] = xr.DataArray(np.zeros(1000), dims=["time"], attrs=attrs)
         recovered = SampledCoordinate._collect_from_dataset(dataset, "__values__")[
             "time"
@@ -920,7 +926,7 @@ class TestSampledCoordinateToNetCDF:
 
     def test_dataset_written_before_the_denominator_existed_loads_unchanged(self):
         # A file written before this round trip existed has no
-        # `sampling_interval_denominator` attribute at all -- exactly what a
+        # `sampling_denominator` attribute at all -- exactly what a
         # whole-tick rate (denominator 1) still writes today -- and must
         # load exactly as before, denominator implicitly 1.
         import xarray as xr
@@ -931,7 +937,7 @@ class TestSampledCoordinateToNetCDF:
         )
         dataset = xr.Dataset()
         dataset, attrs = coord._to_dataset(dataset, {})
-        assert "sampling_interval_denominator" not in dataset["distance_sampling"].attrs
+        assert "sampling_denominator" not in dataset["distance_sampling"].attrs
         dataset["__values__"] = xr.DataArray(
             np.zeros(30), dims=["distance"], attrs=attrs
         )
@@ -1146,6 +1152,36 @@ class TestSampledCoordinateMissingBranches:
         )
         npt.assert_array_equal(coord.get_split_indices("overlaps"), [5])
         assert coord._is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_seam_of_exactly_one_fractional_step(self):
+        # 10/3 ns per sample floors to 3 ns, so judging the seam against the
+        # floored interval would call this genuinely increasing axis a
+        # decrease. Two segments of 3 samples: the first spans 0..20/3, the
+        # second starts exactly one step after it.
+        t0 = np.datetime64("2000-01-01T00:00:00", "ns")
+        coord = SampledCoordinate(
+            {
+                "tie_values": [t0, t0 + np.timedelta64(10, "ns")],
+                "tie_lengths": [3, 3],
+                "sampling_numerator": np.timedelta64(10, "ns"),
+                "sampling_denominator": 3,
+            },
+            "time",
+        )
+        assert coord.sampling_interval == np.timedelta64(3, "ns")
+        assert coord._is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_datetime_seam_that_goes_backwards(self):
+        t0 = np.datetime64("2000-01-01T00:00:00", "ns")
+        coord = SampledCoordinate(
+            {
+                "tie_values": [t0, t0 - np.timedelta64(100, "ns")],
+                "tie_lengths": [3, 3],
+                "sampling_interval": np.timedelta64(10, "ns"),
+            },
+            "time",
+        )
+        assert coord._is_monotonic_increasing() is False
 
     def test_is_monotonic_increasing_negative_interval(self):
         # a regular axis running backwards has no seam to report it

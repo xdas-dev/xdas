@@ -46,7 +46,7 @@ docs = [
     "sphinx-copybutton",
     "sphinx",
 ]
-tests = ["dascore", "dask<2025.4.0", "psutil", "seisbench", "torch"]
+tests = ["dascore", "dask<2025.4.0", "psutil", "seisbench", "torch>=2.7"]
 
 # Single source of truth for the version: xdas/__init__.py
 [tool.setuptools.dynamic]

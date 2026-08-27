@@ -234,7 +234,7 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
         # only, whatever the sign of the interval.
         if self.empty:
             return True
-        numerator, _ = self._sampling_ratio
+        numerator, denominator = self._sampling_ratio
         # the sign of the ratio is the sign of the numerator alone (the
         # denominator is always strictly positive), so this avoids the
         # exact-dtype floor division in `sampling_interval` rounding a small
@@ -242,8 +242,17 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
         if np.any(self.tie_lengths > 1) and not numerator > numerator - numerator:
             return False
         _, deltas = self._split_candidates()
-        zero = self.sampling_interval - self.sampling_interval
-        return bool(np.all(deltas + self.sampling_interval > zero))
+        # Same reason as above: cross-multiply by the denominator rather than
+        # compare against the floored `sampling_interval`, which is smaller
+        # than the true step for a fractional-tick rate and so would call a
+        # seam of exactly one step a decrease. Exact dtypes cross-multiply in
+        # Python ints, where the product cannot overflow.
+        if np.issubdtype(self.dtype, np.floating):
+            return bool(np.all(deltas + numerator > 0))
+        is_datetime = np.issubdtype(self.dtype, np.datetime64)
+        ticks = deltas.view("i8") if is_datetime else deltas
+        offset = int(numerator.astype("i8")) if is_datetime else int(numerator)
+        return bool(np.all(ticks.astype(object) * int(denominator) + offset > 0))
 
     def _step_rate(self):
         """``(num, den)`` lists as consumed by the xinterp step kernels.
@@ -488,19 +497,20 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
             if np.issubdtype(self.tie_values.dtype, np.datetime64)
             else self.tie_values
         )
-        # The numerator, not the divided-down `sampling_interval`: a
-        # denominator of 1 (today's files, and every whole-tick rate) makes
-        # the two identical, so this is byte-for-byte what earlier versions
-        # wrote; a denominator > 1 is what makes the round trip exact
-        # instead of floored.
+        # `sampling_interval` keeps the meaning it has always had -- the
+        # interval itself -- so a reader predating the exact ratio still gets
+        # the (merely floored) rate it used to. The exact pair goes beside it
+        # under its own names, and only when it says something the interval
+        # alone does not.
         numerator, denominator = self._sampling_ratio
         sampling_attrs = {
             # interpolated dimension: segment length variable, subsampled dimension
             "tie_point_mapping": f"{self.dim}: {self.name}_lengths {self.name}_points",
-            **encode_delta("sampling_interval", numerator),
+            **encode_delta("sampling_interval", self.sampling_interval),
         }
         if denominator != 1:
-            sampling_attrs["sampling_interval_denominator"] = int(denominator)
+            sampling_attrs.update(encode_delta("sampling_numerator", numerator))
+            sampling_attrs["sampling_denominator"] = int(denominator)
         dataset.update(
             {
                 f"{self.name}_sampling": ((), np.nan, sampling_attrs),
@@ -527,10 +537,16 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
                         first,
                         second,
                     )
-                    numerator = decode_delta("sampling_interval", sampling_attrs)
-                    # A missing denominator defaults to 1, so files written
-                    # before this round trip existed load unchanged.
-                    denominator = sampling_attrs.get("sampling_interval_denominator", 1)
+                    if "sampling_denominator" in sampling_attrs:
+                        # The exact pair, written only when it says more than
+                        # `sampling_interval` alone can.
+                        numerator = decode_delta("sampling_numerator", sampling_attrs)
+                        denominator = sampling_attrs["sampling_denominator"]
+                    else:
+                        # Whole-tick rates, and every file written before the
+                        # exact ratio existed, load unchanged.
+                        numerator = decode_delta("sampling_interval", sampling_attrs)
+                        denominator = 1
                 else:
                     # the spelling that predates the CF-shaped grammar: the
                     # group named the coordinate rather than its tie point
