@@ -1,6 +1,6 @@
 # Release notes
 
-## 0.2.9 (unreleased)
+## 0.2.9
 
 ### Tiles Backend
 - **Tile-backed virtual arrays.** The new `xdas.virtual.tiles` module exposes a file archive as one lazy `TileArray`: slicing, integer indexing, concatenation and the numpy manipulation routines stay lazy, reductions stream, and a read touches only the tiles the selection overlaps. Select it with `vtype="tiles"` on any HDF5 engine — Febus defaults to it, Silixa and the ObsPy formats always use it — and custom engines opt in by implementing `Engine.load_tile` (@atrabattoni).
@@ -41,8 +41,8 @@
 ### Deprecations
 - `MLPicker` and `xdas.mlpicker` are deprecated in favour of `Annotate` and `Picker`; they remain as aliases until 0.4 (@atrabattoni).
 - `ResamplePoly` is deprecated in favour of `Resample` (`method="fir"`, its `maxfactor` renamed `maxup`); it remains as a thin subclass until 0.3 (@atrabattoni).
-- `Coordinate.isdense`, `isinterp` and `issampled`, removed earlier in 0.2.9 development, are restored as deprecated aliases for `isinstance(coord, DenseCoordinate)` / `InterpCoordinate` / `SampledCoordinate` — seisbench's DAS models (`xdas>=0.2.3`) still call them (@atrabattoni).
-- `AxisCoordinate.get_value(index)`, renamed private (`_get_value`) earlier in 0.2.9 development, is restored as a deprecated public alias in favour of `coord[index].values` — seisbench's DAS models call it too (@atrabattoni).
+- `Coordinate.isdense`, `isinterp` and `issampled` are deprecated in favour of `isinstance(coord, DenseCoordinate)` / `InterpCoordinate` / `SampledCoordinate`; they remain as aliases, seisbench's DAS models (`xdas>=0.2.3`) still calling them (@atrabattoni).
+- `AxisCoordinate.get_value(index)` is deprecated in favour of `coord[index].values`; it remains as an alias, seisbench's DAS models calling it too (@atrabattoni).
 
 ### Breaking Changes
 - Python 3.10 support is dropped and the numpy requirement is raised to 2.3 (@atrabattoni).
