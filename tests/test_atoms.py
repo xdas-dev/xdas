@@ -477,7 +477,7 @@ class TestRepr:
         # `taps == default` is an array, whose truth value is an error: a repr
         # must not be the thing that raises
         class Custom(Atom):
-            def __init__(self, taps=np.zeros(3)):
+            def __init__(self, taps=np.zeros(3)):  # noqa: B008 - the array default is the point
                 super().__init__()
                 self.taps = taps
 
