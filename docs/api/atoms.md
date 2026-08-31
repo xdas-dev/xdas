@@ -91,7 +91,7 @@ Methods
    compose
 ```
 
-## Task atoms
+## Operation atoms
 
 Public processing vocabulary with physical parameters only.
 
@@ -100,9 +100,12 @@ Public processing vocabulary with physical parameters only.
    :toctree: ../_autosummary
 
    Differentiate
+   FIRFilter
    Filter
+   IIRFilter
    Integrate
    Resample
+   ResamplePoly
    STFT
 ```
 
@@ -139,17 +142,6 @@ data it applies eagerly, called on `...` it returns the atom.
 .. currentmodule:: xdas.atoms
 ```
 
-## Signal processing
-
-```{eval-rst}
-.. autosummary::
-   :toctree: ../_autosummary
-
-   FIRFilter
-   IIRFilter
-   ResamplePoly
-```
-
 ## Detection and picking
 
 `Annotate` runs a SeisBench model window by window, `Trigger` turns the
@@ -170,7 +162,7 @@ level of `xdas` (`xdas.annotate`, `xdas.trigger`, `xdas.pick`).
 ## Kernel atoms
 
 Expert layer (`xdas.atoms.kernel`): exact stateful primitives with machine
-parameters, designed by the task atoms from the data at the first call.
+parameters, designed by the operation atoms from the data at the first call.
 
 ```{eval-rst}
 .. autosummary::
