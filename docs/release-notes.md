@@ -50,6 +50,7 @@
 - `DataCollection.query` raises a `KeyError` on an indexer naming no level of the collection, instead of silently returning everything unchanged (@atrabattoni).
 - Custom engines must subclass `xdas.io.Engine`: passing a bare read function as `engine` now raises a `TypeError` (@atrabattoni).
 - `Trigger` moved to `xdas.atoms.detect`, with a lowercase twin `xdas.trigger`; the module remains importable and `find_picks` is unchanged. Its `dim` default is now `"time"` instead of `"last"` (@atrabattoni).
+- The `xdas.atoms.signal` module is gone, split into `xdas.atoms.kernel` and `xdas.atoms.operations`; its atoms are still importable from `xdas.atoms` (@atrabattoni).
 
 ### Bug Fixes
 - **`get_discontinuities` reports the discontinuity, not the sample after it.** Since 0.2.5 every row was shifted one sample forward: `delta` gave the sampling interval instead of the jump, and `type` could never say `overlap`. `plot_availability` is fixed with it, and detection was never affected (@atrabattoni).
