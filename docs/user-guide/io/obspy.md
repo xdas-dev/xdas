@@ -57,7 +57,7 @@ for station in stations:
 
 ```
 
-# Working with miniSEED and other ObsPy formats
+# Reading Seismological formats
 
 *Xdas* reads seismological data through ObsPy, with the engine named `"obspy"`
 after the library rather than after any one format: decoding is

@@ -584,7 +584,9 @@ def _trigger(  # pragma: no cover
                 indices.append(buffer_index[lane])
                 values.append(buffer_value[lane])
         else:
-            if value > thresh_on[lane]:
+            # `>=` so the onset matches ObsPy's trigger_onset on a sample that
+            # sits exactly on the threshold
+            if value >= thresh_on[lane]:
                 buffer_status[lane] = True
                 buffer_index[lane] = index
                 buffer_value[lane] = value

@@ -278,49 +278,31 @@ vocabulary, and [](streaming.md) for picking a stream as it arrives.
 
 ## How close is this to SeisBench?
 
-Close enough to be worth stating precisely — and the answer splits in two,
-depending on whether the resampler has anything to do.
+Identical everywhere except the resampler. Fed the same input samples, every
+other stage matches SeisBench to the bit: across both the seventeen cached
+PhaseNet weight sets and `model.classify(stream)` on eighteen stations,
+annotation is bit-identical — a maximum absolute difference of exactly 0 over
+tens of millions of samples, once both sides use the same batch size — the
+preprocessing filter matches wherever a weight set declares one, and `xd.pick`
+and `model.classify` return the same picks on the same samples. (The `~1e-7`
+that appears at differing batch sizes is float32 convolution non-associativity
+between a one-window and a 256-window batch, not a difference of method.) The
+lone trigger edge case — a sample sitting exactly on the threshold, where
+ObsPy's `trigger_onset` turns on at `>= thresh` — is now decided that same way
+by *xdas* too.
 
-### At the model's own rate
+The resampler is the one real deviation, and it is a deviation of passband
+rather than of care. SeisBench resamples with ObsPy's `Trace.resample`, which
+defaults to `window="hann"` and applies that window *in the frequency domain*:
+unity at DC, zero at Nyquist, half the amplitude at half the input Nyquist.
+*Xdas* resamples with a polyphase FIR — the only form that can run chunk by
+chunk — which is flat across that band.
 
-This hour is recorded at 100 Hz, which is what `original` was trained at, so
-the `Resample` stage passes its input through untouched and every other stage
-is measured on exactly the same samples. Over the eighteen stations, twenty
-minutes of each, against `model.classify(stream)`:
-
-- annotation is **bit-identical** — a maximum absolute difference of exactly 0
-  over 6.3 million samples — once both sides are given the same batch size. The
-  ~1e-7 that appears otherwise is float32 convolution non-associativity between
-  a one-window and a 256-window batch, not a difference of method;
-- triggering differs in exactly one place, a sample whose value equals the
-  threshold exactly: ObsPy's `trigger_onset` turns on at `>= thresh`, *xdas* at
-  `> thresh`. It did not occur anywhere in this dataset;
-- end to end, `xd.pick` and `model.classify` each produced **56 picks, every
-  one of them on the same sample**.
-
-That is not a property of one weight set. Repeated over all seventeen cached
-PhaseNet weight sets — four stations, ten minutes each — annotation is
-bit-identical on every one of them, exactly 0 over 11.8 million samples, and so
-is the preprocessing filter wherever a weight set declares one (only `obs`
-does: exactly 0 over 960 thousand samples). Fed the same resampled data, the
-two sides produced **650 picks each, every one on the same sample**. Letting
-each side resample for itself, they differ by a single pick out of 651 — and
-that one difference, together with timing shifts of up to 0.92 s, comes
-entirely from `diting`, the only weight set in the sweep that does not run at
-100 Hz.
-
-### What the resampler costs
-
-Which leaves the resampler as the one real deviation, and it is a deviation of
-passband rather than of care. SeisBench resamples with ObsPy's
-`Trace.resample`, which defaults to `window="hann"` and applies that window *in
-the frequency domain*: unity at DC, zero at Nyquist, and half the amplitude at
-half the input Nyquist. *Xdas* resamples with a polyphase FIR — the only form
-that can run chunk by chunk — which is flat across that band.
-
-The same eighteen stations also record at 20 Hz, on their `BH?` channels, and
-those are enough to show the window directly. Dividing one spectrum by the
-other leaves the taper and nothing else:
+When the data is already at the model's training rate the stage passes its
+input through untouched and the two implementations agree exactly; the
+difference only shows once the resampler has work to do. The same eighteen
+stations also record at 20 Hz, on their `BH?` channels, and dividing one
+resampled spectrum by the other leaves the taper and nothing else:
 
 ```{code-cell}
 import matplotlib.pyplot as plt
@@ -353,20 +335,14 @@ ax.set(
 fig.tight_layout()
 ```
 
-Unity at the left, a half at 5 Hz — half of the 10 Hz input Nyquist — and
-nothing left by 10 Hz. On 20 Hz records that taper sits squarely on the band
-where P and S energy lives, and the consequence is easy to understate if you
-only look at the waveforms. Over the eighteen stations, twenty minutes each:
-
-- the resampled **waveforms** barely differ: a median relative RMS of 1.3 %
-  (0.1 % to 6.0 % across the stations);
-- the **characteristic function** the model computes from them differs
-  enormously: a median maximum difference of 0.49, on a scale that runs from
-  0 to 1;
-- and so the **picks** differ: 44 from *xdas* against 21 from SeisBench, with
-  only 15 in common;
-- fed the *same* resampled data, both sides produce 21 picks, every one of them
-  on the same sample.
+Unity at the left, a half at 5 Hz — half of the 10 Hz input Nyquist — nothing
+by 10 Hz. On 20 Hz records that taper sits squarely where P and S energy lives.
+Over the eighteen stations, twenty minutes each, the resampled **waveforms**
+barely differ (a median relative RMS of 1.3 %), but the **characteristic
+function** the model computes from them differs enormously (a median maximum
+difference of 0.49, on a 0-to-1 scale), and so do the **picks**: 44 from *xdas*
+against 21 from SeisBench, only 15 in common. Fed the *same* resampled data,
+both sides produce the same 21 picks.
 
 A one-percent difference in the waveform becomes a doubling of the detections,
 because the percent that goes missing is the part the network was looking at.

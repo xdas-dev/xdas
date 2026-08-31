@@ -182,7 +182,7 @@ def _find_picks_numeric(cft, thresh, axis=-1, buffer=None, offset=None):
     cft : ndarray
         The N-dimensional characteristic function where picks must be found.
     thresh : float
-        The threshold value above which picks are looked for.
+        The threshold value at or above which picks are looked for.
     axis : int, optional
         The axis along which to find picks. Defaults to -1.
     buffer : Ellipsis or dict, optional
@@ -364,7 +364,9 @@ def _trigger(  # pragma: no cover
                 indices.append(buffer_index[lane])
                 values.append(buffer_value[lane])
         else:
-            if value > thresh_on:
+            # `>=` so the onset matches ObsPy's trigger_onset on a sample that
+            # sits exactly on the threshold
+            if value >= thresh_on:
                 buffer_status[lane] = True
                 buffer_index[lane] = index
                 buffer_value[lane] = value
