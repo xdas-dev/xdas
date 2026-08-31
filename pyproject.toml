@@ -63,6 +63,9 @@ convention = "numpy"
 "docs/**" = ["D"]
 
 [tool.pytest.ini_options]
+# Without this, --doctest-modules walks the repo root and chokes on the copies
+# of xdas sources that sphinx viewcode leaves under docs/_build.
+testpaths = ["xdas", "tests"]
 addopts = ["--doctest-modules", "--import-mode=importlib"]
 doctest_optionflags = "NORMALIZE_WHITESPACE"
 markers = ["slow: marks tests as slow (skip with --skip-slow)"]
