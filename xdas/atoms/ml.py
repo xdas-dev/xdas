@@ -14,7 +14,7 @@ import numpy as np
 from ..core import DataArray, concat, stack
 from .core import Atom, Sequential, State, atomized
 from .detect import Trigger
-from .tasks import Filter, Resample
+from .operations import Filter, Resample
 
 
 class LazyModule:

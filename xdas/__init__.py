@@ -100,7 +100,7 @@ from . import trigger as _trigger_module  # noqa: F401  isort: skip
 from .atoms.detect import trigger
 from .atoms.kernel import rechunk
 from .atoms.ml import annotate, mlpicker, pick
-from .atoms.tasks import (
+from .atoms.operations import (
     detrend,
     differentiate,
     filter,

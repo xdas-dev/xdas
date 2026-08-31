@@ -3,9 +3,9 @@ Kernel atoms: exact stateful chunked primitives with machine parameters.
 
 This is the expert layer. Kernel atoms take machine parameters (filter
 coefficients, integer factors) whose meaning depends on the sampling rate;
-the public task atoms (:mod:`xdas.atoms.tasks`) design them from physical
-parameters at the first call. They are the units used to prove that chunked
-processing equals unchunked processing.
+the public operation atoms (:mod:`xdas.atoms.operations`) design them from
+physical parameters at the first call. They are the units used to prove that
+chunked processing equals unchunked processing.
 
 Includes :class:`LFilter`, :class:`SOSFilter`, :class:`DownSample`,
 :class:`UpSample`, :class:`Polyphase`, :class:`Rechunk`.

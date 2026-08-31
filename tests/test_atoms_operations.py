@@ -20,7 +20,7 @@ from xdas.atoms import (
     Sequential,
     SOSFilter,
 )
-from xdas.atoms.tasks import (
+from xdas.atoms.operations import (
     _edge_resample,
     _snap_factors,
     _solve_ratio,
