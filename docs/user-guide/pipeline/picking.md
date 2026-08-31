@@ -278,75 +278,13 @@ vocabulary, and [](streaming.md) for picking a stream as it arrives.
 
 ## How close is this to SeisBench?
 
-Identical everywhere except the resampler. Fed the same input samples, every
-other stage matches SeisBench to the bit: across both the seventeen cached
-PhaseNet weight sets and `model.classify(stream)` on eighteen stations,
-annotation is bit-identical — a maximum absolute difference of exactly 0 over
-tens of millions of samples, once both sides use the same batch size — the
-preprocessing filter matches wherever a weight set declares one, and `xd.pick`
-and `model.classify` return the same picks on the same samples. (The `~1e-7`
-that appears at differing batch sizes is float32 convolution non-associativity
-between a one-window and a 256-window batch, not a difference of method.) The
-lone trigger edge case — a sample sitting exactly on the threshold, where
-ObsPy's `trigger_onset` turns on at `>= thresh` — is now decided that same way
-by *xdas* too.
-
-The resampler is the one real deviation, and it is a deviation of passband
-rather than of care. SeisBench resamples with ObsPy's `Trace.resample`, which
-defaults to `window="hann"` and applies that window *in the frequency domain*:
-unity at DC, zero at Nyquist, half the amplitude at half the input Nyquist.
-*Xdas* resamples with a polyphase FIR — the only form that can run chunk by
-chunk — which is flat across that band.
-
-When the data is already at the model's training rate the stage passes its
-input through untouched and the two implementations agree exactly; the
-difference only shows once the resampler has work to do. The same eighteen
-stations also record at 20 Hz, on their `BH?` channels, and dividing one
-resampled spectrum by the other leaves the taper and nothing else:
-
-```{code-cell}
-import matplotlib.pyplot as plt
-import numpy as np
-import obspy
-
-bh = xd.open("CX_BH/*.mseed")
-
-ratios = []
-for station in ["PB01", "PB05", "PB09", "PB11", "PB16"]:
-    ours = xd.resample(bh["CX"][station]["--"]["BHZ"][0].load(), 100.0)
-    theirs = obspy.read(f"CX_BH/CX.{station}.mseed").select(channel="BHZ")[0]
-    theirs.resample(100.0)
-    n = min(ours.sizes["time"], theirs.stats.npts)
-    a = np.abs(np.fft.rfft(np.asarray(ours.values[:n], "float64")))
-    b = np.abs(np.fft.rfft(theirs.data[:n].astype("float64")))
-    ratios.append(b / np.where(a == 0, np.nan, a))
-
-freq = np.fft.rfftfreq(n, 0.01)
-ratio = np.convolve(np.nanmedian(ratios, axis=0), np.ones(201) / 201, mode="same")
-
-fig, ax = plt.subplots(figsize=(6, 3))
-ax.plot(freq, ratio)
-ax.set(
-    xlim=(0, 10),
-    ylim=(0, 1.15),
-    xlabel="frequency [Hz]",
-    ylabel="obspy / xdas amplitude",
-)
-fig.tight_layout()
-```
-
-Unity at the left, a half at 5 Hz — half of the 10 Hz input Nyquist — nothing
-by 10 Hz. On 20 Hz records that taper sits squarely where P and S energy lives.
-Over the eighteen stations, twenty minutes each, the resampled **waveforms**
-barely differ (a median relative RMS of 1.3 %), but the **characteristic
-function** the model computes from them differs enormously (a median maximum
-difference of 0.49, on a 0-to-1 scale), and so do the **picks**: 44 from *xdas*
-against 21 from SeisBench, only 15 in common. Fed the *same* resampled data,
-both sides produce the same 21 picks.
-
-A one-percent difference in the waveform becomes a doubling of the detections,
-because the percent that goes missing is the part the network was looking at.
-Reproducing SeisBench here would mean reproducing a worse resampler, so *xdas*
-does not. `resample=False` drops the stage — pass it when the data is already
-at the model's rate, or to compare the two implementations on the same
-waveforms.
+Fed the same samples, *xdas* reproduces SeisBench stage for stage: the
+annotation, the optional preprocessing filter, the triggering and the final
+pick table all match. The one deliberate difference is the resampler. SeisBench
+resamples through ObsPy's `Trace.resample`, which applies a Hann window in the
+frequency domain and so tapers the upper passband; *xdas* resamples with a
+polyphase FIR — the only form that runs chunk by chunk — which stays flat
+across that band. When the data already arrives at the model's training rate
+the stage does nothing and the two agree exactly; when a resample is needed the
+picks can diverge. Pass `resample=False` to drop the stage, or to compare the
+two implementations on identical waveforms.
