@@ -28,6 +28,13 @@ def _along(axis, ndim, slc):
     return tuple(slc if index == axis else slice(None) for index in range(ndim))
 
 
+def _trim_along(da, dim, n):
+    """Keep at most the last *n* samples of *da* along *dim*."""
+    if da.sizes[dim] <= n:
+        return da
+    return da.isel({dim: slice(da.sizes[dim] - n, None)})
+
+
 def _carry_labels(coords, name, positions):
     """
     Re-index the non-dimensional coordinates attached to *name*.
@@ -339,15 +346,20 @@ class Polyphase(Atom):
     Computes what :class:`UpSample` → FIR :class:`LFilter` → :class:`DownSample`
     computes, but only the output samples that survive the decimation, and
     without ever materialising the zero-stuffed signal
-    (:func:`scipy.signal.upfirdn`). The linear-phase group delay of `taps` is
-    removed from the coordinate, as :class:`~xdas.atoms.FIRFilter` does.
+    (:func:`scipy.signal.upfirdn`). By default the linear-phase group delay of
+    `taps` is removed from the coordinate, as :class:`~xdas.atoms.FIRFilter`
+    does; the values are the leading samples of ``upfirdn`` untouched.
+
+    With ``compensate=True`` the group delay is taken out of the *data*
+    instead: the output then lands on the canonical grid (origin unchanged,
+    ``delta * down / up`` spacing, ``ceil(n * up / down)`` samples) and matches
+    :func:`scipy.signal.resample_poly` sample for sample. This is the mode
+    :class:`~xdas.atoms.FIRFilter` selects when it is resampling. Chunked, it
+    reads ahead of the canonical grid, so the last output samples of each run
+    are held back and drained by :meth:`flush`.
 
     The taps are cast down to the data dtype when the data is less precise, so
     float32 input stays float32 instead of being promoted by the filter.
-
-    Chunked calls carry the filter memory and the output-grid phase across
-    chunks, and every call emits every output sample the stream can support so
-    far — nothing is held back, so no flush is needed.
 
     Parameters
     ----------
@@ -362,6 +374,10 @@ class Polyphase(Atom):
         Dimension to resample along. Defaults to ``"last"``.
     parallel : int, bool, or None, optional
         Worker count for parallelisation.
+    compensate : bool, optional
+        Take the group delay out of the data and land on the canonical grid
+        (``scipy.signal.resample_poly`` semantics) rather than shifting the
+        coordinate. Default is False.
 
     Examples
     --------
@@ -385,16 +401,19 @@ class Polyphase(Atom):
 
     """
 
-    def __init__(self, taps, up=1, down=1, dim="last", parallel=None):
+    def __init__(self, taps, up=1, down=1, dim="last", parallel=None, compensate=False):
         super().__init__()
         self.taps = taps
         self.up = up
         self.down = down
         self.dim = dim
         self.parallel = parallel
+        self.compensate = compensate
         self.axis = State(...)
         self.buffer = State(...)
         self.consumed = State(...)
+        self.recent = State(...)
+        self.emitted = State(...)
 
     @property
     def lag(self):
@@ -402,14 +421,34 @@ class Polyphase(Atom):
         return (np.asarray(self.taps).size - 1) // 2
 
     @property
+    def _pre_pad(self):
+        """Taps zero-padding matching scipy.signal.resample_poly's ``n_pre_pad``."""
+        half_len = (np.asarray(self.taps).size - 1) // 2
+        return self.down - half_len % self.down
+
+    @property
+    def _pre_remove(self):
+        """Padded-tap group delay in output samples (scipy's ``n_pre_remove``)."""
+        half_len = (np.asarray(self.taps).size - 1) // 2
+        return (half_len + self._pre_pad) // self.down
+
+    def _filter_len(self):
+        """Length of the filter actually convolved (padded, when resampling)."""
+        length = np.asarray(self.taps).size
+        return length + self._pre_pad if self.compensate else length
+
+    @property
     def phase(self):
         """Period, in input samples, of the output-grid phase."""
         return self.down // math.gcd(self.up, self.down)
 
+    def _memory(self):
+        """Input samples the filter reaches back over."""
+        return -(-(self._filter_len() - 1) // self.up)
+
     def _history_size(self):
         """Input samples to keep: the filter memory plus one phase period."""
-        memory = -(-(np.asarray(self.taps).size - 1) // self.up)
-        return memory + self.phase - 1
+        return self._memory() + self.phase - 1
 
     def initialize(self, da, chunk_dim=None, **flags):
         """Set the axis and allocate the history buffer for chunked operation."""
@@ -422,19 +461,37 @@ class Polyphase(Atom):
         self.axis = State(da.get_axis_num(self.dim))
         # Resolve the "first"/"last" alias before comparing (see `LFilter`).
         dim = self._dim_name(da)
-        if dim == chunk_dim:
+        if dim == chunk_dim and self.compensate:
+            # Delay-compensated resampling reads ahead of the canonical grid,
+            # so a rolling window of recent input (values *and* labels) is
+            # carried and the last output samples are held back for `flush`.
+            self.recent = State(da.isel({dim: slice(0, 0)}))
+            self.consumed = State(0)
+            self.emitted = State(0)
+            self.buffer = State(None)
+        elif dim == chunk_dim:
             shape = tuple(
                 self._history_size() if name == dim else size
                 for name, size in da.sizes.items()
             )
             self.buffer = State(np.zeros(shape, dtype=da.dtype))
             self.consumed = State(0)
+            self.recent = State(None)
+            self.emitted = State(None)
         else:
             self.buffer = State(None)
             self.consumed = State(None)
+            self.recent = State(None)
+            self.emitted = State(None)
 
     def call(self, da, **flags):
         """Resample *da*, carrying the filter memory and grid phase if chunked."""
+        if self.compensate:
+            return self._call_resample(da, **flags)
+        return self._call_filter(da, **flags)
+
+    def _call_filter(self, da, **flags):
+        """Filter, delay-compensating on the coordinate; emit every sample."""
         size = da.sizes[self.dim]
         if size == 0:
             return []
@@ -449,7 +506,7 @@ class Polyphase(Atom):
         # Prepend enough past input to warm up the filter, choosing an amount
         # that puts the chunk start on the output grid so `upfirdn`, which
         # always emits from its own sample zero, lands on the global phase.
-        memory = -(-(np.asarray(self.taps).size - 1) // self.up)
+        memory = self._memory()
         nhist = memory + (start - memory) % self.phase
         values = da.values
         if chunked:
@@ -470,17 +527,124 @@ class Polyphase(Atom):
             return []
         offset = (start - nhist) * up // down
         data = data[_along(axis, data.ndim, slice(first - offset, stop - offset))]
-        return DataArray(
-            data, self._coords(da, first, stop, start), da.dims, da.name, da.attrs
-        )
+        coords = self._output_coords(da, start, first, stop, self.lag)
+        return DataArray(data, coords, da.dims, da.name, da.attrs)
 
-    def _resample(self, values, axis):
-        """Run the polyphase filter over *values*, keeping the data precision."""
+    def _call_resample(self, da, **flags):
+        """Rate change: emit only samples whose window fits the input so far."""
+        size = da.sizes[self.dim]
+        if size == 0:
+            return []
+        axis = self.axis
+        up, down, npr = self.up, self.down, self._pre_remove
+        if self.recent is None:
+            # Eager (or chunked along another dimension): the whole canonical
+            # grid at once, `resample_poly`'s natural zero tail closing it out.
+            n_out = -(-size * up // down)
+            nhist = self._nhist(0)
+            history = np.zeros(
+                tuple(nhist if i == axis else n for i, n in enumerate(da.values.shape)),
+                dtype=da.dtype,
+            )
+            y = self._resample(np.concatenate([history, da.values], axis), axis, True)
+            offset = (0 - nhist) * up // down
+            return self._emit(y, offset, 0, n_out, da, 0)
+        start = self.consumed
+        recent, navail = self.recent, self.recent.sizes[self.dim]
+        nhist = self._nhist(start)
+        y = self._resample(
+            np.concatenate([self._warmup(recent.values, nhist, axis), da.values], axis),
+            axis,
+            True,
+        )
+        offset = (start - nhist) * up // down
+        # Highest `upfirdn` index whose window does not reach past the last real
+        # sample received; canonical index `k` maps to `y[k - offset + npr]`.
+        safe = ((nhist + size) * up - 1 + self._pre_pad) // down
+        hi, lo = safe + offset - npr + 1, self.emitted
+        frame = self._join_recent(recent, da)
+        self.recent = State(_trim_along(frame, self.dim, self._history_size()))
+        self.consumed = State(start + size)
+        if hi <= lo:
+            return []
+        self.emitted = State(hi)
+        return self._emit(y, offset, lo, hi, frame, start - navail)
+
+    def flush(self):
+        """Emit the held-back tail on trailing zeros, to ``ceil(n_in*up/down)``."""
+        if not self.compensate or not isinstance(self.recent, DataArray):
+            return []
+        consumed = self.consumed
+        n_out = -(-consumed * self.up // self.down)
+        if self.emitted >= n_out:
+            return []
+        axis = self.axis
+        recent, navail = self.recent, self.recent.sizes[self.dim]
+        nhist = self._nhist(consumed)
+        hist = self._warmup(recent.values, nhist, axis)
+        tail = np.zeros(
+            tuple(
+                self._memory() + self.phase + 1 if i == axis else n
+                for i, n in enumerate(hist.shape)
+            ),
+            dtype=hist.dtype,
+        )
+        y = self._resample(np.concatenate([hist, tail], axis), axis, True)
+        offset = (consumed - nhist) * self.up // self.down
+        lo = self.emitted
+        self.emitted = State(n_out)
+        return [self._emit(y, offset, lo, n_out, recent, consumed - navail)]
+
+    def _nhist(self, start):
+        """Warm-up depth that puts *start* on the output grid (see `_call_filter`)."""
+        memory = self._memory()
+        return memory + (start - memory) % self.phase
+
+    def _warmup(self, values, nhist, axis):
+        """Take the last *nhist* input samples, zero-padding the front if short."""
+        if values.shape[axis] >= nhist:
+            return values[
+                _along(axis, values.ndim, slice(values.shape[axis] - nhist, None))
+            ]
+        pad = tuple(
+            nhist - values.shape[axis] if i == axis else n
+            for i, n in enumerate(values.shape)
+        )
+        return np.concatenate([np.zeros(pad, dtype=values.dtype), values], axis)
+
+    def _emit(self, y, offset, lo, hi, frame, frame_start):
+        """Slice canonical outputs ``[lo, hi)`` out of *y* and label them."""
+        npr = self._pre_remove
+        block = y[
+            _along(self.axis, y.ndim, slice(lo - offset + npr, hi - offset + npr))
+        ]
+        coords = self._output_coords(frame, frame_start, lo, hi, 0)
+        return DataArray(block, coords, frame.dims, frame.name, frame.attrs)
+
+    def _join_recent(self, recent, da):
+        """Concat the buffer and *da*, re-attaching non-dim labels concat drops."""
+        name = self._dim_name(da)
+        merged = concat([recent, da], name)
+        extra = {
+            key: (name, np.concatenate([recent.coords[key].values, coord.values]))
+            for key, coord in da.coords.items()
+            if key != name and coord.dim == name
+        }
+        return merged.assign_coords(extra) if extra else merged
+
+    def _resample(self, values, axis, padded=False):
+        """Run the polyphase filter over *values*, keeping the data precision.
+
+        *padded* prepends ``_pre_pad`` zeros to the taps, the scipy.signal.
+        resample_poly trick that makes the group delay a whole output sample.
+        """
         taps = np.asarray(self.taps)
         if np.issubdtype(values.dtype, np.floating) and (
             values.dtype.itemsize < taps.dtype.itemsize
         ):
             taps = taps.astype(values.dtype)
+        if padded:
+            taps = np.concatenate([np.zeros(self._pre_pad, dtype=taps.dtype), taps])
         across = int(axis == 0)
         func = parallelize((None, across, None, None, None), across, self.parallel)(
             sp.upfirdn
@@ -496,64 +660,61 @@ class Polyphase(Atom):
         kept = self.buffer[_along(axis, values.ndim, slice(size, None))]
         return np.concatenate([kept, values], axis)
 
-    def _coords(self, da, first, stop, start):
-        """Build the output coordinates on the resampled, delay-corrected grid."""
-        # The "first"/"last" alias would name a new dimension if it reached the
-        # `Coordinate` built below, so resolve it here.
-        name = self._dim_name(da)
-        coord = da.coords[name]
-        size = stop - first
-        # Output `index` sits `index * down - lag` upsampled samples after the
-        # start of the run, hence that many minus `start * up` after this chunk.
-        shift = first * self.down - self.lag - start * self.up
+    def _output_coords(self, frame, frame_start, lo, hi, lag):
+        """Coordinates for canonical output indices ``[lo, hi)`` of a run.
+
+        *frame* holds the coordinates the non-dim labels are drawn from, its
+        first sample at input index *frame_start*; *lag* upsampled samples of
+        group delay come off the axis (0 when the data carries it instead).
+        """
+        # Resolve the "first"/"last" alias before it names a `Coordinate` dim.
+        name = self._dim_name(frame)
+        coord = frame.coords[name]
+        size = hi - lo
+        # Output `k` sits `k*down - lag` upsampled samples after the run start,
+        # hence that many minus `frame_start*up` after this frame.
+        shift = lo * self.down - lag - frame_start * self.up
         if coord.isregular():
-            # (numerator, denominator * up) is the exact intermediate
-            # upsampled rate, and (numerator * down, denominator * up) the
-            # exact output rate -- nothing to round to get either.
+            # (num, den*up) is the exact upsampled rate, (num*down, den*up) the
+            # exact output rate -- neither needs rounding.
             numerator, denominator = coord._sampling_ratio
             if np.issubdtype(coord.dtype, np.floating):
-                up_numerator, up_denominator = numerator / self.up, 1
-                new_numerator = numerator * self.down / self.up
-                new_denominator = 1
+                up_ratio = (numerator / self.up, 1)
+                out_ratio = (numerator * self.down / self.up, 1)
             else:
-                up_numerator, up_denominator = numerator, int(denominator) * self.up
-                new_numerator, new_denominator = numerator * self.down, up_denominator
-            origin = step_value(
-                coord.start, shift, up_numerator, up_denominator, coord.dtype
-            )
+                up_ratio = (numerator, int(denominator) * self.up)
+                out_ratio = (numerator * self.down, int(denominator) * self.up)
+            origin = step_value(coord.start, shift, *up_ratio, coord.dtype)
         else:
-            # No declared rate to inherit; infer one exactly as any other
-            # signal-processing call would (may warn or raise).
-            delta = get_sampling_interval(da, name, cast=False)
+            # No declared rate to inherit; infer one (may warn or raise).
+            delta = get_sampling_interval(frame, name, cast=False)
             origin = coord.start + self._upsampled(shift, delta)
-        coords = da.coords.copy()
+        coords = frame.coords.copy()
         if coord.isregular():
-            # `from_block` lays the ties out from `origin` at the exact output
-            # rate and declares the tick quantization that placing the far one
-            # costs. A coordinate with no jitter of its own to inherit (a
-            # sampled one) carries no `tolerance`, hence the `getattr`.
+            # `from_block` lays the ties from `origin` at the exact output rate
+            # and declares the tick quantization the far one costs. A sampled
+            # coordinate has no jitter of its own, hence the `getattr`.
             coords[name] = InterpCoordinate.from_block(
                 origin,
                 size,
-                (new_numerator, new_denominator),
+                out_ratio,
                 dim=name,
                 tolerance=getattr(coord, "tolerance", None),
             )
+        elif size <= 1:
+            coords[name] = Coordinate(
+                {"tie_indices": [0][:size], "tie_values": [origin][:size]}, name
+            )
         else:
-            if size <= 1:
-                tie_indices, tie_values = [0][:size], [origin][:size]
-            else:
-                last_shift = (stop - 1) * self.down - self.lag - start * self.up
-                last = coord.start + self._upsampled(last_shift, delta)
-                tie_indices, tie_values = [0, size - 1], [origin, last]
-            data = {"tie_indices": tie_indices, "tie_values": tie_values}
-            coords[name] = Coordinate(data, name)
-        # Output `index` is drawn from input sample `index * down // up`.
-        # Flooring — never rounding — is what keeps the position inside this
-        # chunk by construction: rounding a half-integer up can walk past the
-        # last input sample the chunk holds, and the clip that would be needed
-        # to pull it back lands on a different sample than the eager call.
-        positions = (np.arange(first, stop) * self.down) // self.up - start
+            last_shift = (hi - 1) * self.down - lag - frame_start * self.up
+            last = coord.start + self._upsampled(last_shift, delta)
+            coords[name] = Coordinate(
+                {"tie_indices": [0, size - 1], "tie_values": [origin, last]}, name
+            )
+        # Output `k` is drawn from input sample `k*down//up`. Flooring -- never
+        # rounding -- keeps the position inside the frame: rounding a
+        # half-integer up can walk past the last sample it holds.
+        positions = (np.arange(lo, hi) * self.down) // self.up - frame_start
         return _carry_labels(coords, name, positions)
 
     def _upsampled(self, count, delta):

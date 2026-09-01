@@ -32,7 +32,9 @@ from xdas.testing import dummy
 
 def through_chunks(atom, da, nchunk=6, dim="time"):
     chunks = xd.split(da, nchunk, dim)
-    return xd.concat([atom(chunk, chunk_dim=dim) for chunk in chunks], dim)
+    out = [atom(chunk, chunk_dim=dim) for chunk in chunks]
+    out.extend(atom.flush())
+    return xd.concat(out, dim)
 
 
 class TestFunctionForms:
@@ -535,19 +537,16 @@ class TestResample:
         expected = ResamplePoly(20.0, dim="time")(da)
         assert result.equals(expected)
 
-    def test_fir_matches_xs_resample_poly_once_the_removed_lag_is_undone(self):
-        # xd.resample removes the FIR group delay from the coordinate (and
-        # crops it from the values); xs.resample_poly does neither, so the
-        # two agree once shifted by the lag xd.resample removed.
+    @pytest.mark.parametrize("down", [2, 3, 5])
+    def test_fir_matches_xs_resample_poly(self, down):
+        # The "fir" path is the fusion of xs.resample_poly: the group delay is
+        # taken out of the values (scipy's own trim) and the axis stays on the
+        # canonical grid, so the two agree sample for sample.
         da = wavelet_wavefronts()  # 50 Hz
-        result = xd.resample(da, down=2, dim="time")
-        expected = xs.resample_poly(da, 1, 2, "time")
-        numtaps = 20 * 2 + 1
-        lag = ((numtaps - 1) // 2) // 2  # group delay, in output samples
-        n = expected.sizes["time"]
-        np.testing.assert_allclose(
-            result.values[lag:], expected.values[: n - lag], atol=1e-10
-        )
+        result = xd.resample(da, down=down, dim="time")
+        expected = xs.resample_poly(da, 1, down, "time")
+        np.testing.assert_allclose(result.values, expected.values, atol=1e-12)
+        assert np.array_equal(result["time"].values, expected["time"].values)
 
     def test_three_spellings_agree(self):
         da = wavelet_wavefronts()  # 50 Hz
@@ -852,16 +851,18 @@ class TestResample:
 
     def test_state_round_trip_through_a_data_collection_walk(self):
         # Same heterogeneous fleet as the eager round trip, but through a
-        # DataCollection: the per-leaf reset() is what is under test here.
+        # DataCollection: the per-leaf reset() is what is under test here. Both
+        # records snap to the same nested interval (delta * round(target /
+        # delta)); if the state leaked, the second would not.
         atom = Resample(interval=10.0, snap=True, dim="distance")
         first = dummy(shape=(20, 500), step=(0.01, 1.021975))
         second = dummy(shape=(20, 500), step=(0.01, 2.04395))
         dc = xd.DataCollection([first, second], "record")
-        out1, out2 = atom(dc)
-        np.testing.assert_allclose(
-            xd.get_sampling_interval(out1, "distance"),
-            xd.get_sampling_interval(out2, "distance"),
-        )
+        intervals = {
+            round(float(xd.get_sampling_interval(chunk, "distance")), 6)
+            for chunk in atom(dc)
+        }
+        assert intervals == {round(1.021975 * 10, 6)}
 
     def test_chunk_invariant_fir(self):
         da = dummy(shape=(400, 5), step=(0.01, 10.0))

@@ -324,10 +324,18 @@ class FIRFilter(Atom):
         self.polyphase.taps = self.up * taps
         self.polyphase.up = self.up
         self.polyphase.down = self.down
+        # When resampling, land on the canonical grid with the group delay
+        # taken out of the data (scipy.signal.resample_poly); a plain filter
+        # keeps the delay on the coordinate.
+        self.polyphase.compensate = self.up != 1 or self.down != 1
 
     def call(self, da, **flags):
         """Apply the FIR taps to *da*, delay-corrected and resampled."""
         return self.polyphase(da, **flags)
+
+    def flush(self):
+        """Drain the polyphase resampler's held-back tail (no-op for a filter)."""
+        return self.polyphase.flush()
 
 
 class Filter(Atom):
@@ -901,10 +909,10 @@ class Resample(Atom):
         return ValueError(f"{cause} Ways out: " + "; ".join(ways_out))
 
     def flush(self):
-        """Drain the causal iir child's buffered tail; fir and fft never buffer."""
-        if self.method == "iir":
-            return self.child.flush()
-        return []
+        """Drain the child's buffered tail (fir/iir); "fft" never buffers."""
+        if self.method == "fft":
+            return []
+        return self.child.flush()
 
     def call(self, da, **flags):
         """Apply the designed FIR/IIR pipeline, or resample in place for FFT."""
@@ -935,7 +943,11 @@ class Resample(Atom):
         if ratio == 1:
             return da
         n = da.sizes[self.dim]
-        num = max(1, round(n * ratio))
+        # With an exact ratio in hand, land on the same canonical grid the
+        # "fir"/"iir" paths use (`ceil(n * up / down)` samples); otherwise the
+        # achieved `round(n * ratio)` grid, as fine as the Fourier method gets.
+        exact = up is not None and down is not None
+        num = max(1, -(-n * up // down)) if exact else max(1, round(n * ratio))
         if self.tolerance is not None:
             achieved = num / n
             deviation = abs(achieved - ratio) / ratio
@@ -949,7 +961,18 @@ class Resample(Atom):
                     f"quantisation floor here is {floor:.2g}"
                 )
         edge = "mirror" if self.edge is None else self.edge
-        return _edge_resample(da, num, self.dim, self.window, edge)
+        out = _edge_resample(da, num, self.dim, self.window, edge)
+        if not exact:
+            return out
+        # Pin the output axis to the exact canonical grid: same origin, exact
+        # `delta * down / up` spacing (`xs.resample` builds its axis the same
+        # way). The content still lands within half an output sample of it,
+        # which is the "fft" contract.
+        coord = da.coords[self.dim]
+        step = get_sampling_interval(da, self.dim, cast=False) * down / up
+        coords = out.coords.copy()
+        coords[self.dim] = type(coord).from_block(coord.start, num, step, dim=self.dim)
+        return DataArray(out.values, coords, out.dims, out.name, out.attrs)
 
 
 class ResamplePoly(Resample):

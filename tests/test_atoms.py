@@ -258,9 +258,9 @@ class TestResamplePoly:
         with pytest.warns(DeprecationWarning):
             atom = ResamplePoly(125, maxfactor=10, dim="time")
         result = atom(da)
-        result_chunked = xd.concat(
-            [atom(chunk, chunk_dim="time") for chunk in chunks], "time"
-        )
+        streamed = [atom(chunk, chunk_dim="time") for chunk in chunks]
+        streamed.extend(atom.flush())
+        result_chunked = xd.concat(streamed, "time")
 
         assert np.allclose(result.values, result_chunked.values, atol=1e-15, rtol=1e-12)
         assert result.coords.equals(result_chunked.coords)
@@ -350,7 +350,7 @@ class TestPolyphase:
         )
 
     @pytest.mark.parametrize("up, down", [(1, 2), (2, 5), (2, 3)])
-    @pytest.mark.parametrize("nchunk", [3, 7])
+    @pytest.mark.parametrize("nchunk", [3, 7, 100])
     def test_chunked_equals_eager(self, up, down, nchunk):
         da = xd.testing.dummy(shape=(101, 5))
         taps = sp.firwin(21, 0.4 / max(up, down))
@@ -392,6 +392,82 @@ class TestPolyphase:
         da = xd.testing.dummy(shape=(101, 5))
         atom = Polyphase(sp.firwin(21, 0.2), 1, 2, "time")
         assert atom(da.isel(time=slice(0, 0))) == xd.DataCollection([])
+
+    @pytest.mark.parametrize("up, down", [(1, 2), (2, 5), (3, 2)])
+    def test_compensate_matches_resample_poly(self, up, down):
+        # compensate=True is the fusion of scipy.signal.resample_poly: the
+        # group delay comes out of the values, the axis stays canonical.
+        da = xd.testing.dummy(shape=(201, 4))
+        taps = sp.firwin(20 * max(up, down) + 1, 0.4 / max(up, down))
+        result = Polyphase(up * taps, up, down, "time", compensate=True)(da)
+        expected = sp.resample_poly(da.values, up, down, axis=0, window=taps)
+        np.testing.assert_allclose(result.values, expected, atol=1e-12)
+        assert result.sizes["time"] == -(-201 * up // down)
+
+    @pytest.mark.parametrize("nchunk", [3, 199])
+    def test_compensate_chunked_equals_eager_with_flush(self, nchunk):
+        da = xd.testing.dummy(shape=(201, 4))
+        taps = sp.firwin(41, 0.2)
+        eager = Polyphase(taps, 2, 5, "time", compensate=True)(da)
+        atom = Polyphase(taps, 2, 5, "time", compensate=True)
+        outs = [atom(c, chunk_dim="time") for c in xd.split(da, nchunk, "time")]
+        outs += atom.flush()
+        chunked = xd.concat(outs, "time")
+        np.testing.assert_allclose(chunked.values, eager.values, atol=1e-12)
+        assert chunked.coords.equals(eager.coords)
+
+    def test_compensate_empty_chunk_and_exhausted_flush(self):
+        da = xd.testing.dummy(shape=(40, 3))
+        atom = Polyphase(sp.firwin(21, 0.2), 1, 2, "time", compensate=True)
+        assert atom(da.isel(time=slice(0, 0))) == xd.DataCollection([])
+        for chunk in xd.split(da, 4, "time"):
+            atom(chunk, chunk_dim="time")
+        assert len(atom.flush()) == 1  # drains the held-back tail
+        assert atom.flush() == []  # nothing left, emitted has reached n_out
+
+    def test_compensate_flush_pads_a_short_stream(self):
+        # A stream shorter than the filter memory: `flush` zero-pads the
+        # history up to the warm-up length it needs.
+        da = xd.testing.dummy(shape=(15, 3))
+        taps = sp.firwin(21, 0.2)
+        eager = Polyphase(taps, 1, 2, "time", compensate=True)(da)
+        atom = Polyphase(taps, 1, 2, "time", compensate=True)
+        outs = [atom(c, chunk_dim="time") for c in xd.split(da, 3, "time")]
+        outs += atom.flush()
+        chunked = xd.concat(outs, "time")
+        np.testing.assert_allclose(chunked.values, eager.values, atol=1e-12)
+
+    def test_regular_float_coordinate(self):
+        # compensate=False along a float (distance) axis: the float branch of
+        # `_coords`, unreachable through datetime "time".
+        da = xd.testing.dummy(shape=(5, 101))
+        taps = sp.firwin(21, 0.2)
+        eager = Polyphase(taps, 1, 2, "distance")(da)
+        assert eager["distance"].isregular()
+        atom = Polyphase(taps, 1, 2, "distance")
+        outs = [atom(c, chunk_dim="distance") for c in xd.split(da, 4, "distance")]
+        np.testing.assert_allclose(
+            xd.concat(outs, "distance").values, eager.values, atol=1e-15
+        )
+
+    @pytest.mark.parametrize("n", [120, 3])
+    def test_compensate_eager_on_an_irregular_coordinate(self, n):
+        # Chunking an irregular axis is refused upstream, so the irregular
+        # branch of the canonical-grid coords is only reached eagerly; n=3
+        # exercises the one-or-no-tie case.
+        da = xd.testing.dummy(shape=(n, 3))
+        da["time"] = xd.Coordinate(
+            {
+                "tie_indices": da["time"].tie_indices,
+                "tie_values": da["time"].tie_values,
+            },
+            "time",
+        )
+        assert not da["time"].isregular()
+        taps = sp.firwin(min(41, 2 * n - 1) | 1, 0.2)
+        result = Polyphase(taps, 1, 4, "time", compensate=True)(da)
+        assert result.sizes["time"] == -(-n // 4)
+        assert not result["time"].isregular()
 
     def test_upsample_single_sample(self):
         # a one-sample chunk has a single tie: the upsampled block still
