@@ -26,7 +26,10 @@ __all__ = [
     "open_mfdatacollection",
     "open_mfdatatree",
     "plot_availability",
+    "sortby",
     "split",
+    "stack",
+    "trim_overlaps",
 ]
 
 from .dataarray import DataArray
@@ -48,5 +51,8 @@ from .routines import (
     open_mfdatacollection,
     open_mfdatatree,
     plot_availability,
+    sortby,
     split,
+    stack,
+    trim_overlaps,
 )

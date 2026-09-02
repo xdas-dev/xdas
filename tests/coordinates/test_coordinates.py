@@ -1,4 +1,7 @@
+import warnings
+
 import numpy as np
+import numpy.testing as npt
 import pytest
 import xarray as xr
 
@@ -277,6 +280,17 @@ class TestCoordinateBase:
         expected = DenseCoordinate([0.0, 1.0, 2.0], "x")
         assert result.equals(expected)
 
+    def test_deprecated_type_queries_default_false(self):
+        coord = ScalarCoordinate(1)
+        for name in ("isdense", "isinterp", "issampled"):
+            with pytest.warns(FutureWarning, match=name):
+                assert getattr(coord, name)() is False
+
+    def test_get_value_deprecated(self):
+        coord = DenseCoordinate([1.0, 2.0, 3.0], "x")
+        with pytest.warns(FutureWarning, match="get_value"):
+            assert coord.get_value(1) == 2.0
+
     def test_array_with_dtype(self):
         coord = DenseCoordinate([1.0, 2.0, 3.0], "x")
         result = coord.__array__(dtype=np.float32)
@@ -328,19 +342,72 @@ class TestCoordinateBase:
         df = coord.get_discontinuities()
         assert df.empty
 
-    def test_get_discontinuities_tolerance(self):
-        # Tiny sampling interval (0.001) but large gap (5.0); with tolerance=0.005
-        # the within-segment delta (0.001) < tolerance, so the record is skipped.
+    def test_get_discontinuities_values(self):
+        # a 5.0 gap then a 2.0 overlap, on a sampling interval of 1.0: the
+        # boundary straddles the last sample of one segment and the first of
+        # the next, and `delta` is the jump between them, one sampling interval
+        # less than that step
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 4, 5, 9, 10, 14],
+                "tie_values": [0.0, 4.0, 10.0, 14.0, 13.0, 17.0],
+            }
+        )
+        df = coord.get_discontinuities()
+        npt.assert_array_equal(df["start_index"], [4, 9])
+        npt.assert_array_equal(df["end_index"], [5, 10])
+        npt.assert_array_equal(df["start_value"], [4.0, 14.0])
+        npt.assert_array_equal(df["end_value"], [10.0, 13.0])
+        npt.assert_array_equal(df["delta"], [5.0, -2.0])
+        npt.assert_array_equal(df["type"], ["gap", "overlap"])
+
+    def test_get_discontinuities_subsample_overlap_is_an_overlap(self):
+        # the axis still moves forward, by 0.4 of a 1.0 sampling interval, so
+        # the step is positive while the jump is not: obspy calls this an
+        # overlap and so do we
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 5, 9], "tie_values": [0.0, 4.0, 4.4, 8.4]}
+        )
+        df = coord.get_discontinuities()
+        npt.assert_array_equal(df["start_value"], [4.0])
+        npt.assert_array_equal(df["end_value"], [4.4])
+        npt.assert_allclose(df["delta"], [-0.6])
+        npt.assert_array_equal(df["type"], ["overlap"])
+        npt.assert_array_equal(coord.get_split_indices("overlaps"), df["end_index"])
+
+    def test_get_discontinuities_datetime(self):
         coord = InterpCoordinate(
             {
                 "tie_indices": [0, 4, 5, 9],
-                "tie_values": [0.0, 0.004, 5.005, 5.009],
+                "tie_values": np.array(
+                    ["2024-01-01T00:00:00", "2024-01-01T00:00:04"]
+                    + ["2024-01-01T00:00:10", "2024-01-01T00:00:14"],
+                    dtype="datetime64[ms]",
+                ),
             }
         )
-        df_strict = coord.get_discontinuities()
-        df_tolerant = coord.get_discontinuities(tolerance=0.005)
-        assert len(df_strict) == 1
-        assert len(df_tolerant) == 0
+        df = coord.get_discontinuities()
+        npt.assert_array_equal(df["start_index"], [4])
+        npt.assert_array_equal(df["delta"], [np.timedelta64(5, "s")])
+        npt.assert_array_equal(df["type"], ["gap"])
+
+    def test_get_discontinuities_tolerance(self):
+        # `tolerance` filters the very quantity reported as `delta`: the jump,
+        # 5.0 and -2.0 here
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 4, 5, 9, 10, 14],
+                "tie_values": [0.0, 4.0, 10.0, 14.0, 13.0, 17.0],
+            }
+        )
+        npt.assert_array_equal(coord.get_discontinuities()["type"], ["gap", "overlap"])
+        npt.assert_array_equal(
+            coord.get_discontinuities(tolerance=1.5)["type"], ["gap", "overlap"]
+        )
+        npt.assert_array_equal(
+            coord.get_discontinuities(tolerance=3.0)["type"], ["gap"]
+        )
+        assert len(coord.get_discontinuities(tolerance=5.5)) == 0
 
     def test_get_availabilities_empty(self):
         coord = InterpCoordinate()
@@ -484,9 +551,172 @@ class TestEncodeDelta:
         assert encode_delta("tolerance", None) == {}
 
 
+class TestSamplingRatio:
+    """The (numerator, denominator) representation shared by InterpCoordinate
+    and SampledCoordinate, exercised directly at the ``core.py`` level -- the
+    denominator-1 float case in particular can never arise through either
+    class's public constructor (:func:`reduce_sampling_ratio` always forces
+    it), but the general contract still holds it."""
+
+    def test_legacy_spelling_normalises_to_value_one(self):
+        from xdas.coordinates.core import parse_sampling_ratio
+
+        numerator, denominator = parse_sampling_ratio(2.5, None, None, np.float64)
+        assert numerator == 2.5
+        assert denominator == 1
+
+    def test_no_rate_at_all_is_none_none(self):
+        from xdas.coordinates.core import parse_sampling_ratio
+
+        assert parse_sampling_ratio(None, None, None, np.float64) == (None, None)
+
+    def test_both_spellings_together_raise(self):
+        from xdas.coordinates.core import parse_sampling_ratio
+
+        with pytest.raises(ValueError, match="cannot pass both"):
+            parse_sampling_ratio(2.5, 5, 2, np.float64)
+
+    def test_partial_pair_raises(self):
+        from xdas.coordinates.core import parse_sampling_ratio
+
+        with pytest.raises(ValueError, match="provided together"):
+            parse_sampling_ratio(None, 5, None, np.float64)
+        with pytest.raises(ValueError, match="provided together"):
+            parse_sampling_ratio(None, None, 2, np.float64)
+
+    def test_non_positive_denominator_raises(self):
+        from xdas.coordinates.core import parse_sampling_ratio
+
+        with pytest.raises(ValueError, match="strictly positive"):
+            parse_sampling_ratio(None, 5, 0, np.float64)
+
+    def test_integer_pair_is_gcd_reduced(self):
+        from xdas.coordinates.core import parse_sampling_ratio
+
+        numerator, denominator = parse_sampling_ratio(None, 14, 6, np.dtype("int64"))
+        assert numerator == 7
+        assert denominator == 3
+
+    def test_datetime_pair_is_gcd_reduced_and_kept_at_its_own_resolution(self):
+        from xdas.coordinates.core import parse_sampling_ratio
+
+        numerator, denominator = parse_sampling_ratio(
+            None, np.timedelta64(14, "us"), 6, np.dtype("M8[us]")
+        )
+        assert numerator == np.timedelta64(7, "us")
+        assert denominator == 3
+
+    def test_float_pair_folds_the_denominator_to_one(self):
+        from xdas.coordinates.core import parse_sampling_ratio
+
+        numerator, denominator = parse_sampling_ratio(None, 5.0, 4, np.float64)
+        assert numerator == 1.25
+        assert denominator == 1
+
+    def test_divide_short_circuits_at_denominator_one(self):
+        from xdas.coordinates.core import divide_sampling_ratio
+
+        assert divide_sampling_ratio(None, None, np.float64) is None
+        assert divide_sampling_ratio(3.5, 1, np.float64) == 3.5
+
+    def test_divide_floors_for_exact_dtypes_and_true_divides_for_floats(self):
+        from xdas.coordinates.core import divide_sampling_ratio
+
+        # A 10.2 m distance interval floor-divided would silently truncate to
+        # 10.0 -- the bug the dtype branch exists to avoid.
+        assert divide_sampling_ratio(np.int64(7), 3, np.dtype("int64")) == 2
+        assert divide_sampling_ratio(10.2, 3, np.dtype("float64")) == pytest.approx(3.4)
+
+
 class TestGetSamplingIntervalHelperNonAxis:
     def test_scalar_coordinate_returns_none(self):
         from xdas.coordinates import get_sampling_interval
 
         da = xd.DataArray(np.zeros(3), {"x": [0.0, 1.0, 2.0], "meta": 0})
         assert get_sampling_interval(da, "meta") is None
+
+
+class TestReversals:
+    """A reversal is an overlap of a full sampling interval or more."""
+
+    def test_a_subsample_overlap_is_not_a_reversal(self):
+        # the axis advances by 0.4 of a 1.0 sampling interval: an overlap that
+        # leaves the order intact, so there is nothing to cut
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 5, 9], "tie_values": [0.0, 4.0, 4.4, 8.4]}
+        )
+        npt.assert_array_equal(coord.get_split_indices("overlaps"), [5])
+        npt.assert_array_equal(coord.get_split_indices("reversals"), [])
+
+    def test_a_full_sample_overlap_is_a_reversal(self):
+        # 0.5 of a sampling interval short of a whole one: the axis stops
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 5, 9], "tie_values": [0.0, 4.0, 3.5, 7.5]}
+        )
+        npt.assert_array_equal(coord.get_split_indices("reversals"), [5])
+        assert not coord._is_monotonic_increasing()
+
+    def test_repeated_values_are_a_reversal(self):
+        # an axis that stands still is not strictly increasing either, and the
+        # default threshold is exact rather than the epsilon used on jumps
+        coord = DenseCoordinate([10.0, 20.0, 20.0, 30.0])
+        npt.assert_array_equal(coord.get_split_indices("reversals"), [2])
+
+    def test_reversals_are_the_boundaries_monotonicity_trips_on(self):
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 4, 5, 9, 10, 14],
+                "tie_values": [0.0, 4.0, 10.0, 14.0, 13.0, 17.0],
+            }
+        )
+        # a gap, then an overlap of two sampling intervals
+        npt.assert_array_equal(coord.get_split_indices("discontinuities"), [5, 10])
+        npt.assert_array_equal(coord.get_split_indices("reversals"), [10])
+        assert not coord._is_monotonic_increasing()
+        for chunk in xd.split(
+            xd.DataArray(np.arange(15.0), {"dim_0": coord}), "reversals"
+        ):
+            assert chunk["dim_0"]._is_monotonic_increasing()
+
+    def test_tolerance_drops_the_short_reversals(self):
+        coord = DenseCoordinate([0.0, 1.0, 0.5, 1.5, 2.5, 0.5])
+        npt.assert_array_equal(coord.get_split_indices("reversals"), [2, 5])
+        npt.assert_array_equal(coord.get_split_indices("reversals", 1.0), [5])
+
+
+class TestOrderedSelectionOnUnsortedAxes:
+    @staticmethod
+    def dataarray(coord):
+        return xd.DataArray(np.arange(len(coord), dtype=float), {"dim_0": coord})
+
+    def test_a_subsample_overlap_slices_without_splitting(self):
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 5, 9], "tie_values": [0.0, 4.0, 4.4, 8.4]}
+        )
+        da = self.dataarray(coord)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = da.sel(dim_0=slice(2.0, 6.0))
+        npt.assert_array_equal(result.values, [2.0, 3.0, 4.0, 5.0, 6.0])
+
+    def test_a_reversal_splits_and_concatenates(self):
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 5, 9], "tie_values": [0.0, 4.0, 3.0, 7.0]}
+        )
+        da = self.dataarray(coord)
+        with pytest.warns(match="not monotonic increasing"):
+            result = da.sel(dim_0=slice(2.0, 5.0))
+        npt.assert_array_equal(result.values, [2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+
+    def test_an_axis_that_decreases_within_a_segment_is_refused(self):
+        # nothing marks the turn, so no splitting can order it: the selection
+        # says so instead of recursing on itself forever
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 8], "tie_values": [0.0, 4.0, 2.0]}
+        )
+        da = self.dataarray(coord)
+        with (
+            pytest.warns(match="not monotonic increasing"),
+            pytest.raises(ValueError, match="decreases along its axis"),
+        ):
+            da.sel(dim_0=slice(1.0, 3.0))

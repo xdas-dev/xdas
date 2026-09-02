@@ -353,22 +353,34 @@ def resample_poly(
     """
     axis = da.get_axis_num(dim)
     dim = da.dims[axis]
-    d = get_sampling_interval(da, dim, cast=False)
     across = int(axis == 0)
     func = parallelize(across, across, parallel)(sp.resample_poly)
     data = func(da.values, up, down, axis, window, padtype, cval)
     start = da[dim][0].values
-    step = d * down / up
     source = da.coords[dim]
-    new_coord = type(source).from_block(start, data.shape[axis], step, dim=dim)
-    # The derived rate may not be exactly representable (integer datetime
-    # resolutions truncate), so declare that error as jitter on top of the
-    # inherited one, as UpSample does; chunk seams then stay within tolerance.
-    if isinstance(source, InterpCoordinate):
-        tolerance = np.abs(d * down - step * up)
-        if source.tolerance is not None:
-            tolerance = source.tolerance + tolerance
-        new_coord = new_coord.to_regular(step, tolerance)
+    if isinstance(source, InterpCoordinate) and source.isregular():
+        # (numerator * down, denominator * up) is the exact output rate --
+        # nothing to round to get it, so nothing to launder into tolerance.
+        # The far tie is placed by rounding to the coordinate's own tick
+        # resolution, which costs at most a fraction of a tick, not up to a
+        # whole sample period; declare that quantization on top of the
+        # inherited jitter, rather than the old truncated-delta drift.
+        numerator, denominator = source._sampling_ratio
+        if np.issubdtype(source.dtype, np.floating):
+            new_numerator, new_denominator = numerator * down / up, 1
+        else:
+            new_numerator, new_denominator = numerator * down, int(denominator) * up
+        new_coord = InterpCoordinate.from_block(
+            start,
+            data.shape[axis],
+            (new_numerator, new_denominator),
+            dim=dim,
+            tolerance=source.tolerance,
+        )
+    else:
+        d = get_sampling_interval(da, dim, cast=False)
+        step = d * down / up
+        new_coord = type(source).from_block(start, data.shape[axis], step, dim=dim)
     coords = {
         name: new_coord if name == dim else coord
         for name, coord in da.coords.items()

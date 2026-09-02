@@ -32,3 +32,26 @@ class TestProdMLEngine:
         da = xd.open(str(path), engine="prodml")
         assert isinstance(da, xd.DataArray)
         assert da.dims == ("time", "distance")
+
+    def test_time_carries_exact_ratio(self, tmp_path):
+        # F6: a 999-sample axis (1000 tie points) spanning 1000 ms is not a
+        # whole number of nanoseconds per sample; the reader must carry the
+        # exact (numerator, denominator) pair rather than a rounded scalar,
+        # so the coordinate validates at tolerance=0.
+        nt, nd = 1000, 3
+        dx = 1.0
+        data = np.zeros((nt, nd), dtype=np.float32)
+        path = tmp_path / "prodml_999.h5"
+        with h5py.File(path, "w") as f:
+            acq = f.create_group("Acquisition")
+            acq.attrs["SpatialSamplingInterval"] = dx
+            acq.attrs["StartLocusIndex"] = 0
+            raw = acq.create_group("Raw[0]")
+            ds = raw.create_dataset("RawData", data=data)
+            ds.attrs["PartStartTime"] = np.bytes_(b"2020-01-01T00:00:00.000+00:00")
+            ds.attrs["PartEndTime"] = np.bytes_(b"2020-01-01T00:00:01.000+00:00")
+        da = xd.open(str(path), engine="prodml")
+        coord = da["time"]
+        numerator, denominator = coord._sampling_ratio
+        assert denominator == 999
+        assert numerator == np.timedelta64(1_000_000_000, "ns")

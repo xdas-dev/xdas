@@ -94,6 +94,15 @@ class TestGetSplitIndices:
         ("overlaps", 4, [50]),
         ("overlaps", 8, []),
         ("overlaps", 20, []),
+        # a reversal is an overlap one sampling interval longer, so the same
+        # boundaries appear one tolerance step later
+        ("reversals", False, [20, 50]),
+        ("reversals", None, [20, 50]),
+        ("reversals", 1, [20, 50]),
+        ("reversals", 2, [50]),
+        ("reversals", 4, [50]),
+        ("reversals", 8, []),
+        ("reversals", 20, []),
     ]
 
     @pytest.mark.parametrize("ctype", ["interpolated", "sampled"])

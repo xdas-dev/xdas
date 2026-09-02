@@ -29,7 +29,8 @@ access large multi-file acquisitions as a single seamless array.
 :link: pipeline/index
 :link-type: doc
 Building processing sequences with {py:class}`~xdas.atoms.Atom` objects and applying
-them chunk-by-chunk on datasets larger than memory, including real-time streaming.
+them chunk-by-chunk on datasets larger than memory, including real-time streaming and
+phase picking with SeisBench models.
 ```
 
 ```{grid-item-card} How-To Guides

@@ -8,5 +8,7 @@
 .. autosummary::
    :toctree: ../_autosummary
 
+   assert_chunk_invariant
    dummy
+   inject_gaps
 ```

@@ -1,5 +1,5 @@
 """
-Virtual (lazy) array types for deferred HDF5/NetCDF4 access.
+The HDF5 virtual dataset backend (``vtype="hdf5"``).
 
 Includes :class:`VirtualArray` base, :class:`VirtualSource` for a single
 dataset slice, and :class:`VirtualStack` for concatenating sources along
@@ -13,65 +13,42 @@ from tempfile import TemporaryDirectory
 import h5py
 import numpy as np
 
+from .core import VirtualBackend
 
-class VirtualArray:
+
+class VirtualArray(VirtualBackend, vtype="hdf5"):
     """
     Abstract base class for lazy array objects backed by HDF5/NetCDF4 files.
 
-    Subclasses must implement :meth:`shape`, :meth:`dtype`, :meth:`__getitem__`,
-    :meth:`__array__`, and :meth:`to_dataset`.
+    Subclasses must implement the :class:`~xdas.virtual.VirtualBackend`
+    contract (:attr:`shape`, :attr:`dtype`, ``__getitem__``,
+    ``__array__``) plus :meth:`to_dataset`.
     """
 
     def __repr__(self):
         return f"{self.__class__.__name__}: {_to_human(self.nbytes)} ({self.dtype})"
 
-    def __getitem__(self, key):
-        raise NotImplementedError
-
-    def __array__(self, dtype=None, copy=None):
-        raise NotImplementedError
-
-    @property
-    def shape(self):
-        """Tuple of array dimensions (abstract — must be overridden)."""
-        raise NotImplementedError
-
-    @property
-    def dtype(self):
-        """NumPy dtype of the array elements (abstract — must be overridden)."""
-        raise NotImplementedError
-
     def to_dataset(self, file_or_group, name):
         """Write this virtual array as an HDF5 dataset (abstract — must be overridden)."""
         raise NotImplementedError
 
-    @property
-    def ndim(self):
-        """Number of dimensions."""
-        return len(self.shape)
+    @classmethod
+    def from_variable(cls, variable):
+        """
+        Expose one stored HDF5 variable as a lazy virtual source.
 
-    @property
-    def size(self):
-        """Total number of elements."""
-        if self.shape:
-            return np.prod(self.shape)
-        else:
-            return 0
+        Parameters
+        ----------
+        variable : h5py.Dataset
+            The open variable to wrap.
 
-    @property
-    def empty(self):
-        """``True`` if the array contains no elements."""
-        return self.size == 0
+        Returns
+        -------
+        VirtualSource
+        """
+        return VirtualSource(variable)
 
-    @property
-    def nbytes(self):
-        """Total number of bytes occupied by the array elements."""
-        if self.shape:
-            return self.size * self.dtype.itemsize
-        else:
-            return 0
-
-    def create_variable(self, file, name, dims=None, dtype=None):
+    def create_variable(self, file, name, dims=None):
         """
         Write this virtual array into *file* and register it as a named variable.
 
@@ -83,8 +60,6 @@ class VirtualArray:
             Variable name to create inside *file*.
         dims : sequence of str, optional
             Dimension names for the variable.
-        dtype : dtype-like, optional
-            Override data type for the variable.
 
         Returns
         -------
@@ -390,7 +365,7 @@ class VirtualSource(VirtualArray):
     sliced to indicate which regions should be used. Sliced VirtualSource eventually can
     be assigned to a VirtualLayout to
 
-    Best practive is to pass it a `h5py.Dataset` obtain destructuring a `h5py.File`.
+    Best practice is to pass it a `h5py.Dataset` obtain destructuring a `h5py.File`.
     Otherwise the exact filename, dataset name, shape and dtype must be passed.
 
     The data can be accessed using `numpy.asarray` or the `__array__` special method.
@@ -501,7 +476,7 @@ class Selection:
     """
     Used to perform lazy selection.
 
-    It is usefull when dealing with lazy array to avoid loading unneccessary data.
+    It is useful when dealing with lazy array to avoid loading unnecessary data.
     It must be initialized with the shape of the underlying array. It allows to track
     the succesive slice or single element selections made along the different
     dimensions of the array. Once the overall selection must be aaplied, the

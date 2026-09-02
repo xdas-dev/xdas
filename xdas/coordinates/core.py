@@ -10,6 +10,7 @@ import warnings
 import weakref
 from abc import ABC, abstractmethod
 from copy import copy, deepcopy
+from fractions import Fraction
 from functools import wraps
 from itertools import pairwise
 from typing import ClassVar
@@ -29,6 +30,19 @@ CODE_TO_UNITS = {
     "ns": "nanoseconds",
 }
 UNITS_TO_CODE = {v: k for k, v in CODE_TO_UNITS.items()}
+
+
+def array_equal_nan(x, y):
+    """Like :func:`numpy.array_equal` but treats NaNs as equal, when supported.
+
+    ``equal_nan=True`` raises ``TypeError`` on dtypes numpy's ``isnan`` does
+    not support (e.g. fixed-width string arrays); fall back to a plain
+    comparison there.
+    """
+    try:
+        return np.array_equal(x, y, equal_nan=True)
+    except TypeError:
+        return np.array_equal(x, y)
 
 
 def wraps_first_last(func):
@@ -476,6 +490,48 @@ class Coordinate(ABC):
         """
         return False
 
+    def isdense(self):
+        """Return ``True`` if this is a :class:`DenseCoordinate` (explicit numpy array).
+
+        .. deprecated:: 0.2.9
+            Use ``isinstance(coord, DenseCoordinate)`` instead.
+        """
+        warnings.warn(
+            "Coordinate.isdense() is deprecated; use "
+            "isinstance(coord, DenseCoordinate) instead.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        return False
+
+    def isinterp(self):
+        """Return ``True`` if this is an :class:`InterpCoordinate` (piecewise-linear).
+
+        .. deprecated:: 0.2.9
+            Use ``isinstance(coord, InterpCoordinate)`` instead.
+        """
+        warnings.warn(
+            "Coordinate.isinterp() is deprecated; use "
+            "isinstance(coord, InterpCoordinate) instead.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        return False
+
+    def issampled(self):
+        """Return ``True`` if this is a :class:`SampledCoordinate` (regularly sampled).
+
+        .. deprecated:: 0.2.9
+            Use ``isinstance(coord, SampledCoordinate)`` instead.
+        """
+        warnings.warn(
+            "Coordinate.issampled() is deprecated; use "
+            "isinstance(coord, SampledCoordinate) instead.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        return False
+
     def equals(self, other):
         """Return ``True`` if *other* is the same coordinate type with identical dim and data.
 
@@ -492,7 +548,7 @@ class Coordinate(ABC):
             pairs = [(a, b)]
         for x, y in pairs:
             x, y = np.asarray(x), np.asarray(y)
-            if x.dtype != y.dtype or not np.array_equal(x, y, equal_nan=False):
+            if x.dtype != y.dtype or not array_equal_nan(x, y):
                 return False
         return True
 
@@ -590,7 +646,16 @@ class AxisCoordinate(Coordinate, ABC):
 
     @abstractmethod
     def _is_monotonic_increasing(self):
-        """Return ``True`` if all consecutive differences in this coordinate are positive."""
+        """
+        Return ``True`` if all consecutive differences in this coordinate are positive.
+
+        This is a property of the raw steps, not of the jumps that
+        :meth:`get_split_indices` reports: an overlap shorter than one sampling
+        interval still moves the axis forward, and leaves it sorted. Only an
+        overlap of a full interval or more breaks the order. Implementations
+        must therefore look at the values themselves rather than at the
+        discontinuities, which say nothing about the slope within a segment.
+        """
 
     @abstractmethod
     def _get_value(self, index):
@@ -806,6 +871,19 @@ class AxisCoordinate(Coordinate, ABC):
         """Value at the last element."""
         return self._get_value(len(self) - 1)
 
+    def get_value(self, index):
+        """Return the coordinate value(s) at integer *index*.
+
+        .. deprecated:: 0.2.9
+            Use ``coord[index].values`` instead.
+        """
+        warnings.warn(
+            "Coordinate.get_value() is deprecated; use coord[index].values instead.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        return self._get_value(index)
+
     # --- dunders logic ---
 
     def __getitem__(self, item):
@@ -857,24 +935,32 @@ class AxisCoordinate(Coordinate, ABC):
 
         Parameters
         ----------
-        kind : {"discontinuities", "gaps", "overlaps"}, optional
+        kind : {"discontinuities", "gaps", "overlaps", "reversals"}, optional
             Which boundary type to return. ``"gaps"`` returns only boundaries
-            where the axis jumps forward by more than one sampling interval;
-            ``"overlaps"`` returns only boundaries where the axis jumps
-            backward. ``"discontinuities"`` (default) returns both.
+            where the axis advances by more than one sampling interval;
+            ``"overlaps"`` returns only boundaries where it advances by less
+            than one — the ObsPy convention, so an overlap shorter than a
+            sample counts even though the axis still moves forward.
+            ``"discontinuities"`` (default) returns both. ``"reversals"``
+            returns the boundaries where the axis does not advance at all:
+            those overlaps that are a full sampling interval or longer, which
+            are the only ones that break the sort order. Cutting there yields
+            monotonic pieces, unless the axis also decreases *within* a
+            segment, which no boundary can report.
         tolerance : float, timedelta, None, or ``False``, optional
             Minimum absolute magnitude of the jump to report. Boundaries
             smaller than *tolerance* are silently dropped. ``None`` removes
             only zero-magnitude jumps (i.e. consecutive equal values).
             ``False`` (default) disables magnitude filtering and returns all
-            boundaries of the requested kind.
+            boundaries of the requested kind. For ``"reversals"`` it is the
+            step, not the jump, that is compared against it.
 
         Returns
         -------
         numpy.ndarray
             Integer indices of the start of each new segment (excluding the first).
         """
-        valid_kinds = {"discontinuities", "gaps", "overlaps"}
+        valid_kinds = {"discontinuities", "gaps", "overlaps", "reversals"}
         if kind not in valid_kinds:
             raise ValueError(f"`kind` must be one of {valid_kinds}; got {kind!r}")
 
@@ -884,8 +970,26 @@ class AxisCoordinate(Coordinate, ABC):
         if kind == "discontinuities" and tolerance is False:
             return positions
 
+        zero = np.timedelta64(0) if np.issubdtype(self.dtype, np.datetime64) else 0
+
+        if kind == "reversals":
+            if positions.size == 0:
+                return positions
+            # a reversal is judged on the raw step rather than on the jump: the
+            # question is whether the axis moves forward at all, not whether it
+            # moves forward by a whole sample. The default threshold is exactly
+            # zero, so that the boundaries reported here are exactly the ones
+            # that make `_is_monotonic_increasing` false
+            steps = self._get_value(positions) - self._get_value(positions - 1)
+            if tolerance is False:
+                threshold = zero
+            else:
+                threshold = -parse_scalar_delta(
+                    tolerance, self.dtype, default_zero=True
+                )
+            return positions[steps <= threshold]
+
         if tolerance is False:
-            zero = np.timedelta64(0) if np.issubdtype(self.dtype, np.datetime64) else 0
             match kind:
                 case "gaps":
                     mask = deltas >= zero
@@ -910,8 +1014,10 @@ class AxisCoordinate(Coordinate, ABC):
         Parameters
         ----------
         tolerance : float, timedelta, or None, optional
-            Minimum magnitude of a gap or overlap to include.  ``None``
-            (default) reports all discontinuities regardless of size.
+            Minimum absolute magnitude of the jump to report, as in
+            :meth:`get_split_indices`. ``None`` (default) reports every
+            discontinuity regardless of size; a jump of exactly zero is a
+            clean continuation and is never reported.
 
         Returns
         -------
@@ -919,17 +1025,37 @@ class AxisCoordinate(Coordinate, ABC):
             A DataFrame with the following columns:
 
             - start_index : int
-                The index where the discontinuity starts.
+                The index of the last sample before the discontinuity.
             - end_index : int
-                The index where the discontinuity ends.
+                The index of the first sample after it.
             - start_value : float
-                The value at the start of the discontinuity.
+                The value at `start_index`.
             - end_value : float
-                The value at the end of the discontinuity.
+                The value at `end_index`.
             - delta : float
-                The difference between the end_value and start_value.
+                The jump: the step from `start_value` to `end_value` minus one
+                sampling interval, i.e. how far the axis lands from a clean
+                continuation. This is the quantity `tolerance` filters on.
             - type : str
-                The type of the discontinuity, either "gap" or "overlap".
+                The type of the discontinuity, "gap" when `delta` is positive
+                and "overlap" when it is negative.
+
+        Notes
+        -----
+        This follows the ObsPy convention: `start_value`, `end_value` and
+        `delta` are the *Last Sample*, *Next Sample* and *Delta* columns of
+        :meth:`obspy.core.stream.Stream.get_gaps`. An axis that moves forward
+        by less than one sampling interval is an overlap, as it is there.
+
+        Examples
+        --------
+        >>> import xdas as xd
+        >>> coord = xd.Coordinate(
+        ...     {"tie_indices": [0, 4, 5, 9], "tie_values": [0.0, 4.0, 3.0, 7.0]}
+        ... )
+        >>> coord.get_discontinuities()
+           start_index  end_index  start_value  end_value  delta     type
+        0            4          5          4.0        3.0   -2.0  overlap
 
         """
         if self.empty:
@@ -943,23 +1069,22 @@ class AxisCoordinate(Coordinate, ABC):
                     "type",
                 ]
             )
-        indices = self.get_split_indices("discontinuities", tolerance)
+        # same candidates and same filter as `get_split_indices`, but the jump
+        # of each survivor is reported alongside its position
+        positions, deltas = self._split_candidates()
+        tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
+        mask = np.abs(deltas) > tolerance
         records = []
-        for index in indices:
-            start_index = index
-            end_index = index + 1
-            start_value = self._get_value(index)
-            end_value = self._get_value(index + 1)
-            delta = end_value - start_value
-            if tolerance is not None and np.abs(delta) < tolerance:
-                continue
+        # a split index is the first sample of the new segment: the step being
+        # reported runs from the sample before it to it
+        for index, delta in zip(positions[mask], deltas[mask]):
             record = {
-                "start_index": start_index,
-                "end_index": end_index,
-                "start_value": start_value,
-                "end_value": end_value,
+                "start_index": index - 1,
+                "end_index": index,
+                "start_value": self._get_value(index - 1),
+                "end_value": self._get_value(index),
                 "delta": delta,
-                "type": ("gap" if end_value > start_value else "overlap"),
+                "type": ("gap" if delta > 0 else "overlap"),
             }
             records.append(record)
         return pd.DataFrame.from_records(records)
@@ -1262,6 +1387,201 @@ def parse_scalar_delta(value, dtype, default_zero=False):
     return value
 
 
+def parse_sampling_ratio(
+    sampling_interval, sampling_numerator, sampling_denominator, dtype
+):
+    """
+    Normalise a coordinate's declared rate to a canonical ``(numerator, denominator)`` pair.
+
+    Accepts either spelling: a scalar ``sampling_interval`` (normalised to
+    ``(value, 1)``), or an explicit ``sampling_numerator`` / ``sampling_denominator``
+    pair, which must be given together. No rate at all (all three ``None``) returns
+    ``(None, None)``. The pair is always reduced to lowest terms by ``gcd`` -- an
+    irreducible fraction is the canonical, comparable form, so two coordinates built
+    from either spelling store the same pair and compare equal.
+
+    Float dtypes have no tick, so the denominator is coerced to 1 -- an *enforced*
+    invariant rather than a convention: dividing first if a pair was passed, since a
+    float axis has no exact referent for the ratio to preserve.
+
+    Parameters
+    ----------
+    sampling_interval : scalar or None
+        Legacy spelling: the sampling interval itself.
+    sampling_numerator : scalar or None
+        Explicit numerator, paired with `sampling_denominator`.
+    sampling_denominator : int or None
+        Explicit denominator, paired with `sampling_numerator`. Must be strictly
+        positive.
+    dtype : numpy.dtype
+        The coordinate's own value dtype, used to normalise `numerator` (e.g. to a
+        timedelta64 unit) exactly as :func:`parse_scalar_delta` would.
+
+    Returns
+    -------
+    numerator : numpy scalar or None
+    denominator : numpy.int64 or None
+
+    Raises
+    ------
+    ValueError
+        If both spellings are given, if only one of `sampling_numerator` /
+        `sampling_denominator` is given, or if `sampling_denominator` is not
+        strictly positive.
+    """
+    if sampling_numerator is not None or sampling_denominator is not None:
+        if sampling_interval is not None:
+            raise ValueError(
+                "cannot pass both `sampling_interval` and "
+                "`sampling_numerator`/`sampling_denominator`"
+            )
+        if sampling_numerator is None or sampling_denominator is None:
+            raise ValueError(
+                "`sampling_numerator` and `sampling_denominator` must be "
+                "provided together"
+            )
+        numerator = parse_scalar_delta(sampling_numerator, dtype)
+        denominator = int(sampling_denominator)
+        if not denominator > 0:
+            raise ValueError("`sampling_denominator` must be strictly positive")
+    elif sampling_interval is not None:
+        numerator = parse_scalar_delta(sampling_interval, dtype)
+        denominator = 1
+    else:
+        return None, None
+
+    return reduce_sampling_ratio(numerator, denominator, dtype)
+
+
+def reduce_sampling_ratio(numerator, denominator, dtype):
+    """
+    Reduce an already-typed ``(numerator, denominator)`` pair to lowest terms.
+
+    Assumes `numerator` already carries a numpy scalar of the right dtype (see
+    :func:`parse_scalar_delta`) and `denominator` is a strictly positive ``int``;
+    callers are responsible for validating both before calling this. gcd-reduces
+    exact dtypes (timedelta64 and integer); float dtypes have no tick, so the
+    denominator is coerced to 1 -- an enforced invariant, dividing first.
+
+    Datetime numerators are also normalised to `dtype`'s own resolution, so an
+    in-memory coordinate matches the one read back after serialisation (which
+    always encodes timedeltas at the coordinate's own datetime resolution).
+
+    Returns
+    -------
+    numerator : numpy scalar
+    denominator : numpy.int64
+    """
+    # Dispatch on `numerator`'s own dtype rather than `dtype`: a coordinate read
+    # back from the pre-CF on-disk spelling can carry a numeric `tie_values`
+    # paired with a timedelta64 rate (see `SampledCoordinate._collect_from_dataset`),
+    # and that mismatch must round-trip unreduced rather than be forced into a
+    # kind it never claimed.
+    numerator_dtype = np.asarray(numerator).dtype
+    if np.issubdtype(numerator_dtype, np.floating):
+        if denominator != 1:
+            numerator = numerator / denominator
+        return numerator, np.int64(1)
+
+    if np.issubdtype(numerator_dtype, np.timedelta64):
+        # Align to the coordinate's own resolution only when it too is
+        # datetime64-flavoured; the legacy mismatch above keeps its own unit.
+        if np.issubdtype(dtype, np.datetime64):
+            unit = np.datetime_data(dtype)[0]
+            numerator = numerator.astype(f"timedelta64[{unit}]")
+        else:
+            unit = np.datetime_data(numerator_dtype)[0]
+        ticks = int(numerator.view("i8"))
+        g = int(np.gcd(abs(ticks), denominator)) or 1
+        numerator = np.timedelta64(ticks // g, unit)
+    else:
+        ticks = int(numerator)
+        g = int(np.gcd(abs(ticks), denominator)) or 1
+        numerator = numerator_dtype.type(ticks // g)
+    denominator //= g
+    return numerator, np.int64(denominator)
+
+
+def divide_sampling_ratio(numerator, denominator, dtype):
+    """
+    Derive the nominal sampling interval scalar from a ``(numerator, denominator)`` pair.
+
+    ``numerator // denominator`` for exact dtypes (timedelta64 and integer), which
+    reproduces the rounded, human-facing tick count; ``numerator / denominator`` for
+    floating dtypes, which carry no tick to floor to (``10.2 // 1 == 10.0`` would
+    silently truncate a 10.2 m distance interval). A denominator of 1 short-circuits
+    to `numerator` itself, whatever the dtype, so this is a true no-op wherever the
+    ratio has not moved past the legacy ``(value, 1)`` spelling.
+
+    Returns
+    -------
+    scalar or None
+        ``None`` when `numerator` is ``None`` (no declared rate).
+    """
+    if numerator is None:
+        return None
+    if denominator == 1:
+        return numerator
+    if np.issubdtype(dtype, np.floating):
+        return numerator / denominator
+    return numerator // denominator
+
+
+def step_value(anchor, offset, numerator, denominator, dtype):
+    """`anchor` shifted by `offset` steps at the exact `numerator / denominator` rate.
+
+    Rounds to the coordinate's own tick resolution (ties to even, the same
+    convention `xinterp`'s step kernels use). `offset` may be negative.
+    """
+    if np.issubdtype(dtype, np.floating):
+        return anchor + offset * numerator / denominator
+    is_datetime = np.issubdtype(dtype, np.datetime64)
+    ticks = int(numerator.astype("i8")) if is_datetime else int(numerator)
+    span = round(Fraction(int(offset) * ticks, int(denominator)))
+    if is_datetime:
+        unit = np.datetime_data(dtype)[0]
+        return anchor + np.timedelta64(span, unit)
+    return anchor + dtype.type(span)
+
+
+def quantization_tolerance(tie_indices, tie_values, numerator, denominator, dtype):
+    """Smallest tolerance covering *tie_values*' own placement against the rate.
+
+    Rounding a tie value to the nearest representable tick is unavoidable
+    whenever a continuous segment's index span is not a multiple of
+    `denominator` -- distinct from instrumental jitter, but still real, so it
+    must be declared rather than silently causing the coordinate to fail its
+    own validity check. Mirrors the cross-multiplied
+    ``|denominator * num - numerator * den| <= 2 * tolerance * denominator``
+    bound :meth:`~.interp.InterpCoordinate._is_valid_sampling_interval` checks,
+    solved for the least `tolerance` that satisfies it.
+    """
+    num = np.diff(tie_values)
+    den = np.diff(tie_indices)
+    mask = den != 1
+    num, den = num[mask], den[mask]
+    if num.size == 0:
+        return parse_scalar_delta(None, dtype, default_zero=True)
+    denominator = int(denominator)
+    if np.issubdtype(dtype, np.floating):
+        drift = np.abs(denominator * num - numerator * den).max()
+        return drift / (2 * denominator)
+    is_datetime = np.issubdtype(dtype, np.datetime64)
+    if is_datetime:
+        num = num.view("i8").astype(object)
+        p = int(numerator.astype("i8"))
+    else:
+        num = num.astype(object)
+        p = int(numerator)
+    den = den.astype(object)
+    drift = int(np.abs(denominator * num - p * den).max())
+    ticks = -(-drift // (2 * denominator))  # ceil division, exact
+    if is_datetime:
+        unit = np.datetime_data(dtype)[0]
+        return np.timedelta64(ticks, unit)
+    return dtype.type(ticks)
+
+
 def get_sampling_interval(da, dim, cast=True):
     """
     Return the nominal sample spacing along a given dimension.
@@ -1317,7 +1637,8 @@ def get_sampling_interval(da, dim, cast=True):
         f"tolerance"
     )
     if isinstance(coord, InterpCoordinate):
-        sampling_interval, tolerance = coord._infer_regular()
+        numerator, denominator, tolerance = coord._infer_regular()
+        sampling_interval = divide_sampling_ratio(numerator, denominator, coord.dtype)
     else:
         try:
             regular = coord.to_regular()

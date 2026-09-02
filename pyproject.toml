@@ -5,19 +5,17 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "xdas"
 dynamic = ["version"]
-requires-python = ">= 3.10"
+requires-python = ">= 3.11"
 authors = [
     { name = "Alister Trabattoni", email = "alister.trabattoni@gmail.com" },
 ]
 dependencies = [
-    "dask<2025.4.0",
     "h5netcdf",
     "h5py",
     "hdf5plugin",
     "loky",
-    "msgpack",
     "numba",
-    "numpy",
+    "numpy>=2.3",
     "obspy",
     "pandas",
     "plotly",
@@ -27,7 +25,7 @@ dependencies = [
     "typing_extensions",
     "watchdog",
     "xarray",
-    "xinterp",
+    "xinterp>=0.2.0",
     "pyzmq",
 ]
 
@@ -42,7 +40,7 @@ docs = [
     "sphinx-copybutton",
     "sphinx",
 ]
-tests = ["dascore", "psutil", "seisbench", "torch"]
+tests = ["dascore", "dask<2025.4.0", "psutil", "seisbench", "torch>=2.7"]
 
 # Single source of truth for the version: xdas/__init__.py
 [tool.setuptools.dynamic]
@@ -65,6 +63,9 @@ convention = "numpy"
 "docs/**" = ["D"]
 
 [tool.pytest.ini_options]
+# Without this, --doctest-modules walks the repo root and chokes on the copies
+# of xdas sources that sphinx viewcode leaves under docs/_build.
+testpaths = ["xdas", "tests"]
 addopts = ["--doctest-modules", "--import-mode=importlib"]
 doctest_optionflags = "NORMALIZE_WHITESPACE"
 markers = ["slow: marks tests as slow (skip with --skip-slow)"]

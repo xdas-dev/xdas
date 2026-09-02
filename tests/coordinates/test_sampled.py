@@ -1,6 +1,7 @@
 import tempfile
 
 import numpy as np
+import numpy.testing as npt
 import pandas as pd
 import pytest
 
@@ -45,6 +46,8 @@ class TestSampledCoordinateBasics:
         assert len(coord) == 3
         assert coord.start == 0.0
         assert coord.end == 2.0
+        with pytest.warns(FutureWarning, match="issampled"):
+            assert coord.issampled() is True
         assert coord.get_sampling_interval() == 1.0
 
         # mismatched lengths
@@ -124,6 +127,84 @@ class TestSampledCoordinateBasics:
                     "tie_values": [0.0, 10.0],
                     "tie_lengths": [[3], [2]],
                     "sampling_interval": 1.0,
+                }
+            )
+
+
+class TestSamplingRatio:
+    """SampledCoordinate's numerator/denominator spelling, alongside the
+    legacy ``sampling_interval`` one it stays interchangeable with."""
+
+    def test_numerator_denominator_spelling_equals_legacy_spelling(self):
+        legacy = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [10], "sampling_interval": 2.0}
+        )
+        ratio = SampledCoordinate(
+            {
+                "tie_values": [0.0],
+                "tie_lengths": [10],
+                "sampling_numerator": 2.0,
+                "sampling_denominator": 1,
+            }
+        )
+        assert legacy.equals(ratio)
+        assert legacy._sampling_ratio == ratio._sampling_ratio
+
+    def test_integer_ratio_is_gcd_reduced(self):
+        coord = SampledCoordinate(
+            {
+                "tie_values": np.array([0], dtype="int64"),
+                "tie_lengths": [10],
+                "sampling_numerator": 14,
+                "sampling_denominator": 6,
+            }
+        )
+        numerator, denominator = coord._sampling_ratio
+        assert numerator == 7
+        assert denominator == 3
+        assert coord.sampling_interval == 7 // 3
+
+    def test_both_spellings_together_raise(self):
+        with pytest.raises(ValueError, match="cannot pass both"):
+            SampledCoordinate(
+                {
+                    "tie_values": [0.0],
+                    "tie_lengths": [10],
+                    "sampling_interval": 2.0,
+                    "sampling_numerator": 2.0,
+                    "sampling_denominator": 1,
+                }
+            )
+
+    def test_partial_pair_raises(self):
+        with pytest.raises(ValueError, match="provided together"):
+            SampledCoordinate(
+                {"tie_values": [0.0], "tie_lengths": [10], "sampling_numerator": 2.0}
+            )
+        with pytest.raises(ValueError, match="provided together"):
+            SampledCoordinate(
+                {"tie_values": [0.0], "tie_lengths": [10], "sampling_denominator": 1}
+            )
+
+    def test_non_scalar_denominator_raises(self):
+        with pytest.raises(ValueError, match="scalar value"):
+            SampledCoordinate(
+                {
+                    "tie_values": [0.0],
+                    "tie_lengths": [10],
+                    "sampling_numerator": 2.0,
+                    "sampling_denominator": [1, 2],
+                }
+            )
+
+    def test_non_positive_denominator_raises(self):
+        with pytest.raises(ValueError, match="strictly positive"):
+            SampledCoordinate(
+                {
+                    "tie_values": [0.0],
+                    "tie_lengths": [10],
+                    "sampling_numerator": 2.0,
+                    "sampling_denominator": 0,
                 }
             )
 
@@ -528,13 +609,12 @@ class TestSampledCoordinateConcat:
 
 class TestSampledCoordinateDiscontinuitiesAvailabilities:
     def test_discontinuities_and_availabilities(self):
-        # tie_lengths set to create 2 segments
+        # two segments, [0, 1, 2] then [5, 6]: one 2.0 gap between them
         coord = SampledCoordinate(
             {"tie_values": [0.0, 5.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
         )
         dis = coord.get_discontinuities()
         avail = coord.get_availabilities()
-        # expect DataFrame with specific columns
         for df in (dis, avail):
             assert isinstance(df, pd.DataFrame)
             assert set(df.columns) >= {
@@ -545,8 +625,17 @@ class TestSampledCoordinateDiscontinuitiesAvailabilities:
                 "delta",
                 "type",
             }
-        # availabilities should list segments (2 segments -> 2 records)
-        assert len(avail) >= 1
+        # the discontinuity straddles the two segments, which the
+        # availabilities bound on either side
+        npt.assert_array_equal(dis["start_index"], [2])
+        npt.assert_array_equal(dis["end_index"], [3])
+        npt.assert_array_equal(dis["start_value"], [2.0])
+        npt.assert_array_equal(dis["end_value"], [5.0])
+        npt.assert_array_equal(dis["delta"], [2.0])
+        npt.assert_array_equal(dis["type"], ["gap"])
+        npt.assert_array_equal(avail["start_index"], [0, 3])
+        npt.assert_array_equal(avail["end_index"], [2, 4])
+        npt.assert_array_equal(avail["type"], ["data", "data"])
 
 
 class TestSampledCoordinateSlicing:
@@ -805,6 +894,58 @@ class TestSampledCoordinateToNetCDF:
 
         assert coords.equals(da.coords)
 
+    def test_to_dataset_and_back_preserves_the_denominator(self):
+        # F: a 999-sample rate has a denominator that does not reduce to 1;
+        # the round trip must carry the exact pair, not the floored scalar.
+        import xarray as xr
+
+        coord = SampledCoordinate(
+            {
+                "tie_values": [0],
+                "tie_lengths": [1000],
+                "sampling_numerator": 30_000_000_000,
+                "sampling_denominator": 999,
+            },
+            "time",
+            dtype="timedelta64[ns]",
+        )
+        dataset = xr.Dataset()
+        dataset, attrs = coord._to_dataset(dataset, {})
+        attrs_written = dataset["time_sampling"].attrs
+        assert attrs_written["sampling_denominator"] == 333
+        # `sampling_interval` keeps its legacy meaning, so a reader that
+        # predates the exact pair still reads the floored interval rather
+        # than silently taking the numerator for it.
+        assert attrs_written["sampling_interval"] == 30_030_030
+        assert attrs_written["sampling_numerator"] == 10_000_000_000
+        dataset["__values__"] = xr.DataArray(np.zeros(1000), dims=["time"], attrs=attrs)
+        recovered = SampledCoordinate._collect_from_dataset(dataset, "__values__")[
+            "time"
+        ]
+        assert recovered._sampling_ratio == coord._sampling_ratio
+
+    def test_dataset_written_before_the_denominator_existed_loads_unchanged(self):
+        # A file written before this round trip existed has no
+        # `sampling_denominator` attribute at all -- exactly what a
+        # whole-tick rate (denominator 1) still writes today -- and must
+        # load exactly as before, denominator implicitly 1.
+        import xarray as xr
+
+        coord = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [30], "sampling_interval": 2.5},
+            "distance",
+        )
+        dataset = xr.Dataset()
+        dataset, attrs = coord._to_dataset(dataset, {})
+        assert "sampling_denominator" not in dataset["distance_sampling"].attrs
+        dataset["__values__"] = xr.DataArray(
+            np.zeros(30), dims=["distance"], attrs=attrs
+        )
+        recovered = SampledCoordinate._collect_from_dataset(dataset, "__values__")[
+            "distance"
+        ]
+        assert recovered.equals(coord)
+
     def test_to_netcdf_and_back(self):
         expected = self.make_dataarray()
 
@@ -812,6 +953,62 @@ class TestSampledCoordinateToNetCDF:
             expected.to_netcdf(file.name)
             result = xd.open(file.name)
             assert result.equals(expected)
+
+    def test_collect_legacy_spelling(self):
+        # the spelling that predates the CF-shaped grammar: the group named the
+        # coordinate, the mapping listed both tie point variables, and the
+        # interval was the sampling variable's own value
+        import xarray as xr
+
+        dataset = xr.Dataset(
+            {
+                "time_values": ("time_points", np.array([0, 1_000_000_000])),
+                "time_lengths": ("time_points", np.array([100, 100])),
+                "time_sampling": (
+                    (),
+                    8,
+                    {
+                        "tie_point_mapping": "time: time_values time_lengths",
+                        "dtype": "timedelta64[ns]",
+                        "units": "milliseconds",
+                    },
+                ),
+                "__values__": (
+                    ("time",),
+                    np.zeros(200),
+                    {"coordinate_sampling": "time: time_sampling"},
+                ),
+            }
+        )
+        recovered = SampledCoordinate._collect_from_dataset(dataset, "__values__")
+        coord = recovered["time"]
+        assert coord.dim == "time"
+        assert coord.sampling_interval == np.timedelta64(8, "ms")
+        npt.assert_array_equal(coord.tie_lengths, [100, 100])
+
+    def test_collect_legacy_spelling_numeric(self):
+        # the same, on a numeric axis: no units/dtype attributes to decode, the
+        # sampling variable's value is the interval as it stands
+        import xarray as xr
+
+        dataset = xr.Dataset(
+            {
+                "distance_values": ("distance_points", np.array([0.0])),
+                "distance_lengths": ("distance_points", np.array([30])),
+                "distance_sampling": (
+                    (),
+                    2.5,
+                    {"tie_point_mapping": "distance: distance_values distance_lengths"},
+                ),
+                "__values__": (
+                    ("distance",),
+                    np.zeros(30),
+                    {"coordinate_sampling": "distance: distance_sampling"},
+                ),
+            }
+        )
+        recovered = SampledCoordinate._collect_from_dataset(dataset, "__values__")
+        assert recovered["distance"].sampling_interval == 2.5
 
 
 class TestGetSplitIndices:
@@ -947,6 +1144,68 @@ class TestSampledCoordinateMissingBranches:
         )
         assert coord._is_monotonic_increasing() is True
 
+    def test_is_monotonic_increasing_subsample_overlap(self):
+        # the seam advances by 0.4 of a 1.0 sampling interval: an overlap, but
+        # the values keep increasing, so the axis stays sorted
+        coord = SampledCoordinate(
+            {"tie_values": [0.0, 4.4], "tie_lengths": [5, 5], "sampling_interval": 1.0}
+        )
+        npt.assert_array_equal(coord.get_split_indices("overlaps"), [5])
+        assert coord._is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_seam_of_exactly_one_fractional_step(self):
+        # 10/3 ns per sample floors to 3 ns, so judging the seam against the
+        # floored interval would call this genuinely increasing axis a
+        # decrease. Two segments of 3 samples: the first spans 0..20/3, the
+        # second starts exactly one step after it.
+        t0 = np.datetime64("2000-01-01T00:00:00", "ns")
+        coord = SampledCoordinate(
+            {
+                "tie_values": [t0, t0 + np.timedelta64(10, "ns")],
+                "tie_lengths": [3, 3],
+                "sampling_numerator": np.timedelta64(10, "ns"),
+                "sampling_denominator": 3,
+            },
+            "time",
+        )
+        assert coord.sampling_interval == np.timedelta64(3, "ns")
+        assert coord._is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_datetime_seam_that_goes_backwards(self):
+        t0 = np.datetime64("2000-01-01T00:00:00", "ns")
+        coord = SampledCoordinate(
+            {
+                "tie_values": [t0, t0 - np.timedelta64(100, "ns")],
+                "tie_lengths": [3, 3],
+                "sampling_interval": np.timedelta64(10, "ns"),
+            },
+            "time",
+        )
+        assert coord._is_monotonic_increasing() is False
+
+    def test_is_monotonic_increasing_negative_interval(self):
+        # a regular axis running backwards has no seam to report it
+        coord = SampledCoordinate(
+            {"tie_values": [0.0], "tie_lengths": [5], "sampling_interval": -1.0}
+        )
+        npt.assert_array_equal(coord.get_split_indices("discontinuities"), [])
+        assert coord._is_monotonic_increasing() is False
+
+    def test_is_monotonic_increasing_single_sample_segments(self):
+        # segments of one sample have no interior, so the interval never falls
+        # between two samples and its sign cannot disorder anything
+        coord = SampledCoordinate(
+            {
+                "tie_values": [0.0, 1.0, 2.0],
+                "tie_lengths": [1, 1, 1],
+                "sampling_interval": -1.0,
+            }
+        )
+        assert coord._is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_empty(self):
+        assert SampledCoordinate()._is_monotonic_increasing() is True
+
     def test_get_sampling_interval_singleton(self):
         coord = SampledCoordinate(
             {"tie_values": [0.0], "tie_lengths": [1], "sampling_interval": 1.0}
@@ -988,3 +1247,195 @@ class TestSampledCoordinateToRegular:
             {"tie_values": [0.0], "tie_lengths": [5], "sampling_interval": 2.0}, "x"
         )
         assert coord.to_regular(sampling_interval=2.05, tolerance=0.1).equals(coord)
+
+
+class TestSampledCoordinateExactRate:
+    """Phase B acceptance: fixes F1 (unbounded drift from a rounded rate),
+    F3 (two rates that only agree once rounded), F7 (overflow at large tick
+    counts) -- see /ssd/trabatto/claude/exact-rate-ratio/PLAN.html section 07.
+    """
+
+    NUM, DEN = 30_000_000, 999  # F1/F3's rate, in ticks
+
+    def test_forward_step_exact_to_half_tick_at_every_index(self):
+        # the plan's acceptance size: a 3e7-sample segment at 30000000/999
+        n = 30_000_000
+        coord = SampledCoordinate(
+            {
+                "tie_values": np.array([0], dtype="int64"),
+                "tie_lengths": [n],
+                "sampling_numerator": self.NUM,
+                "sampling_denominator": self.DEN,
+            }
+        )
+        k = np.arange(n, dtype="int64")
+        # k * NUM tops out at 9e14, comfortably under 2**53 (~9.007e15), so a
+        # float64 round-half-to-even division is an exact reference here
+        exact = k.astype("f8") * self.NUM / self.DEN
+        expected = np.round(exact).astype("int64")
+        actual = coord._get_value(k)
+        assert np.array_equal(actual, expected)
+        assert np.max(np.abs(actual.astype("f8") - exact)) <= 0.5
+
+    def test_get_value_exact_datetime_fractional_rate(self):
+        from fractions import Fraction
+
+        t0 = np.datetime64("2024-01-01T00:00:00", "us")
+        coord = SampledCoordinate(
+            {
+                "tie_values": np.array([t0], dtype="datetime64[us]"),
+                "tie_lengths": [50],
+                "sampling_numerator": np.timedelta64(self.NUM, "us"),
+                "sampling_denominator": self.DEN,
+            }
+        )
+        k = np.arange(50)
+        actual = (coord._get_value(k) - t0).astype("timedelta64[us]").astype("i8")
+        # python's round() on a Fraction ties to even, matching xinterp
+        expected = np.array([round(Fraction(int(ki) * self.NUM, self.DEN)) for ki in k])
+        assert np.array_equal(actual, expected)
+
+    def test_two_rates_that_round_to_the_same_interval_no_longer_concat(self):
+        # both 30000000/999 and 30000300/999 floor to sampling_interval
+        # 30030 -- laundered as the same rate before phase A/B -- yet are
+        # exact, different rates and must not be allowed to concatenate
+        a = SampledCoordinate(
+            {
+                "tie_values": np.array([0], dtype="int64"),
+                "tie_lengths": [999],
+                "sampling_numerator": self.NUM,
+                "sampling_denominator": self.DEN,
+            }
+        )
+        b = SampledCoordinate(
+            {
+                "tie_values": np.array([a.values[-1] + a.sampling_interval]),
+                "tie_lengths": [999],
+                "sampling_numerator": 30_000_300,
+                "sampling_denominator": self.DEN,
+            }
+        )
+        assert a.sampling_interval == b.sampling_interval == 30030
+        with pytest.raises(ValueError, match="different sampling intervals"):
+            a._concat(b)
+
+    @pytest.mark.parametrize("step", [1, 7, 100])
+    def test_slice_step_exact(self, step):
+        from fractions import Fraction
+
+        n = 10_000
+        coord = SampledCoordinate(
+            {
+                "tie_values": np.array([0], dtype="int64"),
+                "tie_lengths": [n],
+                "sampling_numerator": self.NUM,
+                "sampling_denominator": self.DEN,
+            }
+        )
+        sliced = coord[::step]
+        numerator, denominator = sliced._sampling_ratio
+        assert (
+            Fraction(int(numerator), int(denominator))
+            == Fraction(self.NUM, self.DEN) * step
+        )
+
+        parent_values = coord.values
+        sliced_values = sliced.values
+        expected_indices = np.arange(len(sliced_values)) * step
+        # the anchor is read straight off the parent, so it is bit-identical
+        assert sliced_values[0] == parent_values[0]
+        # later samples, re-stepped from that anchor, land within a tick of
+        # a full re-derivation against the parent -- accepted as
+        # sub-resolution (D3)
+        assert np.all(np.abs(sliced_values - parent_values[expected_indices]) <= 1)
+
+    def test_slice_anchor_is_bit_identical_to_parent_at_offset(self):
+        coord = SampledCoordinate(
+            {
+                "tie_values": np.array([0], dtype="int64"),
+                "tie_lengths": [10_000],
+                "sampling_numerator": self.NUM,
+                "sampling_denominator": self.DEN,
+            }
+        )
+        sliced = coord[537:9000:13]
+        assert sliced.tie_values[0] == coord.values[537]
+
+    def test_simplify_preserves_exact_ratio_instead_of_flooring(self):
+        coord = SampledCoordinate(
+            {
+                "tie_values": np.array([0], dtype="int64"),
+                "tie_lengths": [10],
+                "sampling_numerator": self.NUM,
+                "sampling_denominator": self.DEN,
+            }
+        )
+        # NUM/DEN does not divide evenly: a floored `sampling_interval`
+        # would have silently rounded this away before phase B
+        assert coord._sampling_ratio[1] != 1
+        simplified = coord.simplify(tolerance=0)
+        assert simplified._sampling_ratio == coord._sampling_ratio
+
+    def test_concat_preserves_exact_ratio(self):
+        a = SampledCoordinate(
+            {
+                "tie_values": np.array([0], dtype="int64"),
+                "tie_lengths": [10],
+                "sampling_numerator": self.NUM,
+                "sampling_denominator": self.DEN,
+            }
+        )
+        b = SampledCoordinate(
+            {
+                "tie_values": np.array([a.values[-1] + a.sampling_interval]),
+                "tie_lengths": [5],
+                "sampling_numerator": self.NUM,
+                "sampling_denominator": self.DEN,
+            }
+        )
+        combined = a._concat(b)
+        assert combined._sampling_ratio == a._sampling_ratio
+
+    def test_add_and_sub_preserve_exact_ratio(self):
+        coord = SampledCoordinate(
+            {
+                "tie_values": np.array([0], dtype="int64"),
+                "tie_lengths": [10],
+                "sampling_numerator": self.NUM,
+                "sampling_denominator": self.DEN,
+            }
+        )
+        assert (coord + 5)._sampling_ratio == coord._sampling_ratio
+        assert (coord - 5)._sampling_ratio == coord._sampling_ratio
+
+    def test_get_indexer_round_trip_on_plain_integer_dtype(self):
+        coord = SampledCoordinate(
+            {
+                "tie_values": np.array([0], dtype="int64"),
+                "tie_lengths": [30],
+                "sampling_numerator": self.NUM,
+                "sampling_denominator": self.DEN,
+            }
+        )
+        values = coord.values
+        for i, value in enumerate(values):
+            assert coord._get_indexer(value, method=None) == i
+
+    def test_get_indexer_on_single_sample_block(self):
+        coord = SampledCoordinate(
+            {"tie_values": [5.0], "tie_lengths": [1], "sampling_interval": 2.0}
+        )
+        assert coord._get_indexer(5.0, method=None) == 0
+        with pytest.raises(KeyError):
+            coord._get_indexer(6.0, method=None)
+
+        assert coord._get_indexer(6.0, method="nearest") == 0
+        assert coord._get_indexer(4.0, method="nearest") == 0
+
+        assert coord._get_indexer(6.0, method="ffill") == 0
+        with pytest.raises(KeyError):
+            coord._get_indexer(4.0, method="ffill")
+
+        assert coord._get_indexer(4.0, method="bfill") == 0
+        with pytest.raises(KeyError):
+            coord._get_indexer(6.0, method="bfill")

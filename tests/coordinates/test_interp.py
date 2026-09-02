@@ -104,6 +104,11 @@ class TestInterpCoordinate:
         coord2 = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert coord1.equals(coord2)
 
+    def test_isinterp(self):
+        coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
+        with pytest.warns(FutureWarning, match="isinterp"):
+            assert coord.isinterp() is True
+
     def test_getitem(self):
         coord = InterpCoordinate({"tie_indices": [0, 8], "tie_values": [100.0, 900.0]})
         assert isinstance(coord[0], ScalarCoordinate)
@@ -392,7 +397,7 @@ class TestInterpCoordinate:
         )
 
     def test_simplify_keeps_kink(self):
-        # A genuine kink inside a continuous area forces Douglas-Peucker to keep
+        # A genuine kink inside a continuous area forces the reduction to keep
         # the deviating interior point.
         coord = InterpCoordinate(
             {"tie_indices": [0, 5, 10], "tie_values": [0.0, 100.0, 0.0]}
@@ -547,6 +552,28 @@ class TestInterpCoordinateExtra:
         )
         assert coord._is_monotonic_increasing() is True
 
+    def test_is_monotonic_increasing_subsample_overlap(self):
+        # the axis advances by 0.4 of a 1.0 sampling interval: an overlap, but
+        # the values keep increasing, so the axis stays sorted
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 5, 9], "tie_values": [0.0, 4.0, 4.4, 8.4]}
+        )
+        np.testing.assert_array_equal(coord.get_split_indices("overlaps"), [5])
+        assert coord._is_monotonic_increasing() is True
+
+    def test_is_monotonic_increasing_smooth_decrease(self):
+        # no discontinuity anywhere — the axis simply turns around inside a
+        # segment, which no boundary can report
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 4, 8], "tie_values": [0.0, 4.0, 2.0]}
+        )
+        np.testing.assert_array_equal(coord.get_split_indices("discontinuities"), [])
+        assert coord._is_monotonic_increasing() is False
+
+    def test_is_monotonic_increasing_single_decreasing_segment(self):
+        coord = InterpCoordinate({"tie_indices": [0, 4], "tie_values": [4.0, 0.0]})
+        assert coord._is_monotonic_increasing() is False
+
     def test_slice_step_collision(self):
         coord = InterpCoordinate(
             {"tie_indices": [0, 2, 6, 12], "tie_values": [0.0, 20.0, 60.0, 120.0]}
@@ -684,14 +711,16 @@ class TestInterpCoordinateExtra:
 
     def test_infer_regular(self):
         # Numeric: rates 1.0 (den=10) and 1.0555 (den=5); the inferred spacing
-        # and tolerance must round-trip through `to_regular`.
+        # and tolerance must round-trip through `to_regular`. Float ties carry
+        # no tick, so the denominator is always 1 (D2).
         coord = InterpCoordinate(
             {"tie_indices": [0, 10, 15], "tie_values": [0.0, 10.0, 15.55]}
         )
-        si, tol = coord._infer_regular()
-        assert si > 0
+        num, den, tol = coord._infer_regular()
+        assert num > 0
+        assert den == 1
         assert tol > 0
-        reg = coord.to_regular(sampling_interval=si, tolerance=tol)
+        reg = coord.to_regular(sampling_interval=num / den, tolerance=tol)
         assert reg.isregular()
 
         # Datetime variant: tolerance comes back as a timedelta64.
@@ -706,18 +735,30 @@ class TestInterpCoordinateExtra:
                 ],
             }
         )
-        si_dt, tol_dt = coord_dt._infer_regular()
+        num_dt, den_dt, tol_dt = coord_dt._infer_regular()
         assert np.issubdtype(np.asarray(tol_dt).dtype, np.timedelta64)
         assert tol_dt > np.timedelta64(0)
-        assert coord_dt.to_regular(
-            sampling_interval=si_dt, tolerance=tol_dt
-        ).isregular()
+        assert coord_dt._is_valid_sampling_interval(num_dt, den_dt, tol_dt)
+
+        # Plain integer variant: same rates, exact-rational infer_step path,
+        # not the datetime or float branch; the denominator need not be 1.
+        coord_int = InterpCoordinate(
+            {
+                "tie_indices": [0, 10, 15],
+                "tie_values": np.array([0, 10, 15], dtype="int64") * 1000 + [0, 0, 550],
+            }
+        )
+        num_int, den_int, tol_int = coord_int._infer_regular()
+        assert num_int > 0
+        assert den_int > 0
+        assert tol_int >= 0
+        assert coord_int._is_valid_sampling_interval(num_int, den_int, tol_int)
 
         # No continuous segment → nothing to infer.
         unit = InterpCoordinate(
             {"tie_indices": [0, 1, 2], "tie_values": [0.0, 1.0, 2.0]}
         )
-        assert unit._infer_regular() == (None, None)
+        assert unit._infer_regular() == (None, None, None)
 
     def test_add_sub(self):
         coord = InterpCoordinate({"tie_indices": [0, 4], "tie_values": [10.0, 50.0]})
@@ -775,6 +816,102 @@ class TestInterpCoordinateExtra:
         dataset, attrs = coord._to_dataset(dataset, attrs)
         assert "time_indices" in dataset
         assert dataset["time_values"].dtype == np.dtype("datetime64[ns]")
+
+    def test_collect_legacy_spelling(self):
+        # the pre-break grammar, written without any interpolation variable
+        dataset = xr.Dataset(
+            {
+                "x_indices": ("x_points", np.array([0, 8])),
+                "x_values": ("x_points", np.array([100.0, 900.0])),
+                "__values__": (
+                    ("x",),
+                    np.zeros(9),
+                    {"coordinate_interpolation": "x: x_indices x_values"},
+                ),
+            }
+        )
+        recovered = InterpCoordinate._collect_from_dataset(dataset, "__values__")
+        assert np.allclose(recovered["x"].tie_values, [100.0, 900.0])
+
+
+class TestSamplingRatio:
+    """InterpCoordinate's numerator/denominator spelling, alongside the legacy
+    ``sampling_interval`` one it stays interchangeable with."""
+
+    def test_numerator_denominator_spelling_equals_legacy_spelling(self):
+        legacy = InterpCoordinate(
+            {
+                "tie_indices": [0, 10],
+                "tie_values": [0.0, 10.0],
+                "sampling_interval": 1.0,
+            }
+        )
+        ratio = InterpCoordinate(
+            {
+                "tie_indices": [0, 10],
+                "tie_values": [0.0, 10.0],
+                "sampling_numerator": 1.0,
+                "sampling_denominator": 1,
+            }
+        )
+        assert legacy.equals(ratio)
+        assert legacy._sampling_ratio == ratio._sampling_ratio
+
+    def test_integer_ratio_is_gcd_reduced(self):
+        # tolerance=1 absorbs the floor-division gap between the exact 6/4
+        # rate and the tick-rounded 3//2 the property reports.
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 4],
+                "tie_values": np.array([0, 6], dtype="int64"),
+                "sampling_numerator": 6,
+                "sampling_denominator": 4,
+                "tolerance": 1,
+            }
+        )
+        numerator, denominator = coord._sampling_ratio
+        assert numerator == 3
+        assert denominator == 2
+        assert coord.sampling_interval == 3 // 2
+
+    def test_irregular_ratio_is_none_none(self):
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 1, 2], "tie_values": [0.0, 1.0, 2.0]}
+        )
+        assert coord._sampling_ratio == (None, None)
+
+    def test_both_spellings_together_raise(self):
+        with pytest.raises(ValueError, match="cannot pass both"):
+            InterpCoordinate(
+                {
+                    "tie_indices": [0, 1],
+                    "tie_values": [0.0, 1.0],
+                    "sampling_interval": 1.0,
+                    "sampling_numerator": 1.0,
+                    "sampling_denominator": 1,
+                }
+            )
+
+    def test_partial_pair_raises(self):
+        with pytest.raises(ValueError, match="provided together"):
+            InterpCoordinate(
+                {
+                    "tie_indices": [0, 1],
+                    "tie_values": [0.0, 1.0],
+                    "sampling_numerator": 1.0,
+                }
+            )
+
+    def test_non_positive_denominator_raises(self):
+        with pytest.raises(ValueError, match="strictly positive"):
+            InterpCoordinate(
+                {
+                    "tie_indices": [0, 1],
+                    "tie_values": [0.0, 1.0],
+                    "sampling_numerator": 1.0,
+                    "sampling_denominator": 0,
+                }
+            )
 
 
 class TestInterpCoordinateRegular:
@@ -1022,6 +1159,76 @@ class TestInterpCoordinateRegular:
         assert recovered["time"].isregular()
         assert recovered["time"].sampling_interval == np.timedelta64(1, "s")
 
+    @pytest.mark.parametrize(
+        "tolerance",
+        [
+            np.timedelta64(2, "ms"),
+            np.timedelta64(2000, "us"),
+            np.timedelta64(2_000_000, "ns"),
+        ],
+    )
+    def test_tolerance_verdict_does_not_depend_on_its_timedelta_unit(self, tolerance):
+        # The same real duration, spelled in three units, must judge the same
+        # drift the same way: a float tolerance is read as seconds and so
+        # arrives in nanoseconds whatever unit the axis itself carries.
+        t0 = np.datetime64("2020-01-01T00:00:00.000", "ms")
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 99],
+                "tie_values": [t0, t0 + np.timedelta64(995, "ms")],
+            },
+            "time",
+        )
+        assert not coord._is_valid_sampling_interval(
+            np.timedelta64(10, "ms"), 1, tolerance
+        )
+
+    def test_dataset_roundtrip_preserves_the_denominator(self):
+        # F: a 999-sample rate has a denominator that does not reduce to 1;
+        # the round trip must carry the exact pair, not the floored scalar.
+        t0 = np.datetime64("2000-01-01T00:00:00", "ns")
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 999],
+                "tie_values": [t0, t0 + np.timedelta64(30_000_000_000, "ns")],
+            }
+        ).to_regular(tolerance=np.timedelta64(0, "ns"))
+        da = xd.DataArray(np.zeros(1000), {"time": coord})
+        dataset = xr.Dataset()
+        dataset, attrs = da.coords["time"]._to_dataset(dataset, {})
+        attrs_written = dataset["time_interpolation"].attrs
+        assert attrs_written["sampling_denominator"] == 333
+        # `sampling_interval` keeps its legacy meaning, so a reader that
+        # predates the exact pair still reads the floored interval rather
+        # than silently taking the numerator for it.
+        assert attrs_written["sampling_interval"] == 30_030_030
+        assert attrs_written["sampling_numerator"] == 10_000_000_000
+        dataset["__v__"] = xr.DataArray(np.zeros(1000), dims=["time"])
+        dataset["__v__"].attrs.update(attrs)
+        recovered = Coordinate._from_dataset(dataset, "__v__")["time"]
+        assert recovered._sampling_ratio == coord._sampling_ratio
+
+    def test_dataset_written_before_the_denominator_existed_loads_unchanged(self):
+        # A file written before this round trip existed has no
+        # `sampling_denominator` attribute at all -- exactly what a
+        # whole-tick rate (denominator 1) still writes today -- and must
+        # load exactly as before, denominator implicitly 1.
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 8],
+                "tie_values": [100.0, 900.0],
+                "sampling_interval": 100.0,
+            },
+            dim="x",
+        )
+        dataset = xr.Dataset()
+        dataset, attrs = coord._to_dataset(dataset, {})
+        assert "sampling_denominator" not in dataset["x_interpolation"].attrs
+        dataset["__v__"] = xr.DataArray(np.zeros(9), dims=["x"])
+        dataset["__v__"].attrs.update(attrs)
+        recovered = Coordinate._from_dataset(dataset, "__v__")["x"]
+        assert recovered.equals(coord)
+
     def test_collect_mixed_plain_and_regular(self):
         da = xd.DataArray(
             np.zeros((20, 9)),
@@ -1101,10 +1308,15 @@ class TestSimplifyToleranceDefaults:
         result = coord.simplify()
         assert result.equals(coord)
 
-    def test_widen_only_when_needed(self):
-        # Fusing a jump beyond the declared tolerance widens it to the least
-        # value that describes the surviving tie points: the fused coordinate
-        # spans 13 s over 11 intervals, so it drifts 2 s from the nominal grid.
+    def test_regularity_refused_when_fusion_exceeds_tolerance(self):
+        # D3: tolerance means instrumental jitter, set once, never widened
+        # afterwards -- so a reduce pass whose fused jump drifts further than
+        # the declared tolerance drops the coordinate's regularity instead of
+        # stretching the tolerance to cover it. The fused coordinate spans
+        # 13 s over 11 intervals, 2 s off the nominal 1 s grid, against a
+        # declared tolerance of 0: the fusion still happens (reduce is a
+        # function of the caller's budget, not of the declared rate) but the
+        # coordinate comes back irregular.
         t0 = np.datetime64("2000-01-01T00:00:00", "ns")
         s = np.timedelta64(1, "s").astype("m8[ns]")
         coord = InterpCoordinate(
@@ -1117,14 +1329,15 @@ class TestSimplifyToleranceDefaults:
         )
         result = coord.simplify(np.timedelta64(3, "s"))
         assert len(result.tie_indices) == 2
-        assert result.sampling_interval == s
-        assert result.tolerance == np.timedelta64(1, "s").astype("m8[ns]")
-        assert result._is_valid_sampling_interval(s, result.tolerance)
+        assert result.sampling_interval is None
+        assert result.tolerance is None
 
-    def test_widening_beyond_the_budget_never_raises(self):
-        # Douglas-Peucker bounds how far values move, not how much drift fusing
-        # a discontinuity exposes, so the required tolerance can exceed the
-        # budget. Real OptoDAS seams: 2 ms late every 10 s at 125 Hz.
+    def test_regularity_refused_beyond_the_budget_never_raises(self):
+        # D3, same shape as above on real data: the reduction bounds how far
+        # values move, not how much drift fusing a discontinuity exposes, so
+        # a fusion that needs more than the declared tolerance to describe is
+        # refused rather than raising. Real OptoDAS seams: 2 ms late every
+        # 10 s at 125 Hz.
         t0 = np.datetime64("2021-10-27T15:44:10.721999872", "ns")
         offsets = [
             0,
@@ -1145,17 +1358,14 @@ class TestSimplifyToleranceDefaults:
             }
         )
         result = coord.simplify(np.timedelta64(1_000_000, "ns"))
-        assert result.isregular()
-        assert result.sampling_interval == np.timedelta64(8_000_000, "ns")
-        # Four times the 1 ms budget, and the smallest value that validates.
-        assert result.tolerance == np.timedelta64(2_000_128, "ns")
-        assert result._is_valid_sampling_interval(
-            result.sampling_interval, result.tolerance
-        )
+        assert not result.isregular()
+        assert result.sampling_interval is None
+        assert result.tolerance is None
 
-    def test_widen_only_when_needed_on_float_axis(self):
-        # Same widening on a float axis: fusing the 4.0 seam leaves a coordinate
-        # spanning 64.0 over 21 intervals, 1.0 off the nominal 3.0 grid.
+    def test_regularity_refused_when_fusion_exceeds_tolerance_on_float_axis(self):
+        # D3, same refusal on a float axis: fusing the 4.0 seam leaves a
+        # coordinate spanning 64.0 over 21 intervals, 1.0 off the nominal 3.0
+        # grid, against a declared tolerance of 0.
         coord = InterpCoordinate(
             {
                 "tie_indices": [0, 10, 11, 21],
@@ -1166,15 +1376,8 @@ class TestSimplifyToleranceDefaults:
         )
         result = coord.simplify(2.0)
         assert len(result.tie_indices) == 2
-        assert result.sampling_interval == 3.0
-        assert result.tolerance == pytest.approx(0.5, abs=1e-9)
-        assert result._is_valid_sampling_interval(3.0, result.tolerance)
-
-    def test_minimal_tolerance_without_continuous_area(self):
-        # Nothing to constrain the spacing: the zero-like default is enough.
-        coord = InterpCoordinate({"tie_indices": [0, 1], "tie_values": [0.0, 5.0]})
-        tolerance = coord._minimal_tolerance(1.0)
-        assert coord._is_valid_sampling_interval(1.0, tolerance)
+        assert result.sampling_interval is None
+        assert result.tolerance is None
 
 
 class TestSimplifyNoReduce:
@@ -1215,3 +1418,195 @@ class TestFromBlockShort:
         coord = InterpCoordinate.from_block(0.0, 0, 2.0, dim="x")
         assert coord.empty
         assert coord.sampling_interval == 2.0
+
+
+class TestSleeve:
+    """The one-pass reduce stage: same deviation guarantee as the former
+    Douglas-Peucker, O(n) whatever survives."""
+
+    def test_deviation_bound_holds_on_jitter(self):
+        rng = np.random.default_rng(0)
+        n = 200
+        starts = np.arange(n, dtype="int64") * 10
+        jitter = rng.integers(-1_500_000, 1_500_000, n)
+        t0 = np.datetime64("2026-01-01", "ns").astype("i8")
+        seg = t0 + np.arange(n) * 100_000_000 + jitter
+        tie_indices = np.empty(2 * n, dtype="int64")
+        tie_indices[0::2] = starts
+        tie_indices[1::2] = starts + 9
+        tie_values = np.empty(2 * n, dtype="i8")
+        tie_values[0::2] = seg
+        tie_values[1::2] = seg + 90_000_000
+        coord = InterpCoordinate(
+            {"tie_indices": tie_indices, "tie_values": tie_values.astype("M8[ns]")},
+            "time",
+        )
+        tolerance = np.timedelta64(1_000_000, "ns")
+        result = coord.simplify(tolerance)
+        # dropped points stay within tolerance of the simplified curve, and
+        # surviving values are never moved
+        deviation = np.abs(result._get_value(coord.tie_indices) - coord.tie_values)
+        assert deviation.max() <= tolerance
+        kept = np.isin(result.tie_indices, coord.tie_indices)
+        assert kept.all()
+
+    def test_every_gap_survives(self):
+        n = 50
+        tie_indices = np.arange(2 * n, dtype="int64")
+        tie_indices[1::2] = tie_indices[0::2] + 1
+        tie_indices = np.cumsum(np.where(np.arange(2 * n) % 2, 1, 9))
+        tie_indices -= tie_indices[0]
+        values = np.arange(2 * n) * 1_000_000_000
+        coord = InterpCoordinate(
+            {"tie_indices": tie_indices, "tie_values": values.astype("M8[ns]")},
+            "time",
+        )
+        result = coord.simplify(np.timedelta64(1, "ms"))
+        assert len(result.tie_indices) == len(coord.tie_indices)
+
+    def test_subunit_tolerance_is_not_truncated(self):
+        # microsecond values with a nanosecond tolerance: a 4 us seam deviates
+        # ~1.5 us from the spanning chord, so it needs a sub-microsecond budget
+        # to survive (400 ns keeps it) and a 1100 ns one to fuse — both
+        # unrepresentable in truncated us
+        values = np.array([0, 998, 1002, 2000], dtype="M8[us]")
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 999, 1000, 1999], "tie_values": values}, "time"
+        )
+        kept = coord.simplify(np.timedelta64(400, "ns"))
+        fused = coord.simplify(np.timedelta64(1100, "ns"))
+        assert len(kept.tie_indices) == 4
+        assert len(fused.tie_indices) == 2
+
+    def test_seam_below_the_storage_resolution_is_fused(self):
+        # A 1 us seam here reconstructs bit-identically from two tie points:
+        # `forward` rounds to the microsecond and lands on the same values, so
+        # the interior ties carry no information and a zero budget drops them.
+        values = np.array([0, 999, 1001, 2000], dtype="M8[us]")
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 999, 1000, 1999], "tie_values": values}, "time"
+        )
+        result = coord.simplify(np.timedelta64(0, "ns"))
+        assert len(result.tie_indices) == 2
+        index = np.arange(len(coord))
+        np.testing.assert_array_equal(coord[index].values, result[index].values)
+
+    def test_float_values(self):
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 9, 10, 19], "tie_values": [0.0, 9.0, 10.5, 19.5]},
+            "x",
+        )
+        assert len(coord.simplify(1.0).tie_indices) == 2
+        assert len(coord.simplify(0.1).tie_indices) == 4
+
+    def test_two_ties_pass_through(self):
+        coord = InterpCoordinate({"tie_indices": [0, 9], "tie_values": [0.0, 9.0]})
+        result = coord.simplify(0.0)
+        assert len(result.tie_indices) == 2
+
+
+class TestSleeveResolution:
+    """A tie point may sit half a tick off the exact line and still be the only
+    representable value there, so collinearity is judged with that slack."""
+
+    T0 = np.datetime64("2020-01-01", "us")
+
+    def test_unrepresentable_rate_still_collapses(self):
+        # 999 samples over 30 s is 30030.030030... us: the midpoint tie is half
+        # a microsecond off the true line, which no integer value can fix.
+        values = [
+            self.T0,
+            self.T0 + np.timedelta64(1_501_502, "us"),
+            self.T0 + np.timedelta64(30_000_000, "us"),
+        ]
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 50, 999], "tie_values": values}, "time"
+        )
+        result = coord.simplify(np.timedelta64(0, "us"))
+        assert len(result.tie_indices) == 2
+        index = np.arange(len(coord))
+        drift = np.abs(coord[index].values - result[index].values)
+        # within the one tick the representation itself carries
+        assert drift.max() <= np.timedelta64(1, "us")
+
+    def test_real_discontinuities_still_survive(self):
+        for jump in (2, 1_000_000):
+            values = [
+                self.T0,
+                self.T0 + np.timedelta64(50_000, "us"),
+                self.T0 + np.timedelta64(50_100 + jump, "us"),
+                self.T0 + np.timedelta64(100_000 + jump, "us"),
+            ]
+            coord = InterpCoordinate(
+                {"tie_indices": [0, 500, 501, 1000], "tie_values": values}, "time"
+            )
+            assert len(coord.simplify(np.timedelta64(0, "us")).tie_indices) == 4
+
+    def test_subtick_epsilon_does_not_overflow_the_prescale(self):
+        # A picosecond budget on a microsecond axis used to wrap int64 while
+        # scaling the values; the budget is a rational now, so nothing scales.
+        values = [
+            self.T0,
+            self.T0 + np.timedelta64(1_501_502, "us"),
+            self.T0 + np.timedelta64(30_000_000, "us"),
+        ]
+        coord = InterpCoordinate(
+            {"tie_indices": [0, 50, 999], "tie_values": values}, "time"
+        )
+        assert len(coord.simplify(np.timedelta64(1, "ps")).tie_indices) == 2
+
+
+class TestSleeveKernel:
+    """The wide-integer Rust kernel stays exact at magnitudes that would
+    overflow int64 cross-products; there is no fallback tier left to fall
+    back to."""
+
+    def test_random_curves_stay_within_deviation_budget(self):
+        # No int64 machine-kernel/arbitrary-precision split remains to
+        # compare against itself; assert the walk's own contract instead --
+        # every dropped point stays within tolerance of the reduced curve,
+        # and surviving values are never moved.
+        rng = np.random.default_rng(0)
+        epoch = np.datetime64("2020-01-01", "us").view("i8")
+        for _ in range(200):
+            size = int(rng.integers(3, 30))
+            indices = np.array(
+                [0]
+                + sorted(
+                    rng.choice(
+                        np.arange(1, 3000), size=size - 1, replace=False
+                    ).tolist()
+                )
+            )
+            rate = int(rng.integers(1, 10**5))
+            values = indices * rate + rng.integers(-4, 5, size=size)
+            values = np.maximum.accumulate(values) + np.arange(size) + epoch
+            values = values.astype("M8[us]")
+            epsilon = np.timedelta64(int(rng.integers(0, 5)), "us")
+            coord = InterpCoordinate({"tie_indices": indices, "tie_values": values})
+            result = coord.simplify(epsilon)
+            deviation = np.abs(result._get_value(coord.tie_indices) - coord.tie_values)
+            # xinterp's simplify_points bounds every reconstructed sample by
+            # the declared tolerance exactly (its cone is `tol + 1/2` tick
+            # wide, closed on the reconstruction side); no extra tick of
+            # slack is needed here.
+            assert deviation.max() <= epsilon
+            kept = np.isin(result.tie_indices, coord.tie_indices)
+            assert kept.all()
+
+    def test_cross_products_too_wide_for_int64_stay_exact(self):
+        # 4e9 samples with a mid tie half the span away from the chord: the
+        # old int64 cross-product kernel could not represent this walk at
+        # all; the wide-integer kernel handles it directly.
+        indices = np.array([0, 2 * 10**9, 4 * 10**9])
+        values = np.array([0, 5 * 10**17, 2 * 10**18], dtype="i8")
+        coord = InterpCoordinate({"tie_indices": indices, "tie_values": values}, "x")
+        assert len(coord.simplify(0).tie_indices) == 3
+
+    def test_values_near_the_int64_ceiling_stay_exact(self):
+        # Values within a hair of the int64 ceiling: even the old shear
+        # prescale (subtracting the rate) would have overflowed here.
+        indices = np.array([0, 1, 2])
+        values = np.array([0, 10**18, 2**63 - 1], dtype="i8")
+        coord = InterpCoordinate({"tie_indices": indices, "tie_values": values}, "x")
+        assert len(coord.simplify(0).tie_indices) == 3

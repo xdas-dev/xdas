@@ -68,15 +68,16 @@ output samples. When you split data into chunks and apply the filter independent
 each chunk, the state is re-initialised at every boundary and the transient response
 distorts the result near each chunk edge.
 
-Use the stateful atom equivalents from {py:mod}`xdas.atoms` (e.g.
-{py:class}`~xdas.atoms.IIRFilter`, {py:class}`~xdas.atoms.LFilter`) inside a
-{py:class}`~xdas.atoms.Sequential` pipeline. These atoms carry the filter state across
-chunk boundaries automatically when used with {py:func}`~xdas.processing.process`.
+Build the pipeline out of atoms — `xd.filter(..., (1.0, 10.0))` rather than
+`xs.filter(da, ...)` — and run it with {py:meth}`~xdas.atoms.Atom.process`. The atoms
+carry the filter state across chunk boundaries, and flush and restart it wherever the
+input actually has a gap or changes sampling rate, so the chunked answer is the eager
+one. {py:func}`xdas.testing.assert_chunk_invariant` checks that on your own pipeline.
 
 ## Can I use xdas with seismic data that is not DAS?
 
 Yes. The data model is generic: a {py:class}`~xdas.DataArray` can represent any
-labeled N-dimensional array. The [](io/miniseed.md) page shows a complete example with
+labeled N-dimensional array. The [](io/obspy.md) page shows a complete example with
 a large-N seismic array stored as miniSEED files. All signal processing routines in
 {py:mod}`xdas.signal` and {py:mod}`xdas.fft` work on any DataArray regardless of the
 physical quantity it represents.

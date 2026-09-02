@@ -1,8 +1,11 @@
 """:class:`DenseCoordinate`: coordinate backed by a full numpy array."""
 
+import warnings
+
 import numpy as np
 import pandas as pd
 from typing_extensions import override
+from xinterp import forward_points
 
 from .core import AxisCoordinate, parse_data_dim, parse_scalar_delta
 from .interp import InterpCoordinate
@@ -68,11 +71,11 @@ class DenseCoordinate(AxisCoordinate, ctype="dense"):
 
     @override
     def _is_monotonic_increasing(self):
-        if np.issubdtype(self.dtype, np.datetime64):
-            zero = np.timedelta64(0)
-        else:
-            zero = 0
-        return np.all(np.diff(self.values) > zero)
+        # `pandas` is used rather than differencing the values: `np.diff` has no
+        # `subtract` loop for string dtypes, which would make any label-based
+        # selection fail. `is_unique` restores the strict increase, since
+        # `pandas` considers repeated values monotonic increasing.
+        return self.index.is_monotonic_increasing and self.index.is_unique
 
     @override
     def _get_value(self, index):
@@ -144,6 +147,20 @@ class DenseCoordinate(AxisCoordinate, ctype="dense"):
     def __sub__(self, other):
         return self.__class__(self.data - other, self.dim)
 
+    def isdense(self):
+        """Return ``True`` (this is a :class:`DenseCoordinate`).
+
+        .. deprecated:: 0.2.9
+            Use ``isinstance(coord, DenseCoordinate)`` instead.
+        """
+        warnings.warn(
+            "Coordinate.isdense() is deprecated; use "
+            "isinstance(coord, DenseCoordinate) instead.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        return True
+
     @override
     def get_sampling_interval(self, cast=True):
         """
@@ -169,21 +186,36 @@ class DenseCoordinate(AxisCoordinate, ctype="dense"):
                 "cannot make a regular coordinate from fewer than two values"
             )
         tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
+        tie_indices = np.array([0, len(self) - 1])
+        tie_values = np.array([self.data[0], self.data[-1]])
         if sampling_interval is None:
-            sampling_interval = (self.data[-1] - self.data[0]) / (len(self) - 1)
+            # Exact numerator/denominator (the end-to-end span, the sample
+            # count) rather than the pre-divided slope, so an axis placed as
+            # exactly as the ticks allow does not spuriously fail its own
+            # tolerance check. `forward_points` reconstructs the grid the same
+            # way the resulting InterpCoordinate itself would from its two
+            # tie points, so the check matches what gets stored.
+            data = {
+                "tie_indices": tie_indices,
+                "tie_values": tie_values,
+                "sampling_numerator": self.data[-1] - self.data[0],
+                "sampling_denominator": len(self) - 1,
+                "tolerance": tolerance,
+            }
+            grid = forward_points(np.arange(len(self)), tie_indices, tie_values)
         else:
             sampling_interval = parse_scalar_delta(sampling_interval, self.dtype)
-        grid = self.data[0] + sampling_interval * np.arange(len(self))
+            data = {
+                "tie_indices": tie_indices,
+                "tie_values": tie_values,
+                "sampling_interval": sampling_interval,
+                "tolerance": tolerance,
+            }
+            grid = self.data[0] + sampling_interval * np.arange(len(self))
         if not np.all(np.abs(self.data - grid) <= tolerance):
             raise ValueError(
                 "values are not evenly spaced by `sampling_interval` within `tolerance`"
             )
-        data = {
-            "tie_indices": [0, len(self) - 1],
-            "tie_values": [self.data[0], self.data[-1]],
-            "sampling_interval": sampling_interval,
-            "tolerance": tolerance,
-        }
         return InterpCoordinate(data, self.dim)
 
     @override

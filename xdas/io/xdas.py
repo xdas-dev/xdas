@@ -2,45 +2,92 @@
 I/O engine for the native xdas HDF5/NetCDF4 format (:class:`XdasEngine`).
 
 Supports :class:`DataArray`, :class:`DataSequence`, and :class:`DataMapping`.
+
+Whatever the shape of the object, the file is opened once in each
+direction: reading walks a single :func:`xarray.open_datatree`, writing
+lands every group's metadata through a single
+:meth:`xarray.DataTree.to_netcdf` and the data variables through one
+writable `h5netcdf` handle. One handle matters on write: every writable
+`h5netcdf` open walks the whole file to find the next free dimension
+id, so per-array opens made saving a collection quadratic in its size.
 """
 
 import os
 from pathlib import Path
+from typing import ClassVar
 
 import h5netcdf
 import h5py
 import hdf5plugin  # noqa
 import xarray as xr
-from dask.array import Array as DaskArray
 
 from ..coordinates import Coordinates
 from ..core import DataArray, DataCollection, DataMapping, DataSequence
-from ..dask import create_variable, loads
-from ..virtual import VirtualArray, VirtualSource
+from ..core.datacollection import as_sequence_if_positional
+from ..virtual import TileArray, VirtualBackend
+from ..virtual.tiles import TILING
 from .core import Engine
 
 
 class XdasEngine(Engine, name="xdas"):
-    """Engine for the native xdas HDF5/NetCDF4 format."""
+    """
+    Engine for the native xdas HDF5/NetCDF4 format.
 
-    def open_dataarray(self, fname, **kwargs):
+    Parameters
+    ----------
+    vtype : str, optional
+        The virtualization type to use. Default to "hdf5".
+    ctype : str or dict, optional
+        Ignored: the native format stores coordinates as they were written.
+    group : str, optional
+        The location of the data array within the file. Default to the root group.
+
+    """
+
+    _supported_vtypes: ClassVar[list] = ["hdf5", "tiles"]
+
+    def __init__(self, vtype=None, ctype=None, group=None):
+        super().__init__(vtype, ctype)
+        self.group = group
+
+    def open_dataarray(self, fname):
         """Delegate to module-level :func:`open_dataarray`."""
-        return open_dataarray(fname, **kwargs)
+        return open_dataarray(fname, group=self.group, vtype=self.vtype)
 
     def save_dataarray(self, da, fname, **kwargs):
         """Delegate to module-level :func:`save_dataarray`."""
         return save_dataarray(da, fname, **kwargs)
 
-    def open_datacollection(self, fname, **kwargs):
+    def open_datacollection(self, fname):
         """Delegate to module-level :func:`open_datacollection`."""
-        return open_datacollection(fname, **kwargs)
+        return open_datacollection(fname, group=self.group)
 
     def save_datacollection(self, dc, fname, **kwargs):
         """Delegate to module-level :func:`save_datacollection`."""
         return save_datacollection(dc, fname, **kwargs)
 
+    @staticmethod
+    def load_tile(path, selection, *, dataset):
+        """Read a source selection of a native xdas file.
 
-def open_dataarray(fname, group=None):
+        The variable is read with h5py, which resolves any HDF5 virtual
+        dataset the file may store transparently.
+
+        Parameters
+        ----------
+        path : str
+            Path of the NetCDF4/HDF5 file.
+        selection : tuple of slice
+            The source selection to read, one possibly strided slice per
+            axis.
+        dataset : str
+            Location of the data variable within the file.
+        """
+        with h5py.File(path, "r") as file:
+            return file[dataset][selection]
+
+
+def open_dataarray(fname, group=None, vtype=None):
     """
     Read a :class:`DataArray` from a native xdas NetCDF4/HDF5 file.
 
@@ -50,6 +97,11 @@ def open_dataarray(fname, group=None):
         Path to the file.
     group : str, optional
         HDF5 group path inside the file.
+    vtype : str, optional
+        Virtualization backing of the returned data: ``"hdf5"`` (default,
+        an HDF5 virtual source) or ``"tiles"`` (a lazy
+        :class:`~xdas.virtual.TileArray` over the stored variable). Files
+        that store a tile manifest reopen as tile arrays regardless.
 
     Returns
     -------
@@ -58,54 +110,93 @@ def open_dataarray(fname, group=None):
     if isinstance(fname, Path):
         fname = str(fname)
 
-    # read metadata
-    with xr.open_dataset(
-        fname, group=group, engine="h5netcdf", decode_timedelta=False, phony_dims="sort"
-    ) as dataset:
-        # check file format
-        if not (
-            "Conventions" in dataset.attrs and "CF" in dataset.attrs["Conventions"]
-        ):
-            raise TypeError(
-                "file format not recognized. please provide the file format "
-                "with the `engine` keyword argument"
-            )
+    # one open covers the data array and any tile manifest beside it.
+    # "access" is xarray's own default and silences its warning; "sort"
+    # would rescan every group of the file on each open.
+    with xr.open_datatree(
+        fname,
+        group=group,
+        engine="h5netcdf",
+        decode_timedelta=False,
+        phony_dims="access",
+    ) as node:
+        return _read_dataarray(node, fname, group, vtype)
 
-        # identify the "main" data array
-        if len(dataset) == 1:
-            name = next(iter(dataset.keys()))
+
+def _read_dataarray(node, fname, group=None, vtype=None):
+    """Build a :class:`DataArray` from the open tree *node* holding it.
+
+    Parameters
+    ----------
+    node : xarray.DataTree
+        The open node holding the data array (and its tile manifest as a
+        child, if any).
+    fname : str
+        Path of the file the node was opened from, reopened by the hdf5
+        virtual backend.
+    group : str, optional
+        Location of *node* within the file, needed by the same backend.
+    vtype : str, optional
+        Virtualization backing of the returned data (see
+        :func:`open_dataarray`).
+    """
+    dataset = node.dataset
+
+    # check file format
+    if not ("Conventions" in dataset.attrs and "CF" in dataset.attrs["Conventions"]):
+        raise TypeError(
+            "file format not recognized. please provide the file format "
+            "with the `engine` keyword argument"
+        )
+
+    # identify the "main" data array
+    if len(dataset) == 1:
+        name = next(iter(dataset.keys()))
+    else:
+        data_vars = {
+            key: var
+            for key, var in dataset.items()
+            if any("coordinate" in attr for attr in var.attrs)
+        }
+        if len(data_vars) == 1:
+            name = next(iter(data_vars.keys()))
         else:
-            data_vars = {
-                key: var
-                for key, var in dataset.items()
-                if any("coordinate" in attr for attr in var.attrs)
-            }
-            if len(data_vars) == 1:
-                name = next(iter(data_vars.keys()))
-            else:
-                raise ValueError("several possible data arrays detected")
+            raise ValueError("several possible data arrays detected")
 
-        # read coordinates
-        coords = Coordinates._from_dataset(dataset, name)
+    # read coordinates
+    coords = Coordinates._from_dataset(dataset, name)
 
     # read data
-    if "__dask_array__" in dataset[name].attrs:
-        data = loads(dataset[name].attrs.pop("__dask_array__"))
+    attrs = dataset[name].attrs
+    if TILING in attrs:
+        # the placeholder points at the group describing its tiling and
+        # projects the array it stands for: its type must be that array's
+        manifest = node[attrs[TILING]].to_dataset(inherit=False).load()
+        data = TileArray(manifest)
+        if data.dtype != dataset[name].dtype:
+            raise ValueError(
+                f"the placeholder is {dataset[name].dtype} where its manifest "
+                f"records {data.dtype}"
+            )
     else:
         with h5py.File(fname) as file:
             if group:
                 file = file[group]
             variable = file["__values__" if name is None else name]
-            data = VirtualSource(variable)
+            data = VirtualBackend["hdf5" if vtype is None else vtype].from_variable(
+                variable
+            )
+
+    # the file has two reservation registries: CF's plain words, which
+    # the coordinates have consumed, and xdas's dunder-fenced ones
+    attrs = {
+        key: value
+        for key, value in attrs.items()
+        if not (key.startswith("__") and key.endswith("__"))
+    }
 
     # pack everything
-    return DataArray(
-        data,
-        coords,
-        dataset[name].dims,
-        name,
-        None if dataset[name].attrs == {} else dataset[name].attrs,
-    )
+    return DataArray(data, coords, dataset[name].dims, name, attrs or None)
 
 
 def save_dataarray(
@@ -133,18 +224,41 @@ def save_dataarray(
     """
     if isinstance(fname, Path):
         fname = str(fname)
+    _save_tree({group: da}, fname, mode, virtual, encoding, create_dirs)
 
-    if virtual is None:
-        virtual = isinstance(da.data, (VirtualArray, DaskArray))
 
-    # initialize
-    dataset = xr.Dataset(attrs={"Conventions": "CF-1.9"})
-    variable_attrs = {} if da.attrs is None else da.attrs
-    variable_name = "__values__" if da.name is None else da.name
+def _save_tree(leaves, fname, mode, virtual, encoding, create_dirs):
+    """Write *leaves* (``{location or None: DataArray}``) in two passes.
 
-    # prepare metadata
-    for coord in da.coords.values():
-        dataset, variable_attrs = coord._to_dataset(dataset, variable_attrs)
+    First every group's metadata — coordinates and tile manifests — as
+    one :class:`xarray.DataTree`, then every data variable through a
+    single writable `h5netcdf` handle, since xarray cannot write the
+    virtual ones. *mode* applies to the first pass; the second appends.
+    """
+    # prepare metadata: one tree node per group, plus per-leaf variable
+    # attributes and virtual-ness for the second pass
+    nodes = {}
+    entries = []
+    for location, da in leaves.items():
+        isvirtual = isinstance(da.data, VirtualBackend) if virtual is None else virtual
+        if isvirtual:
+            if encoding is not None:
+                raise ValueError("cannot use `encoding` in virtual mode")
+            if not isinstance(da.data, VirtualBackend):
+                raise ValueError(
+                    "can only use `virtual=True` with a virtual array as data"
+                )
+        dataset = xr.Dataset(attrs={"Conventions": "CF-1.13"})
+        attrs = {} if da.attrs is None else dict(da.attrs)
+        for coord in da.coords.values():
+            dataset, attrs = coord._to_dataset(dataset, attrs)
+        nodes["/" if location is None else location] = dataset
+        if isvirtual:
+            for relpath, sibling in da.data.sibling_datasets().items():
+                nodes[relpath if location is None else f"{location}/{relpath}"] = (
+                    sibling
+                )
+        entries.append((location, da, isvirtual, attrs))
 
     # create parent directories if needed
     if create_dirs:
@@ -152,57 +266,47 @@ def save_dataarray(
         if dirname:
             os.makedirs(dirname, exist_ok=True)
 
-    # write data
-    with h5netcdf.File(fname, mode=mode) as file:
-        # group
-        if group is not None and group not in file:
-            file.create_group(group)
-        file = file if group is None else file[group]
+    # write metadata, one public-API call for every group
+    xr.DataTree.from_dict(nodes).to_netcdf(fname, mode=mode, engine="h5netcdf")
 
-        # dims
-        file.dimensions.update(da.sizes)
+    # write data variables, one writable open for the whole file
+    with h5netcdf.File(fname, mode="a") as file:
+        for location, da, isvirtual, attrs in entries:
+            target = file if location is None else file[location]
 
-        # variable
-        if not virtual:
-            encoding = {} if encoding is None else encoding
-            variable = file.create_variable(
-                variable_name, da.dims, da.dtype, data=da.values, **encoding
+            # dims the metadata pass did not create (those carrying no
+            # coordinate variable)
+            target.dimensions.update(
+                {
+                    dim: size
+                    for dim, size in da.sizes.items()
+                    if dim not in target.dimensions
+                }
             )
-        else:
-            if encoding is not None:
-                raise ValueError("cannot use `encoding` with in virtual mode")
-            if isinstance(da.data, VirtualArray):
-                variable = da.data.create_variable(
-                    file, variable_name, da.dims, da.dtype
-                )
-            elif isinstance(da.data, DaskArray):
-                variable = create_variable(
-                    da.data, file, variable_name, da.dims, da.dtype
-                )
+
+            # variable
+            variable_name = "__values__" if da.name is None else da.name
+            if isvirtual:
+                variable = da.data.create_variable(target, variable_name, da.dims)
             else:
-                raise ValueError(
-                    "can only use `virtual=True` with a virtual array as data"
+                # anything not virtual is materialized here, a dask array
+                # computed like any other lazy value
+                variable = target.create_variable(
+                    variable_name,
+                    da.dims,
+                    da.dtype,
+                    data=da.values,
+                    **({} if encoding is None else encoding),
                 )
 
-        # attrs
-        if variable_attrs:
-            variable.attrs.update(variable_attrs)
-
-    # write metadata
-    dataset.to_netcdf(fname, mode="a", group=group, engine="h5netcdf")
+            # attrs
+            if attrs:
+                variable.attrs.update(attrs)
 
 
 def open_datacollection(fname, group=None):
     """Read a :class:`DataCollection` from *fname*, auto-detecting sequence vs. mapping."""
-    dc = open_datamapping(fname, group)
-    try:
-        keys = [int(key) for key in dc]
-    except ValueError:
-        return dc
-    if set(keys) == set(range(len(keys))):
-        return DataSequence([dc[str(key)] for key in range(len(keys))], dc.name)
-    else:
-        return dc
+    return as_sequence_if_positional(open_datamapping(fname, group))
 
 
 def save_datacollection(
@@ -222,30 +326,40 @@ def open_datamapping(fname, group=None):
     if isinstance(fname, Path):
         fname = str(fname)
 
-    with h5py.File(fname, "r") as file:
-        if group is None:
-            group = file[next(iter(file.keys()))]
-        else:
-            group = file[group]
-        name = group.name.split("/")[-1]
-        if isinstance(group, h5py.Dataset):
+    # the whole collection in one open — walking the already open tree
+    # replaces one targeted reopen per data array
+    with xr.open_datatree(
+        fname,
+        engine="h5netcdf",
+        decode_timedelta=False,
+        phony_dims="access",
+    ) as tree:
+        node = tree if group is None else tree[group]
+        if group is None and not node.dataset.data_vars:
+            node = next(iter(node.children.values()))
+        # a collection node holds only groups; finding variables on it (or
+        # being handed a variable path) means the file is something else
+        if isinstance(node, xr.DataArray) or node.dataset.data_vars:
             raise ValueError(
                 "it looks like you are trying to open a data array as a data collection."
             )
+        return _read_datamapping(node, fname)
+
+
+def _read_datamapping(node, fname):
+    """Build a :class:`DataMapping` from the open tree *node* holding it.
+
+    A child node holding variables is a data array; one holding only
+    groups is a nesting level whose single child is a named collection.
+    """
+    name = node.name
+    dm = DataMapping({}, name=None if name == "collection" else name)
+    for key, child in node.children.items():
+        if child.dataset.data_vars:
+            dm[key] = _read_dataarray(child, fname, group=child.path)
         else:
-            if not isinstance(group, h5py.Group):  # pragma: no cover
-                raise RuntimeError(
-                    "something went wrong while opening the data collection."
-                )
-        keys = list(group.keys())
-        dm = DataMapping({}, name=None if name == "collection" else name)
-        for key in keys:
-            subgroup = group[key]
-            if _get_depth(subgroup) == 0:
-                dm[key] = DataArray.from_netcdf(fname, subgroup.name)
-            else:
-                subgroup = subgroup[next(iter(subgroup.keys()))]
-                dm[key] = DataCollection.from_netcdf(fname, subgroup.name)
+            subnode = next(iter(child.children.values()))
+            dm[key] = as_sequence_if_positional(_read_datamapping(subnode, fname))
     return dm
 
 
@@ -253,20 +367,30 @@ def save_datamapping(
     dm, fname, mode="w", group=None, virtual=None, encoding=None, create_dirs=False
 ):
     """Write :class:`DataMapping` *dm* to *fname*, writing each key as a separate group."""
+    if isinstance(fname, Path):
+        fname = str(fname)
     if mode == "w" and group is None and os.path.exists(fname):
         os.remove(fname)
-    for key in dm:
-        name = dm.name if dm.name is not None else "collection"
+    leaves = _collect_leaves(dm, group)
+    if leaves:
+        _save_tree(leaves, fname, "a", virtual, encoding, create_dirs)
+
+
+def _collect_leaves(dc, group):
+    """Flatten collection *dc* into ``{location: DataArray}`` under *group*."""
+    if isinstance(dc, DataSequence):
+        dc = dc.to_mapping()
+    name = dc.name if dc.name is not None else "collection"
+    leaves = {}
+    for key in dc:
         location = "/".join([name, str(key)])
         if group is not None:
             location = f"{group}/{location}"
-        if create_dirs:
-            dirname = os.path.dirname(fname)
-            if dirname:
-                os.makedirs(dirname, exist_ok=True)
-        dm[key].to_netcdf(
-            fname, mode="a", group=location, virtual=virtual, encoding=encoding
-        )
+        if isinstance(dc[key], DataArray):
+            leaves[location] = dc[key]
+        else:
+            leaves.update(_collect_leaves(dc[key], location))
+    return leaves
 
 
 def open_datasequence(fname, group=None):
@@ -281,11 +405,3 @@ def save_datasequence(
     """Write :class:`DataSequence` *ds* to *fname* by converting to a mapping first."""
     dm = ds.to_mapping()
     save_datamapping(dm, fname, mode, group, virtual, encoding, create_dirs)
-
-
-def _get_depth(group):
-    if not isinstance(group, h5py.Group):
-        raise ValueError("not a group")
-    depths = []
-    group.visit(lambda name: depths.append(name.count("/")))
-    return max(depths)

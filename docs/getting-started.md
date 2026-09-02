@@ -184,17 +184,17 @@ common_mode_removal = da - da.mean("distance")
 
 ### Scipy functions
 
-Most scipy function from the `signal` and `fft` submodule have been implemented. The Xdas function are multithreaded. A `parallel` keyword argument can be passed to most of them to indicate the number of cores to use.
+Most scipy function from the `signal` and `fft` submodule have been implemented. The Xdas functions are multithreaded, with the number of threads sized automatically from the amount of data to process; a `parallel` keyword argument lets you override this on most of them.
 
-Bellow an example of spatial and temporal decimation:
+Below an example of spatial and temporal resampling using {py:func}`~xdas.resample`, the single entry point that covers what `scipy.signal.decimate`, `resample_poly` and `resample` do (`method="fir"` by default, `"iir"` or `"fft"` also available). A target can be specified as a rate, a sampling interval, or a plain `up`/`down` ratio:
 
 ```{code-cell}
 import xdas.signal as xs 
 
-decimated = xs.decimate(da, 2, ftype="fir", dim="distance", parallel=None)  # all cores by default
-decimated = xs.decimate(decimated, 2, ftype="iir", dim="time", parallel=8)  # height cores
+resampled = xd.resample(da, down=2, dim="distance")  # halve the spatial sampling, FIR by default
+resampled = xd.resample(resampled, rate=25.0, dim="time", method="iir")  # 25 Hz along time, IIR
 
-decimated.plot(yincrease=False, vmin=-0.25, vmax=0.25)
+resampled.plot(yincrease=False, vmin=-0.25, vmax=0.25)
 ```
 
 Here how to compute a FK diagram. Note that the DataArray object can be used to represent any number and kind of dimensions:
@@ -223,11 +223,12 @@ fk.to_netcdf("fk.nc")
 
 The usual [numpy](https://numpy.org/)/[scipy](https://scipy.org/) way of processing data works great when the data of interest fit in memory. To deal with huge datasets, xdas introduce {py:class}`~xdas.atoms.Atom` objects. 
 
-An {py:class}`~xdas.atoms.Atom` is a generic processing unit that takes one input and return one output. Atoms can store state information to ensure continuity from subsequent calls on contiguous chunks.
+An {py:class}`~xdas.atoms.Atom` is a generic processing unit that takes one input and return one output. Atoms can store state information to ensure continuity from subsequent calls on contiguous chunks. Every processing function xdas ships (`xd.resample`, `xs.lfilter`, `xd.trigger`, ...) has a matching atom: calling it with data applies it right away, while passing `...` in place of the data returns the atom itself, ready to be composed into a pipeline with the `>>` operator.
+
 There are three ways to make atoms with xdas:
 
-- Function can be *atomized* using the {py:class}`~xdas.atoms.Partial` class. All parameters except the input are fixed.
-- The {py:mod}`xdas.atoms` module contains a set of predefined atoms. In particular most stateful atoms are implemented in that module.
+- Most functions in {py:mod}`xdas.signal`, {py:mod}`xdas.fft` and the top-level `xd.*` task functions already have an atom form, obtained by passing `...` as the data argument.
+- Other functions can be *atomized* using the {py:class}`~xdas.atoms.Partial` class. All parameters except the input are fixed.
 - The user can subclass the {py:class}`~xdas.atoms.Atom` class and define its own atoms.
 
 ### Transforming a classic workflow into an atomic pipeline
@@ -240,7 +241,7 @@ from scipy.signal import iirfilter
 b, a = iirfilter(4, 0.1, btype="high")
 
 def process(da):
-  da = xs.decimate(da, 2, ftype="fir", dim="distance")  # not impacted by chunking 
+  da = xd.resample(da, down=2, dim="distance")  # not impacted by chunking 
   da = xs.lfilter(b, a, da, dim="time")  # require state passing along time
   da = np.square(da)  # already a unary operator
   return da
@@ -248,55 +249,38 @@ def process(da):
 monolithic = process(da)
 ```
 
-To convert your workflow into an atomic pipeline you need:
+Converting each processing step into an atom depends on the nature of the step, in particular whether the operation is **stateful** (it relies on the history along the chunked dimension) or **stateless** (each chunk along the chunked dimension can be processed independently). An example of a stateful operation is a recursive filter, passing its state from one chunk to the next. Note that this stateful/stateless characteristic depends on the chunking dimension.
 
-1. to convert each processing step into an atom
-2. to bundle all steps into a {py:class}`~xdas.atoms.Sequential` atom.
+- unary operators that are not stateful can be used as is.
+- functions that have an atom form become atoms by passing `...` as their data argument.
+- functions without an atom form that are stateless must be wrapped with the {py:class}`~xdas.atoms.Partial` class.
+- operations that **are stateful** must be replaced by an equivalent stateful atom, such as {py:class}`~xdas.atoms.LFilter`.
 
-Converting each processing step into an atom depend on the nature of the step. In particular it depends wether the operation is **stateful** (it does rely on the history along the chunked dimension) or **stateless** (the operation can by applied separately on each chunk along the given dimension without any particular consideration). An example of a stateful operation is a recursive filter, passing on the state from t to t+1.Not that this stateful/less caracteristic depends on the chunking dimension.
-
-- unary operators that are not stateful (that do not rely on the history along the chunked axis) can be used as is.
-- functions that are not stateful must be wrapped with the {py:class}`~xdas.atoms.Partial` class.
-- functions that **are stateful** must be replaced by an equivalent stateful object.
-
-In practice, the atomized workflow can be implemented like below. The resulting atom is a callable that can be applied to any data array.
+In practice, the atomized workflow can be built by chaining atoms with `>>`. The resulting {py:class}`~xdas.atoms.Sequential` pipeline is a callable that can be applied to any data array:
 
 ```{code-cell}
-from xdas.atoms import Sequential, Partial, LFilter
+from xdas.atoms import LFilter
 
-atom = Sequential(
-  [
-    Partial(xs.decimate, 2, ftype="fir", dim="distance"),  # use Partial when stateless
-    LFilter(b, a, dim="time"),  # use equivalent atom object if stateful
-    np.square,  # do nothing if unary and stateless
-  ]
-)
+atom = xd.resample(..., down=2, dim="distance") >> LFilter(b, a, dim="time") >> np.square
+atom
+```
 
+```{code-cell}
 atomic = atom(da)
 
-assert atomic.equals(monolithic) # works as `process` but can by applied chunk by chunk
+assert atomic.equals(monolithic)  # works as `process` but can by applied chunk by chunk
 ```
 
 ### Applying an atom chunk by chunk
 
-While atoms can be used as an equivalent of functions to organize pipelines, their major selling points is their abilities to enable chunk processing. While chunk by chunk processing can be done manually, xdas provides the {py:mod}`xdas.processing` module to facilitate this operation. The user must define one data loader and one data writer. Then the {py:func}`~xdas.processing.process` function is used to run the computation. 
+While atoms can be used as an equivalent of functions to organize pipelines, their major selling point is their ability to enable chunk processing. Every pipeline exposes a {py:meth}`~xdas.atoms.Atom.process` method that resolves whatever source and sink you give it — an in-memory or virtual {py:class}`~xdas.DataArray`, a file glob, a directory being written to in real time (see {py:func}`~xdas.watch`) — and streams chunks through, with no loader/writer boilerplate needed.
 
-```{code-cell}
-:tags: [remove-cell]
-
-!mkdir output
-```
-
-In the example below the data array is loaded by chunks of 100 samples along the `"time"` dimension. Each chunk is processed by the atom that was defined above and each resulting processed chunk is saved in the `output` folder. Once the computation is completed, the data loader return a unified view on the output chunks. 
+In the example below the data array is streamed by chunks of 100 samples along the `"time"` dimension, and each resulting processed chunk is saved in the `output` folder. The call returns a unified view on the output chunks once the computation is completed.
 
 ```{code-cell}
 :tags: [remove-output]
 
-from xdas.processing import process, DataArrayLoader, DataArrayWriter
-
-dl = DataArrayLoader(da, chunks={"time": 100})
-dw = DataArrayWriter("output")
-chunked = process(atom, dl, dw)
+chunked = atom.process(da, chunks={"time": 100}, out="output/")
 
 assert chunked.equals(monolithic)  # again equal but could be applied to much bigger datasets
 ```
@@ -307,4 +291,4 @@ assert chunked.equals(monolithic)  # again equal but could be applied to much bi
 !rm -r output
 ```
 
-This part was a short summary about atoms and chunk processing. To go deeper on the atom part you can head to the [](user-guide/pipeline/atoms) section. To further study chunk processing you can head to the [](user-guide/pipeline/processing) section.
+This part was a short summary about atoms and chunk processing. To go deeper on the atom part you can head to the [](user-guide/pipeline/atoms) section. To further study chunk processing you can head to the [](user-guide/pipeline/processing) section. Xdas also ships built-in atoms for phase picking with pretrained [SeisBench](https://github.com/seisbench/seisbench) models (`xd.pick`, {py:class}`~xdas.atoms.Trigger`) — see the [](user-guide/pipeline/picking) guide.

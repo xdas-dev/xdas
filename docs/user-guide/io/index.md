@@ -7,5 +7,5 @@ This section covers reading and writing data with *xdas*.
 
 data-formats
 virtual-datasets
-miniseed
+obspy
 ```

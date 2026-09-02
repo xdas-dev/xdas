@@ -172,6 +172,49 @@ class TestSaveDatamappingCreateDirs:
             os.chdir(orig)
 
 
+class TestSaveDatamappingEmpty:
+    def test_empty_mapping_writes_nothing(self, tmp_path):
+        path = str(tmp_path / "empty.nc")
+        save_datamapping(DataMapping({}), path)
+        assert not os.path.exists(path)
+
+
+class TestOpenDatamappingOnVariable:
+    def test_variable_group_raises(self, tmp_path):
+        da = make_da()
+        dc = xd.DataCollection({"a": da})
+        path = str(tmp_path / "dc.nc")
+        dc.to_netcdf(path)
+        with pytest.raises(ValueError, match="data array as a data collection"):
+            open_datacollection(path, group="collection/a/time_indices")
+
+
+class TestNestedCollections:
+    def test_nested_mapping_round_trip(self, tmp_path):
+        da = make_da()
+        dc = xd.DataCollection({"n1": {"a": da, "b": da}, "n2": {"c": da}})
+        path = str(tmp_path / "nested.nc")
+        dc.to_netcdf(path)
+        result = open_datacollection(path)
+        assert result.equals(dc)
+
+    def test_nested_non_sequential_integer_keys_stay_mapping(self, tmp_path):
+        da = make_da()
+        dc = xd.DataCollection({"n1": {"2": da, "5": da}})
+        path = str(tmp_path / "nested.nc")
+        dc.to_netcdf(path)
+        result = open_datacollection(path)
+        assert result.equals(dc)
+
+    def test_open_with_explicit_group(self, tmp_path):
+        da = make_da()
+        dc = xd.DataCollection({"a": da, "b": da})
+        path = str(tmp_path / "dc.nc")
+        dc.to_netcdf(path)
+        result = open_datacollection(path, group="collection")
+        assert result.equals(dc)
+
+
 class TestOpenSaveDatasequence:
     def test_open_datasequence(self, tmp_path):
         da = make_da()
