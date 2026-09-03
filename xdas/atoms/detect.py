@@ -1,23 +1,25 @@
 """
-Detection atoms: turn a characteristic function into picks.
+Detection atoms: characteristic functions, and the picks drawn from them.
 
 These atoms emit :class:`pandas.DataFrame` objects rather than arrays — the
 transducer contract makes that unremarkable, a pick table is just another
 chunk type flowing downstream to a CSV sink. :class:`Trigger` is the
 threshold detector; its lowercase twin is :func:`xdas.trigger`.
+:class:`STALTA` builds the characteristic function such a detector consumes.
 """
 
 from collections.abc import Mapping
 
 import numpy as np
 import pandas as pd
+import scipy.signal as sp
 from numba import njit
 
-from ..coordinates import Coordinate
-from ..core import concat_coords
+from ..coordinates import Coordinate, get_sampling_interval
+from ..core import DataArray, concat, concat_coords
 from .core import Atom, State, atomized
 
-__all__ = ["Trigger", "trigger"]
+__all__ = ["STALTA", "Trigger", "stalta", "trigger"]
 
 #: Name of the label dimension a mapping of thresholds keys on. It is the
 #: dimension :class:`~xdas.atoms.Annotate` appends to its characteristic
@@ -594,3 +596,184 @@ def _trigger(  # pragma: no cover
 
 
 trigger = atomized(Trigger)
+
+
+class STALTA(Atom):
+    """
+    Short-term over long-term average characteristic function.
+
+    The ratio of a short trailing (or centred) mean of the squared signal to a
+    long one: the classic amplitude detector, whose output is fed to
+    :class:`Trigger` to obtain picks. Both window lengths are given in the
+    physical units of `dim`, so the same atom applies to any sampling rate.
+
+    Stateful: the trailing samples the next window will need are carried
+    across chunks, so chunked processing returns exactly what a single call on
+    the whole record returns. In ``"centered"`` mode a window also reaches
+    forward, so each call holds back the samples it cannot yet complete and
+    :meth:`flush` releases them at the end of the stream. In ``"causal"`` mode
+    nothing is held back and :meth:`flush` has nothing to return.
+
+    Parameters
+    ----------
+    sta : float
+        Length of the short-term window, in the units of `dim`.
+    lta : float
+        Length of the long-term window, in the units of `dim`. Must be longer
+        than `sta`.
+    mode : {"causal", "centered"}, optional
+        Where each window sits relative to the sample it produces.
+        ``"causal"`` (default) averages the samples up to and including it, as
+        a real-time detector must; the onset of a transient is then reported
+        late by roughly half the short window. ``"centered"`` averages
+        symmetrically about it, which sharpens the onset but needs samples
+        from the future, and so is only available offline. The choice shifts
+        pick times, so it is a property of the detector, not a tuning knob.
+    window : str, optional
+        Tapering window applied to both means, by default "boxcar" — the plain
+        running mean. Any window accepted by :func:`scipy.signal.get_window`.
+    pad_mode : str, optional
+        How the two ends of the *record* are extended where a window would
+        reach past them, by default "reflect". Chunk seams are never padded:
+        they use the real neighbouring samples.
+    dim : str, optional
+        The dimension along which to compute the ratio, by default "time".
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import xdas as xd
+
+    A transient buried in noise:
+
+    >>> rng = np.random.default_rng(42)
+    >>> data = rng.normal(0.0, 1.0, 2000)
+    >>> data[1200:1240] += 20.0
+    >>> da = xd.DataArray(
+    ...     data=data,
+    ...     coords={"time": {"tie_indices": [0, 1999], "tie_values": [0.0, 199.9],
+    ...                      "sampling_interval": 0.1}},
+    ... )
+
+    Eager processing with the functional twin:
+
+    >>> cft = xd.stalta(da, sta=1.0, lta=20.0)
+    >>> float(cft.max().values) > 10.0
+    True
+
+    Chunked processing gives the same answer, seam for seam:
+
+    >>> atom = xd.stalta(..., sta=1.0, lta=20.0)
+    >>> chunks = [atom(chunk, chunk_dim="time")
+    ...           for chunk in xd.split(da, 8, dim="time")]
+    >>> chunked = xd.concat(chunks + list(atom.flush()), "time")
+    >>> bool(np.allclose(chunked.values, cft.values))
+    True
+
+    Piped into the trigger, which is the point of it:
+
+    >>> picks = xd.stalta(da, sta=1.0, lta=20.0) >> xd.trigger(..., thresh=8.0)
+
+    """
+
+    def __init__(
+        self, sta, lta, mode="causal", window="boxcar", pad_mode="reflect", dim="time"
+    ):
+        super().__init__()
+        if not sta > 0.0:
+            raise ValueError("`sta` must be strictly positive")
+        if not lta > sta:
+            raise ValueError("`lta` must be longer than `sta`")
+        if mode not in ("causal", "centered"):
+            raise ValueError("`mode` must be either 'causal' or 'centered'")
+        self.sta = float(sta)
+        self.lta = float(lta)
+        self.mode = mode
+        self.window = window
+        self.pad_mode = pad_mode
+        self.dim = dim
+
+        # states
+        self.fs = State(...)
+        self.buffer = State(...)
+        self.skip = State(...)
+
+    def initialize(self, da, chunk_dim=None, **flags):
+        """Measure the sampling rate to size the windows, and open the buffer."""
+        self.fs = State(1.0 / get_sampling_interval(da, self.dim))
+        self.initialize_from_state()
+        self.skip = State(0)
+        if chunk_dim == self.dim:
+            self.buffer = State(da.isel({self.dim: slice(0, 0)}))
+        else:
+            self.buffer = State(None)
+
+    def initialize_from_state(self):
+        """Derive the window lengths, in samples, from the sampling rate."""
+        self.sta_n = _oddify(self.sta * self.fs, 3)
+        self.lta_n = _oddify(self.lta * self.fs, self.sta_n + 2)
+        if self.mode == "causal":
+            self.lookback, self.lookahead = self.lta_n - 1, 0
+        else:
+            self.lookback = self.lookahead = self.lta_n // 2
+
+    def call(self, da, **flags):
+        """Emit the ratio for every sample whose windows are complete."""
+        if self.buffer is None:  # whole record: both ends are record ends
+            return self._ratio(da)
+        x = concat([self.buffer, da], self.dim) if self.buffer.sizes[self.dim] else da
+        size = x.sizes[self.dim]
+        if size <= self.lookback + self.lookahead:
+            # Too little of the record has arrived to extend its start the way
+            # a single call would: hold everything and emit nothing yet.
+            self.buffer = State(x)
+            return []
+        stop = size - self.lookahead
+        out = self._ratio(x).isel({self.dim: slice(self.skip, stop)})
+        keep = self.lookback + self.lookahead
+        self.buffer = State(x.isel({self.dim: slice(size - keep, None)}))
+        self.skip = State(stop - (size - keep))
+        return out
+
+    def flush(self):
+        """Release the held-back tail, padded as the end of a record."""
+        # Not `self.buffer is None`: a flush also reaches an atom that was
+        # never chunked (buffer `None`) or never called at all (buffer `...`).
+        if not isinstance(self.buffer, DataArray):
+            return []
+        if self.skip >= self.buffer.sizes[self.dim]:
+            return []
+        return [self._ratio(self.buffer).isel({self.dim: slice(self.skip, None)})]
+
+    def _ratio(self, da):
+        """Compute the ratio of the two windowed means over a whole block."""
+        axis = da.get_axis_num(self.dim)
+        energy = np.square(np.asarray(da.values, dtype=float))
+        sta = self._mean(energy, self.sta_n, axis)
+        lta = self._mean(energy, self.lta_n, axis)
+        np.maximum(lta, np.finfo(float).eps, out=lta)
+        return da.copy(data=sta / lta)
+
+    def _mean(self, energy, size, axis):
+        """Windowed mean of `energy`, placed according to `mode`."""
+        weights = sp.get_window(self.window, size).astype(float)
+        weights /= weights.sum()
+        shape = tuple(-1 if a == axis else 1 for a in range(energy.ndim))
+        if self.mode == "causal":
+            before, after = size - 1, 0
+        else:
+            before = after = size // 2
+        pad = tuple(
+            (before, after) if a == axis else (0, 0) for a in range(energy.ndim)
+        )
+        padded = np.pad(energy, pad, mode=self.pad_mode)
+        return sp.fftconvolve(padded, weights.reshape(shape), mode="valid")
+
+
+def _oddify(size, floor):
+    """Round a window length to an odd number of samples, at least `floor`."""
+    size = max(floor, round(float(size)))
+    return size if size % 2 else size + 1
+
+
+stalta = atomized(STALTA)
