@@ -1,5 +1,16 @@
 # Release notes
 
+## Unreleased
+
+### Atoms
+- **`xdas.stalta`**, the short-term over long-term average characteristic
+  function, feeding the existing `Trigger` so that detection no longer needs a
+  model. Both windows are given in the units of the dimension, `mode="causal"`
+  (default) or `"centered"` places them relative to the sample they produce,
+  and the atom is stateful: chunked processing returns what a single call on
+  the whole record returns, `flush()` releasing the tail `"centered"` mode
+  holds back (@amaggi).
+
 ## 0.2.9
 
 ### Tiles Backend

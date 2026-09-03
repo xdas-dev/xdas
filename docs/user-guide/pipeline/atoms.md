@@ -86,7 +86,8 @@ energy
 | {py:func}`~xdas.hilbert` | analytic signal |
 | {py:func}`~xdas.medfilt`, {py:func}`~xdas.sliding_mean_removal` | kernels in seconds or meters |
 | {py:func}`~xdas.rechunk` | a streaming-cadence knob, not an operation |
-| {py:func}`~xdas.annotate`, {py:func}`~xdas.trigger`, {py:func}`~xdas.pick` | machine-learning picking (see [](picking.md)) |
+| {py:func}`~xdas.stalta` | short-term over long-term average, windows in seconds |
+| {py:func}`~xdas.annotate`, {py:func}`~xdas.trigger`, {py:func}`~xdas.pick` | detection and picking (see [](picking.md)) |
 
 Each has an atom behind it — {py:class}`~xdas.atoms.Filter`,
 {py:class}`~xdas.atoms.Resample`, and so on — reached by seeding with `...`.
