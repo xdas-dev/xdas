@@ -434,6 +434,7 @@ def open_mfdatatree(
 
     """
     paths = _ensure_str_paths(paths)
+    paths = Path(paths).as_posix()
 
     placeholders = re.findall(r"[\{\[].*?[\}\]]", paths)
 
@@ -447,7 +448,7 @@ def open_mfdatatree(
     wildcard = paths
     for placeholder in placeholders:
         wildcard = wildcard.replace(placeholder, "*")
-    fnames = sorted(glob(wildcard))
+    fnames = sorted(Path(fname).as_posix() for fname in glob(wildcard))
 
     regex = paths
     regex = regex.replace(".", r"\.")
