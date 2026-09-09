@@ -72,6 +72,7 @@ __all__ = [  # noqa: RUF022 - grouped by kind, not alphabetically
     "rechunk",
     "resample",
     "sliding_mean_removal",
+    "stalta",
     "stft",
     "taper",
     "trigger",
@@ -97,7 +98,7 @@ from . import (
 # `sys.modules` and does not rebind the attribute: the lowercase twin below
 # stays `xdas.trigger` for everyone.
 from . import trigger as _trigger_module  # noqa: F401  isort: skip
-from .atoms.detect import trigger
+from .atoms.detect import stalta, trigger
 from .atoms.kernel import rechunk
 from .atoms.ml import annotate, mlpicker, pick
 from .atoms.operations import (

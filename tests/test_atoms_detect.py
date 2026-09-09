@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 
 import xdas as xd
-from xdas.atoms import Trigger
+from xdas.atoms import STALTA, Trigger
 
 
 def generate():
@@ -455,3 +455,107 @@ class TestChunkSemantics:
         assert sorted(zip(chunked["distance"], chunked["time"])) == sorted(
             zip(eager["distance"], eager["time"])
         )
+
+
+def generate_stalta(nt=2000, nx=3, seed=42):
+    """A noisy record with three transients, for the characteristic function."""
+    rng = np.random.default_rng(seed)
+    data = rng.normal(0.0, 1.0, (nt, nx))
+    for onset in (400, 1100, 1700):
+        if onset + 30 <= nt:
+            data[onset : onset + 30] += 15.0 * np.exp(-np.arange(30) / 6.0)[:, None]
+    return xd.DataArray(
+        data=data,
+        coords={
+            "time": {
+                "tie_indices": [0, nt - 1],
+                "tie_values": [0.0, (nt - 1) * 0.002],
+                "sampling_interval": 0.002,
+            },
+            "distance": np.arange(nx) * 10.0,
+        },
+    )
+
+
+def run_chunked(atom, da, n):
+    """Feed `da` to `atom` in `n` chunks and re-join everything it emits."""
+    outs = [atom(chunk, chunk_dim="time") for chunk in xd.split(da, n, dim="time")]
+    return xd.concat(outs + list(atom.flush()), "time")
+
+
+class TestSTALTA:
+    @pytest.mark.parametrize("mode", ["causal", "centered"])
+    @pytest.mark.parametrize("n", [2, 5, 17, 200])
+    def test_chunked_equals_eager(self, mode, n):
+        da = generate_stalta()
+        expected = STALTA(sta=0.02, lta=0.5, mode=mode)(da)
+        result = run_chunked(STALTA(sta=0.02, lta=0.5, mode=mode), da, n)
+        assert result.shape == expected.shape
+        assert np.allclose(result.values, expected.values)
+        assert np.array_equal(
+            result.coords["time"].values, expected.coords["time"].values
+        )
+
+    def test_causal_holds_nothing_back(self):
+        da = generate_stalta()
+        atom = STALTA(sta=0.02, lta=0.5, mode="causal")
+        assert run_chunked(atom, da, 4).sizes["time"] == da.sizes["time"]
+        assert atom.flush() == []
+
+    def test_centered_holds_back_and_flushes(self):
+        da = generate_stalta()
+        atom = STALTA(sta=0.02, lta=0.5, mode="centered")
+        outs = [atom(chunk, chunk_dim="time") for chunk in xd.split(da, 4, dim="time")]
+        emitted = xd.concat(outs, "time").sizes["time"]
+        assert emitted < da.sizes["time"]
+        (tail,) = atom.flush()
+        assert emitted + tail.sizes["time"] == da.sizes["time"]
+
+    def test_causal_onset_is_later_than_centered(self):
+        da = generate_stalta()
+        causal = STALTA(sta=0.02, lta=0.5, mode="causal")(da)
+        centered = STALTA(sta=0.02, lta=0.5, mode="centered")(da)
+        assert int(causal.values[:, 0].argmax()) > int(centered.values[:, 0].argmax())
+
+    def test_twin_and_pipeline(self):
+        da = generate_stalta()
+        assert np.allclose(
+            xd.stalta(da, sta=0.02, lta=0.5).values,
+            STALTA(sta=0.02, lta=0.5)(da).values,
+        )
+        assert isinstance(xd.stalta(..., sta=0.02, lta=0.5), STALTA)
+        picks = da >> (xd.stalta(..., sta=0.02, lta=0.5) >> xd.trigger(..., thresh=8.0))
+        assert len(picks) > 0
+
+    def test_window_and_pad_mode(self):
+        da = generate_stalta()
+        hann = STALTA(sta=0.02, lta=0.5, window="hann")(da)
+        boxcar = STALTA(sta=0.02, lta=0.5, window="boxcar")(da)
+        assert not np.allclose(hann.values, boxcar.values)
+        edge = STALTA(sta=0.02, lta=0.5, pad_mode="edge")(da)
+        assert not np.allclose(edge.values, boxcar.values)
+
+    @pytest.mark.parametrize("mode", ["causal", "centered"])
+    def test_record_shorter_than_the_halo(self, mode):
+        # The whole stream fits inside the window: nothing is ever emitted by
+        # `call`, and `flush` pads both ends as the ends of the record.
+        da = generate_stalta(nt=60)
+        expected = STALTA(sta=0.02, lta=0.5, mode=mode)(da)
+        result = run_chunked(STALTA(sta=0.02, lta=0.5, mode=mode), da, 4)
+        assert np.allclose(result.values, expected.values)
+
+    def test_flush_without_data_is_empty(self):
+        # Uninitialised, and initialised by an eager (unchunked) call: neither
+        # holds anything back.
+        atom = STALTA(sta=0.02, lta=0.5, mode="centered")
+        assert atom.flush() == []
+        atom(generate_stalta())
+        assert atom.flush() == []
+
+    def test_invalid_parameters(self):
+        with pytest.raises(ValueError, match="strictly positive"):
+            STALTA(sta=0.0, lta=1.0)
+        with pytest.raises(ValueError, match="longer than"):
+            STALTA(sta=1.0, lta=0.5)
+        with pytest.raises(ValueError, match="causal.*centered"):
+            STALTA(sta=0.02, lta=0.5, mode="acausal")
