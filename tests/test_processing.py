@@ -12,6 +12,7 @@ import scipy.signal as sp
 
 import xdas as xd
 import xdas.processing as xp
+from tests.conftest import requires_posix_shm
 from xdas.atoms import Partial, Sequential
 from xdas.signal import sosfilt
 
@@ -101,6 +102,7 @@ class TestProcessPool:
         dl = xp.DataArrayLoader(da, {"time": 100}, 4, 2, pool="processes")
         assert xd.concat(list(dl)).equals(expected)
 
+    @requires_posix_shm
     def test_loader_chunks_are_zero_copy(self):
         # Read-only data is the signature of an arena-backed chunk: the parent
         # mapped the worker's pages, nothing was pickled back. The arena is

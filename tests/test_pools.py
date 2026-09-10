@@ -10,6 +10,7 @@ import pytest
 from loky import process_executor
 
 import xdas as xd
+from tests.conftest import requires_posix_shm
 from xdas.processing.core import AUTO_CHUNK_NBYTES, get_pool
 from xdas.processing.pools import (
     _ARENAS,
@@ -60,13 +61,6 @@ def _make(length):
 def _sum(chunk):
     """A task reading a staged argument without sending an array back."""
     return float(chunk.values.sum())
-
-
-requires_posix_shm = pytest.mark.skipif(
-    os.name != "posix",
-    reason="the shared-memory arena is POSIX-only by design (pools.py module docstring)",
-)
-"""Marks a test that exercises the real Arena, not its non-POSIX fallback."""
 
 
 @requires_posix_shm
