@@ -27,6 +27,7 @@ Xdas support the following DAS formats:
 | Constructor       | Instrument        | `engine` argument | Virtualization    | Default   |
 |:-----------------:|:-----------------:|:-----------------:|:-----------------:|:---------:|
 | AP Sensing        | DAS N5*           | `"apsensing"`     | HDF5, tiles       | `hdf5`    |
+| Aragon Photonics  | HDAS              | `"aragon"`        | HDF5, tiles       | `hdf5`    |
 | ASN               | OptoDAS           | `"asn"`           | HDF5, tiles       | `hdf5`    |
 | FEBUS             | A1                | `"febus"`         | HDF5, tiles       | `tiles`   |
 | OptaSense         | OLA, ODH*, ...    | `"optasense"`     | HDF5, tiles       | `hdf5`    |
@@ -71,6 +72,18 @@ tile per file whatever the block count. That is why `febus` defaults to `tiles`.
 ```{warning}
 Due to poor documentation of the various version of the Febus format, it is recommended to manually provide the required trimming and the position of the timestamps within each block. For example to trim 100 samples on both side of each block and to set the timestamp location at the center of the block for a block of 2000 samples:
 `xdas.open("path.h5", engine="febus", overlaps=(100, 100), offset=1000)`
+```
+
+```{note}
+The `aragon` engine reads Aragon Photonics HDAS 3.0 files. Only
+`HDAS_StrainRate` files are supported, and samples are returned as stored (no
+nanostrain conversion). The regular time axis steps at the header's nominal
+sampling interval and is anchored to minimise the largest departure of any
+per-sample stamp from the grid, that departure being stored as the coordinate
+tolerance; a departure over half a sample (a gap, or a partly-filled file)
+triggers a warning. `ctype={"time": "dense"}` keeps every raw stamp instead. The
+distance axis comes from the header's processed-fiber start point and spatial
+sampling.
 ```
 
 ### Engine parameters
