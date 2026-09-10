@@ -1553,7 +1553,9 @@ class StreamWriter:
         return self.submit(st)
 
     def _write(self, st):
-        st.write(f"{self.dirpath}/{st[0].stats.starttime}_tmp.mseed", **self.kw_write)
+        # ":" is illegal in a Windows filename; UTCDateTime's str() has two.
+        starttime = str(st[0].stats.starttime).replace(":", "-")
+        st.write(f"{self.dirpath}/{starttime}_tmp.mseed", **self.kw_write)
 
     def shutdown(self):
         """Shut down the internal thread pool."""

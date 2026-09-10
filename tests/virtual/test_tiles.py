@@ -3,6 +3,7 @@
 import json
 import math
 import os
+import sys
 
 import h5py
 import numpy as np
@@ -2560,6 +2561,11 @@ class TestStoredForm:
         finally:
             del Engine._registry["shift"]
 
+    @pytest.mark.skipif(
+        sys.platform != "linux",
+        reason="raw non-UTF-8 filenames need a filesystem that stores bytes "
+        "verbatim; macOS (APFS) and Windows (NTFS) both reject them",
+    )
     def test_non_utf8_root_survives_the_header(self, tmp_path):
         """A root JSON cannot spell verbatim rides on escaped surrogates."""
         directory = os.fsdecode(os.fsencode(str(tmp_path)) + b"/caf\xe9")

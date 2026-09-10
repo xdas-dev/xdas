@@ -634,7 +634,7 @@ class TestGarbadgeCollection:
                     },
                 },
             )
-            da.to_netcdf(tmp_path / "data" / "chunk_{idx:03d}.nc", create_dirs=True)
+            da.to_netcdf(tmp_path / "data" / f"chunk_{idx:03d}.nc", create_dirs=True)
         da = xd.open(tmp_path / "data" / "chunk_*.nc", squeeze=True)
         da.to_netcdf(tmp_path / "dataarray.nc")
         da = xd.open(tmp_path / "dataarray.nc")

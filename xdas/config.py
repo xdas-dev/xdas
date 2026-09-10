@@ -36,6 +36,15 @@ CGROUP_LIMITS = (
 )
 """Where a container or a batch scheduler declares the memory of a process."""
 
+UNBOUNDED_CGROUP_LIMIT = 2**56
+"""Above this, a cgroup value is its "no limit" sentinel, not a real one.
+
+cgroup v1 spells an absent limit as a value near ``LONG_MAX``, far past any
+machine's actual memory; this must be discarded on its own, not merely by
+losing a `min()` against a physical-memory reading that may not exist (e.g.
+``os.sysconf`` is absent on Windows).
+"""
+
 
 def total_memory():
     """
@@ -44,9 +53,8 @@ def total_memory():
     The smallest of what the machine has and what a cgroup allows it: a
     container or a scheduler allocation is what the process actually gets,
     whatever the machine holds. The unlimited sentinel a cgroup writes when
-    there is no limit is larger than the physical memory, so it loses on its
-    own. Falls back to `FALLBACK_MEMORY` where neither can be read (Windows,
-    a sandboxed filesystem).
+    there is no limit is discarded outright. Falls back to `FALLBACK_MEMORY`
+    where neither can be read (Windows, a sandboxed filesystem).
 
     Returns
     -------
@@ -60,7 +68,9 @@ def total_memory():
                 value = file.read().strip()
         except OSError:
             continue
-        if value.isdigit():  # "max" spells out an absent limit
+        # "max" spells out an absent limit directly; cgroup v1 spells it as
+        # a huge sentinel instead -- both mean "no limit", not "the answer".
+        if value.isdigit() and int(value) < UNBOUNDED_CGROUP_LIMIT:
             limits.append(int(value))
     try:
         limits.append(os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE"))
