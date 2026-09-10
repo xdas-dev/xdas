@@ -1,6 +1,6 @@
 # Release notes
 
-## 0.2.10.dev0
+## 0.2.10 (unreleased)
 
 ### Improvements
 - **Windows and macOS are now tested and working well.** CI runs the full suite on `windows-latest` and `macos-latest` alongside Linux; fixed a `glob()` path-separator bug that broke opening files by wildcard on Windows (#87), and what the new CI then caught: an unbounded memory-limit fallback and illegal colons in temporary filenames (#88) (@ClaudioStrumia, @atrabattoni).
