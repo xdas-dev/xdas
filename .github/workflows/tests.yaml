@@ -17,8 +17,6 @@ jobs:
           - os: macos-latest
             python-version: "3.14"
 
-    continue-on-error: ${{ matrix.os != 'ubuntu-latest' }}
-
     steps:
     - uses: actions/checkout@v4
     - name: Set up uv
