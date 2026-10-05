@@ -25,7 +25,7 @@ dependencies = [
     "typing_extensions",
     "watchdog",
     "xarray",
-    "xinterp>=0.2.0",
+    "xinterp>=0.2.1",
     "pyzmq",
 ]
 
@@ -79,3 +79,7 @@ omit = ["xdas/io/tdms.py"]
 show_missing = true
 skip_covered = true
 exclude_also = ["raise NotImplementedError"]
+
+[tool.uv.sources]
+# development only: build against the local xinterp until 0.2.1 is published
+xinterp = { path = "../xinterp" }

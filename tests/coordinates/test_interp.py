@@ -1308,15 +1308,12 @@ class TestSimplifyToleranceDefaults:
         result = coord.simplify()
         assert result.equals(coord)
 
-    def test_regularity_refused_when_fusion_exceeds_tolerance(self):
+    def test_fusion_refused_when_it_would_exceed_tolerance(self):
         # D3: tolerance means instrumental jitter, set once, never widened
-        # afterwards -- so a reduce pass whose fused jump drifts further than
-        # the declared tolerance drops the coordinate's regularity instead of
-        # stretching the tolerance to cover it. The fused coordinate spans
-        # 13 s over 11 intervals, 2 s off the nominal 1 s grid, against a
-        # declared tolerance of 0: the fusion still happens (reduce is a
-        # function of the caller's budget, not of the declared rate) but the
-        # coordinate comes back irregular.
+        # afterwards -- so the reduce budget is clamped to it and a fusion
+        # that would drift further from the nominal grid is refused, keeping
+        # the rate. Fusing would span 13 s over 11 intervals, 2 s off the
+        # nominal 1 s grid, against a declared tolerance of 0.
         t0 = np.datetime64("2000-01-01T00:00:00", "ns")
         s = np.timedelta64(1, "s").astype("m8[ns]")
         coord = InterpCoordinate(
@@ -1328,16 +1325,12 @@ class TestSimplifyToleranceDefaults:
             }
         )
         result = coord.simplify(np.timedelta64(3, "s"))
-        assert len(result.tie_indices) == 2
-        assert result.sampling_interval is None
-        assert result.tolerance is None
+        assert result.equals(coord)
 
-    def test_regularity_refused_beyond_the_budget_never_raises(self):
-        # D3, same shape as above on real data: the reduction bounds how far
-        # values move, not how much drift fusing a discontinuity exposes, so
-        # a fusion that needs more than the declared tolerance to describe is
-        # refused rather than raising. Real OptoDAS seams: 2 ms late every
-        # 10 s at 125 Hz.
+    def test_fusion_refused_beyond_the_budget_never_raises(self):
+        # D3, same shape as above on real data: OptoDAS seams, 2 ms late every
+        # 10 s at 125 Hz, declared at tolerance 0. Only the seam already on
+        # the grid of its predecessor fuses, losslessly; the rate stays.
         t0 = np.datetime64("2021-10-27T15:44:10.721999872", "ns")
         offsets = [
             0,
@@ -1358,14 +1351,15 @@ class TestSimplifyToleranceDefaults:
             }
         )
         result = coord.simplify(np.timedelta64(1_000_000, "ns"))
-        assert not result.isregular()
-        assert result.sampling_interval is None
-        assert result.tolerance is None
+        np.testing.assert_array_equal(result.tie_indices, [0, 1249, 1250, 3749, 3750, 4999])
+        np.testing.assert_array_equal(result.values, coord.values)
+        assert result.sampling_interval == coord.sampling_interval
+        assert result.tolerance == coord.tolerance
 
-    def test_regularity_refused_when_fusion_exceeds_tolerance_on_float_axis(self):
-        # D3, same refusal on a float axis: fusing the 4.0 seam leaves a
-        # coordinate spanning 64.0 over 21 intervals, 1.0 off the nominal 3.0
-        # grid, against a declared tolerance of 0.
+    def test_fusion_refused_when_it_would_exceed_tolerance_on_float_axis(self):
+        # D3, same refusal on a float axis: fusing the 4.0 seam would span
+        # 64.0 over 21 intervals, 1.0 off the nominal 3.0 grid, against a
+        # declared tolerance of 0.
         coord = InterpCoordinate(
             {
                 "tie_indices": [0, 10, 11, 21],
@@ -1375,9 +1369,73 @@ class TestSimplifyToleranceDefaults:
             }
         )
         result = coord.simplify(2.0)
-        assert len(result.tie_indices) == 2
-        assert result.sampling_interval is None
-        assert result.tolerance is None
+        assert result.equals(coord)
+
+    def test_drifts_that_add_up_keep_an_interior_tie(self):
+        # each segment runs 2 ms long against the nominal 100 ms, tolerance
+        # 2.5 ms: one chord fits the values exactly but drifts 8 ms, so it
+        # would break the rate; two segments drift 4 ms <= 2 * 2.5 ms
+        t0 = np.datetime64("2000-01-01T00:00:00", "ns")
+        ms = np.timedelta64(1_000_000, "ns")
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 10, 20, 30, 40],
+                "tie_values": t0 + np.array([0, 102, 204, 306, 408]) * ms,
+                "sampling_interval": 10 * ms,
+                "tolerance": np.timedelta64(2_500_000, "ns"),
+            }
+        )
+        result = coord.simplify()
+        np.testing.assert_array_equal(result.tie_indices, [0, 20, 40])
+        assert result.sampling_interval == 10 * ms
+        assert result.tolerance == coord.tolerance
+
+    def test_budget_is_clamped_to_the_declared_tolerance(self):
+        # a wider explicit budget still thins at the declared tolerance only
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 10, 20, 30, 40],
+                "tie_values": [0, 102, 204, 306, 408],
+                "sampling_interval": 10,
+                "tolerance": 2,
+            }
+        )
+        result = coord.simplify(100)
+        np.testing.assert_array_equal(result.tie_indices, [0, 20, 40])
+        assert result.sampling_interval == 10
+        assert result.tolerance == 2
+
+    def test_fractional_rate_validates_exactly_at_the_budget(self):
+        # rate 21/2 ticks, tolerance 1: validity is |2 * df - 21 * dx| <= 4.
+        # The chord over [0, 5] drifts 5, which xinterp's band at the usual
+        # half-tick budget (< 6) would accept; the budget must refuse it.
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 3, 5, 8],
+                "tie_values": [0, 33, 55, 87],
+                "sampling_numerator": 21,
+                "sampling_denominator": 2,
+                "tolerance": 1,
+            }
+        )
+        result = coord.simplify()
+        np.testing.assert_array_equal(result.tie_indices, [0, 3, 8])
+        assert result.isregular()
+
+    def test_fast_path_checks_the_rate(self):
+        # every value is within the budget of the single chord, but that chord
+        # drifts 4 > 2 * 1 off the nominal rate, so the walk takes over
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 10, 20],
+                "tie_values": [0.0, 12.0, 24.0],
+                "sampling_interval": 1.0,
+                "tolerance": 2.0,
+            }
+        )
+        result = coord.simplify(1.0)
+        np.testing.assert_array_equal(result.tie_indices, [0, 10, 20])
+        assert result.sampling_interval == 1.0
 
 
 class TestSimplifyNoReduce:
