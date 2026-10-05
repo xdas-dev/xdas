@@ -326,32 +326,36 @@ def open_mfdatacollection(
             "file in memory. Open the files in batches and combine the results."
         )
     max_workers = get_scan_workers(parallel, len(paths))
-    if max_workers == 1:
-        if verbose:
-            iterator = tqdm(paths, desc="Fetching metadata from files")
+    # updated by hand rather than wrapping the iterator, so that it is still
+    # open when a scan fails: `open` tries this scan before falling back to
+    # data arrays, and a failed attempt must not leave a stale bar behind
+    bar = tqdm(
+        total=len(paths), desc="Fetching metadata from files", disable=not verbose
+    )
+    objs = []
+    futures = []
+    try:
+        if max_workers == 1:
+            for path in paths:
+                objs.append(open_datacollection(path, engine=engine))
+                bar.update()
         else:
-            iterator = paths
-        objs = [open_datacollection(path, engine=engine) for path in iterator]
-    else:
-        executor = get_scan_pool(max_workers)
-        futures = [
-            executor.submit(open_datacollection, path, engine=engine) for path in paths
-        ]
-        if verbose:
-            iterator = tqdm(
-                as_completed(futures),
-                total=len(futures),
-                desc="Fetching metadata from files",
-            )
-        else:
-            iterator = as_completed(futures)
-        try:
-            objs = [future.result() for future in iterator]
-        except BaseException:
-            # the pool is shared and outlives this scan: leave it no backlog
-            for future in futures:
-                future.cancel()
-            raise
+            executor = get_scan_pool(max_workers)
+            futures = [
+                executor.submit(open_datacollection, path, engine=engine)
+                for path in paths
+            ]
+            for future in as_completed(futures):
+                objs.append(future.result())
+                bar.update()
+    except BaseException:
+        # the pool is shared and outlives this scan: leave it no backlog
+        for future in futures:
+            future.cancel()
+        bar.leave = False
+        bar.close()
+        raise
+    bar.close()
     # the native format stacks hdf5 sources; the engines that describe a file
     # as a collection are tile-backed, and let `concat` pick
     virtual = True if engine is None else None

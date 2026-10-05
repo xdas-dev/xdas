@@ -2032,3 +2032,40 @@ class TestScanCancellation:
         with pytest.raises(KeyboardInterrupt):
             xd.open_mfdataarray(paths, engine="xdas", parallel=2)
         assert all(future.cancelled() for future in executor.futures[1:])
+
+
+class TestFailedScanBar:
+    @pytest.fixture
+    def bars(self, monkeypatch):
+        from xdas.core import routines
+
+        bars = []
+
+        class Recorder(routines.tqdm):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                bars.append(self)
+
+        monkeypatch.setattr(routines, "tqdm", Recorder)
+        return bars
+
+    @pytest.mark.parametrize("parallel", [1, 2])
+    def test_failed_collection_scan_wipes_its_bar(self, tmp_path, bars, parallel):
+        # `open` tries a collection scan first: on data array files it fails,
+        # and its bar must not stay on screen above the one that succeeds
+        expected = xd.testing.dummy(dims=("time", "space"), shape=(10, 5))
+        for index, chunk in enumerate(xd.split(expected, 3, "time"), start=1):
+            chunk.to_netcdf(tmp_path / f"chunk_{index}.nc")
+        with pytest.raises(ValueError):
+            xd.open_mfdatacollection(
+                str(tmp_path / "*.nc"), verbose=True, parallel=parallel
+            )
+        (bar,) = bars
+        assert bar.disable  # closed
+        assert not bar.leave
+
+    def test_successful_collection_scan_keeps_its_bar(self, tmp_path, bars):
+        da = xd.testing.dummy(shape=(10, 5))
+        xd.DataCollection([da, da]).to_netcdf(tmp_path / "dc.nc")
+        xd.open_mfdatacollection(str(tmp_path / "*.nc"), verbose=True, parallel=1)
+        assert bars[0].leave
