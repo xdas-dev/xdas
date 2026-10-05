@@ -345,7 +345,13 @@ def open_mfdatacollection(
             )
         else:
             iterator = as_completed(futures)
-        objs = [future.result() for future in iterator]
+        try:
+            objs = [future.result() for future in iterator]
+        except BaseException:
+            # the pool is shared and outlives this scan: leave it no backlog
+            for future in futures:
+                future.cancel()
+            raise
     # the native format stacks hdf5 sources; the engines that describe a file
     # as a collection are tile-backed, and let `concat` pick
     virtual = True if engine is None else None
@@ -742,15 +748,21 @@ def open_mfdataarray(
             )
         else:
             iterator = as_completed(futures_to_paths)
-        for future in iterator:
-            try:
-                obj = future.result()
-            except Exception as error:  # noqa: BLE001 - collected and warned below
-                path = futures_to_paths[future]
-                failures.append((path, error))
-                warnings.warn(f"could not open {path}: {error}", RuntimeWarning)
-            else:
-                consume(obj)
+        try:
+            for future in iterator:
+                try:
+                    obj = future.result()
+                except Exception as error:  # noqa: BLE001 - collected and warned below
+                    path = futures_to_paths[future]
+                    failures.append((path, error))
+                    warnings.warn(f"could not open {path}: {error}", RuntimeWarning)
+                else:
+                    consume(obj)
+        except BaseException:
+            # the pool is shared and outlives this scan: leave it no backlog
+            for future in futures_to_paths:
+                future.cancel()
+            raise
     if not objs and not runs:  # there must be failures
         path, error = failures[0]
         raise RuntimeError(

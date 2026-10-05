@@ -1981,3 +1981,54 @@ class TestConcatNewDimVirtual:
         da = xd.concat(objs, "channel")
         assert da.dims == ("channel", "time", "space")
         assert isinstance(da.data, np.ndarray)
+
+
+class TestScanCancellation:
+    class Executor:
+        """Fails the first submission and leaves every other one pending."""
+
+        def __init__(self):
+            self.futures = []
+
+        def submit(self, fn, *args, **kwargs):
+            from concurrent.futures import Future
+
+            future = Future()
+            if not self.futures:
+                future.set_exception(OSError("unreadable"))
+            self.futures.append(future)
+            return future
+
+    @pytest.fixture
+    def executor(self, monkeypatch):
+        from xdas.core import routines
+
+        executor = self.Executor()
+        monkeypatch.setattr(routines, "get_scan_pool", lambda max_workers: executor)
+        return executor
+
+    @pytest.fixture
+    def paths(self, tmp_path):
+        paths = [str(tmp_path / f"{index}.nc") for index in range(4)]
+        for path in paths:
+            open(path, "w").close()
+        return paths
+
+    def test_failed_collection_scan_leaves_no_backlog(self, paths, executor):
+        # the pool is shared: what a failed scan left queued, the next one waits on
+        with pytest.raises(OSError, match="unreadable"):
+            xd.open_mfdatacollection(paths, parallel=2)
+        assert all(future.cancelled() for future in executor.futures[1:])
+
+    def test_interrupted_array_scan_leaves_no_backlog(
+        self, paths, executor, monkeypatch
+    ):
+        from xdas.core import routines
+
+        def interrupt(*args, **kwargs):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(routines.warnings, "warn", interrupt)
+        with pytest.raises(KeyboardInterrupt):
+            xd.open_mfdataarray(paths, engine="xdas", parallel=2)
+        assert all(future.cancelled() for future in executor.futures[1:])
