@@ -5,7 +5,7 @@ import pytest
 
 import xdas as xd
 from xdas.coordinates import Coordinate
-from xdas.io.obspy import ObsPyEngine, get_band_code, to_stream
+from xdas.io.obspy import ObsPyEngine, get_band_code, read_header, to_stream
 from xdas.virtual import TileArray
 
 
@@ -416,6 +416,25 @@ class TestOpenRouting:
         assert da.sizes["time"] == 50
         assert da.dtype == np.float32
         npt.assert_allclose(da.values, data)
+
+
+class TestForeignFiles:
+    @pytest.mark.parametrize(
+        "head", [b"\x89HDF\r\n\x1a\n", b"CDF\x01", b"CDF\x02", b"CDF\x05"], ids=str
+    )
+    def test_refused_before_obspy_reads_them(self, tmp_path, monkeypatch, head):
+        # obspy's detectors would read the whole file; one short read must do
+        path = tmp_path / "foreign.h5"
+        path.write_bytes(head + bytes(64))
+        monkeypatch.setattr(obspy, "read", pytest.fail)
+        with pytest.raises(TypeError, match="not a format ObsPy reads"):
+            ObsPyEngine().open_datacollection(path)
+        with pytest.raises(TypeError, match="not a format ObsPy reads"):
+            ObsPyEngine().open_dataarray(str(path))
+
+    def test_globs_pass_through_to_obspy(self, tmp_path):
+        write(tmp_path / "a.mseed", [(header(), np.random.rand(10))])
+        assert len(read_header(str(tmp_path / "*.mseed"))) == 1
 
 
 class TestHelpers:

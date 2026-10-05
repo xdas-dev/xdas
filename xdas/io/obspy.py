@@ -6,6 +6,7 @@ SEG-2 and the rest — goes through it. It replaces
 :mod:`xdas.io.miniseed`, which is kept alongside it for the views it wrote.
 """
 
+import os
 from typing import ClassVar
 
 import numpy as np
@@ -23,6 +24,18 @@ BLANK_LOCATION = "--"
 
 #: The levels of the SEED hierarchy, outermost first.
 LEVELS = ("network", "station", "location", "channel")
+
+#: Leading bytes of the container formats DAS files come in, none of which
+#: ObsPy reads. Without a format, :func:`obspy.read` runs every plugin's
+#: detector, some of which (CSS) read the whole file as text: a second or more
+#: and as much memory as the file is large, for each HDF5 file auto-detection
+#: asks this engine about. netCDF4 is HDF5, so its signature covers it.
+FOREIGN_SIGNATURES = {
+    b"\x89HDF\r\n\x1a\n": "HDF5",
+    b"CDF\x01": "netCDF3",
+    b"CDF\x02": "netCDF3",
+    b"CDF\x05": "netCDF3",
+}
 
 #: Element type each MiniSEED encoding *decodes to*, which is not the type it
 #: was written from: libmseed unpacks every integer encoding to ``int32``,
@@ -81,7 +94,7 @@ class ObsPyEngine(Engine, name="obspy"):
 
     def open_datacollection(self, fname):
         """Return the traces of *fname* as a collection nested on the SEED hierarchy."""
-        st = obspy.read(fname, headonly=True)
+        st = read_header(fname)
         # libmseed's trace-list assembly returns traces in no useful order;
         # `sort` puts them in (id, starttime) order
         st.sort()
@@ -106,7 +119,7 @@ class ObsPyEngine(Engine, name="obspy"):
 
     def open_dataarray(self, fname):
         """Return the unique trace of *fname* as a lazy tile-backed data array."""
-        st = obspy.read(fname, headonly=True)
+        st = read_header(fname)
         if len(st) != 1:
             raise ValueError(
                 f"{fname} holds {len(st)} traces, not one; open it with "
@@ -385,3 +398,27 @@ def get_band_code(sampling_rate):
         return "X"
     else:
         return band_code[index]
+
+
+def read_header(fname):
+    """
+    Return the header-only :class:`obspy.Stream` of *fname*.
+
+    Files that start with a :data:`FOREIGN_SIGNATURES` signature are refused
+    before :func:`obspy.read` sees them, so that probing them costs one short
+    read rather than a pass through every ObsPy format detector. Anything else
+    :func:`obspy.read` takes (a glob, a URL, a file object) is passed through.
+
+    Raises
+    ------
+    TypeError
+        If *fname* is in a container format ObsPy does not read, as
+        :func:`obspy.read` does for a format it does not know.
+    """
+    if isinstance(fname, (str, os.PathLike)) and os.path.isfile(fname):
+        with open(fname, "rb") as file:
+            head = file.read(8)
+        for signature, name in FOREIGN_SIGNATURES.items():
+            if head.startswith(signature):
+                raise TypeError(f"{fname} is a {name} file, not a format ObsPy reads")
+    return obspy.read(fname, headonly=True)
