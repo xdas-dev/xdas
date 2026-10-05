@@ -1,11 +1,14 @@
 """Tests for the Aragon Photonics HDAS HDF5 engine."""
 
+import warnings
+
 import h5py
 import numpy as np
 import numpy.testing as npt
 import pytest
 
 import xdas as xd
+from xdas.coordinates import InterpCoordinate
 from xdas.io.aragon import AragonEngine
 
 NT, NX = 30, 8
@@ -54,6 +57,38 @@ def make_aragon_file(
     return data
 
 
+DT_NS = 20_000_000
+MTB = 10  # samples between two sync stamps
+EPS_NS = 2 * np.spacing(EPOCH) * 1e9  # two float64 spacings of the stamps
+
+
+def hdas_like_stamps(nt, mtb=MTB, late=(), seed=0):
+    """NTP-locked HDAS stamps: a sync every *mtb* samples with ms jitter,
+    interpolated in between, except before each sync in *late*, where the block
+    keeps stepping at the header dt and the stamps jump at the sync."""
+    rng = np.random.default_rng(seed)
+    nsync = nt // mtb + 1
+    syncs = EPOCH + np.arange(nsync) * mtb * DT_S + rng.uniform(-1e-3, 1e-3, nsync)
+    stamps = np.empty(nsync * mtb)
+    for k in range(nsync - 1):
+        block = slice(k * mtb, (k + 1) * mtb)
+        if k + 1 in late:
+            syncs[k + 1] = syncs[k] + mtb * DT_S + 3e-3
+            stamps[block] = syncs[k] + np.arange(mtb) * DT_S
+        else:
+            stamps[block] = np.linspace(syncs[k], syncs[k + 1], mtb + 1)[:-1]
+    return stamps[:nt]
+
+
+def as_ns(stamps):
+    return (stamps * 1e9).round().astype("int64")
+
+
+def assert_within_eps(time, stamps):
+    deviation = np.abs(time.values.astype("int64") - as_ns(stamps))
+    assert deviation.max() <= EPS_NS
+
+
 class TestAragonEngine:
     def test_open_hdf5(self, tmp_path):
         path = tmp_path / "aragon.h5"
@@ -98,10 +133,6 @@ class TestAragonEngine:
         da = xd.open(str(path), engine="aragon", ctype={"distance": ctype})
         npt.assert_array_equal(da["distance"].values, X0 + DX * np.arange(NX))
 
-    def test_time_ctype_sampled_rejected(self):
-        with pytest.raises(NotImplementedError, match="sampled"):
-            AragonEngine(ctype={"time": "sampled"})
-
     def test_time_axis_from_stamps(self, tmp_path):
         # time comes from Timestamps, not header[69]
         path = tmp_path / "aragon.h5"
@@ -112,22 +143,6 @@ class TestAragonEngine:
             da["time"].values[0] - np.datetime64(round((EPOCH + 0.37) * 1e9), "ns")
         ) < np.timedelta64(1, "us")
 
-    def test_time_anchor_minimizes_deviation(self, tmp_path):
-        # a lone early first stamp must not drag the whole grid with it: the
-        # anchor sits at the Chebyshev centre of the residuals
-        path = tmp_path / "aragon.h5"
-        ts = EPOCH + np.arange(NT, dtype="f8") * DT_S
-        ts[0] -= 4e-3  # 4 ms early outlier
-        make_aragon_file(path, timestamps=ts)
-        da = xd.open(str(path), engine="aragon")
-        stamps = (ts * 1e9).round().astype("int64")
-        residual = stamps - 20_000_000 * np.arange(NT)
-        spread = int(residual.max() - residual.min())
-        assert da["time"].values[0] == np.datetime64(
-            int(residual.min()) + spread // 2, "ns"
-        )
-        assert da["time"].tolerance == np.timedelta64((spread + 1) // 2, "ns")
-
     def test_dense_time_keeps_jitter(self, tmp_path):
         path = tmp_path / "aragon.h5"
         rng = np.random.default_rng(1)
@@ -137,26 +152,147 @@ class TestAragonEngine:
         expected = (jittery * 1e9).round().astype("datetime64[ns]")
         npt.assert_array_equal(da["time"].values, expected)
 
-    def test_interpolated_time_tolerates_jitter(self, tmp_path):
+    def test_locked_stamps_interpolated(self, tmp_path):
         path = tmp_path / "aragon.h5"
-        rng = np.random.default_rng(2)
-        jittery = EPOCH + np.arange(NT) * DT_S + rng.uniform(-1e-3, 1e-3, NT)
-        make_aragon_file(path, timestamps=jittery)
-        da = xd.open(str(path), engine="aragon")
-        stamps = (jittery * 1e9).round().astype("int64")
-        spread = int(np.ptp(stamps - 20_000_000 * np.arange(NT)))
-        npt.assert_array_equal(
-            np.diff(da["time"].values), np.timedelta64(20_000_000, "ns")
-        )
-        assert da["time"].tolerance == np.timedelta64((spread + 1) // 2, "ns")
+        nt, late = 20 * MTB, (4, 11)
+        stamps = hdas_like_stamps(nt, late=late)
+        make_aragon_file(path, data=np.zeros((nt, NX), "f4"), timestamps=stamps)
+        time = xd.open(str(path), engine="aragon")["time"]
+        assert isinstance(time, InterpCoordinate)
+        assert_within_eps(time, stamps)
+        assert len(time.tie_indices) <= nt // MTB + 1 + len(late)
+        for k in late:
+            assert k * MTB - 1 in time.tie_indices  # the pre-jump stamp
 
-    def test_gap_warns(self, tmp_path):
+    def test_sampling_interval_and_minimal_tolerance(self, tmp_path):
         path = tmp_path / "aragon.h5"
-        gappy = EPOCH + np.arange(NT, dtype="f8") * DT_S
-        gappy[NT // 2 :] += 5 * DT_S  # five dropped samples mid-file
-        make_aragon_file(path, timestamps=gappy)
-        with pytest.warns(RuntimeWarning, match="gap"):
-            xd.open(str(path), engine="aragon")
+        nt = 20 * MTB
+        stamps = hdas_like_stamps(nt, late=(7,))
+        make_aragon_file(path, data=np.zeros((nt, NX), "f4"), timestamps=stamps)
+        time = xd.open(str(path), engine="aragon")["time"]
+        assert time.get_sampling_interval() == DT_S
+        assert time.tolerance > np.timedelta64(0, "ns")
+        data = {
+            "tie_indices": time.tie_indices,
+            "tie_values": time.tie_values,
+            "sampling_interval": time.sampling_interval,
+        }
+        InterpCoordinate({**data, "tolerance": time.tolerance}, dim="time")
+        with pytest.raises(ValueError, match="not consistent"):
+            InterpCoordinate(
+                {**data, "tolerance": time.tolerance - np.timedelta64(1, "ns")},
+                dim="time",
+            )
+
+    def test_regular_stamps_two_ties(self, tmp_path):
+        path = tmp_path / "aragon.h5"
+        make_aragon_file(path)
+        time = xd.open(str(path), engine="aragon")["time"]
+        npt.assert_array_equal(time.tie_indices, [0, NT - 1])
+        assert time.get_sampling_interval() == DT_S
+
+    def test_free_running_stamps(self, tmp_path):
+        # not locked: one stamp per sample, sawtooth drift and us noise
+        path = tmp_path / "aragon.h5"
+        nt = 300
+        rng = np.random.default_rng(3)
+        sawtooth = 2e-4 * ((np.arange(nt) % 70) / 70)
+        stamps = EPOCH + np.arange(nt) * DT_S + sawtooth + rng.uniform(-1e-6, 1e-6, nt)
+        make_aragon_file(path, data=np.zeros((nt, NX), "f4"), timestamps=stamps)
+        time = xd.open(str(path), engine="aragon")["time"]
+        assert_within_eps(time, stamps)
+        assert time.get_sampling_interval() == DT_S
+
+    def test_sampled_time(self, tmp_path):
+        path = tmp_path / "aragon.h5"
+        nt = 20 * MTB
+        stamps = hdas_like_stamps(nt, late=(4,))
+        make_aragon_file(path, data=np.zeros((nt, NX), "f4"), timestamps=stamps)
+        ties = xd.open(str(path), engine="aragon")["time"]
+        time = xd.open(str(path), engine="aragon", ctype={"time": "sampled"})["time"]
+        npt.assert_array_equal(time.tie_indices, ties.tie_indices[:-1])
+        npt.assert_array_equal(time.tie_values, ties.tie_values[:-1])
+        assert time.tie_lengths.sum() == nt
+        assert time.sampling_interval == np.timedelta64(DT_NS, "ns")
+
+    @pytest.mark.parametrize("ctype", ["interpolated", "sampled", "dense"])
+    def test_no_warning(self, tmp_path, ctype):
+        path = tmp_path / "aragon.h5"
+        nt = 20 * MTB
+        stamps = hdas_like_stamps(nt, late=(3, 9))
+        make_aragon_file(path, data=np.zeros((nt, NX), "f4"), timestamps=stamps)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            xd.open(str(path), engine="aragon", ctype={"time": ctype})
+
+    def test_gap_sides_are_ties(self, tmp_path):
+        path = tmp_path / "aragon.h5"
+        stamps = EPOCH + np.arange(NT, dtype="f8") * DT_S
+        stamps[NT // 2 :] += 3 * DT_S  # three dropped samples mid-file
+        make_aragon_file(path, timestamps=stamps)
+        time = xd.open(str(path), engine="aragon")["time"]
+        assert {NT // 2 - 1, NT // 2} <= set(time.tie_indices)
+        assert_within_eps(time, stamps)
+
+    @pytest.mark.parametrize("nt", [1, 2])
+    @pytest.mark.parametrize("ctype", ["interpolated", "sampled", "dense"])
+    def test_tiny_files(self, tmp_path, nt, ctype):
+        path = tmp_path / "aragon.h5"
+        stamps = EPOCH + np.arange(nt) * DT_S
+        make_aragon_file(path, data=np.zeros((nt, NX), "f4"), timestamps=stamps)
+        time = xd.open(str(path), engine="aragon", ctype={"time": ctype})["time"]
+        npt.assert_array_equal(time.values.astype("int64"), as_ns(stamps))
+        if ctype == "interpolated":
+            assert time.tolerance == np.timedelta64(0, "ns")
+            assert time.get_sampling_interval() == DT_S
+
+    @pytest.mark.parametrize("ctype", ["interpolated", "sampled", "dense"])
+    def test_tiles_time_matches_hdf5(self, tmp_path, ctype):
+        path = tmp_path / "aragon.h5"
+        nt = 20 * MTB
+        stamps = hdas_like_stamps(nt, late=(5,))
+        make_aragon_file(path, data=np.zeros((nt, NX), "f4"), timestamps=stamps)
+        ctype = {"time": ctype}
+        da = xd.open(str(path), engine="aragon", ctype=ctype)
+        tiles = xd.open(str(path), engine="aragon", vtype="tiles", ctype=ctype)
+        assert tiles["time"].equals(da["time"])
+
+    def make_consecutive_files(self, tmp_path, nfile=3, nt=20 * MTB):
+        stamps = hdas_like_stamps(nfile * nt, late=(6, 27, 44))
+        paths = []
+        for k in range(nfile):
+            path = tmp_path / f"aragon_{k}.h5"
+            chunk = stamps[k * nt : (k + 1) * nt]
+            make_aragon_file(path, data=np.zeros((nt, NX), "f4"), timestamps=chunk)
+            paths.append(str(path))
+        return paths, stamps
+
+    @pytest.mark.parametrize("ctype", ["interpolated", "sampled", "dense"])
+    def test_consecutive_files_exact(self, tmp_path, ctype):
+        paths, stamps = self.make_consecutive_files(tmp_path)
+        da = xd.open(paths, engine="aragon", ctype={"time": ctype}, tolerance=0)
+        assert da.sizes["time"] == stamps.size
+        if ctype == "sampled":
+            parts = [
+                xd.open(path, engine="aragon", ctype={"time": ctype})["time"].values
+                for path in paths
+            ]
+            npt.assert_array_equal(da["time"].values, np.concatenate(parts))
+        else:
+            assert_within_eps(da["time"], stamps)
+        if ctype == "interpolated":
+            assert da["time"].get_sampling_interval() == DT_S
+
+    def test_consecutive_files_default_tolerance(self, tmp_path):
+        paths, stamps = self.make_consecutive_files(tmp_path)
+        tolerance = max(
+            xd.open(path, engine="aragon")["time"].tolerance for path in paths
+        )
+        time = xd.open(paths, engine="aragon")["time"]
+        assert time.get_sampling_interval() == DT_S
+        assert time.tolerance == tolerance
+        deviation = np.abs(time.values.astype("int64") - as_ns(stamps))
+        assert deviation.max() <= tolerance.astype("i8") + EPS_NS
 
     def test_missing_group_raises(self, tmp_path):
         path = tmp_path / "notaragon.h5"

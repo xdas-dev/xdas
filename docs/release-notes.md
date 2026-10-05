@@ -3,7 +3,7 @@
 ## 0.2.10 (unreleased)
 
 ### New Features
-- **Aragon Photonics HDAS support.** The new `aragon` engine reads HDAS 3.0 `HDAS_StrainRate` HDF5 files, returning samples as stored. The regular time axis uses the header sampling rate anchored on the per-sample stamps (`ctype={"time": "dense"}` keeps the raw stamps); the distance axis comes from the header. HDF5 and tile virtualization (@atrabattoni).
+- **Aragon Photonics HDAS support.** The new `aragon` engine reads HDAS 3.0 `HDAS_StrainRate` HDF5 files, returning samples as stored. The time axis keeps the device stamps (to their float64 resolution) and declares the header sampling interval with the smallest tolerance they allow; `ctype={"time": "sampled"}` steps at the header interval and `"dense"` keeps every stamp. The distance axis comes from the header. HDF5 and tile virtualization (@atrabattoni).
 
 ### Improvements
 - **Windows and macOS are now tested and working well.** CI runs the full suite on `windows-latest` and `macos-latest` alongside Linux; fixed a `glob()` path-separator bug that broke opening files by wildcard on Windows (#87), and what the new CI then caught: an unbounded memory-limit fallback and illegal colons in temporary filenames (#88) (@ClaudioStrumia, @atrabattoni).

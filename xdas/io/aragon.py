@@ -1,10 +1,10 @@
 """I/O engine for Aragon Photonics HDAS HDF5 files (:class:`AragonEngine`)."""
 
-import warnings
 from typing import ClassVar
 
 import h5py
 import numpy as np
+from xinterp import simplify_points
 
 from ..coordinates import Coordinate
 from ..core import DataArray
@@ -19,18 +19,26 @@ _HEADER = "Header/Header_Data"
 class AragonEngine(Engine, name="aragon"):
     """Engine for Aragon Photonics HDAS 3.0 ``HDAS_StrainRate`` HDF5 files.
 
-    Samples are returned as stored (no nanostrain conversion). The regular time
-    axis steps at the header's nominal sampling interval, anchored to minimise
-    the largest departure of a stamp from the grid; that departure is the
-    coordinate tolerance, and a value over half a sample (a data gap, or a
-    partly-filled file) triggers a warning. ``ctype={"time": "dense"}`` keeps the
-    raw per-sample stamps instead. The distance axis comes from the header's
-    processed-fiber start point and spatial sampling.
+    Samples are returned as stored (no nanostrain conversion). The time axis
+    keeps the device's per-sample stamps: those their neighbours reproduce
+    within the float64 resolution of the stamps (about 240 ns) are dropped, the
+    rest become the tie points. The default ``interpolated`` time axis declares
+    the header's nominal sampling interval with the smallest tolerance that the
+    stamps allow (milliseconds on NTP-locked files). ``ctype={"time":
+    "sampled"}`` steps at the header interval from each tie point instead, and
+    ``ctype={"time": "dense"}`` keeps every stamp. The distance axis comes from
+    the header's processed-fiber start point and spatial sampling.
+
+    When several files are opened together, the declared tolerance is also the
+    budget used to thin the tie points: values may then move by up to that
+    tolerance (the sampling interval is kept). Pass ``tolerance=0`` to
+    :func:`xdas.open` to keep the exact stamps. A one-sample gap cannot be told
+    apart from clock jitter in the stamps.
     """
 
     _supported_vtypes: ClassVar[list] = ["hdf5", "tiles"]
     _supported_ctypes: ClassVar[dict] = {
-        "time": ["interpolated", "dense"],
+        "time": ["interpolated", "sampled", "dense"],
         "distance": ["interpolated", "sampled", "dense"],
     }
 
@@ -61,29 +69,45 @@ class AragonEngine(Engine, name="aragon"):
         nt, nd = data.shape
         if timestamps.size != nt:
             raise ValueError(f"{fname}: {timestamps.size} timestamps for {nt} samples")
-        stamps = (timestamps * 1e9).round().astype("int64")
-
         if self.ctype["time"] == "dense":
-            time = Coordinate["dense"](stamps.astype("datetime64[ns]"), dim="time")
+            time = Coordinate["dense"](_to_datetime(timestamps), dim="time")
         else:
-            # regular grid at the header's exact rate, anchored on the residual
-            # midpoint so its tolerance is the smallest departure it must allow
-            dt_ns = round(h[49] * h[76] * h[101] / h[1] * 1e9)
-            residual = stamps - dt_ns * np.arange(nt)
-            spread = int(residual.max() - residual.min())
-            t0 = np.datetime64(int(residual.min()) + spread // 2, "ns")
-            tolerance = np.timedelta64((spread + 1) // 2, "ns")
-            if spread > dt_ns:
-                warnings.warn(
-                    f"{fname}: time stamps depart from the {dt_ns / 1e6:g} ms grid "
-                    f"by {tolerance / np.timedelta64(1, 'ms'):.1f} ms; the file may "
-                    f"have a gap. Use ctype={{'time': 'dense'}} for the raw stamps.",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-            time = Coordinate["interpolated"].from_block(
-                t0, nt, np.timedelta64(dt_ns, "ns"), dim="time", tolerance=tolerance
+            # drop the stamps their neighbours reproduce within the float64
+            # resolution of the stamps (rounding noise only)
+            index = np.arange(nt)
+            keep = simplify_points(
+                index, timestamps, np.spacing(np.abs(timestamps).max()), 1.0
             )
+            tie_indices, tie_values = index[keep], _to_datetime(timestamps[keep])
+            dt_ns = round(h[49] * h[76] * h[101] / h[1] * 1e9)
+            if self.ctype["time"] == "interpolated":
+                # smallest tolerance that lets the header dt validate on every
+                # continuous segment (adjacent-index tie pairs are discontinuities)
+                span = np.diff(tie_indices)
+                drift = (
+                    np.diff(tie_values.view("i8"))[span > 1] - dt_ns * span[span > 1]
+                )
+                tolerance = (int(np.abs(drift).max()) + 1) // 2 if drift.size else 0
+                time = Coordinate["interpolated"](
+                    {
+                        "tie_indices": tie_indices,
+                        "tie_values": tie_values,
+                        "sampling_interval": np.timedelta64(dt_ns, "ns"),
+                        "tolerance": np.timedelta64(tolerance, "ns"),
+                    },
+                    dim="time",
+                )
+            else:
+                # one segment per tie, the last tie closing the final segment
+                starts = tie_indices[:-1] if tie_indices.size > 1 else tie_indices
+                time = Coordinate["sampled"](
+                    {
+                        "tie_values": tie_values[: starts.size],
+                        "tie_lengths": np.diff(np.r_[starts, nt]),
+                        "sampling_interval": np.timedelta64(dt_ns, "ns"),
+                    },
+                    dim="time",
+                )
 
         distance = Coordinate[self.ctype["distance"]].from_block(
             float(h[72]), nd, float(h[44]), dim="distance"
@@ -95,3 +119,8 @@ class AragonEngine(Engine, name="aragon"):
         """Read a source selection of the ``/StrainRate/StrainRate_Data`` dataset."""
         with h5py.File(path, "r") as file:
             return file[_DATA][selection]
+
+
+def _to_datetime(seconds):
+    """Round float64 epoch *seconds* to ``datetime64[ns]``."""
+    return (seconds * 1e9).round().astype("int64").astype("datetime64[ns]")

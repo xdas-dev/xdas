@@ -77,13 +77,17 @@ Due to poor documentation of the various version of the Febus format, it is reco
 ```{note}
 The `aragon` engine reads Aragon Photonics HDAS 3.0 files. Only
 `HDAS_StrainRate` files are supported, and samples are returned as stored (no
-nanostrain conversion). The regular time axis steps at the header's nominal
-sampling interval and is anchored to minimise the largest departure of any
-per-sample stamp from the grid, that departure being stored as the coordinate
-tolerance; a departure over half a sample (a gap, or a partly-filled file)
-triggers a warning. `ctype={"time": "dense"}` keeps every raw stamp instead. The
-distance axis comes from the header's processed-fiber start point and spatial
-sampling.
+nanostrain conversion). The time axis keeps the device's per-sample stamps,
+dropping only those their neighbours reproduce within the float64 resolution of
+the stamps (about 240 ns). By default it declares the header's nominal sampling
+interval with the smallest tolerance the stamps allow (milliseconds on
+NTP-locked files). `ctype={"time": "sampled"}` steps at the header interval from
+each kept stamp instead, and `ctype={"time": "dense"}` keeps every stamp. When
+several files are opened together, that tolerance is also the budget used to
+thin the tie points, so values may move by up to it; pass `tolerance=0` to
+`xdas.open` to keep the exact stamps. A one-sample gap cannot be told apart
+from clock jitter in the stamps. The distance axis comes from the header's
+processed-fiber start point and spatial sampling.
 ```
 
 ### Engine parameters
