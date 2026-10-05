@@ -68,6 +68,42 @@ class TestEngineRegistry:
         with pytest.raises(ValueError, match="ctype must be"):
             Engine["asn"](ctype=42)
 
+    @pytest.mark.parametrize(
+        ("name", "expected"),
+        [
+            ("aragon", False),
+            ("asn", False),
+            ("febus", False),
+            ("xdas", True),
+            ("obspy", True),
+        ],
+    )
+    def test_opens_collections_follows_the_override(self, name, expected):
+        assert Engine[name]().opens_collections is expected
+
+    def test_auto_engine_may_open_collections(self):
+        assert AutoEngine().opens_collections
+
+    def test_open_skips_the_collection_scan_of_an_array_engine(
+        self, tmp_path, monkeypatch
+    ):
+        # the scan would only collect one refusal per file, and draw a
+        # progress bar for it
+        from xdas.core import routines
+
+        expected = xd.testing.dummy(dims=("time", "space"), shape=(10, 5))
+        for index, chunk in enumerate(xd.split(expected, 3, "time"), start=1):
+            chunk.to_netcdf(tmp_path / f"chunk_{index}.nc")
+
+        def scan(*args, **kwargs):
+            pytest.fail("a collection scan was run with an array-only engine")
+
+        monkeypatch.setattr(routines, "open_mfdatacollection", scan)
+        # the native engine, made array-only by falling back to the abstract
+        monkeypatch.delattr(type(Engine["xdas"]()), "open_datacollection")
+        result = xd.open(str(tmp_path / "*.nc"), engine="xdas", parallel=1)
+        assert result.equals(expected)
+
 
 class TestGenericIO:
     TEST_FILES = {

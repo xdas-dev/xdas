@@ -200,18 +200,20 @@ def open(
                     )
                 except Exception:  # noqa: BLE001, S110 - not native collections
                     pass
-            try:
-                return open_mfdatacollection(
-                    paths,
-                    dim,
-                    tolerance,
-                    squeeze=False if squeeze is None else squeeze,
-                    parallel=parallel,
-                    verbose=verbose,
-                    engine=_resolve_engine(engine, vtype, ctype, engine_kwargs),
-                )
-            except NotImplementedError:
-                pass  # the engine describes a file as one array
+            resolved = _resolve_engine(engine, vtype, ctype, engine_kwargs)
+            if resolved.opens_collections:
+                try:
+                    return open_mfdatacollection(
+                        paths,
+                        dim,
+                        tolerance,
+                        squeeze=False if squeeze is None else squeeze,
+                        parallel=parallel,
+                        verbose=verbose,
+                        engine=resolved,
+                    )
+                except NotImplementedError:
+                    pass  # the engine describes a file as one array
             return open_mfdataarray(
                 paths,
                 dim,

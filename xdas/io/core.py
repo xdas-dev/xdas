@@ -118,6 +118,15 @@ class Engine:
         """Open *fname* and return a :class:`DataCollection` (abstract)."""
         raise NotImplementedError
 
+    @property
+    def opens_collections(self):
+        """Whether the engine can describe a file as a :class:`DataCollection`.
+
+        False when it leaves :meth:`open_datacollection` abstract, which lets
+        callers skip asking it file by file, only to be refused every time.
+        """
+        return type(self).open_datacollection is not Engine.open_datacollection
+
     def save_datacollection(self, dc, fname, **kwargs):
         """Write *dc* to *fname* (abstract)."""
         raise NotImplementedError
