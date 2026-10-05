@@ -1351,7 +1351,9 @@ class TestSimplifyToleranceDefaults:
             }
         )
         result = coord.simplify(np.timedelta64(1_000_000, "ns"))
-        np.testing.assert_array_equal(result.tie_indices, [0, 1249, 1250, 3749, 3750, 4999])
+        np.testing.assert_array_equal(
+            result.tie_indices, [0, 1249, 1250, 3749, 3750, 4999]
+        )
         np.testing.assert_array_equal(result.values, coord.values)
         assert result.sampling_interval == coord.sampling_interval
         assert result.tolerance == coord.tolerance
