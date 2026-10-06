@@ -523,7 +523,7 @@ class TestSampledCoordinateConcat:
         expected = SampledCoordinate(
             {"tie_values": [0.0, 10.0], "tie_lengths": [3, 2], "sampling_interval": 1.0}
         )
-        result = coord1._concat(coord2)
+        result = SampledCoordinate._concat([coord1, coord2])
         assert result.equals(expected)
 
     def test_concat_two_datetime_coords(self):
@@ -551,7 +551,7 @@ class TestSampledCoordinateConcat:
                 "sampling_interval": np.timedelta64(1, "s"),
             }
         )
-        result = coord1._concat(coord2)
+        result = SampledCoordinate._concat([coord1, coord2])
         assert result.equals(expected)
 
     def test_concat_empty(self):
@@ -559,8 +559,8 @@ class TestSampledCoordinateConcat:
             {"tie_values": [0.0], "tie_lengths": [3], "sampling_interval": 1.0}
         )
         coord2 = SampledCoordinate()
-        assert coord1._concat(coord2).equals(coord1)
-        assert coord2._concat(coord1).equals(coord1)
+        assert SampledCoordinate._concat([coord1, coord2]).equals(coord1)
+        assert SampledCoordinate._concat([coord2, coord1]).equals(coord1)
 
     def test_concat_sampling_interval_mismatch(self):
         coord1 = SampledCoordinate(
@@ -570,7 +570,7 @@ class TestSampledCoordinateConcat:
             {"tie_values": [10.0], "tie_lengths": [2], "sampling_interval": 2.0}
         )
         with pytest.raises(ValueError):
-            coord1._concat(coord2)
+            SampledCoordinate._concat([coord1, coord2])
 
     def test_concat_dtype_mismatch(self):
         coord1 = SampledCoordinate(
@@ -584,7 +584,7 @@ class TestSampledCoordinateConcat:
             }
         )
         with pytest.raises(ValueError):
-            coord1._concat(coord2)
+            SampledCoordinate._concat([coord1, coord2])
 
     def test_concat_type_mismatch(self):
         coord1 = SampledCoordinate(
@@ -592,7 +592,7 @@ class TestSampledCoordinateConcat:
         )
         coord2 = DenseCoordinate(np.array([10.0, 11.0]))
         with pytest.raises(TypeError):
-            coord1._concat(coord2)
+            SampledCoordinate._concat([coord1, coord2])
 
     def test_concat_dimension_mismatch(self):
         coord1 = SampledCoordinate(
@@ -604,7 +604,41 @@ class TestSampledCoordinateConcat:
             dim="depth",
         )
         with pytest.raises(ValueError):
-            coord1._concat(coord2)
+            SampledCoordinate._concat([coord1, coord2])
+
+    @staticmethod
+    def make_block(start, length, sampling_interval=1.0):
+        return SampledCoordinate(
+            {
+                "tie_values": [start],
+                "tie_lengths": [length],
+                "sampling_interval": sampling_interval,
+            }
+        )
+
+    def test_concat_many(self):
+        empty = SampledCoordinate()
+        coords = [self.make_block(0.0, 3), self.make_block(10.0, 2)]
+        coords.append(self.make_block(20.0, 4))
+        expected = SampledCoordinate(
+            {
+                "tie_values": [0.0, 10.0, 20.0],
+                "tie_lengths": [3, 2, 4],
+                "sampling_interval": 1.0,
+            }
+        )
+        assert SampledCoordinate._concat(coords).equals(expected)
+        result = SampledCoordinate._concat([coords[0], empty, *coords[1:], empty])
+        assert result.equals(expected)
+        assert SampledCoordinate._concat([empty, coords[1]]) is coords[1]
+        assert SampledCoordinate._concat([empty, empty]) is empty
+
+    @pytest.mark.parametrize("position", [1, 2])
+    def test_concat_many_sampling_interval_mismatch(self, position):
+        coords = [self.make_block(10.0 * k, 3) for k in range(3)]
+        coords[position] = self.make_block(10.0 * position, 3, sampling_interval=2.0)
+        with pytest.raises(ValueError, match="different sampling intervals"):
+            SampledCoordinate._concat(coords)
 
 
 class TestSampledCoordinateDiscontinuitiesAvailabilities:
@@ -1317,7 +1351,7 @@ class TestSampledCoordinateExactRate:
         )
         assert a.sampling_interval == b.sampling_interval == 30030
         with pytest.raises(ValueError, match="different sampling intervals"):
-            a._concat(b)
+            SampledCoordinate._concat([a, b])
 
     @pytest.mark.parametrize("step", [1, 7, 100])
     def test_slice_step_exact(self, step):
@@ -1393,7 +1427,7 @@ class TestSampledCoordinateExactRate:
                 "sampling_denominator": self.DEN,
             }
         )
-        combined = a._concat(b)
+        combined = SampledCoordinate._concat([a, b])
         assert combined._sampling_ratio == a._sampling_ratio
 
     def test_add_and_sub_preserve_exact_ratio(self):

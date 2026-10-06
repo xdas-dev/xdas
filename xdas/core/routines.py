@@ -2088,11 +2088,9 @@ def concat_coords(
     if sort:
         order = sorted(order, key=lambda idx: objs[idx][0].values)
         objs = [objs[index] for index in order]
-    out = objs[0]
 
-    # concat
-    for obj in objs[1:]:
-        out = out._concat(obj)
+    # concat (in one pass: a pairwise fold would re-validate the growing result)
+    out = objs[0] if len(objs) == 1 else type(objs[0])._concat(objs)
 
     # simplify
     if tolerance is not False:

@@ -7,7 +7,7 @@
 
 ### Improvements
 - **Windows and macOS are now tested and working well.** CI runs the full suite on `windows-latest` and `macos-latest` alongside Linux; fixed a `glob()` path-separator bug that broke opening files by wildcard on Windows (#87), and what the new CI then caught: an unbounded memory-limit fallback and illegal colons in temporary filenames (#88) (@ClaudioStrumia, @atrabattoni).
-- Opening many files with format auto-detection is faster: the ObsPy engine no longer reads HDF5 and netCDF files whole to refuse them, and failed collection attempts leave neither queued jobs nor a progress bar behind (@atrabattoni).
+- Opening many files is faster: coordinates now concatenate in linear rather than quadratic time, the ObsPy engine no longer reads HDF5 and netCDF files whole to refuse them during format auto-detection, and failed collection attempts leave neither queued jobs nor a progress bar behind (@atrabattoni).
 
 ## 0.2.9
 

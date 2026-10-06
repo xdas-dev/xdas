@@ -95,19 +95,13 @@ class DenseCoordinate(AxisCoordinate, ctype="dense"):
     def _slice(self, slc):
         return self.__class__(self.data[slc], self.dim)
 
+    @classmethod
     @override
-    def _concat(self, other):
-        if not isinstance(other, self.__class__):
-            raise TypeError(f"cannot concatenate {type(other)} to {self.__class__}")
-        if not self.dim == other.dim:
-            raise ValueError("cannot concatenate coordinate with different dimension")
-        if self.empty:
-            return other
-        if other.empty:
-            return self
-        if not self.dtype == other.dtype:
-            raise ValueError("cannot concatenate coordinate with different dtype")
-        return self.__class__(np.concatenate([self.data, other.data]), self.dim)
+    def _concat(cls, objs):
+        nonempty = cls._check_concat(objs)
+        if len(nonempty) <= 1:
+            return nonempty[0] if nonempty else objs[-1]
+        return cls(np.concatenate([obj.data for obj in nonempty]), objs[0].dim)
 
     @override
     def _to_dataset(self, dataset, attrs):

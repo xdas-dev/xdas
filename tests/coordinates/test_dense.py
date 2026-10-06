@@ -125,26 +125,61 @@ class TestDenseCoordinate:
         coord1 = DenseCoordinate([1, 2, 3])
         coord2 = DenseCoordinate([4, 5, 6])
 
-        result = coord1._concat(coord2)
+        result = DenseCoordinate._concat([coord1, coord2])
         expected = DenseCoordinate([1, 2, 3, 4, 5, 6])
         assert result.equals(expected)
 
-        result = coord2._concat(coord1)
+        result = DenseCoordinate._concat([coord2, coord1])
         expected = DenseCoordinate([4, 5, 6, 1, 2, 3])
         assert result.equals(expected)
 
-        assert coord0._concat(coord0).empty
-        assert coord0._concat(coord1).equals(coord1)
-        assert coord1._concat(coord0).equals(coord1)
+        assert DenseCoordinate._concat([coord0, coord0]).empty
+        assert DenseCoordinate._concat([coord0, coord1]).equals(coord1)
+        assert DenseCoordinate._concat([coord1, coord0]).equals(coord1)
 
         with pytest.raises(TypeError):
-            coord1._concat(ScalarCoordinate(1))
+            DenseCoordinate._concat([coord1, ScalarCoordinate(1)])
         with pytest.raises(ValueError, match="different dimension"):
-            DenseCoordinate([1, 2, 3], "x")._concat(DenseCoordinate([4, 5, 6], "y"))
-        with pytest.raises(ValueError, match="different dtype"):
-            DenseCoordinate(np.array([1, 2, 3], dtype=np.int32))._concat(
-                DenseCoordinate(np.array([4.0, 5.0, 6.0], dtype=np.float64))
+            DenseCoordinate._concat(
+                [DenseCoordinate([1, 2, 3], "x"), DenseCoordinate([4, 5, 6], "y")]
             )
+        with pytest.raises(ValueError, match="different dtype"):
+            DenseCoordinate._concat(
+                [
+                    DenseCoordinate(np.array([1, 2, 3], dtype=np.int32)),
+                    DenseCoordinate(np.array([4.0, 5.0, 6.0], dtype=np.float64)),
+                ]
+            )
+
+    def test_concat_many(self):
+        empty = DenseCoordinate()
+        coords = [DenseCoordinate([1, 2]), DenseCoordinate([3]), DenseCoordinate([4])]
+        expected = DenseCoordinate([1, 2, 3, 4])
+        assert DenseCoordinate._concat(coords).equals(expected)
+        # empties anywhere are skipped
+        result = DenseCoordinate._concat([empty, coords[0], empty, *coords[1:], empty])
+        assert result.equals(expected)
+        # a single non-empty input is returned as is, all-empty gives the last one
+        assert DenseCoordinate._concat([coords[1]]) is coords[1]
+        assert DenseCoordinate._concat([empty, coords[1], empty]) is coords[1]
+        last = DenseCoordinate(np.array([], dtype=np.float32))
+        assert DenseCoordinate._concat([empty, last]) is last
+
+    def test_concat_many_error_order(self):
+        # faulty inputs are reported in order, as a pairwise fold would
+        coord = DenseCoordinate([1, 2, 3], "x")
+        with pytest.raises(ValueError, match="different dimension"):
+            DenseCoordinate._concat(
+                [coord, DenseCoordinate([4], "y"), ScalarCoordinate(1)]
+            )
+        with pytest.raises(TypeError):
+            DenseCoordinate._concat(
+                [coord, ScalarCoordinate(1), DenseCoordinate([4], "y")]
+            )
+        # an empty input is never dtype-checked
+        empty = DenseCoordinate(np.array([], dtype=np.int8), "x")
+        result = DenseCoordinate._concat([coord, empty, DenseCoordinate([4], "x")])
+        assert result.equals(DenseCoordinate([1, 2, 3, 4], "x"))
 
     def test_get_split_indices(self):
         coord = DenseCoordinate([1, 2, 3, 10, 11, 12])

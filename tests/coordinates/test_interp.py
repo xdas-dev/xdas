@@ -332,19 +332,19 @@ class TestInterpCoordinate:
         coord1 = InterpCoordinate({"tie_indices": [0, 2], "tie_values": [0, 20]})
         coord2 = InterpCoordinate({"tie_indices": [0, 2], "tie_values": [30, 50]})
 
-        result = coord1._concat(coord2).simplify()
+        result = InterpCoordinate._concat([coord1, coord2]).simplify()
         expected = InterpCoordinate({"tie_indices": [0, 5], "tie_values": [0, 50]})
         assert result.equals(expected)
 
-        result = coord2._concat(coord1).simplify()
+        result = InterpCoordinate._concat([coord2, coord1]).simplify()
         expected = InterpCoordinate(
             {"tie_indices": [0, 2, 3, 5], "tie_values": [30, 50, 0, 20]}
         )
         assert result.equals(expected)
 
-        assert coord0._concat(coord0).empty
-        assert coord0._concat(coord1).equals(coord1)
-        assert coord1._concat(coord0).equals(coord1)
+        assert InterpCoordinate._concat([coord0, coord0]).empty
+        assert InterpCoordinate._concat([coord0, coord1]).equals(coord1)
+        assert InterpCoordinate._concat([coord1, coord0]).equals(coord1)
 
     def test_simplify_preserves_real_discontinuity(self):
         # A large jump across a den == 1 gap is preserved as an emergent property
@@ -434,22 +434,36 @@ class TestInterpCoordinateExtra:
 
     def test_concat_errors(self):
         with pytest.raises(TypeError):
-            InterpCoordinate({"tie_indices": [0, 2], "tie_values": [0, 20]})._concat(
-                ScalarCoordinate(1)
+            InterpCoordinate._concat(
+                [
+                    InterpCoordinate({"tie_indices": [0, 2], "tie_values": [0, 20]}),
+                    ScalarCoordinate(1),
+                ]
             )
         with pytest.raises(ValueError, match="different dimension"):
-            InterpCoordinate(
-                {"tie_indices": [0, 2], "tie_values": [0, 20]}, "x"
-            )._concat(
-                InterpCoordinate({"tie_indices": [0, 2], "tie_values": [30, 50]}, "y")
+            InterpCoordinate._concat(
+                [
+                    InterpCoordinate(
+                        {"tie_indices": [0, 2], "tie_values": [0, 20]}, "x"
+                    ),
+                    InterpCoordinate(
+                        {"tie_indices": [0, 2], "tie_values": [30, 50]}, "y"
+                    ),
+                ]
             )
         with pytest.raises(ValueError, match="different dtype"):
-            InterpCoordinate(
-                {"tie_indices": [0, 2], "tie_values": np.array([0, 20], dtype=np.int32)}
-            )._concat(
-                InterpCoordinate(
-                    {"tie_indices": [0, 2], "tie_values": np.array([30.0, 50.0])}
-                )
+            InterpCoordinate._concat(
+                [
+                    InterpCoordinate(
+                        {
+                            "tie_indices": [0, 2],
+                            "tie_values": np.array([0, 20], dtype=np.int32),
+                        }
+                    ),
+                    InterpCoordinate(
+                        {"tie_indices": [0, 2], "tie_values": np.array([30.0, 50.0])}
+                    ),
+                ]
             )
 
     def test_init_non_monotonic(self):
@@ -1034,7 +1048,7 @@ class TestInterpCoordinateRegular:
         b = InterpCoordinate(
             {"tie_indices": [0, 9], "tie_values": [1.0, 1.9], "sampling_interval": 0.1}
         )
-        result = a._concat(b)
+        result = InterpCoordinate._concat([a, b])
         assert isinstance(result, InterpCoordinate)
         assert result.isregular()
         assert result.sampling_interval == 0.1
@@ -1049,7 +1063,7 @@ class TestInterpCoordinateRegular:
         b = InterpCoordinate(
             {"tie_indices": [0, 9], "tie_values": [1.0, 2.8], "sampling_interval": 0.2}
         )
-        result = a._concat(b)
+        result = InterpCoordinate._concat([a, b])
         assert isinstance(result, InterpCoordinate)
         assert not result.isregular()
         assert result.sampling_interval is None
@@ -1057,9 +1071,64 @@ class TestInterpCoordinateRegular:
 
         # Mixed regular/irregular drifts too far → irregular.
         c = InterpCoordinate({"tie_indices": [0, 9], "tie_values": [3.0, 4.0]})
-        mixed = a._concat(c)
+        mixed = InterpCoordinate._concat([a, c])
         assert mixed.sampling_interval is None
         assert len(mixed) == 20
+
+    @staticmethod
+    def make_block(start, sampling_interval=1, tolerance=None, size=5):
+        step = 1 if sampling_interval is None else sampling_interval
+        data = {
+            "tie_indices": [0, size - 1],
+            "tie_values": [start, start + (size - 1) * step],
+        }
+        if sampling_interval is not None:
+            data.update(sampling_interval=sampling_interval, tolerance=tolerance)
+        return InterpCoordinate(data, "x")
+
+    def test_concat_many(self):
+        coords = [
+            self.make_block(0, tolerance=0),
+            self.make_block(10, tolerance=2),
+            self.make_block(20, tolerance=1),
+        ]
+        empty = InterpCoordinate(dim="x")
+        expected = InterpCoordinate(
+            {
+                "tie_indices": [0, 4, 5, 9, 10, 14],
+                "tie_values": [0, 4, 10, 14, 20, 24],
+                "sampling_interval": 1,
+                "tolerance": 2,
+            },
+            "x",
+        )
+        assert InterpCoordinate._concat(coords).equals(expected)
+        result = InterpCoordinate._concat([empty, coords[0], empty, *coords[1:]])
+        assert result.equals(expected)
+
+    def test_concat_many_irregular(self):
+        # one mismatched or missing rate anywhere makes the whole merge irregular
+        a, c = self.make_block(0), self.make_block(20)
+        for b in (self.make_block(10, sampling_interval=2), self.make_block(10, None)):
+            result = InterpCoordinate._concat([a, b, c])
+            assert not result.isregular()
+            assert len(result) == 15
+            assert list(result.tie_indices) == [0, 4, 5, 9, 10, 14]
+
+    def test_concat_validates_once(self, monkeypatch):
+        calls = []
+        validate = InterpCoordinate._is_valid_sampling_interval
+
+        def counting(self, *args):
+            calls.append(1)
+            return validate(self, *args)
+
+        coords = [self.make_block(10 * k) for k in range(50)]
+        monkeypatch.setattr(InterpCoordinate, "_is_valid_sampling_interval", counting)
+        result = InterpCoordinate._concat(coords)
+        assert len(calls) == 1
+        assert result.isregular()
+        assert len(result) == 250
 
     def test_concat_coords_recovers_regular_spacing(self):
         # `_concat` itself stays strict and drops to irregular when sampling
@@ -1083,7 +1152,7 @@ class TestInterpCoordinateRegular:
             },
             "x",
         )
-        assert not a._concat(b).isregular()
+        assert not InterpCoordinate._concat([a, b]).isregular()
 
         from xdas.core.routines import concat_coords
 

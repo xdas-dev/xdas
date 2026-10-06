@@ -717,21 +717,69 @@ class AxisCoordinate(Coordinate, ABC):
             A new coordinate of the same subclass.
         """
 
+    @classmethod
     @abstractmethod
-    def _concat(self, other):
+    def _concat(cls, objs):
         """
-        Return a new coordinate formed by appending *other* after this one.
+        Return a new coordinate formed by joining all *objs* end to end.
+
+        Implementations merge everything in one pass, building and validating
+        the result once, so the cost is linear in the total size.
 
         Parameters
         ----------
-        other : Coordinate
-            Must be the same subclass and have the same ``dim`` and ``dtype``.
+        objs : sequence of Coordinate
+            Coordinates to join, in order. Must all be instances of `cls` and
+            share the same ``dim``; the non-empty ones must share the same
+            ``dtype``.
 
         Returns
         -------
         Coordinate
-            Concatenated coordinate of the same subclass.
+            Concatenated coordinate. When at most one of *objs* is non-empty,
+            that object itself (the last one if all are empty).
         """
+
+    @classmethod
+    def _check_concat(cls, objs):
+        """
+        Validate *objs* for :meth:`_concat` and return the non-empty ones.
+
+        Type and ``dim`` are checked one object at a time, in order, so several
+        faulty inputs raise the error a left-to-right pairwise concatenation
+        would. Empty objects skip the ``dtype`` check.
+
+        Parameters
+        ----------
+        objs : sequence of Coordinate
+            Coordinates to join, in order. Must not be empty.
+
+        Returns
+        -------
+        list of Coordinate
+            The non-empty objects of *objs*, in order.
+
+        Raises
+        ------
+        TypeError
+            If an object is not an instance of `cls`.
+        ValueError
+            If the objects do not share the same ``dim``, or the non-empty ones
+            do not share the same ``dtype``.
+        """
+        dim = objs[0].dim
+        for obj in objs:
+            if not isinstance(obj, cls):
+                raise TypeError(f"cannot concatenate {type(obj)} to {cls}")
+            if not obj.dim == dim:
+                raise ValueError(
+                    "cannot concatenate coordinate with different dimension"
+                )
+        nonempty = [obj for obj in objs if not obj.empty]
+        for obj in nonempty[1:]:
+            if not obj.dtype == nonempty[0].dtype:
+                raise ValueError("cannot concatenate coordinate with different dtype")
+        return nonempty
 
     @abstractmethod
     def get_sampling_interval(self, cast=True):
@@ -1525,6 +1573,39 @@ def divide_sampling_ratio(numerator, denominator, dtype):
     if np.issubdtype(dtype, np.floating):
         return numerator / denominator
     return numerator // denominator
+
+
+def same_sampling_ratio(ratio, other, dtype):
+    """
+    Whether two ``(numerator, denominator)`` pairs describe the exact same rate.
+
+    Cross-multiplies rather than divides: two rates that only agree once rounded
+    to a single stored value must compare unequal. Exact dtypes work in Python
+    ints (arbitrary precision), so this cannot overflow however large the
+    denominators get.
+
+    Parameters
+    ----------
+    ratio, other : tuple
+        ``(numerator, denominator)`` pairs, as held by ``_sampling_ratio``.
+    dtype : numpy.dtype
+        The coordinate dtype the numerators refer to.
+
+    Returns
+    -------
+    bool
+        ``False`` when either numerator is ``None`` (no declared rate).
+    """
+    numerator, denominator = ratio
+    other_numerator, other_denominator = other
+    if numerator is None or other_numerator is None:
+        return False
+    if np.issubdtype(dtype, np.datetime64):
+        numerator = int(numerator.astype("i8"))
+        other_numerator = int(other_numerator.astype("i8"))
+    elif not np.issubdtype(dtype, np.floating):
+        numerator, other_numerator = int(numerator), int(other_numerator)
+    return numerator * int(other_denominator) == other_numerator * int(denominator)
 
 
 def step_value(anchor, offset, numerator, denominator, dtype):

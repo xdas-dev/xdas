@@ -24,6 +24,7 @@ from .core import (
     parse_sampling_ratio,
     parse_scalar_delta,
     quantization_tolerance,
+    same_sampling_ratio,
     step_value,
 )
 
@@ -329,54 +330,38 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             }
         return self.__class__(data, self.dim)
 
+    @classmethod
     @override
-    def _concat(self, other):
-        if not isinstance(other, self.__class__):
-            raise TypeError(f"cannot concatenate {type(other)} to {self.__class__}")
-        if not self.dim == other.dim:
-            raise ValueError("cannot concatenate coordinate with different dimension")
-        if self.empty:
-            return other
-        if other.empty:
-            return self
-        if not self.dtype == other.dtype:
-            raise ValueError("cannot concatenate coordinate with different dtype")
+    def _concat(cls, objs):
+        nonempty = cls._check_concat(objs)
+        if len(nonempty) <= 1:
+            return nonempty[0] if nonempty else objs[-1]
+        offsets = np.cumsum([0] + [len(obj) for obj in nonempty[:-1]])
         data = {
-            "tie_indices": np.append(self.tie_indices, other.tie_indices + len(self)),
-            "tie_values": np.append(self.tie_values, other.tie_values),
+            "tie_indices": np.concatenate(
+                [obj.tie_indices + offset for obj, offset in zip(nonempty, offsets)]
+            ),
+            "tie_values": np.concatenate([obj.tie_values for obj in nonempty]),
         }
-        # Strict primitive: preserve the regular contract only when both sides
-        # advertise the exact same spacing; otherwise the merged coord is
-        # irregular by construction. The joining tie pair has ``den == 1`` (a
-        # CF discontinuity) so each side's segments validate independently,
-        # and ``max(tolerance)`` bounds the union. Reconciling slightly
-        # different rates is the job of user-facing routines (see
-        # :func:`concat_coords`, which delegates to :meth:`simplify`).
-        numerator, denominator = self._sampling_ratio
-        other_numerator, other_denominator = other._sampling_ratio
-        if numerator is not None and other_numerator is not None:
-            # Cross-multiply rather than divide: two rates that only agree
-            # once rounded to a single stored value must compare unequal
-            # here. Python ints are arbitrary precision, so this needs no
-            # kernel and cannot overflow however large the (unbounded, per
-            # D2) denominators get.
-            if np.issubdtype(self.dtype, np.datetime64):
-                lhs, rhs = (
-                    int(numerator.astype("i8")),
-                    int(other_numerator.astype("i8")),
-                )
-            elif not np.issubdtype(self.dtype, np.floating):
-                lhs, rhs = int(numerator), int(other_numerator)
-            else:
-                lhs, rhs = numerator, other_numerator
-            if lhs * int(other_denominator) == rhs * int(denominator):
-                data = {
-                    **data,
-                    "sampling_numerator": numerator,
-                    "sampling_denominator": denominator,
-                    "tolerance": max(self.tolerance, other.tolerance),
-                }
-        return self.__class__(data, self.dim)
+        # Strict primitive: stay regular only when every input advertises the
+        # exact same spacing, else the merge is irregular by construction. Each
+        # seam is an adjacent-index tie pair (a CF discontinuity), so every
+        # input's segments validate independently and ``max(tolerance)`` bounds
+        # the union. Reconciling slightly different rates is the job of
+        # :func:`concat_coords`, which delegates to :meth:`simplify`.
+        first = nonempty[0]
+        if all(
+            same_sampling_ratio(first._sampling_ratio, obj._sampling_ratio, first.dtype)
+            for obj in nonempty
+        ):
+            numerator, denominator = first._sampling_ratio
+            data = {
+                **data,
+                "sampling_numerator": numerator,
+                "sampling_denominator": denominator,
+                "tolerance": max(obj.tolerance for obj in nonempty),
+            }
+        return cls(data, objs[0].dim)
 
     @override
     def _to_dataset(self, dataset, attrs):
