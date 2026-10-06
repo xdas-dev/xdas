@@ -1377,12 +1377,27 @@ class TestSimplifyToleranceDefaults:
         result = coord.simplify()
         assert result.equals(coord)
 
-    def test_fusion_refused_when_it_would_exceed_tolerance(self):
-        # D3: tolerance means instrumental jitter, set once, never widened
-        # afterwards -- so the reduce budget is clamped to it and a fusion
-        # that would drift further from the nominal grid is refused, keeping
-        # the rate. Fusing would span 13 s over 11 intervals, 2 s off the
-        # nominal 1 s grid, against a declared tolerance of 0.
+    def test_fusion_refused_when_it_would_exceed_the_budget(self):
+        # a fusion that would drift further from the nominal grid than the
+        # budget allows is refused, keeping the rate. Fusing would span 13 s
+        # over 11 intervals, 2 s off the nominal 1 s grid: beyond 2 * 0.5 s.
+        t0 = np.datetime64("2000-01-01T00:00:00", "ns")
+        s = np.timedelta64(1, "s").astype("m8[ns]")
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 5, 6, 11],
+                "tie_values": [t0, t0 + 5 * s, t0 + 8 * s, t0 + 13 * s],
+                "sampling_interval": s,
+                "tolerance": np.timedelta64(0, "ns"),
+            }
+        )
+        result = coord.simplify(np.timedelta64(500, "ms"))
+        np.testing.assert_array_equal(result.tie_indices, coord.tie_indices)
+        assert result.sampling_interval == s
+
+    def test_wider_budget_fuses_and_widens_the_tolerance(self):
+        # same seam under a 3 s budget: the fusion fits, the rate is kept and
+        # the result declares the widened tolerance its chord now carries
         t0 = np.datetime64("2000-01-01T00:00:00", "ns")
         s = np.timedelta64(1, "s").astype("m8[ns]")
         coord = InterpCoordinate(
@@ -1394,12 +1409,31 @@ class TestSimplifyToleranceDefaults:
             }
         )
         result = coord.simplify(np.timedelta64(3, "s"))
+        np.testing.assert_array_equal(result.tie_indices, [0, 11])
+        assert result.sampling_interval == s
+        assert result.tolerance == np.timedelta64(3, "s")
+
+    def test_zero_budget_is_lossless(self):
+        # a budget narrower than the declared tolerance is used as given:
+        # `0` keeps every tie and the declared tolerance is kept
+        t0 = np.datetime64("2000-01-01T00:00:00", "ns")
+        ms = np.timedelta64(1_000_000, "ns")
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 10, 20, 30, 40],
+                "tie_values": t0 + np.array([0, 102, 204, 306, 408]) * ms,
+                "sampling_interval": 10 * ms,
+                "tolerance": 3 * ms,
+            }
+        )
+        result = coord.simplify(0)
         assert result.equals(coord)
 
     def test_fusion_refused_beyond_the_budget_never_raises(self):
-        # D3, same shape as above on real data: OptoDAS seams, 2 ms late every
-        # 10 s at 125 Hz, declared at tolerance 0. Only the seam already on
-        # the grid of its predecessor fuses, losslessly; the rate stays.
+        # same shape as above on real data: OptoDAS seams, 2 ms late every
+        # 10 s at 125 Hz, declared at tolerance 0, under a 1 ms budget. Only
+        # the seam already on the grid of its predecessor fuses, losslessly;
+        # the rate stays.
         t0 = np.datetime64("2021-10-27T15:44:10.721999872", "ns")
         offsets = [
             0,
@@ -1425,12 +1459,11 @@ class TestSimplifyToleranceDefaults:
         )
         np.testing.assert_array_equal(result.values, coord.values)
         assert result.sampling_interval == coord.sampling_interval
-        assert result.tolerance == coord.tolerance
+        assert result.tolerance == np.timedelta64(1_000_000, "ns")
 
-    def test_fusion_refused_when_it_would_exceed_tolerance_on_float_axis(self):
-        # D3, same refusal on a float axis: fusing the 4.0 seam would span
-        # 64.0 over 21 intervals, 1.0 off the nominal 3.0 grid, against a
-        # declared tolerance of 0.
+    def test_fusion_refused_when_it_would_exceed_the_budget_on_float_axis(self):
+        # same refusal on a float axis: fusing the 4.0 seam would span 64.0
+        # over 21 intervals, 1.0 off the nominal 3.0 grid, beyond 2 * 0.4.
         coord = InterpCoordinate(
             {
                 "tie_indices": [0, 10, 11, 21],
@@ -1439,8 +1472,9 @@ class TestSimplifyToleranceDefaults:
                 "tolerance": 0.0,
             }
         )
-        result = coord.simplify(2.0)
-        assert result.equals(coord)
+        result = coord.simplify(0.4)
+        np.testing.assert_array_equal(result.tie_indices, coord.tie_indices)
+        assert result.tolerance == 0.4
 
     def test_drifts_that_add_up_keep_an_interior_tie(self):
         # each segment runs 2 ms long against the nominal 100 ms, tolerance
@@ -1461,8 +1495,9 @@ class TestSimplifyToleranceDefaults:
         assert result.sampling_interval == 10 * ms
         assert result.tolerance == coord.tolerance
 
-    def test_budget_is_clamped_to_the_declared_tolerance(self):
-        # a wider explicit budget still thins at the declared tolerance only
+    def test_wider_budget_is_not_clamped_to_the_declared_tolerance(self):
+        # the declared tolerance alone keeps an interior tie (see above); a
+        # wider explicit budget thins past it and is declared on the result
         coord = InterpCoordinate(
             {
                 "tie_indices": [0, 10, 20, 30, 40],
@@ -1472,9 +1507,37 @@ class TestSimplifyToleranceDefaults:
             }
         )
         result = coord.simplify(100)
-        np.testing.assert_array_equal(result.tie_indices, [0, 20, 40])
+        np.testing.assert_array_equal(result.tie_indices, [0, 40])
         assert result.sampling_interval == 10
-        assert result.tolerance == 2
+        assert result.tolerance == 100
+
+    def test_wide_budget_flattens_resync_jumps_but_keeps_a_gap(self):
+        # HDAS-like clock: 100 Hz nominal, running 12 us fast per sample and
+        # resyncing with a one-sample jump every 1000 samples, so ties sit at
+        # adjacent indices and the stamps saw-tooth by 12 ms around the grid,
+        # declared at the 6.5 ms that just validates the rate. A 1 s budget
+        # fuses the sawtooth away and keeps only the real 1 h gap.
+        t0 = np.datetime64("2026-09-09T00:00:00", "ns").astype("i8")
+        ms = 1_000_000
+        tie_indices, tie_values = [], []
+        for k in range(20):
+            value = t0 + 10_000 * ms * k + (3_600_000 * ms if k >= 10 else 0)
+            tie_indices += [1000 * k, 1000 * k + 999]
+            tie_values += [value, value + 999 * (10 * ms - 12_000)]
+        coord = InterpCoordinate(
+            {
+                "tie_indices": tie_indices,
+                "tie_values": np.array(tie_values).astype("M8[ns]"),
+                "sampling_interval": np.timedelta64(10 * ms, "ns"),
+                "tolerance": np.timedelta64(6_500_000, "ns"),
+            }
+        )
+        result = coord.simplify(1.0)
+        np.testing.assert_array_equal(result.tie_indices, [0, 9999, 10000, 19999])
+        assert result.sampling_interval == np.timedelta64(10 * ms, "ns")
+        assert result.tolerance == np.timedelta64(1, "s")
+        # the default budget (the declared 6.5 ms) cannot fuse the jumps
+        assert len(coord.simplify().tie_indices) == len(tie_indices)
 
     def test_fractional_rate_validates_exactly_at_the_budget(self):
         # rate 21/2 ticks, tolerance 1: validity is |2 * df - 21 * dx| <= 4.

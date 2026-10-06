@@ -8,6 +8,7 @@
 ### Improvements
 - **Windows and macOS are now tested and working well.** CI runs the full suite on `windows-latest` and `macos-latest` alongside Linux; fixed a `glob()` path-separator bug that broke opening files by wildcard on Windows (#87), and what the new CI then caught: an unbounded memory-limit fallback and illegal colons in temporary filenames (#88) (@ClaudioStrumia, @atrabattoni).
 - Opening many files is faster: coordinates now concatenate in linear rather than quadratic time, the ObsPy engine no longer reads HDF5 and netCDF files whole to refuse them during format auto-detection, and failed collection attempts leave neither queued jobs nor a progress bar behind (@atrabattoni).
+- `simplify` on a coordinate with a declared sampling interval keeps that interval and spends the budget it is given: a tolerance wider than the declared one thins past it and is declared on the result, so jittery clocks fold down to their real gaps; `tolerance=0` stays lossless (@atrabattoni).
 
 ## 0.2.9
 

@@ -32,8 +32,9 @@ class AragonEngine(Engine, name="aragon"):
     When several files are opened together, the declared tolerance is also the
     budget used to thin the tie points: values may then move by up to that
     tolerance (the sampling interval is kept). Pass ``tolerance=0`` to
-    :func:`xdas.open` to keep the exact stamps. A one-sample gap cannot be told
-    apart from clock jitter in the stamps.
+    :func:`xdas.open` to keep the exact stamps, or a wider one to fold the
+    clock's resync jumps away (it is then declared on the time axis). A
+    one-sample gap cannot be told apart from clock jitter in the stamps.
     """
 
     _supported_vtypes: ClassVar[list] = ["hdf5", "tiles"]

@@ -731,12 +731,13 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         *tolerance* (the internal Chebyshev fit's worst residual stays inside the
         budget). The promotion is per-continuous-segment and sign-agnostic, so
         two same-rate segments joined by a CF overlap are still described by one
-        spacing. An already-regular coordinate always keeps its spacing:
-        tolerance means instrumental jitter and nothing else, is set once at
-        construction, and is never widened afterwards (D3). The reduce budget
-        is clamped to the declared tolerance, and every fused chord must also
-        honour the spacing within it, so a fusion that would break the rate is
-        refused rather than the rate dropped.
+        spacing. An already-regular coordinate always keeps its spacing: every
+        fused chord must honour it within *tolerance*, so a fusion that would
+        break the rate is refused rather than the rate dropped. A *tolerance*
+        wider than the declared one widens it: the budget is used as given and
+        the result declares ``max(tolerance, self.tolerance)``, the jitter its
+        fused chords may now carry. A narrower one thins less (``0`` is
+        lossless) and keeps the declared tolerance.
 
         See :meth:`Coordinate.simplify` for the parameter contract.
         """
@@ -748,9 +749,8 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
         rate = None
         if self.sampling_interval is not None:
-            # a fused chord must keep the declared rate within the declared jitter
+            # a fused chord must keep the declared rate within the budget
             rate = self._sampling_ratio
-            tolerance = min(tolerance, self.tolerance)
         if reduce:
             tie_indices, tie_values = _sleeve(
                 self.tie_indices, self.tie_values, tolerance, rate
@@ -764,7 +764,7 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
                 **data,
                 "sampling_numerator": numerator,
                 "sampling_denominator": denominator,
-                "tolerance": self.tolerance,
+                "tolerance": max(tolerance, self.tolerance),
             }
             return self.__class__(data, self.dim)
         # Otherwise try to promote: infer the best spacing on the surviving
