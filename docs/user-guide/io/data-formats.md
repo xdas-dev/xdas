@@ -30,8 +30,10 @@ Xdas support the following DAS formats:
 | Aragon Photonics  | HDAS              | `"aragon"`        | HDF5, tiles       | `hdf5`    |
 | ASN               | OptoDAS           | `"asn"`           | HDF5, tiles       | `hdf5`    |
 | FEBUS             | A1                | `"febus"`         | HDF5, tiles       | `tiles`   |
+| Fosina            | DxS               | `"fosina"`        | HDF5, tiles       | `hdf5`    |
 | OptaSense         | OLA, ODH*, ...    | `"optasense"`     | HDF5, tiles       | `hdf5`    |
-| Silixa            | iDAS              | `"silixa"`        | tiles             | `tiles`   |
+| Silixa            | iDAS (TDMS)       | `"silixa"`        | tiles             | `tiles`   |
+| Silixa            | iDAS (HDF5)       | `"prodml"`        | HDF5, tiles       | `hdf5`    |
 | SINTELA           | ONYX              | `"sintela"`       | HDF5, tiles       | `hdf5`    |
 | Terra15           | Treble            | `"terra15"`       | HDF5, tiles       | `hdf5`    |
 
@@ -49,6 +51,16 @@ engine named after the library rather than after a format:
 The `"obspy"` engine is the only one that describes a file as a *collection*
 rather than a single array: it emits one lazy data array per ObsPy `Trace`,
 nested on the SEED hierarchy. See [](obspy.md).
+
+ProdML is a vendor-neutral standard, so the `"prodml"` engine reads the HDF5
+files of every instrument that writes it. `"optasense"`, `"sintela"` and
+`"fosina"` are aliases of it, kept so that the engine can be named after the
+instrument. Known ProdML writers include:
+
+- OptaSense interrogators (OLA, ODH, QuantX, IU software);
+- Silixa iDAS, when recording to HDF5 (ProdML 2.0 and 2.1);
+- SINTELA ONYX;
+- Fosina DxS.
 
 ```{note}
 `"miniseed"` is the engine `"obspy"` replaced, kept so that views written by

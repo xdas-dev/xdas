@@ -1,7 +1,7 @@
 """
 I/O engine for ProdML HDF5 files (:class:`ProdML`).
 
-Also known as OptaSense and Sintela format.
+Also known as OptaSense, Sintela and Fosina format.
 """
 
 from typing import ClassVar
@@ -17,9 +17,9 @@ from .core import Engine
 _RAWDATA = "/Acquisition/Raw[0]/RawData"
 
 
-class ProdML(Engine, name="prodml", aliases=["optasense", "sintela"]):
+class ProdML(Engine, name="prodml", aliases=["optasense", "sintela", "fosina"]):
     """
-    Engine for reading ProdML / OptaSense / Sintela HDF5 files.
+    Engine for reading ProdML / OptaSense / Sintela / Fosina HDF5 files.
 
     Parameters
     ----------

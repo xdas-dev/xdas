@@ -13,6 +13,10 @@ class TestEngineRegistry:
         with pytest.raises(KeyError, match="no engine registered"):
             Engine["nonexistent_engine_xyz"]
 
+    @pytest.mark.parametrize("alias", ["optasense", "sintela", "fosina"])
+    def test_prodml_aliases(self, alias):
+        assert Engine[alias] is Engine["prodml"]
+
     def test_invalid_vtype_raises_value_error(self):
         with pytest.raises(ValueError, match="vtype must be None or a string"):
             Engine["asn"](vtype=42)
