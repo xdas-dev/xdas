@@ -1,4 +1,5 @@
 import dascore as dc
+import h5py
 import numpy as np
 import pytest
 from dascore.utils.downloader import fetch
@@ -138,10 +139,16 @@ class TestGenericIO:
                 da = xd.open(path, engine=engine)
                 spool = dc.read(path)
                 patch = spool[0]
+                data = da.values
+                # dascore >= 0.1.24 applies OptoDAS dataScale, xdas keeps raw counts
+                if engine == "asn" and patch.dtype != da.dtype:
+                    with h5py.File(path) as file:
+                        scale = float(file["header/dataScale"][()])
+                    data = data.astype(patch.dtype) * scale
                 assert isinstance(da, xd.DataArray)
-                assert da.dtype == patch.dtype
+                assert data.dtype == patch.dtype
                 assert da.shape == patch.shape
-                assert np.array_equal(da.values, patch.data, equal_nan=True)
+                assert np.array_equal(data, patch.data, equal_nan=True)
                 assert da.dims == patch.dims
                 for dim in da.dims:
                     if dim == "distance" and fname in self.SKIP_DISTANCE_COMPARISON:
