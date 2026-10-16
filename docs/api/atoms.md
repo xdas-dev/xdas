@@ -133,6 +133,7 @@ data it applies eagerly, called on `...` it returns the atom.
    rechunk
    resample
    sliding_mean_removal
+   stalta
    stft
    taper
    trigger
@@ -144,16 +145,18 @@ data it applies eagerly, called on `...` it returns the atom.
 
 ## Detection and picking
 
-`Annotate` runs a SeisBench model window by window, `Trigger` turns the
-characteristic function it produces into a pick table, and `Picker` is the
-whole pipeline a weight set describes — its own filter, its own sampling rate,
+`STALTA` and `Annotate` build a characteristic function — the first from the
+amplitude of the signal itself, the second by running a SeisBench model window
+by window — `Trigger` turns either one into a pick table, and `Picker` is the
+whole pipeline a weight set describes: its own filter, its own sampling rate,
 its own per-phase thresholds. Each has a lowercase functional twin at the top
-level of `xdas` (`xdas.annotate`, `xdas.trigger`, `xdas.pick`).
+level of `xdas` (`xdas.stalta`, `xdas.annotate`, `xdas.trigger`, `xdas.pick`).
 
 ```{eval-rst}
 .. autosummary::
    :toctree: ../_autosummary
 
+   STALTA
    Annotate
    Trigger
    Picker

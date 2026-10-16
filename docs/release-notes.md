@@ -3,6 +3,7 @@
 ## 0.2.10 (unreleased)
 
 ### New Features
+- **`xdas.stalta`**, the short-term over long-term average characteristic function, feeding the existing `Trigger` so that detection no longer needs a model. Both windows are given in the units of the dimension. `method="recursive"` (default) and `"classic"` reproduce ObsPy's `recursive_sta_lta` and `classic_sta_lta` sample for sample, `"delayed"` ends the long window where the short one starts, and `"centered"` centres both windows for offline use. The atom is stateful and streams at a cost independent of the window lengths: chunked processing returns what a single call on the whole record returns, `flush()` releasing the tail `"centered"` holds back (@amaggi, @atrabattoni).
 - **Aragon Photonics HDAS support.** The new `aragon` engine reads HDAS 3.0 `HDAS_StrainRate` HDF5 files, returning samples as stored. The time axis keeps the device stamps (to their float64 resolution) and declares the header sampling interval with the smallest tolerance they allow; `ctype={"time": "sampled"}` steps at the header interval and `"dense"` keeps every stamp. The distance axis comes from the header. HDF5 and tile virtualization (@atrabattoni).
 - Add a `"fosina"` alias of the `"prodml"` engine, and list in the user guide the instruments known to write ProdML (@atrabattoni).
 
