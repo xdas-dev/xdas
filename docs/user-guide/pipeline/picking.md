@@ -292,11 +292,11 @@ two implementations on identical waveforms.
 ## Detecting without a model
 
 Not every detection needs a network of weights. {py:func}`~xdas.stalta` is the
-classic amplitude detector — a short trailing average of the squared signal
-over a long one — and it feeds the very same {py:class}`~xdas.atoms.Trigger`,
-so the pick table and everything downstream of it are unchanged. Both window
-lengths are given in the units of the dimension, seconds here, so the same atom
-applies whatever the sampling rate:
+classic amplitude detector — a short average of the squared signal over a long
+one — and it feeds the very same {py:class}`~xdas.atoms.Trigger`, so the pick
+table and everything downstream of it are unchanged. Both window lengths are
+given in the units of the dimension, seconds here, so the same atom applies
+whatever the sampling rate:
 
 ```{code-cell}
 import numpy as np
@@ -316,30 +316,38 @@ noisy = xd.DataArray(
     },
 )
 
-xd.trigger(xd.stalta(noisy, sta=0.5, lta=10.0), thresh=8.0)
+xd.trigger(xd.stalta(noisy, sta=0.5, lta=10.0), thresh=4.0)
 ```
 
-The transient starts at 20 s and is picked a little after it: a causal detector
-only ever sees the past, so it reports an onset late by roughly half the short
-window. That is the default, and the only mode a real-time detector can use.
-Offline, `mode="centered"` averages symmetrically about the sample it produces,
-which sharpens the onset at the price of needing samples from the future:
+The default `method="recursive"` is the Evans and Allen exponential average,
+and `"classic"` the trailing boxcar one: both reproduce their
+[ObsPy](https://docs.obspy.org/packages/autogen/obspy.signal.trigger.html)
+counterparts sample for sample, including the zeros reported while the long
+window is not yet full. `"delayed"` ends the long window where the short one
+starts, so that a transient does not raise its own reference.
+
+All three are causal: they only ever see the past, and they are the methods a
+real-time detector can use. Their peak trails the transient — by about half
+the short window for the boxcar ones, which only peak once that window is full
+of it. Offline, `method="centered"` averages symmetrically about the sample it
+produces, which brings the peak back onto the transient at the price of
+needing samples from the future:
 
 ```{code-cell}
-xd.trigger(xd.stalta(noisy, sta=0.5, lta=10.0, mode="centered"), thresh=8.0)
+xd.trigger(xd.stalta(noisy, sta=0.5, lta=10.0, method="centered"), thresh=4.0)
 ```
 
 The choice moves pick times, so it is a property of the detector rather than a
-tuning knob — the same threshold on the same record gives different times under
-the two modes.
+tuning knob — the same threshold on the same record gives different times
+under different methods.
 
 Like every atom, it is stateful: an hour arriving in ten-second chunks gives
-exactly what the hour gives in one piece, seam for seam. In `"centered"` mode
-the samples whose window is not yet complete are held back, and `flush()`
-releases them at the end of the stream — which the streaming machinery of
-[](processing.md) calls for you:
+exactly what the hour gives in one piece, seam for seam, at a cost that does
+not depend on the window lengths. With `"centered"` the samples whose window is
+not yet complete are held back, and `flush()` releases them at the end of the
+stream — which the streaming machinery of [](processing.md) calls for you:
 
 ```{code-cell}
-pipeline = xd.stalta(..., sta=0.5, lta=10.0) >> xd.trigger(..., thresh=8.0)
+pipeline = xd.stalta(..., sta=0.5, lta=10.0) >> xd.trigger(..., thresh=4.0)
 pipeline.process(noisy, chunks={"time": 500})
 ```
