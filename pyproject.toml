@@ -5,6 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "xdas"
 dynamic = ["version"]
+readme = "README.md"
 requires-python = ">= 3.11"
 authors = [
     { name = "Alister Trabattoni", email = "alister.trabattoni@gmail.com" },
@@ -43,6 +44,12 @@ docs = [
 tests = ["dascore", "dask<2025.4.0", "psutil", "seisbench", "torch>=2.7"]
 
 # Single source of truth for the version: xdas/__init__.py
+[project.urls]
+Homepage = "https://github.com/xdas-dev/xdas"
+Documentation = "https://xdas.readthedocs.io"
+Changelog = "https://github.com/xdas-dev/xdas/blob/main/CHANGELOG.md"
+Issues = "https://github.com/xdas-dev/xdas/issues"
+
 [tool.setuptools.dynamic]
 version = { attr = "xdas.__version__" }
 
