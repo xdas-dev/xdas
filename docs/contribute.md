@@ -18,22 +18,17 @@ git clone git@github.com:xdas-dev/xdas.git
 cd xdas
 ```
 
-3. Checkout to the `dev` branch:
-```
-git checkout dev
-```
-
-4. Create virtual environment and install development dependencies:
+3. Create virtual environment and install development dependencies:
 ```
 uv sync --all-groups
 ```
 
-5. Check that all tests are passing and that test coverage is 100\%:
+4. Check that all tests are passing and that test coverage is 100\%:
 ```
 uv run pytest --cov
 ```
 
-6. Check that the documentation builds without errors:
+5. Check that the documentation builds without errors:
 ```
 cd docs
 uv run make html
@@ -67,15 +62,20 @@ We will go through all the details
 
 ## How to edit the code
 
-The usual workflow is:
-- create a branch to have your independent version of the code
+Xdas follows [GitHub Flow](https://docs.github.com/en/get-started/using-github/github-flow): `main` is the only long-lived branch and is always releasable. The usual workflow is:
+- create a branch off `main` to have your independent version of the code
 - make modifications by doing as many commits as you want
 - format your code
 - check that the tests are passing (and that the documentation builds).
+- add an entry to the `[Unreleased]` section of `CHANGELOG.md` (see below)
 - publish your branch online
-- make a pull request to ask the permission to merge your code.
+- make a pull request against `main` to ask the permission to merge your code.
 
 To do this you can either use git in the [terminal](https://git-scm.com/docs/gittutorial) or within [VS Code](https://code.visualstudio.com/docs/sourcecontrol/overview).
+
+## How to write a changelog entry
+
+`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Add one line per user-visible change under `[Unreleased]`, in the section that fits: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed` or `Security`. Write it for users, not reviewers: say what changed for them, start with **Breaking:** when existing code stops working, and credit yourself at the end, e.g. `(@your-github-handle)`. Purely internal changes (tests, CI, refactoring) need no entry.
 
 
 ## How to write a docstring with examples
@@ -164,3 +164,15 @@ uv run make html
 You can then inspect the documentation by opening `index.html` in docs/_build/html with any browser.
 
 Note that VS Code has an extension called Live Preview to render html. Once this extension is installed, right click on the `index.html` file and click on Show preview.
+
+## Releasing
+
+Releases are cut from `main` by a maintainer:
+1. On a branch, rename `[Unreleased]` in `CHANGELOG.md` to `[X.Y.Z] - YYYY-MM-DD`, open a fresh empty `[Unreleased]` above it, update the compare links at the bottom, and set `__version__ = "X.Y.Z"` in `xdas/__init__.py`.
+2. Merge that pull request into `main` once CI is green.
+3. Tag the merge commit and push the tag (no `v` prefix):
+```
+git tag X.Y.Z
+git push origin X.Y.Z
+```
+The CI then runs the tests again, checks that the tag matches `__version__`, builds the package and publishes it to PyPI.
