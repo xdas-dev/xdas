@@ -175,4 +175,4 @@ Releases are cut from `main` by a maintainer:
 git tag X.Y.Z
 git push origin X.Y.Z
 ```
-The CI then runs the tests again, checks that the tag matches `__version__`, builds the package and publishes it to PyPI.
+The CI then runs the tests again, checks that the tag matches `__version__`, builds the package, publishes it to PyPI once a maintainer approves the `pypi` deployment, and finally creates the GitHub release with the version's `CHANGELOG.md` section as notes (which Zenodo archives).
