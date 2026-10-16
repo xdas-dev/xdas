@@ -54,7 +54,7 @@ class DataCollection:
     ...     "instrument",
     ... )
     >>> dc
-    <xdas.DataCollection: 5 leaves, 4.6 MB>
+    <xdas.DataCollection: 5 arrays, 4.6 MB>
     instrument  record
     das1             0  (time: 300, distance: 401)  939.8 KB
                      1  (time: 300, distance: 401)  939.8 KB
@@ -143,7 +143,7 @@ class DataCollection:
         ...     "instrument",
         ... )
         >>> dc.query(instrument="das1", record=0)
-        <xdas.DataCollection: 1 leaf, 939.8 KB>
+        <xdas.DataCollection: 1 array, 939.8 KB>
         instrument  record
         das1             0  (time: 300, distance: 401)  939.8 KB
 
@@ -671,11 +671,18 @@ class DataSequence(DataCollection, MutableSequence):
 
 def format_collection(dc):
     """
-    Render a data collection as a flat table, one row per leaf.
+    Render a data collection, one row per leaf or per homogeneous subtree.
 
-    Each row spells out the keys that address a leaf, then that leaf's shape
-    and the memory it takes once loaded. Repeated keys are blanked so that a
-    row shows only what changed from the one above.
+    A homogeneous collection, whose every depth is named and named alike by
+    the branches that reach it, is a flat table: each row spells out the keys
+    that address a leaf, then that leaf's shape and the memory it takes once
+    loaded. Repeated keys are blanked so that a row shows only what changed
+    from the one above.
+
+    Where branches disagree or leave a depth unnamed, the collection is
+    drawn as a tree instead, and
+    each homogeneous subtree under it is collapsed into a single summary
+    line. Indexing into that subtree shows its table.
 
     Parameters
     ----------
@@ -689,13 +696,15 @@ def format_collection(dc):
 
     """
     rows = get_leaves(dc)
-    header = (
-        f"<xdas.DataCollection: {len(rows)} {'leaf' if len(rows) == 1 else 'leaves'}, "
-        f"{to_human(sum(get_nbytes(leaf) for _, leaf in rows))}>"
-    )
+    header = f"<xdas.DataCollection: {describe(rows)}>"
     if not rows:
         return header
+    body = format_table(rows) if is_homogeneous(dc, rows) else format_tree(dc)
+    return "\n".join([header] + body)
 
+
+def format_table(rows):
+    """Render the leaves *rows* of a homogeneous collection as flat lines."""
     keys = [[key for _, key in path] for path, _ in rows]
     ncolumns = max(len(row) for row in keys)
     # a column is a depth, so a branch that stops short has no key to put in
@@ -717,8 +726,7 @@ def format_collection(dc):
         for index, (row, (_, leaf)) in enumerate(zip(grid, rows))
     ]
 
-    fields = get_fields(rows)
-    heads = (fields if fields else [""] * ncolumns) + ["", ""]
+    heads = get_names(rows) + ["", ""]
     # positional keys and the memory column are right aligned so that they
     # can be compared down the column
     columns = zip(*[row + cells[-2:] for row, cells in zip(grid, body)])
@@ -731,11 +739,38 @@ def format_collection(dc):
         max(len(heads[d]), *(len(row[d]) for row in body)) for d in range(len(heads))
     ]
 
-    lines = [header]
-    if any(heads):
-        lines.append(format_row(heads, widths, right))
-    lines.extend(format_row(row, widths, right) for row in body)
-    return "\n".join(lines)
+    return [format_row(row, widths, right) for row in [heads] + body]
+
+
+def format_tree(node):
+    """Render a heterogeneous *node* as tree lines, one branch per child.
+
+    A leaf child shows its shape and size. A homogeneous child collapses into
+    the dimensions and size of its leaves, as a leaf would, with its chain of
+    field names and leaf count hooked below. A heterogeneous child opens a
+    subtree of its own.
+    """
+    items = list(enumerate(node) if node.issequence() else node.items())
+    lines = [node.name] if node.name is not None else []
+    for index, (key, value) in enumerate(items):
+        last = index == len(items) - 1
+        branch, indent = ("└── ", "    ") if last else ("├── ", "│   ")
+        if not isinstance(value, DataCollection):
+            lines.append(
+                f"{branch}{key}  {get_shape(value)}  {to_human(get_nbytes(value))}"
+            )
+            continue
+        rows = get_leaves(value)
+        if not rows:
+            lines.append(f"{branch}{key}  (empty)")
+        elif is_homogeneous(value, rows):
+            nbytes = sum(get_nbytes(leaf) for _, leaf in rows)
+            lines.append(f"{branch}{key}  {get_dims(rows)}  {to_human(nbytes)}")
+            lines.append(f"{indent}╰─ {' › '.join(get_names(rows))}  ({count(rows)})")
+        else:
+            lines.append(f"{branch}{key}  {describe(rows)}")
+            lines.extend((indent + line).rstrip() for line in format_tree(value))
+    return lines
 
 
 def format_row(cells, widths, right):
@@ -763,22 +798,67 @@ def get_leaves(dc):
     return leaves
 
 
-def get_fields(rows):
-    """Return the name of each depth, empty where the branches disagree.
+def get_names(rows):
+    """Return the field name of each depth, None where it has no single name.
 
     A field name belongs to a node, not to a depth: two branches can name
     the same depth differently or not at all, and only some of them reach
-    the deepest ones. Such a depth is left unheaded rather than headed with
-    a name that speaks for one branch only, but the depths that do agree are
-    still worth naming.
+    the deepest ones.
     """
     ncolumns = max(len(path) for path, _ in rows)
-    heads = []
+    names = []
     for depth in range(ncolumns):
         found = {path[depth][0] for path, _ in rows if depth < len(path)}
-        name = next(iter(found)) if len(found) == 1 else None
-        heads.append(name if name is not None else "")
-    return heads
+        names.append(next(iter(found)) if len(found) == 1 else None)
+    return names
+
+
+def is_homogeneous(node, rows):
+    """Tell whether every depth of *node*, of leaves *rows*, bears one name.
+
+    Only such a collection is well defined enough for a flat table: its
+    columns can all be headed. Branches may stop at different depths, as
+    long as those they share are named alike. An empty branch has no leaf
+    to give it a row, so it calls for a tree, where it can be shown.
+    """
+    return None not in get_names(rows) and not has_empty(node)
+
+
+def has_empty(node):
+    """Tell whether *node* holds an empty collection at any depth."""
+    values = node if node.issequence() else node.values()
+    return any(
+        isinstance(value, DataCollection) and (not len(value) or has_empty(value))
+        for value in values
+    )
+
+
+def get_dims(rows):
+    """Return the dimensions met across the leaves of *rows*, in order."""
+    dims = []
+    for _, leaf in rows:
+        names = ("rows", "columns") if isinstance(leaf, pd.DataFrame) else leaf.dims
+        dims.extend(dim for dim in names if dim not in dims)
+    return f"({', '.join(dims)})"
+
+
+def count(rows):
+    """Count the leaves of *rows* by kind, as ``"4 arrays, 1 table"``."""
+    ntables = sum(isinstance(leaf, pd.DataFrame) for _, leaf in rows)
+    narrays = len(rows) - ntables
+    parts = [
+        f"{number} {noun}{'' if number == 1 else 's'}"
+        for number, noun in ((narrays, "array"), (ntables, "table"))
+        if number
+    ]
+    return ", ".join(parts)
+
+
+def describe(rows):
+    """Summarize the leaves of *rows*: their count by kind and their size."""
+    if not rows:
+        return "empty"
+    return f"{count(rows)}, {to_human(sum(get_nbytes(leaf) for _, leaf in rows))}"
 
 
 def get_shape(leaf):

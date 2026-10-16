@@ -434,7 +434,7 @@ def open_mfdatatree(
     >>> import xdas as xd
     >>> paths = "/data/{node}/{cable}/[record]/proc/[record].h5"
     >>> xd.open_mfdatatree(paths, engine="asn") # doctest: +SKIP
-    <xdas.DataCollection: 6 leaves, 1.2 TB>
+    <xdas.DataCollection: 6 arrays, 1.2 TB>
     node  cable  record
     CCN   N           0  (time: ..., distance: ...)  ...
                       1  (time: ..., distance: ...)  ...
@@ -1505,7 +1505,7 @@ def stack(dc, level, dim=None, join=None, tolerance=None):
     ...     "station",
     ... )
     >>> dc
-    <xdas.DataCollection: 4 leaves, 128 B>
+    <xdas.DataCollection: 4 arrays, 128 B>
     station  channel
     SX01     SHZ      (time: 4)  32 B
              SHN      (time: 4)  32 B
@@ -1514,7 +1514,7 @@ def stack(dc, level, dim=None, join=None, tolerance=None):
 
     >>> stacked = xd.stack(dc, "channel")
     >>> stacked
-    <xdas.DataCollection: 2 leaves, 128 B>
+    <xdas.DataCollection: 2 arrays, 128 B>
     station
     SX01     (channel: 2, time: 4)  64 B
     SX02     (channel: 2, time: 4)  64 B
