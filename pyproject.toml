@@ -31,7 +31,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["ruff", "pytest", "pytest-cov"]
+dev = ["ruff~=0.17.1", "pytest", "pytest-cov"]  # ruff pinned: its rules change between minor versions
 docs = [
     "ipykernel",
     "matplotlib",

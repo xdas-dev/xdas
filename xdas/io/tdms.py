@@ -67,7 +67,7 @@ def parse_time_stamp(fractions, seconds):
     """
     if fractions is not None and seconds is not None and fractions + seconds > 0:
         # the TDMS epoch is naive by spec; callers convert to tz-naive datetime64
-        return datetime.timedelta(0, fractions * 2**-64 + seconds) + datetime.datetime(  # noqa: DTZ001
+        return datetime.timedelta(0, fractions * 2**-64 + seconds) + datetime.datetime(
             1904, 1, 1
         )
     else:
