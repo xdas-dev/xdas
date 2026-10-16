@@ -12,7 +12,6 @@ from collections.abc import Mapping
 
 import numpy as np
 import pandas as pd
-import scipy.signal as sp
 from numba import njit
 
 from ..coordinates import Coordinate, get_sampling_interval
@@ -602,17 +601,39 @@ class STALTA(Atom):
     """
     Short-term over long-term average characteristic function.
 
-    The ratio of a short trailing (or centred) mean of the squared signal to a
-    long one: the classic amplitude detector, whose output is fed to
-    :class:`Trigger` to obtain picks. Both window lengths are given in the
-    physical units of `dim`, so the same atom applies to any sampling rate.
+    The ratio of a short mean of the squared signal to a long one: the classic
+    amplitude detector, whose output is fed to :class:`Trigger` to obtain
+    picks. Both window lengths are given in the physical units of `dim`, so
+    the same atom applies to any sampling rate.
 
-    Stateful: the trailing samples the next window will need are carried
-    across chunks, so chunked processing returns exactly what a single call on
-    the whole record returns. In ``"centered"`` mode a window also reaches
-    forward, so each call holds back the samples it cannot yet complete and
-    :meth:`flush` releases them at the end of the stream. In ``"causal"`` mode
-    nothing is held back and :meth:`flush` has nothing to return.
+    The ``recursive`` and ``classic`` methods follow their ObsPy counterparts
+    of :mod:`obspy.signal.trigger` sample for sample, including the samples
+    reported as zero while the windows are not yet full. All methods are
+    computed by running sums carried from chunk to chunk, so chunked processing
+    returns exactly what a single call on the whole record returns, at a cost
+    that does not depend on the window lengths.
+
+    ============== ==========================================================
+    method         definition
+    ============== ==========================================================
+    ``recursive``  Exponential averages of time constants `sta` and `lta`
+                   (Evans and Allen), as ObsPy's ``recursive_sta_lta``.
+                   The default, and the cheapest to stream: its state is two
+                   numbers per channel.
+    ``classic``    Trailing boxcar means, as ObsPy's ``classic_sta_lta``.
+    ``delayed``    Trailing boxcar means, the long window ending where the
+                   short one starts so that a transient does not raise its
+                   own reference (Withers et al., 1998).
+    ``centered``   Boxcar means centred on the sample they produce, so the
+                   peak sits on the transient, but each window reaches `lta` /
+                   2 into the future:
+                   offline only, the samples it cannot yet complete being
+                   held back until :meth:`flush`.
+    ============== ==========================================================
+
+    The choice moves pick times, so it is a property of the detector, not a
+    tuning knob: the peak of a trailing boxcar lags the transient by about half
+    the short window, that of ``centered`` does not.
 
     Parameters
     ----------
@@ -621,23 +642,28 @@ class STALTA(Atom):
     lta : float
         Length of the long-term window, in the units of `dim`. Must be longer
         than `sta`.
-    mode : {"causal", "centered"}, optional
-        Where each window sits relative to the sample it produces.
-        ``"causal"`` (default) averages the samples up to and including it, as
-        a real-time detector must; the onset of a transient is then reported
-        late by roughly half the short window. ``"centered"`` averages
-        symmetrically about it, which sharpens the onset but needs samples
-        from the future, and so is only available offline. The choice shifts
-        pick times, so it is a property of the detector, not a tuning knob.
-    window : str, optional
-        Tapering window applied to both means, by default "boxcar" — the plain
-        running mean. Any window accepted by :func:`scipy.signal.get_window`.
-    pad_mode : str, optional
-        How the two ends of the *record* are extended where a window would
-        reach past them, by default "reflect". Chunk seams are never padded:
-        they use the real neighbouring samples.
+    method : {"recursive", "classic", "delayed", "centered"}, optional
+        How the two averages are computed, by default "recursive".
     dim : str, optional
         The dimension along which to compute the ratio, by default "time".
+
+    Notes
+    -----
+    Samples whose windows are incomplete — the start of each run, and with
+    ``"centered"`` its end too — are zero, which no positive threshold
+    triggers on. The boxcar sums are recomputed from scratch once per window,
+    so the round-off of a loud transient does not outlive two windows (the
+    cumulative sum of ObsPy's ``classic_sta_lta`` keeps it for the rest of the
+    trace). ObsPy's ``delayed_sta_lta`` is not used as a reference: as of
+    ObsPy 1.5 it adds the samples leaving its windows instead of subtracting
+    them.
+
+    References
+    ----------
+    Withers, M., Aster, R., Young, C., Beiriger, J., Harris, M., Moore, S.,
+    and Trujillo, J. (1998). A comparison of select trigger algorithms for
+    automated global seismic phase and event detection. Bulletin of the
+    Seismological Society of America, 88(1), 95-106.
 
     Examples
     --------
@@ -664,10 +690,8 @@ class STALTA(Atom):
     Chunked processing gives the same answer, seam for seam:
 
     >>> atom = xd.stalta(..., sta=1.0, lta=20.0)
-    >>> chunks = [atom(chunk, chunk_dim="time")
-    ...           for chunk in xd.split(da, 8, dim="time")]
-    >>> chunked = xd.concat(chunks + list(atom.flush()), "time")
-    >>> bool(np.allclose(chunked.values, cft.values))
+    >>> chunked = atom.process(da, chunks={"time": 250})
+    >>> bool(np.array_equal(chunked.values, cft.values))
     True
 
     Piped into the trigger, which is the point of it:
@@ -676,104 +700,216 @@ class STALTA(Atom):
 
     """
 
-    def __init__(
-        self, sta, lta, mode="causal", window="boxcar", pad_mode="reflect", dim="time"
-    ):
+    def __init__(self, sta, lta, method="recursive", dim="time"):
         super().__init__()
+        if method not in _STALTA_METHODS:
+            raise ValueError(
+                f"`method` must be one of {', '.join(map(repr, _STALTA_METHODS))}"
+            )
         if not sta > 0.0:
             raise ValueError("`sta` must be strictly positive")
         if not lta > sta:
             raise ValueError("`lta` must be longer than `sta`")
-        if mode not in ("causal", "centered"):
-            raise ValueError("`mode` must be either 'causal' or 'centered'")
         self.sta = float(sta)
         self.lta = float(lta)
-        self.mode = mode
-        self.window = window
-        self.pad_mode = pad_mode
+        self.method = method
         self.dim = dim
 
         # states
-        self.fs = State(...)
+        self.delta = State(...)
+        self.count = State(...)
+        self.sums = State(...)
+        self.ring = State(...)
         self.buffer = State(...)
-        self.skip = State(...)
 
     def initialize(self, da, chunk_dim=None, **flags):
-        """Measure the sampling rate to size the windows, and open the buffer."""
-        self.fs = State(1.0 / get_sampling_interval(da, self.dim))
+        """Measure the sampling interval to size the windows, and zero the sums."""
+        self.delta = State(float(get_sampling_interval(da, self.dim)))
         self.initialize_from_state()
-        self.skip = State(0)
+        lanes = da.size // da.sizes[self.dim]
+        self.count = State(0)
+        self.sums = State(self._fresh_sums(lanes))
+        self.ring = State(np.zeros((lanes, self.history)))
+        # `None` marks a whole record per call (no seam along `dim` to cross)
         if chunk_dim == self.dim:
             self.buffer = State(da.isel({self.dim: slice(0, 0)}))
         else:
             self.buffer = State(None)
 
     def initialize_from_state(self):
-        """Derive the window lengths, in samples, from the sampling rate."""
-        self.sta_n = _oddify(self.sta * self.fs, 3)
-        self.lta_n = _oddify(self.lta * self.fs, self.sta_n + 2)
-        if self.mode == "causal":
-            self.lookback, self.lookahead = self.lta_n - 1, 0
+        """Derive the window lengths and offsets, in samples."""
+        self.nsta = round(self.sta / self.delta)
+        self.nlta = round(self.lta / self.delta)
+        if self.nsta < 1:
+            raise ValueError("`sta` is shorter than one sample")
+        if not self.nlta > self.nsta:
+            raise ValueError("`lta` must span more samples than `sta`")
+        # each boxcar window ends `delay` samples before the newest one
+        self.lag = 0
+        match self.method:
+            case "delayed":
+                self.dsta, self.dlta = 0, self.nsta
+            case "centered":
+                self.lag = self.nlta // 2
+                self.dsta, self.dlta = self.lag - self.nsta // 2, 0
+            case _:
+                self.dsta = self.dlta = 0
+        if self.method == "recursive":
+            self.start, self.history = self.nlta, 0
         else:
-            self.lookback = self.lookahead = self.lta_n // 2
+            reach = max(self.nsta + self.dsta, self.nlta + self.dlta)
+            self.start, self.history = reach - 1, reach + 1
 
     def call(self, da, **flags):
-        """Emit the ratio for every sample whose windows are complete."""
-        if self.buffer is None:  # whole record: both ends are record ends
-            return self._ratio(da)
+        """Emit the ratio for every sample the stream so far determines."""
+        if self.buffer is None:  # whole record: start afresh, end with the tail
+            lanes = da.size // da.sizes[self.dim]
+            self.count = State(0)
+            self.sums = State(self._fresh_sums(lanes))
+            self.ring = State(np.zeros((lanes, self.history)))
+            shifted = self._advance(da)[..., self.lag :]
+            values = np.zeros(shifted.shape[:-1] + (da.sizes[self.dim],))
+            values[..., : shifted.shape[-1]] = shifted
+            return da.copy(data=self._unlane(values, da))
+        values = self._advance(da)
         x = concat([self.buffer, da], self.dim) if self.buffer.sizes[self.dim] else da
-        size = x.sizes[self.dim]
-        if size <= self.lookback + self.lookahead:
-            # Too little of the record has arrived to extend its start the way
-            # a single call would: hold everything and emit nothing yet.
-            self.buffer = State(x)
+        # the newest `lag` samples stay held back: their windows reach samples
+        # yet to come
+        emit = max(x.sizes[self.dim] - self.lag, 0)
+        self.buffer = State(x.isel({self.dim: slice(emit, None)}))
+        if not emit:
             return []
-        stop = size - self.lookahead
-        out = self._ratio(x).isel({self.dim: slice(self.skip, stop)})
-        keep = self.lookback + self.lookahead
-        self.buffer = State(x.isel({self.dim: slice(size - keep, None)}))
-        self.skip = State(stop - (size - keep))
-        return out
+        values = values[..., values.shape[-1] - emit :]
+        out = x.isel({self.dim: slice(0, emit)})
+        return out.copy(data=self._unlane(values, out))
 
     def flush(self):
-        """Release the held-back tail, padded as the end of a record."""
+        """Release the held-back tail, zero since its windows run off the record."""
         # Not `self.buffer is None`: a flush also reaches an atom that was
         # never chunked (buffer `None`) or never called at all (buffer `...`).
-        if not isinstance(self.buffer, DataArray):
+        if not isinstance(self.buffer, DataArray) or not self.buffer.sizes[self.dim]:
             return []
-        if self.skip >= self.buffer.sizes[self.dim]:
-            return []
-        return [self._ratio(self.buffer).isel({self.dim: slice(self.skip, None)})]
+        tail = self.buffer.copy(data=np.zeros(self.buffer.shape))
+        self.buffer = State(self.buffer.isel({self.dim: slice(0, 0)}))
+        return [tail]
 
-    def _ratio(self, da):
-        """Compute the ratio of the two windowed means over a whole block."""
-        axis = da.get_axis_num(self.dim)
-        energy = np.square(np.asarray(da.values, dtype=float))
-        sta = self._mean(energy, self.sta_n, axis)
-        lta = self._mean(energy, self.lta_n, axis)
-        np.maximum(lta, np.finfo(float).eps, out=lta)
-        return da.copy(data=sta / lta)
+    def _fresh_sums(self, lanes):
+        """Return the initial running sums, two per lane, ObsPy's for "recursive"."""
+        sums = np.zeros((lanes, 2))
+        if self.method == "recursive":
+            sums[:, 1] = _TINY
+        return sums
 
-    def _mean(self, energy, size, axis):
-        """Windowed mean of `energy`, placed according to `mode`."""
-        weights = sp.get_window(self.window, size).astype(float)
-        weights /= weights.sum()
-        shape = tuple(-1 if a == axis else 1 for a in range(energy.ndim))
-        if self.mode == "causal":
-            before, after = size - 1, 0
+    def _advance(self, da):
+        """Feed one block to the kernel, returning its ratios lane by lane."""
+        values = np.moveaxis(np.asarray(da.values), da.get_axis_num(self.dim), -1)
+        energy = np.square(values.reshape(-1, values.shape[-1]), dtype=float)
+        # the kernels update the sums and the ring in place
+        if self.method == "recursive":
+            out = _recursive_ratio(energy, self.sums, self.count, self.nsta, self.nlta)
         else:
-            before = after = size // 2
-        pad = tuple(
-            (before, after) if a == axis else (0, 0) for a in range(energy.ndim)
-        )
-        padded = np.pad(energy, pad, mode=self.pad_mode)
-        return sp.fftconvolve(padded, weights.reshape(shape), mode="valid")
+            out = _boxcar_ratio(
+                energy,
+                self.sums,
+                self.ring,
+                self.count,
+                self.nsta,
+                self.dsta,
+                self.nlta,
+                self.dlta,
+                self.start,
+            )
+        self.count = State(self.count + energy.shape[-1])
+        return out
+
+    def _unlane(self, values, like):
+        """Fold lane-by-lane ratios back into the layout of `like`."""
+        axis = like.get_axis_num(self.dim)
+        shape = np.moveaxis(np.empty(like.shape, dtype=bool), axis, -1).shape
+        return np.moveaxis(values.reshape(shape), -1, axis)
 
 
-def _oddify(size, floor):
-    """Round a window length to an odd number of samples, at least `floor`."""
-    size = max(floor, round(float(size)))
-    return size if size % 2 else size + 1
+_STALTA_METHODS = ("recursive", "classic", "delayed", "centered")
+
+#: The floor of the long-term average, ObsPy's: smallest normal float64.
+_TINY = np.finfo(np.float64).tiny
+
+
+@njit(cache=True)
+def _recursive_ratio(energy, sums, count, nsta, nlta):  # pragma: no cover
+    """
+    Evans and Allen recursive STA/LTA, resumable, as ObsPy's.
+
+    `sums` holds the two averages of each lane and is updated in place;
+    `count` is the index, in the run, of the first sample of `energy`.
+    """
+    csta = 1.0 / nsta
+    clta = 1.0 / nlta
+    icsta = 1.0 - csta
+    iclta = 1.0 - clta
+    lanes, size = energy.shape
+    out = np.zeros((lanes, size))
+    for lane in range(lanes):
+        sta = sums[lane, 0]
+        lta = sums[lane, 1]
+        for j in range(size):
+            t = count + j
+            if t == 0:  # ObsPy's recursion starts at the second sample
+                continue
+            sta = csta * energy[lane, j] + icsta * sta
+            lta = clta * energy[lane, j] + iclta * lta
+            if t >= nlta:
+                out[lane, j] = sta / max(lta, _TINY)
+        sums[lane, 0] = sta
+        sums[lane, 1] = lta
+    return out
+
+
+@njit(cache=True)
+def _boxcar_ratio(
+    energy, sums, ring, count, nsta, dsta, nlta, dlta, start
+):  # pragma: no cover
+    """
+    Ratio of two boxcar means, resumable.
+
+    Each window spans `n` samples and ends `d` samples before the newest one.
+    `ring` keeps the last ``ring.shape[1]`` energies of each lane and `sums`
+    the two running sums, both updated in place; `count` is the index, in the
+    run, of the first sample of `energy`. Samples before `start` are zero.
+    """
+    lanes, size = energy.shape
+    out = np.zeros((lanes, size))
+    for lane in range(lanes):
+        ssta = sums[lane, 0]
+        slta = sums[lane, 1]
+        for j in range(size):
+            t = count + j
+            ring[lane, t % ring.shape[1]] = energy[lane, j]
+            ssta = _slide(ring[lane], ssta, t - dsta, nsta)
+            slta = _slide(ring[lane], slta, t - dlta, nlta)
+            if t >= start:
+                out[lane, j] = (ssta / nsta) / max(slta / nlta, _TINY)
+        sums[lane, 0] = ssta
+        sums[lane, 1] = slta
+    return out
+
+
+@njit(cache=True)
+def _slide(ring, total, last, n):  # pragma: no cover
+    """Move a running sum of `n` samples to the window ending at `last`."""
+    if last < 0:
+        return 0.0
+    size = ring.shape[0]
+    # once per window, sum from scratch: what sliding accumulated is dropped
+    if (last + 1) % n == 0:
+        total = 0.0
+        for k in range(last - n + 1, last + 1):
+            total += ring[k % size]
+        return total
+    total += ring[last % size]
+    if last >= n:
+        total -= ring[(last - n) % size]
+    return total
 
 
 stalta = atomized(STALTA)
