@@ -503,7 +503,7 @@ def boxcar_reference(x, nsta, nlta, method):
 
 class TestSTALTA:
     @pytest.mark.parametrize("sta, lta", [(0.5, 10.0), (0.21, 3.0)])
-    def test_recursive_matches_obspy_exactly(self, sta, lta):
+    def test_recursive_matches_obspy(self, sta, lta):
         from obspy.signal.trigger import recursive_sta_lta
 
         da = generate_stalta()
@@ -511,7 +511,10 @@ class TestSTALTA:
         nsta, nlta = round(sta / 0.01), round(lta / 0.01)
         for lane in range(da.sizes["distance"]):
             expected = recursive_sta_lta(da.values[:, lane], nsta, nlta)
-            np.testing.assert_array_equal(result.values[:, lane], expected)
+            # the same recursion, but a compiler may fuse its multiply-add
+            # (arm64 does), so only round-off apart
+            np.testing.assert_allclose(result.values[:, lane], expected, rtol=1e-12)
+            np.testing.assert_array_equal(result.values[:, lane] == 0, expected == 0)
 
     @pytest.mark.parametrize("sta, lta", [(0.5, 10.0), (0.21, 3.0)])
     def test_classic_matches_obspy(self, sta, lta):
