@@ -21,9 +21,10 @@ Changes that break existing code are flagged **Breaking**.
 - **A data collection mixing schemas prints as a tree.** Only a collection whose levels are all named, and named alike across branches, keeps its flat table; otherwise each such branch collapses into its dimensions and size, with its levels and leaf count hooked below. Leaves are now counted as arrays and tables (@atrabattoni).
 - `simplify` on a coordinate with a declared sampling interval spends the budget it is given: a tolerance wider than the declared one thins past it and is declared on the result, so jittery clocks fold down to their real gaps; `tolerance=0` stays lossless (@atrabattoni).
 - The `xinterp` requirement is raised to 0.2.1 (@atrabattoni).
+- **The `dev` branch is retired**: development happens on `main`, so the latest version installs with `pip install "git+https://github.com/xdas-dev/xdas.git@main"`; installing from `@dev` no longer works. Releases are now published to PyPI and GitHub by CI from a version tag, and the PyPI page shows the README and project links (@atrabattoni).
 
 ### Fixed
-- Fix opening files by wildcard on Windows, broken by a path-separator mismatch (#87) (@ClaudioStrumia).
+- Fix `open_mfdatatree` on Windows, its path pattern not matching the backslash-separated paths found on disk (#87) (@ClaudioStrumia).
 - Fix an unbounded `"memory_limit"` default where the physical memory cannot be read, as on Windows: a cgroup's "no limit" sentinel was taken for a real limit (#88) (@atrabattoni).
 - Fix `StreamWriter` failing on Windows, its temporary filenames holding colons (#88) (@atrabattoni).
 - Fix `simplify` dropping the declared sampling interval of an interpolated coordinate: a fusion that would break the rate is now refused (@atrabattoni).
