@@ -1,8 +1,8 @@
 <div align="center">
 <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./docs/_static/logo-dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="./docs/_static/logo-light.png">
-    <img alt="Xdas Logo" height="250px">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/xdas-dev/xdas/main/docs/_static/logo-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/xdas-dev/xdas/main/docs/_static/logo-light.png">
+    <img alt="Xdas Logo" height="250px" src="https://raw.githubusercontent.com/xdas-dev/xdas/main/docs/_static/logo-light.png">
 </picture>
 </div>
 

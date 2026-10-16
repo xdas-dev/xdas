@@ -6,9 +6,19 @@ on:
     tags: ["[0-9]*"]
   pull_request:
 
+# The repository default grants write; only the release job needs it.
+permissions:
+  contents: read
+
+# A new commit on a PR supersedes its running checks; main and tags always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30  # the suite takes ~4 min; a hang must not hold a release
     strategy:
       fail-fast: false
       matrix:
@@ -79,3 +89,23 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # create the GitHub release
+    steps:
+      - uses: actions/checkout@v7
+      - name: Extract the release notes from the changelog
+        run: |
+          awk -v tag="$GITHUB_REF_NAME" '
+            index($0, "## [" tag "]") == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found
+          ' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "no CHANGELOG.md section for $GITHUB_REF_NAME"; exit 1; }
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file notes.md

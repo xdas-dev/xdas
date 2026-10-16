@@ -1732,16 +1732,6 @@ class ZMQPublisher(SubscriptionTracker):
     nsubscribers : int
         The number of currently subscribed peers.
 
-    Methods
-    -------
-    submit(da)
-        Send a DataArray over ZeroMQ.
-    wait_for_subscribers(count, timeout)
-        Blocks until *count* peers are subscribed, so that nothing published
-        afterwards is dropped.
-    close()
-        Release the socket and its context.
-
     Examples
     --------
     >>> import xdas as xd
@@ -1825,13 +1815,6 @@ class ZMQSubscriber(ZMQEndpoint):
     timeout : float or None, optional
         How many seconds to wait at most for each packet. None, the default,
         waits forever.
-
-    Methods
-    -------
-    wait_until_subscribed()
-        Block until the publisher has registered this subscription.
-    close()
-        Release the socket and its context.
 
     Examples
     --------

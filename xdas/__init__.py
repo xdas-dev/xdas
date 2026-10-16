@@ -6,7 +6,7 @@ types for physical axes, multi-threaded signal processing pipelines, and I/O eng
 for common DAS instrument formats.
 """
 
-__version__ = "0.2.9"
+__version__ = "0.2.10"
 
 __all__ = [  # noqa: RUF022 - grouped by kind, not alphabetically
     # submodules
