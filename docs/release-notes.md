@@ -1,15 +1,16 @@
 # Release notes
 
-## Unreleased
+## 0.2.10 (unreleased)
 
-### Atoms
-- **`xdas.stalta`**, the short-term over long-term average characteristic
-  function, feeding the existing `Trigger` so that detection no longer needs a
-  model. Both windows are given in the units of the dimension, `mode="causal"`
-  (default) or `"centered"` places them relative to the sample they produce,
-  and the atom is stateful: chunked processing returns what a single call on
-  the whole record returns, `flush()` releasing the tail `"centered"` mode
-  holds back (@amaggi).
+### New Features
+- **`xdas.stalta`**, the short-term over long-term average characteristic function, feeding the existing `Trigger` so that detection no longer needs a model. Both windows are given in the units of the dimension, `mode="causal"` (default) or `"centered"` places them relative to the sample they produce, and the atom is stateful: chunked processing returns what a single call on the whole record returns, `flush()` releasing the tail `"centered"` mode holds back (@amaggi).
+- **Aragon Photonics HDAS support.** The new `aragon` engine reads HDAS 3.0 `HDAS_StrainRate` HDF5 files, returning samples as stored. The time axis keeps the device stamps (to their float64 resolution) and declares the header sampling interval with the smallest tolerance they allow; `ctype={"time": "sampled"}` steps at the header interval and `"dense"` keeps every stamp. The distance axis comes from the header. HDF5 and tile virtualization (@atrabattoni).
+- Add a `"fosina"` alias of the `"prodml"` engine, and list in the user guide the instruments known to write ProdML (@atrabattoni).
+
+### Improvements
+- **Windows and macOS are now tested and working well.** CI runs the full suite on `windows-latest` and `macos-latest` alongside Linux; fixed a `glob()` path-separator bug that broke opening files by wildcard on Windows (#87), and what the new CI then caught: an unbounded memory-limit fallback and illegal colons in temporary filenames (#88) (@ClaudioStrumia, @atrabattoni).
+- Opening many files is faster: coordinates now concatenate in linear rather than quadratic time, the ObsPy engine no longer reads HDF5 and netCDF files whole to refuse them during format auto-detection, and failed collection attempts leave neither queued jobs nor a progress bar behind (@atrabattoni).
+- `simplify` on a coordinate with a declared sampling interval keeps that interval and spends the budget it is given: a tolerance wider than the declared one thins past it and is declared on the result, so jittery clocks fold down to their real gaps; `tolerance=0` stays lossless (@atrabattoni).
 
 ## 0.2.9
 

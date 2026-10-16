@@ -200,18 +200,20 @@ def open(
                     )
                 except Exception:  # noqa: BLE001, S110 - not native collections
                     pass
-            try:
-                return open_mfdatacollection(
-                    paths,
-                    dim,
-                    tolerance,
-                    squeeze=False if squeeze is None else squeeze,
-                    parallel=parallel,
-                    verbose=verbose,
-                    engine=_resolve_engine(engine, vtype, ctype, engine_kwargs),
-                )
-            except NotImplementedError:
-                pass  # the engine describes a file as one array
+            resolved = _resolve_engine(engine, vtype, ctype, engine_kwargs)
+            if resolved.opens_collections:
+                try:
+                    return open_mfdatacollection(
+                        paths,
+                        dim,
+                        tolerance,
+                        squeeze=False if squeeze is None else squeeze,
+                        parallel=parallel,
+                        verbose=verbose,
+                        engine=resolved,
+                    )
+                except NotImplementedError:
+                    pass  # the engine describes a file as one array
             return open_mfdataarray(
                 paths,
                 dim,
@@ -324,26 +326,36 @@ def open_mfdatacollection(
             "file in memory. Open the files in batches and combine the results."
         )
     max_workers = get_scan_workers(parallel, len(paths))
-    if max_workers == 1:
-        if verbose:
-            iterator = tqdm(paths, desc="Fetching metadata from files")
+    # updated by hand rather than wrapping the iterator, so that it is still
+    # open when a scan fails: `open` tries this scan before falling back to
+    # data arrays, and a failed attempt must not leave a stale bar behind
+    bar = tqdm(
+        total=len(paths), desc="Fetching metadata from files", disable=not verbose
+    )
+    objs = []
+    futures = []
+    try:
+        if max_workers == 1:
+            for path in paths:
+                objs.append(open_datacollection(path, engine=engine))
+                bar.update()
         else:
-            iterator = paths
-        objs = [open_datacollection(path, engine=engine) for path in iterator]
-    else:
-        executor = get_scan_pool(max_workers)
-        futures = [
-            executor.submit(open_datacollection, path, engine=engine) for path in paths
-        ]
-        if verbose:
-            iterator = tqdm(
-                as_completed(futures),
-                total=len(futures),
-                desc="Fetching metadata from files",
-            )
-        else:
-            iterator = as_completed(futures)
-        objs = [future.result() for future in iterator]
+            executor = get_scan_pool(max_workers)
+            futures = [
+                executor.submit(open_datacollection, path, engine=engine)
+                for path in paths
+            ]
+            for future in as_completed(futures):
+                objs.append(future.result())
+                bar.update()
+    except BaseException:
+        # the pool is shared and outlives this scan: leave it no backlog
+        for future in futures:
+            future.cancel()
+        bar.leave = False
+        bar.close()
+        raise
+    bar.close()
     # the native format stacks hdf5 sources; the engines that describe a file
     # as a collection are tile-backed, and let `concat` pick
     virtual = True if engine is None else None
@@ -434,6 +446,7 @@ def open_mfdatatree(
 
     """
     paths = _ensure_str_paths(paths)
+    paths = Path(paths).as_posix()
 
     placeholders = re.findall(r"[\{\[].*?[\}\]]", paths)
 
@@ -447,7 +460,7 @@ def open_mfdatatree(
     wildcard = paths
     for placeholder in placeholders:
         wildcard = wildcard.replace(placeholder, "*")
-    fnames = sorted(glob(wildcard))
+    fnames = sorted(Path(fname).as_posix() for fname in glob(wildcard))
 
     regex = paths
     regex = regex.replace(".", r"\.")
@@ -739,15 +752,21 @@ def open_mfdataarray(
             )
         else:
             iterator = as_completed(futures_to_paths)
-        for future in iterator:
-            try:
-                obj = future.result()
-            except Exception as error:  # noqa: BLE001 - collected and warned below
-                path = futures_to_paths[future]
-                failures.append((path, error))
-                warnings.warn(f"could not open {path}: {error}", RuntimeWarning)
-            else:
-                consume(obj)
+        try:
+            for future in iterator:
+                try:
+                    obj = future.result()
+                except Exception as error:  # noqa: BLE001 - collected and warned below
+                    path = futures_to_paths[future]
+                    failures.append((path, error))
+                    warnings.warn(f"could not open {path}: {error}", RuntimeWarning)
+                else:
+                    consume(obj)
+        except BaseException:
+            # the pool is shared and outlives this scan: leave it no backlog
+            for future in futures_to_paths:
+                future.cancel()
+            raise
     if not objs and not runs:  # there must be failures
         path, error = failures[0]
         raise RuntimeError(
@@ -2069,11 +2088,9 @@ def concat_coords(
     if sort:
         order = sorted(order, key=lambda idx: objs[idx][0].values)
         objs = [objs[index] for index in order]
-    out = objs[0]
 
-    # concat
-    for obj in objs[1:]:
-        out = out._concat(obj)
+    # concat (in one pass: a pairwise fold would re-validate the growing result)
+    out = objs[0] if len(objs) == 1 else type(objs[0])._concat(objs)
 
     # simplify
     if tolerance is not False:

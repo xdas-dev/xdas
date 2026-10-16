@@ -332,19 +332,19 @@ class TestInterpCoordinate:
         coord1 = InterpCoordinate({"tie_indices": [0, 2], "tie_values": [0, 20]})
         coord2 = InterpCoordinate({"tie_indices": [0, 2], "tie_values": [30, 50]})
 
-        result = coord1._concat(coord2).simplify()
+        result = InterpCoordinate._concat([coord1, coord2]).simplify()
         expected = InterpCoordinate({"tie_indices": [0, 5], "tie_values": [0, 50]})
         assert result.equals(expected)
 
-        result = coord2._concat(coord1).simplify()
+        result = InterpCoordinate._concat([coord2, coord1]).simplify()
         expected = InterpCoordinate(
             {"tie_indices": [0, 2, 3, 5], "tie_values": [30, 50, 0, 20]}
         )
         assert result.equals(expected)
 
-        assert coord0._concat(coord0).empty
-        assert coord0._concat(coord1).equals(coord1)
-        assert coord1._concat(coord0).equals(coord1)
+        assert InterpCoordinate._concat([coord0, coord0]).empty
+        assert InterpCoordinate._concat([coord0, coord1]).equals(coord1)
+        assert InterpCoordinate._concat([coord1, coord0]).equals(coord1)
 
     def test_simplify_preserves_real_discontinuity(self):
         # A large jump across a den == 1 gap is preserved as an emergent property
@@ -434,22 +434,36 @@ class TestInterpCoordinateExtra:
 
     def test_concat_errors(self):
         with pytest.raises(TypeError):
-            InterpCoordinate({"tie_indices": [0, 2], "tie_values": [0, 20]})._concat(
-                ScalarCoordinate(1)
+            InterpCoordinate._concat(
+                [
+                    InterpCoordinate({"tie_indices": [0, 2], "tie_values": [0, 20]}),
+                    ScalarCoordinate(1),
+                ]
             )
         with pytest.raises(ValueError, match="different dimension"):
-            InterpCoordinate(
-                {"tie_indices": [0, 2], "tie_values": [0, 20]}, "x"
-            )._concat(
-                InterpCoordinate({"tie_indices": [0, 2], "tie_values": [30, 50]}, "y")
+            InterpCoordinate._concat(
+                [
+                    InterpCoordinate(
+                        {"tie_indices": [0, 2], "tie_values": [0, 20]}, "x"
+                    ),
+                    InterpCoordinate(
+                        {"tie_indices": [0, 2], "tie_values": [30, 50]}, "y"
+                    ),
+                ]
             )
         with pytest.raises(ValueError, match="different dtype"):
-            InterpCoordinate(
-                {"tie_indices": [0, 2], "tie_values": np.array([0, 20], dtype=np.int32)}
-            )._concat(
-                InterpCoordinate(
-                    {"tie_indices": [0, 2], "tie_values": np.array([30.0, 50.0])}
-                )
+            InterpCoordinate._concat(
+                [
+                    InterpCoordinate(
+                        {
+                            "tie_indices": [0, 2],
+                            "tie_values": np.array([0, 20], dtype=np.int32),
+                        }
+                    ),
+                    InterpCoordinate(
+                        {"tie_indices": [0, 2], "tie_values": np.array([30.0, 50.0])}
+                    ),
+                ]
             )
 
     def test_init_non_monotonic(self):
@@ -1034,7 +1048,7 @@ class TestInterpCoordinateRegular:
         b = InterpCoordinate(
             {"tie_indices": [0, 9], "tie_values": [1.0, 1.9], "sampling_interval": 0.1}
         )
-        result = a._concat(b)
+        result = InterpCoordinate._concat([a, b])
         assert isinstance(result, InterpCoordinate)
         assert result.isregular()
         assert result.sampling_interval == 0.1
@@ -1049,7 +1063,7 @@ class TestInterpCoordinateRegular:
         b = InterpCoordinate(
             {"tie_indices": [0, 9], "tie_values": [1.0, 2.8], "sampling_interval": 0.2}
         )
-        result = a._concat(b)
+        result = InterpCoordinate._concat([a, b])
         assert isinstance(result, InterpCoordinate)
         assert not result.isregular()
         assert result.sampling_interval is None
@@ -1057,9 +1071,64 @@ class TestInterpCoordinateRegular:
 
         # Mixed regular/irregular drifts too far → irregular.
         c = InterpCoordinate({"tie_indices": [0, 9], "tie_values": [3.0, 4.0]})
-        mixed = a._concat(c)
+        mixed = InterpCoordinate._concat([a, c])
         assert mixed.sampling_interval is None
         assert len(mixed) == 20
+
+    @staticmethod
+    def make_block(start, sampling_interval=1, tolerance=None, size=5):
+        step = 1 if sampling_interval is None else sampling_interval
+        data = {
+            "tie_indices": [0, size - 1],
+            "tie_values": [start, start + (size - 1) * step],
+        }
+        if sampling_interval is not None:
+            data.update(sampling_interval=sampling_interval, tolerance=tolerance)
+        return InterpCoordinate(data, "x")
+
+    def test_concat_many(self):
+        coords = [
+            self.make_block(0, tolerance=0),
+            self.make_block(10, tolerance=2),
+            self.make_block(20, tolerance=1),
+        ]
+        empty = InterpCoordinate(dim="x")
+        expected = InterpCoordinate(
+            {
+                "tie_indices": [0, 4, 5, 9, 10, 14],
+                "tie_values": [0, 4, 10, 14, 20, 24],
+                "sampling_interval": 1,
+                "tolerance": 2,
+            },
+            "x",
+        )
+        assert InterpCoordinate._concat(coords).equals(expected)
+        result = InterpCoordinate._concat([empty, coords[0], empty, *coords[1:]])
+        assert result.equals(expected)
+
+    def test_concat_many_irregular(self):
+        # one mismatched or missing rate anywhere makes the whole merge irregular
+        a, c = self.make_block(0), self.make_block(20)
+        for b in (self.make_block(10, sampling_interval=2), self.make_block(10, None)):
+            result = InterpCoordinate._concat([a, b, c])
+            assert not result.isregular()
+            assert len(result) == 15
+            assert list(result.tie_indices) == [0, 4, 5, 9, 10, 14]
+
+    def test_concat_validates_once(self, monkeypatch):
+        calls = []
+        validate = InterpCoordinate._is_valid_sampling_interval
+
+        def counting(self, *args):
+            calls.append(1)
+            return validate(self, *args)
+
+        coords = [self.make_block(10 * k) for k in range(50)]
+        monkeypatch.setattr(InterpCoordinate, "_is_valid_sampling_interval", counting)
+        result = InterpCoordinate._concat(coords)
+        assert len(calls) == 1
+        assert result.isregular()
+        assert len(result) == 250
 
     def test_concat_coords_recovers_regular_spacing(self):
         # `_concat` itself stays strict and drops to irregular when sampling
@@ -1083,7 +1152,7 @@ class TestInterpCoordinateRegular:
             },
             "x",
         )
-        assert not a._concat(b).isregular()
+        assert not InterpCoordinate._concat([a, b]).isregular()
 
         from xdas.core.routines import concat_coords
 
@@ -1308,15 +1377,27 @@ class TestSimplifyToleranceDefaults:
         result = coord.simplify()
         assert result.equals(coord)
 
-    def test_regularity_refused_when_fusion_exceeds_tolerance(self):
-        # D3: tolerance means instrumental jitter, set once, never widened
-        # afterwards -- so a reduce pass whose fused jump drifts further than
-        # the declared tolerance drops the coordinate's regularity instead of
-        # stretching the tolerance to cover it. The fused coordinate spans
-        # 13 s over 11 intervals, 2 s off the nominal 1 s grid, against a
-        # declared tolerance of 0: the fusion still happens (reduce is a
-        # function of the caller's budget, not of the declared rate) but the
-        # coordinate comes back irregular.
+    def test_fusion_refused_when_it_would_exceed_the_budget(self):
+        # a fusion that would drift further from the nominal grid than the
+        # budget allows is refused, keeping the rate. Fusing would span 13 s
+        # over 11 intervals, 2 s off the nominal 1 s grid: beyond 2 * 0.5 s.
+        t0 = np.datetime64("2000-01-01T00:00:00", "ns")
+        s = np.timedelta64(1, "s").astype("m8[ns]")
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 5, 6, 11],
+                "tie_values": [t0, t0 + 5 * s, t0 + 8 * s, t0 + 13 * s],
+                "sampling_interval": s,
+                "tolerance": np.timedelta64(0, "ns"),
+            }
+        )
+        result = coord.simplify(np.timedelta64(500, "ms"))
+        np.testing.assert_array_equal(result.tie_indices, coord.tie_indices)
+        assert result.sampling_interval == s
+
+    def test_wider_budget_fuses_and_widens_the_tolerance(self):
+        # same seam under a 3 s budget: the fusion fits, the rate is kept and
+        # the result declares the widened tolerance its chord now carries
         t0 = np.datetime64("2000-01-01T00:00:00", "ns")
         s = np.timedelta64(1, "s").astype("m8[ns]")
         coord = InterpCoordinate(
@@ -1328,16 +1409,31 @@ class TestSimplifyToleranceDefaults:
             }
         )
         result = coord.simplify(np.timedelta64(3, "s"))
-        assert len(result.tie_indices) == 2
-        assert result.sampling_interval is None
-        assert result.tolerance is None
+        np.testing.assert_array_equal(result.tie_indices, [0, 11])
+        assert result.sampling_interval == s
+        assert result.tolerance == np.timedelta64(3, "s")
 
-    def test_regularity_refused_beyond_the_budget_never_raises(self):
-        # D3, same shape as above on real data: the reduction bounds how far
-        # values move, not how much drift fusing a discontinuity exposes, so
-        # a fusion that needs more than the declared tolerance to describe is
-        # refused rather than raising. Real OptoDAS seams: 2 ms late every
-        # 10 s at 125 Hz.
+    def test_zero_budget_is_lossless(self):
+        # a budget narrower than the declared tolerance is used as given:
+        # `0` keeps every tie and the declared tolerance is kept
+        t0 = np.datetime64("2000-01-01T00:00:00", "ns")
+        ms = np.timedelta64(1_000_000, "ns")
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 10, 20, 30, 40],
+                "tie_values": t0 + np.array([0, 102, 204, 306, 408]) * ms,
+                "sampling_interval": 10 * ms,
+                "tolerance": 3 * ms,
+            }
+        )
+        result = coord.simplify(0)
+        assert result.equals(coord)
+
+    def test_fusion_refused_beyond_the_budget_never_raises(self):
+        # same shape as above on real data: OptoDAS seams, 2 ms late every
+        # 10 s at 125 Hz, declared at tolerance 0, under a 1 ms budget. Only
+        # the seam already on the grid of its predecessor fuses, losslessly;
+        # the rate stays.
         t0 = np.datetime64("2021-10-27T15:44:10.721999872", "ns")
         offsets = [
             0,
@@ -1358,14 +1454,16 @@ class TestSimplifyToleranceDefaults:
             }
         )
         result = coord.simplify(np.timedelta64(1_000_000, "ns"))
-        assert not result.isregular()
-        assert result.sampling_interval is None
-        assert result.tolerance is None
+        np.testing.assert_array_equal(
+            result.tie_indices, [0, 1249, 1250, 3749, 3750, 4999]
+        )
+        np.testing.assert_array_equal(result.values, coord.values)
+        assert result.sampling_interval == coord.sampling_interval
+        assert result.tolerance == np.timedelta64(1_000_000, "ns")
 
-    def test_regularity_refused_when_fusion_exceeds_tolerance_on_float_axis(self):
-        # D3, same refusal on a float axis: fusing the 4.0 seam leaves a
-        # coordinate spanning 64.0 over 21 intervals, 1.0 off the nominal 3.0
-        # grid, against a declared tolerance of 0.
+    def test_fusion_refused_when_it_would_exceed_the_budget_on_float_axis(self):
+        # same refusal on a float axis: fusing the 4.0 seam would span 64.0
+        # over 21 intervals, 1.0 off the nominal 3.0 grid, beyond 2 * 0.4.
         coord = InterpCoordinate(
             {
                 "tie_indices": [0, 10, 11, 21],
@@ -1374,10 +1472,104 @@ class TestSimplifyToleranceDefaults:
                 "tolerance": 0.0,
             }
         )
-        result = coord.simplify(2.0)
-        assert len(result.tie_indices) == 2
-        assert result.sampling_interval is None
-        assert result.tolerance is None
+        result = coord.simplify(0.4)
+        np.testing.assert_array_equal(result.tie_indices, coord.tie_indices)
+        assert result.tolerance == 0.4
+
+    def test_drifts_that_add_up_keep_an_interior_tie(self):
+        # each segment runs 2 ms long against the nominal 100 ms, tolerance
+        # 2.5 ms: one chord fits the values exactly but drifts 8 ms, so it
+        # would break the rate; two segments drift 4 ms <= 2 * 2.5 ms
+        t0 = np.datetime64("2000-01-01T00:00:00", "ns")
+        ms = np.timedelta64(1_000_000, "ns")
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 10, 20, 30, 40],
+                "tie_values": t0 + np.array([0, 102, 204, 306, 408]) * ms,
+                "sampling_interval": 10 * ms,
+                "tolerance": np.timedelta64(2_500_000, "ns"),
+            }
+        )
+        result = coord.simplify()
+        np.testing.assert_array_equal(result.tie_indices, [0, 20, 40])
+        assert result.sampling_interval == 10 * ms
+        assert result.tolerance == coord.tolerance
+
+    def test_wider_budget_is_not_clamped_to_the_declared_tolerance(self):
+        # the declared tolerance alone keeps an interior tie (see above); a
+        # wider explicit budget thins past it and is declared on the result
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 10, 20, 30, 40],
+                "tie_values": [0, 102, 204, 306, 408],
+                "sampling_interval": 10,
+                "tolerance": 2,
+            }
+        )
+        result = coord.simplify(100)
+        np.testing.assert_array_equal(result.tie_indices, [0, 40])
+        assert result.sampling_interval == 10
+        assert result.tolerance == 100
+
+    def test_wide_budget_flattens_resync_jumps_but_keeps_a_gap(self):
+        # HDAS-like clock: 100 Hz nominal, running 12 us fast per sample and
+        # resyncing with a one-sample jump every 1000 samples, so ties sit at
+        # adjacent indices and the stamps saw-tooth by 12 ms around the grid,
+        # declared at the 6.5 ms that just validates the rate. A 1 s budget
+        # fuses the sawtooth away and keeps only the real 1 h gap.
+        t0 = np.datetime64("2026-09-09T00:00:00", "ns").astype("i8")
+        ms = 1_000_000
+        tie_indices, tie_values = [], []
+        for k in range(20):
+            value = t0 + 10_000 * ms * k + (3_600_000 * ms if k >= 10 else 0)
+            tie_indices += [1000 * k, 1000 * k + 999]
+            tie_values += [value, value + 999 * (10 * ms - 12_000)]
+        coord = InterpCoordinate(
+            {
+                "tie_indices": tie_indices,
+                "tie_values": np.array(tie_values).astype("M8[ns]"),
+                "sampling_interval": np.timedelta64(10 * ms, "ns"),
+                "tolerance": np.timedelta64(6_500_000, "ns"),
+            }
+        )
+        result = coord.simplify(1.0)
+        np.testing.assert_array_equal(result.tie_indices, [0, 9999, 10000, 19999])
+        assert result.sampling_interval == np.timedelta64(10 * ms, "ns")
+        assert result.tolerance == np.timedelta64(1, "s")
+        # the default budget (the declared 6.5 ms) cannot fuse the jumps
+        assert len(coord.simplify().tie_indices) == len(tie_indices)
+
+    def test_fractional_rate_validates_exactly_at_the_budget(self):
+        # rate 21/2 ticks, tolerance 1: validity is |2 * df - 21 * dx| <= 4.
+        # The chord over [0, 5] drifts 5, which xinterp's band at the usual
+        # half-tick budget (< 6) would accept; the budget must refuse it.
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 3, 5, 8],
+                "tie_values": [0, 33, 55, 87],
+                "sampling_numerator": 21,
+                "sampling_denominator": 2,
+                "tolerance": 1,
+            }
+        )
+        result = coord.simplify()
+        np.testing.assert_array_equal(result.tie_indices, [0, 3, 8])
+        assert result.isregular()
+
+    def test_fast_path_checks_the_rate(self):
+        # every value is within the budget of the single chord, but that chord
+        # drifts 4 > 2 * 1 off the nominal rate, so the walk takes over
+        coord = InterpCoordinate(
+            {
+                "tie_indices": [0, 10, 20],
+                "tie_values": [0.0, 12.0, 24.0],
+                "sampling_interval": 1.0,
+                "tolerance": 2.0,
+            }
+        )
+        result = coord.simplify(1.0)
+        np.testing.assert_array_equal(result.tie_indices, [0, 10, 20])
+        assert result.sampling_interval == 1.0
 
 
 class TestSimplifyNoReduce:

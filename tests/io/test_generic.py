@@ -1,4 +1,5 @@
 import dascore as dc
+import h5py
 import numpy as np
 import pytest
 from dascore.utils.downloader import fetch
@@ -11,6 +12,10 @@ class TestEngineRegistry:
     def test_unknown_engine_raises_key_error(self):
         with pytest.raises(KeyError, match="no engine registered"):
             Engine["nonexistent_engine_xyz"]
+
+    @pytest.mark.parametrize("alias", ["optasense", "sintela", "fosina"])
+    def test_prodml_aliases(self, alias):
+        assert Engine[alias] is Engine["prodml"]
 
     def test_invalid_vtype_raises_value_error(self):
         with pytest.raises(ValueError, match="vtype must be None or a string"):
@@ -68,6 +73,42 @@ class TestEngineRegistry:
         with pytest.raises(ValueError, match="ctype must be"):
             Engine["asn"](ctype=42)
 
+    @pytest.mark.parametrize(
+        ("name", "expected"),
+        [
+            ("aragon", False),
+            ("asn", False),
+            ("febus", False),
+            ("xdas", True),
+            ("obspy", True),
+        ],
+    )
+    def test_opens_collections_follows_the_override(self, name, expected):
+        assert Engine[name]().opens_collections is expected
+
+    def test_auto_engine_may_open_collections(self):
+        assert AutoEngine().opens_collections
+
+    def test_open_skips_the_collection_scan_of_an_array_engine(
+        self, tmp_path, monkeypatch
+    ):
+        # the scan would only collect one refusal per file, and draw a
+        # progress bar for it
+        from xdas.core import routines
+
+        expected = xd.testing.dummy(dims=("time", "space"), shape=(10, 5))
+        for index, chunk in enumerate(xd.split(expected, 3, "time"), start=1):
+            chunk.to_netcdf(tmp_path / f"chunk_{index}.nc")
+
+        def scan(*args, **kwargs):
+            pytest.fail("a collection scan was run with an array-only engine")
+
+        monkeypatch.setattr(routines, "open_mfdatacollection", scan)
+        # the native engine, made array-only by falling back to the abstract
+        monkeypatch.delattr(type(Engine["xdas"]()), "open_datacollection")
+        result = xd.open(str(tmp_path / "*.nc"), engine="xdas", parallel=1)
+        assert result.equals(expected)
+
 
 class TestGenericIO:
     TEST_FILES = {
@@ -102,10 +143,16 @@ class TestGenericIO:
                 da = xd.open(path, engine=engine)
                 spool = dc.read(path)
                 patch = spool[0]
+                data = da.values
+                # dascore >= 0.1.24 applies OptoDAS dataScale, xdas keeps raw counts
+                if engine == "asn" and patch.dtype != da.dtype:
+                    with h5py.File(path) as file:
+                        scale = float(file["header/dataScale"][()])
+                    data = data.astype(patch.dtype) * scale
                 assert isinstance(da, xd.DataArray)
-                assert da.dtype == patch.dtype
+                assert data.dtype == patch.dtype
                 assert da.shape == patch.shape
-                assert np.array_equal(da.values, patch.data, equal_nan=True)
+                assert np.array_equal(data, patch.data, equal_nan=True)
                 assert da.dims == patch.dims
                 for dim in da.dims:
                     if dim == "distance" and fname in self.SKIP_DISTANCE_COMPARISON:

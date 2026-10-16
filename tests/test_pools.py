@@ -10,6 +10,7 @@ import pytest
 from loky import process_executor
 
 import xdas as xd
+from tests.conftest import requires_posix_shm
 from xdas.processing.core import AUTO_CHUNK_NBYTES, get_pool
 from xdas.processing.pools import (
     _ARENAS,
@@ -62,6 +63,7 @@ def _sum(chunk):
     return float(chunk.values.sum())
 
 
+@requires_posix_shm
 class TestArena:
     def test_slots_are_distinct_and_reused(self):
         arena = Arena(3, 1024)
@@ -188,6 +190,7 @@ class TestOffloadable:
 
 @pytest.mark.slow
 class TestProcessPool:
+    @requires_posix_shm
     def test_chunk_comes_back_through_the_arena(self):
         expected = xd.testing.dummy(shape=(100, 10))
         with ProcessPool(1, 1, expected.nbytes) as pool:
@@ -206,6 +209,7 @@ class TestProcessPool:
         with ProcessPool(1) as pool:
             assert pool.submit(_double, 21).result() == 42
 
+    @requires_posix_shm
     def test_errors_propagate_and_free_the_slot(self):
         with ProcessPool(1) as pool:
             future = pool.submit(_raise)
@@ -231,6 +235,7 @@ class TestProcessPool:
             for _ in range(6):  # more rounds than there are slots
                 assert pool.submit(_sum, da).result() == pytest.approx(da.values.sum())
 
+    @requires_posix_shm
     def test_slots_are_recycled_when_chunks_are_dropped(self):
         nbytes = xd.testing.dummy(shape=(100, 10)).nbytes
         with ProcessPool(1, 1, nbytes) as pool:
@@ -238,6 +243,7 @@ class TestProcessPool:
                 pool.submit(_make, 100).result()  # dropped straight away
             assert len(pool._arena._free) == pool._arena.nslots
 
+    @requires_posix_shm
     def test_held_chunks_hold_their_slots(self):
         nbytes = xd.testing.dummy(shape=(100, 10)).nbytes
         with ProcessPool(1, 1, nbytes) as pool:
@@ -246,6 +252,7 @@ class TestProcessPool:
             assert len(pool._arena._free) == nslots - 2
             del held
 
+    @requires_posix_shm
     def test_exhausted_arena_falls_back_rather_than_blocking(self):
         da = xd.testing.dummy(shape=(100, 10))
         with ProcessPool(1, 1, da.nbytes) as pool:
@@ -256,6 +263,7 @@ class TestProcessPool:
         assert extra.equals(da)
         assert extra.data.flags.writeable  # no slot left, so it was pickled
 
+    @requires_posix_shm
     def test_cancel_returns_the_slot(self):
         with ProcessPool(1) as pool:
             arena = pool._arena
@@ -265,6 +273,7 @@ class TestProcessPool:
             assert future.cancel()
             assert len(arena._free) == nslots
 
+    @requires_posix_shm
     def test_a_cancelled_task_still_raises(self):
         with ProcessPool(1) as pool:
             future = ProcessFuture(pool, Future(), pool._arena.reserve())
@@ -272,6 +281,7 @@ class TestProcessPool:
             with pytest.raises(CancelledError):
                 future.result()
 
+    @requires_posix_shm
     def test_a_timeout_keeps_the_slot(self):
         # The task may still be writing into it, so the slot is not reusable.
         with ProcessPool(1) as pool:
@@ -289,6 +299,7 @@ class TestProcessPool:
             result = pool.submit(_identity, da).result()
         assert result.equals(da)
 
+    @requires_posix_shm
     def test_shutdown_unlinks_the_arena(self):
         pool = ProcessPool(1)
         path = pool._arena.path
@@ -296,6 +307,7 @@ class TestProcessPool:
         pool.shutdown()
         assert not os.path.exists(path)
 
+    @requires_posix_shm
     def test_cancelling_a_running_task_changes_nothing(self):
         with ProcessPool(1) as pool:
             future = pool.submit(_double, 1)
@@ -312,6 +324,7 @@ class TestWorkerSide:
     them; calling them directly is what pins their behaviour down.
     """
 
+    @requires_posix_shm
     def test_a_result_is_parked_in_the_outbox(self):
         arena = Arena(2, 2**16)
         try:
@@ -323,6 +336,7 @@ class TestWorkerSide:
         finally:
             arena.close()
 
+    @requires_posix_shm
     def test_a_result_too_big_for_the_outbox_is_left_alone(self):
         arena = Arena(2, 1024)
         try:
@@ -336,6 +350,7 @@ class TestWorkerSide:
         da = xd.testing.dummy(shape=(10, 10))
         assert _run(_identity, None, (da,), {}).data is da.data
 
+    @requires_posix_shm
     def test_a_parked_argument_is_resolved_to_a_view(self):
         arena = Arena(2, 2**16)
         try:
@@ -363,12 +378,14 @@ class TestGetPool:
             assert pool.submit(abs, -1).result() == 1
 
     @pytest.mark.slow
+    @requires_posix_shm
     def test_processes_sizes_its_slots_from_the_chunk(self):
         with get_pool("processes", 1, 1, 4096) as pool:
             assert isinstance(pool, ProcessPool)
             assert pool._arena.slot_nbytes == 4096
 
     @pytest.mark.slow
+    @requires_posix_shm
     def test_slots_default_to_the_auto_chunk_budget(self):
         with get_pool("processes", 1) as pool:
             assert pool._arena.slot_nbytes == AUTO_CHUNK_NBYTES

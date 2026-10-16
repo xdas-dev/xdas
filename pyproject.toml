@@ -25,7 +25,7 @@ dependencies = [
     "typing_extensions",
     "watchdog",
     "xarray",
-    "xinterp>=0.2.0",
+    "xinterp>=0.2.1",
     "pyzmq",
 ]
 

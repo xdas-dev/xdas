@@ -1,8 +1,9 @@
 """
 I/O subsystem: plugin-based :class:`Engine` registry and concrete engines.
 
-Supports xdas native, ASN, APSensing, Febus, ProdML, Silixa and Terra15
-formats, plus everything ObsPy reads (MiniSEED, SAC, GSE2, ...). The legacy
+Supports xdas native, ASN, APSensing, Aragon Photonics HDAS, Febus, ProdML,
+Silixa and Terra15 formats, plus everything ObsPy reads (MiniSEED, SAC, GSE2,
+...). The legacy
 `"miniseed"` engine is kept for stored views written by it.
 """
 
@@ -10,6 +11,7 @@ __all__ = [
     "AutoEngine",
     "Engine",
     "apsensing",
+    "aragon",
     "asn",
     "febus",
     "get_free_port",
@@ -21,7 +23,7 @@ __all__ = [
     "xdas",
 ]
 
-from . import apsensing, asn, febus, prodml, silixa, terra15, xdas
+from . import apsensing, aragon, asn, febus, prodml, silixa, terra15, xdas
 from .core import AutoEngine, Engine, get_free_port
 
 # isort: split

@@ -1,3 +1,4 @@
+import os
 from contextlib import ExitStack
 
 import pytest
@@ -7,6 +8,13 @@ import xdas
 
 def pytest_configure(config):
     xdas.config.set("n_workers", 1)
+
+
+requires_posix_shm = pytest.mark.skipif(
+    os.name != "posix",
+    reason="the shared-memory arena is POSIX-only by design (pools.py module docstring)",
+)
+"""Marks a test that exercises the real Arena, not its non-POSIX fallback."""
 
 
 @pytest.fixture

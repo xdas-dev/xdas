@@ -24,6 +24,7 @@ from .core import (
     parse_sampling_ratio,
     parse_scalar_delta,
     quantization_tolerance,
+    same_sampling_ratio,
     step_value,
 )
 
@@ -329,54 +330,38 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             }
         return self.__class__(data, self.dim)
 
+    @classmethod
     @override
-    def _concat(self, other):
-        if not isinstance(other, self.__class__):
-            raise TypeError(f"cannot concatenate {type(other)} to {self.__class__}")
-        if not self.dim == other.dim:
-            raise ValueError("cannot concatenate coordinate with different dimension")
-        if self.empty:
-            return other
-        if other.empty:
-            return self
-        if not self.dtype == other.dtype:
-            raise ValueError("cannot concatenate coordinate with different dtype")
+    def _concat(cls, objs):
+        nonempty = cls._check_concat(objs)
+        if len(nonempty) <= 1:
+            return nonempty[0] if nonempty else objs[-1]
+        offsets = np.cumsum([0] + [len(obj) for obj in nonempty[:-1]])
         data = {
-            "tie_indices": np.append(self.tie_indices, other.tie_indices + len(self)),
-            "tie_values": np.append(self.tie_values, other.tie_values),
+            "tie_indices": np.concatenate(
+                [obj.tie_indices + offset for obj, offset in zip(nonempty, offsets)]
+            ),
+            "tie_values": np.concatenate([obj.tie_values for obj in nonempty]),
         }
-        # Strict primitive: preserve the regular contract only when both sides
-        # advertise the exact same spacing; otherwise the merged coord is
-        # irregular by construction. The joining tie pair has ``den == 1`` (a
-        # CF discontinuity) so each side's segments validate independently,
-        # and ``max(tolerance)`` bounds the union. Reconciling slightly
-        # different rates is the job of user-facing routines (see
-        # :func:`concat_coords`, which delegates to :meth:`simplify`).
-        numerator, denominator = self._sampling_ratio
-        other_numerator, other_denominator = other._sampling_ratio
-        if numerator is not None and other_numerator is not None:
-            # Cross-multiply rather than divide: two rates that only agree
-            # once rounded to a single stored value must compare unequal
-            # here. Python ints are arbitrary precision, so this needs no
-            # kernel and cannot overflow however large the (unbounded, per
-            # D2) denominators get.
-            if np.issubdtype(self.dtype, np.datetime64):
-                lhs, rhs = (
-                    int(numerator.astype("i8")),
-                    int(other_numerator.astype("i8")),
-                )
-            elif not np.issubdtype(self.dtype, np.floating):
-                lhs, rhs = int(numerator), int(other_numerator)
-            else:
-                lhs, rhs = numerator, other_numerator
-            if lhs * int(other_denominator) == rhs * int(denominator):
-                data = {
-                    **data,
-                    "sampling_numerator": numerator,
-                    "sampling_denominator": denominator,
-                    "tolerance": max(self.tolerance, other.tolerance),
-                }
-        return self.__class__(data, self.dim)
+        # Strict primitive: stay regular only when every input advertises the
+        # exact same spacing, else the merge is irregular by construction. Each
+        # seam is an adjacent-index tie pair (a CF discontinuity), so every
+        # input's segments validate independently and ``max(tolerance)`` bounds
+        # the union. Reconciling slightly different rates is the job of
+        # :func:`concat_coords`, which delegates to :meth:`simplify`.
+        first = nonempty[0]
+        if all(
+            same_sampling_ratio(first._sampling_ratio, obj._sampling_ratio, first.dtype)
+            for obj in nonempty
+        ):
+            numerator, denominator = first._sampling_ratio
+            data = {
+                **data,
+                "sampling_numerator": numerator,
+                "sampling_denominator": denominator,
+                "tolerance": max(obj.tolerance for obj in nonempty),
+            }
+        return cls(data, objs[0].dim)
 
     @override
     def _to_dataset(self, dataset, attrs):
@@ -746,13 +731,13 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
         *tolerance* (the internal Chebyshev fit's worst residual stays inside the
         budget). The promotion is per-continuous-segment and sign-agnostic, so
         two same-rate segments joined by a CF overlap are still described by one
-        spacing. An already-regular coordinate keeps its spacing only while the
-        surviving tie points still honour it within the coordinate's own
-        declared tolerance: tolerance means instrumental jitter and nothing
-        else, is set once at construction, and is never widened afterwards
-        (D3) -- a reduce pass whose fused jump exceeds the declared budget
-        drops the coordinate's regularity rather than stretching the number
-        that describes it.
+        spacing. An already-regular coordinate always keeps its spacing: every
+        fused chord must honour it within *tolerance*, so a fusion that would
+        break the rate is refused rather than the rate dropped. A *tolerance*
+        wider than the declared one widens it: the budget is used as given and
+        the result declares ``max(tolerance, self.tolerance)``, the jitter its
+        fused chords may now carry. A narrower one thins less (``0`` is
+        lossless) and keeps the declared tolerance.
 
         See :meth:`Coordinate.simplify` for the parameter contract.
         """
@@ -762,25 +747,25 @@ class InterpCoordinate(AxisCoordinate, ctype="interpolated"):
             # Default the budget to the coordinate's own declared jitter.
             tolerance = self.tolerance
         tolerance = parse_scalar_delta(tolerance, self.dtype, default_zero=True)
+        rate = None
+        if self.sampling_interval is not None:
+            # a fused chord must keep the declared rate within the budget
+            rate = self._sampling_ratio
         if reduce:
             tie_indices, tie_values = _sleeve(
-                self.tie_indices, self.tie_values, tolerance
+                self.tie_indices, self.tie_values, tolerance, rate
             )
         else:
             tie_indices, tie_values = self.tie_indices, self.tie_values
         data = {"tie_indices": tie_indices, "tie_values": tie_values}
-        if self.sampling_interval is not None:
-            numerator, denominator = self._sampling_ratio
-            reduced = self.__class__(data, self.dim)
-            if not reduce or reduced._is_valid_sampling_interval(
-                numerator, denominator, self.tolerance
-            ):
-                data = {
-                    **data,
-                    "sampling_numerator": numerator,
-                    "sampling_denominator": denominator,
-                    "tolerance": self.tolerance,
-                }
+        if rate is not None:
+            numerator, denominator = rate
+            data = {
+                **data,
+                "sampling_numerator": numerator,
+                "sampling_denominator": denominator,
+                "tolerance": max(tolerance, self.tolerance),
+            }
             return self.__class__(data, self.dim)
         # Otherwise try to promote: infer the best spacing on the surviving
         # continuous segments and keep it only if it validates within the budget.
@@ -906,7 +891,7 @@ def _epsilon_ratio(dtype, epsilon):
     return epsilon, 1.0
 
 
-def _sleeve(x, y, epsilon):
+def _sleeve(x, y, epsilon, rate=None):
     """
     Reduce the piecewise-linear curve *(x, y)* with a one-pass greedy sleeve.
 
@@ -943,6 +928,10 @@ def _sleeve(x, y, epsilon):
         Corresponding coordinate values (tie values).
     epsilon : float or numpy.timedelta64
         Maximum allowed deviation to retain a point.
+    rate : tuple, optional
+        A declared ``(numerator, denominator)`` spacing. Every chord that drops
+        a point must then also honour it within *epsilon*, as
+        :meth:`InterpCoordinate._is_valid_sampling_interval` judges it.
 
     Returns
     -------
@@ -951,6 +940,16 @@ def _sleeve(x, y, epsilon):
     """
     if len(x) < 3:
         return x, y
+    en, ed = _epsilon_ratio(y.dtype, epsilon)
+    sn = sd = None
+    if rate is not None:
+        sn, sd = rate[0], int(rate[1])
+        if not np.issubdtype(y.dtype, np.floating):
+            sn = int(sn.view("i8")) if isinstance(sn, np.timedelta64) else int(sn)
+            # xinterp's band is |drift| < 2 * en / ed on integer ticks; pick the
+            # largest en / ed whose band is exactly |drift| <= 2 * epsilon, as
+            # validity reads it (it only tightens the cone when `sd > 1`)
+            en, ed = (2 * sd * en - sd * ed) // ed + 1, 2 * sd
     # Fast path: one chord spans the whole curve (the fully continuous case,
     # resolved vectorized). `forward_points` reconstructs exactly what the
     # reduced coordinate would return, so this measures the real shift and
@@ -958,11 +957,21 @@ def _sleeve(x, y, epsilon):
     # catches curves the incremental walk below is too conservative to
     # collapse.
     deviation = np.abs(y - forward_points(x, x[[0, -1]], y[[0, -1]]))
-    if deviation.max() <= epsilon:
+    if deviation.max() <= epsilon and (
+        rate is None or _honours_rate(x, y, en, ed, sn, sd)
+    ):
         return x[[0, -1]], y[[0, -1]]
-    en, ed = _epsilon_ratio(y.dtype, epsilon)
-    keep = simplify_points(x, y, en, ed)
+    keep = simplify_points(x, y, en, ed, sn, sd)
     return x[keep], y[keep]
+
+
+def _honours_rate(x, y, en, ed, sn, sd):
+    """Whether the chord from the first to the last point passes xinterp's band."""
+    dx = int(x[-1]) - int(x[0])
+    dy = y[-1] - y[0]
+    if not np.issubdtype(y.dtype, np.floating):
+        dy = int(np.asarray(dy).view("i8"))
+    return abs(sd * ed * dy - sn * ed * dx) < 2 * en * sd
 
 
 def _chebyshev_center_pair(num, den):

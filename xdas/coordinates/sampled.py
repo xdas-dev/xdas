@@ -22,6 +22,7 @@ from .core import (
     parse_data_dim,
     parse_scalar_delta,
     reduce_sampling_ratio,
+    same_sampling_ratio,
 )
 
 
@@ -439,44 +440,31 @@ class SampledCoordinate(AxisCoordinate, ctype="sampled"):
         }
         return self.__class__(data, self.dim)
 
+    @classmethod
     @override
-    def _concat(self, other):
-        if not isinstance(other, self.__class__):
-            raise TypeError(f"cannot concatenate {type(other)} to {self.__class__}")
-        if not self.dim == other.dim:
-            raise ValueError("cannot concatenate coordinate with different dimension")
-        if self.empty:
-            return other
-        if other.empty:
-            return self
-        if not self.dtype == other.dtype:
-            raise ValueError("cannot concatenate coordinate with different dtype")
-        n1, d1 = self._sampling_ratio
-        n2, d2 = other._sampling_ratio
-        # cross-multiply rather than divide: two rates that only agree once
-        # rounded to a single stored value (F3) must compare unequal here.
-        # Python ints are arbitrary precision, so this needs no kernel and
-        # cannot overflow however large the (unbounded, per D2) denominators
-        # get.
-        if np.issubdtype(self.dtype, np.datetime64):
-            n1, n2 = int(n1.astype("i8")), int(n2.astype("i8"))
-        elif not np.issubdtype(self.dtype, np.floating):
-            n1, n2 = int(n1), int(n2)
-        if not n1 * int(d2) == n2 * int(d1):
-            raise ValueError(
-                "cannot concatenate coordinate with different sampling intervals"
-            )
-        tie_values = np.concatenate([self.tie_values, other.tie_values])
-        tie_lengths = np.concatenate([self.tie_lengths, other.tie_lengths])
-        numerator, denominator = self._sampling_ratio
-        return self.__class__(
+    def _concat(cls, objs):
+        nonempty = cls._check_concat(objs)
+        if len(nonempty) <= 1:
+            return nonempty[0] if nonempty else objs[-1]
+        first = nonempty[0]
+        # exact rates only (F3): a rate that merely rounds to the same stored
+        # interval is a different rate
+        for obj in nonempty[1:]:
+            if not same_sampling_ratio(
+                first._sampling_ratio, obj._sampling_ratio, first.dtype
+            ):
+                raise ValueError(
+                    "cannot concatenate coordinate with different sampling intervals"
+                )
+        numerator, denominator = first._sampling_ratio
+        return cls(
             {
-                "tie_values": tie_values,
-                "tie_lengths": tie_lengths,
+                "tie_values": np.concatenate([obj.tie_values for obj in nonempty]),
+                "tie_lengths": np.concatenate([obj.tie_lengths for obj in nonempty]),
                 "sampling_numerator": numerator,
                 "sampling_denominator": denominator,
             },
-            self.dim,
+            objs[0].dim,
         )
 
     @override

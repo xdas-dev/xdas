@@ -3,6 +3,14 @@ import os
 import xdas.config as xc
 
 
+def _uncapped_memory():
+    # Mirrors total_memory()'s own fallback: os.sysconf is absent on Windows.
+    try:
+        return os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
+    except (AttributeError, ValueError, OSError):
+        return xc.FALLBACK_MEMORY
+
+
 class TestDefaults:
     def test_the_two_parallel_paths_have_their_own_knob(self):
         # One count cannot serve both: threads are sized against one array,
@@ -42,20 +50,19 @@ class TestTotalMemory:
             limit = tmp_path / "memory.max"
             limit.write_text(content)
             monkeypatch.setattr(xc, "CGROUP_LIMITS", (str(limit),))
-            physical = os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
-            assert xc.total_memory() == physical
+            assert xc.total_memory() == _uncapped_memory()
 
     def test_missing_files_are_skipped(self, monkeypatch, tmp_path):
         monkeypatch.setattr(xc, "CGROUP_LIMITS", (str(tmp_path / "absent"),))
-        physical = os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
-        assert xc.total_memory() == physical
+        assert xc.total_memory() == _uncapped_memory()
 
     def test_falls_back_when_nothing_can_be_read(self, monkeypatch):
         def unavailable(name):
             raise ValueError(name)
 
         monkeypatch.setattr(xc, "CGROUP_LIMITS", ())
-        monkeypatch.setattr(xc.os, "sysconf", unavailable)
+        # raising=False: os.sysconf doesn't exist at all on Windows.
+        monkeypatch.setattr(xc.os, "sysconf", unavailable, raising=False)
         assert xc.total_memory() == xc.FALLBACK_MEMORY
 
 

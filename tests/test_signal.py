@@ -221,23 +221,19 @@ class TestSTFT:
 
     def test_parrallel(self):
         da = xd.testing.dummy(shape=(10000, 11), step=(0.01, 0.1))
-        serial = xs.stft(
-            da,
-            nperseg=100,
-            noverlap=50,
-            window="hamming",
-            dim={"time": "frequency"},
-            parallel=False,
-        )
-        parallel = xs.stft(
-            da,
-            nperseg=100,
-            noverlap=50,
-            window="hamming",
-            dim={"time": "frequency"},
-            parallel=True,
-        )
-        assert serial.equals(parallel)
+        kwargs = {
+            "nperseg": 100,
+            "noverlap": 50,
+            "window": "hamming",
+            "dim": {"time": "frequency"},
+        }
+        serial = xs.stft(da, parallel=False, **kwargs)
+        parallel = xs.stft(da, parallel=True, **kwargs)
+        # Not bit-exact: a differently-batched FFT rounds differently on some
+        # platforms (e.g. macOS's Accelerate backend), even split channel-wise.
+        assert serial.dims == parallel.dims
+        assert serial.coords.equals(parallel.coords)
+        assert np.allclose(serial.values, parallel.values)
 
     def test_last_dimension_with_non_dimensional_coordinates(self):
         da = xd.testing.dummy(shape=(100, 1001))
