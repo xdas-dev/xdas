@@ -6,9 +6,19 @@ on:
     tags: ["[0-9]*"]
   pull_request:
 
+# The repository default grants write; only the release job needs it.
+permissions:
+  contents: read
+
+# A new commit on a PR supersedes its running checks; main and tags always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30  # the suite takes ~4 min; a hang must not hold a release
     strategy:
       fail-fast: false
       matrix:
