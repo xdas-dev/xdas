@@ -5,17 +5,33 @@ on:
     branches: [main]
     tags: ["[0-9]*"]
   pull_request:
+  schedule:
+    - cron: "0 6 * * 1"  # weekly, against the latest releases of every dependency
+  workflow_dispatch:  # the full set by hand, e.g. before tagging
 
 # The repository default grants write; only the release job needs it.
 permissions:
   contents: read
 
-# A new commit on a PR supersedes its running checks; main and tags always finish.
+# A new commit on a PR supersedes its running checks; every other run is its
+# own group, so none is ever cancelled or skipped.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.0
+      - name: Check the code with ruff
+        run: uv run --only-group dev ruff check --output-format=github
+      - name: Check the formatting with ruff
+        run: uv run --only-group dev ruff format --check
+
   test:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30  # the suite takes ~4 min; a hang must not hold a release
@@ -55,6 +71,8 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
   docs:
+    # Not on PRs, to keep them fast: a break shows on main, and never reaches a release.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -70,7 +88,7 @@ jobs:
 
   build:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [test, docs]
+    needs: [lint, test, docs]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
