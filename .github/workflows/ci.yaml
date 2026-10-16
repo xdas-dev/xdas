@@ -104,10 +104,23 @@ jobs:
           cd "$RUNNER_TEMP"  # away from the checkout, so the wheel is what gets imported
           version=$(uv run --isolated --no-project --with "$wheel" python -c "import xdas; print(xdas.__version__)")
           test "$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != xdas.__version__ $version"; exit 1; }
+      # Here rather than in the release job: a missing section must stop the upload.
+      - name: Extract the release notes from the changelog
+        run: |
+          awk -v tag="$GITHUB_REF_NAME" '
+            index($0, "## [" tag "]") == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found
+          ' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "no CHANGELOG.md section for $GITHUB_REF_NAME"; exit 1; }
       - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: notes
+          path: notes.md
 
   publish:
     needs: build
@@ -130,16 +143,14 @@ jobs:
     permissions:
       contents: write  # create the GitHub release
     steps:
-      - uses: actions/checkout@v7
-      - name: Extract the release notes from the changelog
-        run: |
-          awk -v tag="$GITHUB_REF_NAME" '
-            index($0, "## [" tag "]") == 1 { found = 1; next }
-            found && /^## \[/ { exit }
-            found
-          ' CHANGELOG.md > notes.md
-          test -s notes.md || { echo "no CHANGELOG.md section for $GITHUB_REF_NAME"; exit 1; }
+      - uses: actions/download-artifact@v8
+        with:
+          name: notes
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file notes.md
+          GH_REPO: ${{ github.repository }}  # no checkout to infer it from
+        run: |
+          # A letter in the tag (0.3.0rc1) marks a pre-release, as PyPI reads it.
+          prerelease=$([[ "$GITHUB_REF_NAME" =~ [a-z] ]] && echo --prerelease || true)
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file notes.md $prerelease
