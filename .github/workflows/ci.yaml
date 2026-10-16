@@ -78,12 +78,14 @@ jobs:
         uses: astral-sh/setup-uv@v10.3.0
         with:
           python-version: "3.14"
-      - name: Check that the tag matches the package version
-        run: |
-          version=$(sed -nE 's/^__version__ = "(.*)"$/\1/p' xdas/__init__.py)
-          test "$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != __version__ $version"; exit 1; }
       - name: Build sdist and wheel
         run: uv build
+      - name: Check that the built wheel imports as the tagged version
+        run: |
+          wheel=$(realpath dist/*.whl)
+          cd "$RUNNER_TEMP"  # away from the checkout, so the wheel is what gets imported
+          version=$(uv run --isolated --no-project --with "$wheel" python -c "import xdas; print(xdas.__version__)")
+          test "$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != xdas.__version__ $version"; exit 1; }
       - uses: actions/upload-artifact@v7
         with:
           name: dist
