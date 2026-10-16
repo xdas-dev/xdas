@@ -16,6 +16,7 @@ from numba import njit
 
 from ..coordinates import Coordinate, get_sampling_interval
 from ..core import DataArray, concat, concat_coords
+from ..parallel import get_workers_count, parallelize
 from .core import Atom, State, atomized
 
 __all__ = ["STALTA", "Trigger", "stalta", "trigger"]
@@ -646,6 +647,8 @@ class STALTA(Atom):
         How the two averages are computed, by default "recursive".
     dim : str, optional
         The dimension along which to compute the ratio, by default "time".
+    parallel : int, bool, or None, optional
+        Worker count for parallelisation across channels.
 
     Notes
     -----
@@ -700,7 +703,7 @@ class STALTA(Atom):
 
     """
 
-    def __init__(self, sta, lta, method="recursive", dim="time"):
+    def __init__(self, sta, lta, method="recursive", dim="time", parallel=None):
         super().__init__()
         if method not in _STALTA_METHODS:
             raise ValueError(
@@ -714,6 +717,7 @@ class STALTA(Atom):
         self.lta = float(lta)
         self.method = method
         self.dim = dim
+        self.parallel = parallel
 
         # states
         self.delta = State(...)
@@ -803,12 +807,18 @@ class STALTA(Atom):
     def _advance(self, da):
         """Feed one block to the kernel, returning its ratios lane by lane."""
         values = np.moveaxis(np.asarray(da.values), da.get_axis_num(self.dim), -1)
-        energy = np.square(values.reshape(-1, values.shape[-1]), dtype=float)
-        # the kernels update the sums and the ring in place
+        # C order: the kernels walk each lane along `dim`, which `moveaxis` strides
+        energy = np.square(values.reshape(-1, values.shape[-1]), dtype=float, order="C")
+        # the kernels update the sums and the ring in place, each worker its
+        # own slice of lanes; the pool is sized by the samples processed, not
+        # by the ring, which a call barely touches
+        parallel = get_workers_count(self.parallel, energy.nbytes)
         if self.method == "recursive":
-            out = _recursive_ratio(energy, self.sums, self.count, self.nsta, self.nlta)
+            func = parallelize((0, 0, None, None, None), 0, parallel)(_recursive_ratio)
+            out = func(energy, self.sums, self.count, self.nsta, self.nlta)
         else:
-            out = _boxcar_ratio(
+            func = parallelize((0, 0, 0) + (None,) * 6, 0, parallel)(_boxcar_ratio)
+            out = func(
                 energy,
                 self.sums,
                 self.ring,
@@ -835,7 +845,7 @@ _STALTA_METHODS = ("recursive", "classic", "delayed", "centered")
 _TINY = np.finfo(np.float64).tiny
 
 
-@njit(cache=True)
+@njit(nogil=True, cache=True)
 def _recursive_ratio(energy, sums, count, nsta, nlta):  # pragma: no cover
     """
     Evans and Allen recursive STA/LTA, resumable, as ObsPy's.
@@ -865,7 +875,7 @@ def _recursive_ratio(energy, sums, count, nsta, nlta):  # pragma: no cover
     return out
 
 
-@njit(cache=True)
+@njit(nogil=True, cache=True)
 def _boxcar_ratio(
     energy, sums, ring, count, nsta, dsta, nlta, dlta, start
 ):  # pragma: no cover
@@ -894,7 +904,7 @@ def _boxcar_ratio(
     return out
 
 
-@njit(cache=True)
+@njit(nogil=True, cache=True)
 def _slide(ring, total, last, n):  # pragma: no cover
     """Move a running sum of `n` samples to the window ending at `last`."""
     if last < 0:

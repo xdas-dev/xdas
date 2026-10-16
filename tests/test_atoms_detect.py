@@ -636,6 +636,17 @@ class TestSTALTA:
         atom(generate_stalta())
         assert atom.flush() == []
 
+    @pytest.mark.parametrize("method", STALTA_METHODS)
+    def test_parallel_matches_serial(self, method):
+        # each worker updates its own slice of lanes of the carried sums
+        da = generate_stalta(nx=7)
+        expected = STALTA(0.5, 10.0, method=method, parallel=False)(da)
+        result = STALTA(0.5, 10.0, method=method, parallel=3)(da)
+        np.testing.assert_array_equal(result.values, expected.values)
+        atom = STALTA(0.5, 10.0, method=method, parallel=3)
+        chunked = atom.process(da, chunks={"time": 2500})
+        np.testing.assert_array_equal(chunked.values, expected.values)
+
     def test_twin_and_pipeline(self):
         da = generate_stalta()
         np.testing.assert_array_equal(
