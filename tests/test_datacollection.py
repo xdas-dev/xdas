@@ -232,7 +232,7 @@ class TestDataCollection:
         from xdas.core.datacollection import DataMapping
 
         dm = DataMapping({}, "empty")
-        assert repr(dm) == "<xdas.DataCollection: 0 leaves, 0 B>"
+        assert repr(dm) == "<xdas.DataCollection: empty>"
 
     def test_mapping_reduce(self):
         import pickle
@@ -617,7 +617,7 @@ class TestDataFrameLeaves:
         df = pd.DataFrame({"time": [1.0, 2.0], "value": [0.5, 0.9]})
         dc = xd.DataCollection({"ST01": df}, "station")
         assert "(rows: 2, columns: 2)" in repr(dc)
-        assert repr(dc).splitlines()[0] == "<xdas.DataCollection: 1 leaf, 32 B>"
+        assert repr(dc).splitlines()[0] == "<xdas.DataCollection: 1 table, 32 B>"
 
 
 class TestCollectionRepr:
@@ -636,7 +636,7 @@ class TestCollectionRepr:
             "node",
         )
         lines = repr(dc).splitlines()
-        assert lines[0] == "<xdas.DataCollection: 1 leaf, 48 B>"
+        assert lines[0] == "<xdas.DataCollection: 1 array, 48 B>"
         assert lines[1] == "node  cable  record"
         assert lines[2] == "CCN   N           0  (time: 4, distance: 3)  48 B"
 
@@ -656,35 +656,162 @@ class TestCollectionRepr:
             "SER   S           -  (time: 4)  16 B",
         ]
 
-    def test_an_unnamed_depth_leaves_its_column_unheaded(self):
-        # the named depths are still worth heading
+    def test_an_unnamed_depth_draws_a_tree(self):
+        # a column without a name is not a table: each level is spelled out
         dc = xd.DataCollection({"CCN": {"N": [self.array(time=4)]}}, "node")
         assert repr(dc).splitlines()[1:] == [
             "node",
-            "CCN   N  0  (time: 4)  16 B",
+            "└── CCN  1 array, 16 B",
+            "    └── N  1 array, 16 B",
+            "        └── 0  (time: 4)  16 B",
         ]
 
-    def test_a_disputed_depth_leaves_its_column_unheaded(self):
-        # one branch calls it a cable, the other a record: neither speaks for
-        # the column, but the root still does
+    def test_a_disputed_depth_draws_a_tree(self):
+        # one branch calls it a cable, the other a record: no column could be
+        # headed, so each branch collapses into its own summary line
         dc = xd.DataCollection(
             {
                 "CCN": ("cable", [self.array(time=4)]),
-                "SER": ("record", [self.array(time=4)]),
+                "SER": ("record", [self.array(time=4), self.array(time=4)]),
             },
+            "node",
+        )
+        assert repr(dc).splitlines() == [
+            "<xdas.DataCollection: 3 arrays, 48 B>",
+            "node",
+            "├── CCN  (time)  16 B",
+            "│   ╰─ cable  (1 array)",
+            "└── SER  (time)  32 B",
+            "    ╰─ record  (2 arrays)",
+        ]
+
+    def test_branches_with_different_schemas_collapse(self):
+        das = xd.DataCollection(
+            {"N01": ("cable", {"CAB1": ("record", [self.array(time=4, distance=3)])})},
+            "node",
+        )
+        seismic = xd.DataCollection(
+            {"FR": ("station", {"OGSI": ("channel", {"HHZ": self.array(time=4)})})},
+            "network",
+        )
+        dc = xd.DataCollection({"das": das, "seismic": seismic}, "kind")
+        assert repr(dc).splitlines() == [
+            "<xdas.DataCollection: 2 arrays, 64 B>",
+            "kind",
+            "├── das  (time, distance)  48 B",
+            "│   ╰─ node › cable › record  (1 array)",
+            "└── seismic  (time)  16 B",
+            "    ╰─ network › station › channel  (1 array)",
+        ]
+        # indexing into a collapsed branch shows its table
+        assert repr(dc["das"]).splitlines()[1] == "node  cable  record"
+
+    def test_leaves_stand_next_to_collapsed_branches(self):
+        df = pd.DataFrame({"time": [1.0, 2.0], "value": [0.5, 0.9]})
+        dc = xd.DataCollection(
+            {
+                "das": ("cable", {"N": [self.array(time=4)]}),
+                "seismic": ("station", {"SSB": self.array(time=4)}),
+                "picks": df,
+                "stack": self.array(time=2, distance=2),
+            },
+            "kind",
+        )
+        assert repr(dc).splitlines() == [
+            "<xdas.DataCollection: 3 arrays, 1 table, 80 B>",
+            "kind",
+            "├── das  1 array, 16 B",
+            "│   cable",
+            "│   └── N  1 array, 16 B",
+            "│       └── 0  (time: 4)  16 B",
+            "├── seismic  (time)  16 B",
+            "│   ╰─ station  (1 array)",
+            "├── picks  (rows: 2, columns: 2)  32 B",
+            "└── stack  (time: 2, distance: 2)  16 B",
+        ]
+
+    def test_heterogeneous_branches_open_a_subtree(self):
+        mixed = {
+            "das": ("cable", [self.array(time=4)]),
+            "seismic": ("channel", {"HHZ": self.array(time=4)}),
+        }
+        dc = xd.DataCollection(
+            {
+                "OBS-A": ("kind", mixed),
+                "OBS-B": ("kind", {"das": ("cable", [self.array(time=4)])}),
+            },
+            "site",
+        )
+        assert repr(dc).splitlines() == [
+            "<xdas.DataCollection: 3 arrays, 48 B>",
+            "site",
+            "├── OBS-A  2 arrays, 32 B",
+            "│   kind",
+            "│   ├── das  (time)  16 B",
+            "│   │   ╰─ cable  (1 array)",
+            "│   └── seismic  (time)  16 B",
+            "│       ╰─ channel  (1 array)",
+            "└── OBS-B  (time)  16 B",
+            "    ╰─ kind › cable  (1 array)",
+        ]
+
+    def test_an_unnamed_tree_level_has_no_field_line(self):
+        dc = xd.DataCollection(
+            [
+                {
+                    "das": ("cable", [self.array(time=4)]),
+                    "seismic": [self.array(time=4)],
+                },
+                self.array(time=4),
+            ]
+        )
+        assert repr(dc).splitlines() == [
+            "<xdas.DataCollection: 3 arrays, 48 B>",
+            "├── 0  2 arrays, 32 B",
+            "│   ├── das  (time)  16 B",
+            "│   │   ╰─ cable  (1 array)",
+            "│   └── seismic  1 array, 16 B",
+            "│       └── 0  (time: 4)  16 B",
+            "└── 1  (time: 4)  16 B",
+        ]
+
+    def test_an_empty_branch_is_marked_empty(self):
+        dc = xd.DataCollection(
+            {
+                "das": ("cable", [self.array(time=4)]),
+                "seismic": ("station", {}),
+                "other": ("channel", [self.array(time=4)]),
+            },
+            "kind",
+        )
+        assert repr(dc).splitlines()[2:] == [
+            "├── das  (time)  16 B",
+            "│   ╰─ cable  (1 array)",
+            "├── seismic  (empty)",
+            "└── other  (time)  16 B",
+            "    ╰─ channel  (1 array)",
+        ]
+
+    def test_a_deep_empty_branch_is_not_hidden_by_the_table(self):
+        # an empty branch has no leaf to give it a row: a table would drop it
+        dc = xd.DataCollection(
+            {"N01": ("cable", {"CAB1": ("record", [self.array(time=4)]), "CAB2": []})},
             "node",
         )
         assert repr(dc).splitlines()[1:] == [
             "node",
-            "CCN   0  (time: 4)  16 B",
-            "SER   0  (time: 4)  16 B",
+            "└── N01  1 array, 16 B",
+            "    cable",
+            "    ├── CAB1  (time)  16 B",
+            "    │   ╰─ record  (1 array)",
+            "    └── CAB2  (empty)",
         ]
 
-    def test_no_header_when_nothing_is_named(self):
+    def test_a_nameless_collection_draws_a_tree(self):
         dc = xd.DataCollection([self.array(time=4), self.array(time=4)])
         assert repr(dc).splitlines()[1:] == [
-            "0  (time: 4)  16 B",
-            "1  (time: 4)  16 B",
+            "├── 0  (time: 4)  16 B",
+            "└── 1  (time: 4)  16 B",
         ]
 
     def test_repeated_keys_are_blanked(self):

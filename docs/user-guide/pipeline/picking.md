@@ -229,7 +229,7 @@ cable pair, each recorded as two consecutive records:
 ...     "cable",
 ... )
 >>> das
-<xdas.DataCollection: 4 leaves, 937.5 KB>
+<xdas.DataCollection: 4 arrays, 937.5 KB>
 cable  record
 east        0  (time: 10000, distance: 3)  234.4 KB
             1  (time: 10000, distance: 3)  234.4 KB

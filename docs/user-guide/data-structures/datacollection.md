@@ -88,7 +88,7 @@ dc = xd.open(path, engine="asn")
 dc
 ```
 ```text
-<xdas.DataCollection: 4 leaves, 4.5 GB>
+<xdas.DataCollection: 4 arrays, 4.5 GB>
 network  cable  record
 REKA     RK1         0  (time: 54000, distance: 10000)    2.0 GB
                      1  (time: 10000, distance: 5000)   190.7 MB
@@ -106,7 +106,7 @@ dc = xd.open("datacollection.nc")
 dc
 ```
 ```text
-<xdas.DataCollection: 4 leaves, 4.5 GB>
+<xdas.DataCollection: 4 arrays, 4.5 GB>
 network  cable  record
 REKA     RK1         0  (time: 54000, distance: 10000)    2.0 GB
                      1  (time: 10000, distance: 5000)   190.7 MB
@@ -142,7 +142,7 @@ dc["REKA"]["RK2"].insert(0, da)
 dc
 ```
 ```text
-<xdas.DataCollection: 5 leaves, 17.3 GB>
+<xdas.DataCollection: 5 arrays, 17.3 GB>
 network  cable  record
 REKA     RK1         0  (time: 54000, distance: 10000)    2.0 GB
                      1  (time: 10000, distance: 5000)   190.7 MB
@@ -152,3 +152,36 @@ REKA     RK1         0  (time: 54000, distance: 10000)    2.0 GB
 ```
 
 You now have 2 records in your records list.
+## Printing a collection
+
+A collection whose levels are all named, and named alike across branches, prints as one
+table, as above. When
+branches follow different schemas, say DAS acquisitions next to seismic stations, the
+collection prints as a tree instead. Each homogeneous branch collapses into the
+dimensions and size of its arrays, with its levels and array count hooked below:
+
+```python
+dc = xd.DataCollection({"das": das, "seismic": seismic}, "kind")
+dc
+```
+```text
+<xdas.DataCollection: 6 arrays, 4.2 GB>
+kind
+├── das  (time, distance)  4.2 GB
+│   ╰─ network › cable › record  (3 arrays)
+└── seismic  (time)  4.1 MB
+    ╰─ network › station › location › channel  (3 arrays)
+```
+
+Index into a branch to see its table:
+
+```python
+dc["seismic"]
+```
+```text
+<xdas.DataCollection: 3 arrays, 4.1 MB>
+network  station  location  channel
+FR       OGSI           00  HHZ      (time: 360000)  1.4 MB
+                            HHN      (time: 360000)  1.4 MB
+                            HHE      (time: 360000)  1.4 MB
+```
