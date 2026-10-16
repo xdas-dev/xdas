@@ -18,6 +18,7 @@ Plus the detection atoms of :mod:`xdas.atoms.detect` and the ML-based
 """
 
 __all__ = [
+    "STALTA",
     "STFT",
     "Annotate",
     "Atom",
@@ -43,11 +44,12 @@ __all__ = [
     "as_function",
     "atomized",
     "compose",
+    "stalta",
     "trigger",
 ]
 
 from .core import Atom, Partial, Sequential, State, as_function, atomized, compose
-from .detect import Trigger, trigger
+from .detect import STALTA, Trigger, stalta, trigger
 from .kernel import DownSample, LFilter, Polyphase, Rechunk, SOSFilter, UpSample
 from .ml import Annotate, MLPicker, Picker
 from .operations import (

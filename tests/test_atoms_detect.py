@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 
 import xdas as xd
-from xdas.atoms import Trigger
+from xdas.atoms import STALTA, Trigger
 
 
 def generate():
@@ -455,3 +455,219 @@ class TestChunkSemantics:
         assert sorted(zip(chunked["distance"], chunked["time"])) == sorted(
             zip(eager["distance"], eager["time"])
         )
+
+
+STALTA_METHODS = ["recursive", "classic", "delayed", "centered"]
+BOXCAR_METHODS = ["classic", "delayed", "centered"]
+
+
+def generate_stalta(nt=6000, nx=3, seed=42, delta=0.01):
+    """A noisy record with three transients, for the characteristic function."""
+    rng = np.random.default_rng(seed)
+    data = rng.normal(0.0, 1.0, (nt, nx))
+    for onset in (1500, 3200, 4700):
+        if onset + 100 <= nt:
+            data[onset : onset + 100] += 15.0 * np.exp(-np.arange(100) / 25.0)[:, None]
+    return xd.DataArray(
+        data=data,
+        coords={
+            "time": {
+                "tie_indices": [0, nt - 1],
+                "tie_values": [0.0, (nt - 1) * delta],
+                "sampling_interval": delta,
+            },
+            "distance": np.arange(nx) * 10.0,
+        },
+    )
+
+
+def boxcar_reference(x, nsta, nlta, method):
+    """Direct sum of every window, zero where one is incomplete."""
+    energy = np.square(x)
+    n = len(x)
+    out = np.zeros(n)
+    for i in range(n):
+        match method:
+            case "classic":
+                ends = (i, i)
+            case "delayed":
+                ends = (i, i - nsta)
+            case "centered":
+                ends = (i + nsta // 2, i + nlta // 2)
+        windows = [(ends[0] - nsta + 1, ends[0]), (ends[1] - nlta + 1, ends[1])]
+        if all(lo >= 0 and hi < n for lo, hi in windows):
+            (a, b), (c, d) = windows
+            out[i] = energy[a : b + 1].mean() / energy[c : d + 1].mean()
+    return out
+
+
+class TestSTALTA:
+    @pytest.mark.parametrize("sta, lta", [(0.5, 10.0), (0.21, 3.0)])
+    def test_recursive_matches_obspy(self, sta, lta):
+        from obspy.signal.trigger import recursive_sta_lta
+
+        da = generate_stalta()
+        result = STALTA(sta, lta, method="recursive")(da)
+        nsta, nlta = round(sta / 0.01), round(lta / 0.01)
+        for lane in range(da.sizes["distance"]):
+            expected = recursive_sta_lta(da.values[:, lane], nsta, nlta)
+            # the same recursion, but a compiler may fuse its multiply-add
+            # (arm64 does), so only round-off apart
+            np.testing.assert_allclose(result.values[:, lane], expected, rtol=1e-12)
+            np.testing.assert_array_equal(result.values[:, lane] == 0, expected == 0)
+
+    @pytest.mark.parametrize("sta, lta", [(0.5, 10.0), (0.21, 3.0)])
+    def test_classic_matches_obspy(self, sta, lta):
+        from obspy.signal.trigger import classic_sta_lta
+
+        da = generate_stalta()
+        result = STALTA(sta, lta, method="classic")(da)
+        nsta, nlta = round(sta / 0.01), round(lta / 0.01)
+        for lane in range(da.sizes["distance"]):
+            expected = classic_sta_lta(da.values[:, lane], nsta, nlta)
+            np.testing.assert_allclose(result.values[:, lane], expected, rtol=1e-10)
+            # the same zero warm-up, sample for sample
+            np.testing.assert_array_equal(result.values[:, lane] == 0, expected == 0)
+
+    @pytest.mark.parametrize("method", BOXCAR_METHODS)
+    @pytest.mark.parametrize("sta, lta", [(0.5, 10.0), (0.2, 3.0)])
+    def test_boxcar_matches_direct_sums(self, method, sta, lta):
+        da = generate_stalta()
+        result = STALTA(sta, lta, method=method)(da)
+        nsta, nlta = round(sta / 0.01), round(lta / 0.01)
+        expected = boxcar_reference(da.values[:, 0], nsta, nlta, method)
+        np.testing.assert_allclose(result.values[:, 0], expected, rtol=1e-10)
+
+    @pytest.mark.parametrize("method", STALTA_METHODS)
+    def test_dim_on_any_axis(self, method):
+        da = generate_stalta()
+        expected = STALTA(0.5, 10.0, method=method)(da)
+        result = STALTA(0.5, 10.0, method=method)(da.transpose("distance", "time"))
+        assert result.dims == ("distance", "time")
+        np.testing.assert_array_equal(result.values, expected.values.T)
+
+    @pytest.mark.parametrize("method", STALTA_METHODS)
+    def test_chunk_invariant(self, method):
+        da = generate_stalta()
+        atom = STALTA(0.5, 10.0, method=method)
+        xd.testing.assert_chunk_invariant(atom, da, chunks={"time": 1000}, gaps=2)
+        # chunks far shorter than the long window, and than what "centered"
+        # holds back
+        xd.testing.assert_chunk_invariant(atom, da, chunks={"time": 37}, cuts=0)
+
+    @pytest.mark.parametrize("method", STALTA_METHODS)
+    def test_chunked_along_another_dim(self, method):
+        da = generate_stalta()
+        expected = STALTA(0.5, 10.0, method=method)(da)
+        result = STALTA(0.5, 10.0, method=method).process(da, chunks={"distance": 1})
+        np.testing.assert_array_equal(result.values, expected.values)
+
+    @pytest.mark.parametrize("method", STALTA_METHODS)
+    def test_scale_invariant(self, method):
+        # DAS strain rates are ~1e-9: their energy must not hit the floor
+        da = generate_stalta()
+        expected = STALTA(0.5, 10.0, method=method)(da).values
+        result = STALTA(0.5, 10.0, method=method)(da * 1e-9).values
+        np.testing.assert_allclose(result, expected, rtol=1e-9)
+
+    @pytest.mark.parametrize("method", BOXCAR_METHODS)
+    def test_round_off_does_not_outlive_a_loud_transient(self, method):
+        # A burst 1e9 times louder than what follows: a cumulative sum keeps
+        # its round-off for the rest of the trace, the running sums for at
+        # most two windows.
+        da = generate_stalta(nt=12000, nx=1)
+        data = da.values.copy()
+        data[2000:2100] *= 1e6
+        data[3000:] *= 1e-3
+        da = da.copy(data=data)
+        nsta, nlta = 50, 1000
+        result = STALTA(0.5, 10.0, method=method)(da).values[:, 0]
+        expected = boxcar_reference(data[:, 0], nsta, nlta, method)
+        clean = slice(2100 + 2 * (nsta + nlta), None)
+        np.testing.assert_allclose(result[clean], expected[clean], rtol=1e-8)
+
+    @pytest.mark.parametrize("method", ["recursive", "classic", "delayed"])
+    def test_causal_methods_ignore_the_future(self, method):
+        da = generate_stalta()
+        expected = STALTA(0.5, 10.0, method=method)(da).values
+        data = da.values.copy()
+        data[2500:] = 100.0
+        result = STALTA(0.5, 10.0, method=method)(da.copy(data=data)).values
+        np.testing.assert_array_equal(result[:2500], expected[:2500])
+        assert not np.array_equal(result[2500:], expected[2500:])
+
+    @pytest.mark.parametrize("method", ["recursive", "classic", "delayed"])
+    def test_causal_methods_hold_nothing_back(self, method):
+        da = generate_stalta()
+        atom = STALTA(0.5, 10.0, method=method)
+        for chunk in xd.split(da, 7, dim="time"):
+            out = atom(chunk, chunk_dim="time")
+            assert out.sizes["time"] == chunk.sizes["time"]
+        assert atom.flush() == []
+
+    def test_centered_holds_back_half_the_long_window(self):
+        da = generate_stalta()
+        atom = STALTA(0.5, 10.0, method="centered")
+        outs = [atom(chunk, chunk_dim="time") for chunk in xd.split(da, 4, dim="time")]
+        emitted = xd.concat(outs, "time").sizes["time"]
+        assert emitted == da.sizes["time"] - 1000 // 2
+        (tail,) = atom.flush()
+        assert tail.sizes["time"] == 1000 // 2
+        np.testing.assert_array_equal(tail.values, 0.0)
+        assert atom.flush() == []
+
+    def test_centered_onset_is_earlier_than_causal(self):
+        da = generate_stalta()
+        causal = STALTA(0.5, 10.0, method="classic")(da)
+        centered = STALTA(0.5, 10.0, method="centered")(da)
+        assert int(causal.values[:, 0].argmax()) > int(centered.values[:, 0].argmax())
+
+    @pytest.mark.parametrize("method", STALTA_METHODS)
+    def test_record_shorter_than_the_windows(self, method):
+        # nothing is ever complete: all zeros, chunked or not
+        da = generate_stalta(nt=300)
+        expected = STALTA(0.5, 10.0, method=method)(da)
+        np.testing.assert_array_equal(expected.values, 0.0)
+        result = STALTA(0.5, 10.0, method=method).process(da, chunks={"time": 40})
+        np.testing.assert_array_equal(result.values, expected.values)
+
+    def test_flush_without_data_is_empty(self):
+        # uninitialised, and initialised by an eager (unchunked) call: neither
+        # holds anything back
+        atom = STALTA(0.5, 10.0, method="centered")
+        assert atom.flush() == []
+        atom(generate_stalta())
+        assert atom.flush() == []
+
+    @pytest.mark.parametrize("method", STALTA_METHODS)
+    def test_parallel_matches_serial(self, method):
+        # each worker updates its own slice of lanes of the carried sums
+        da = generate_stalta(nx=7)
+        expected = STALTA(0.5, 10.0, method=method, parallel=False)(da)
+        result = STALTA(0.5, 10.0, method=method, parallel=3)(da)
+        np.testing.assert_array_equal(result.values, expected.values)
+        atom = STALTA(0.5, 10.0, method=method, parallel=3)
+        chunked = atom.process(da, chunks={"time": 2500})
+        np.testing.assert_array_equal(chunked.values, expected.values)
+
+    def test_twin_and_pipeline(self):
+        da = generate_stalta()
+        np.testing.assert_array_equal(
+            xd.stalta(da, sta=0.5, lta=10.0).values, STALTA(0.5, 10.0)(da).values
+        )
+        assert isinstance(xd.stalta(..., sta=0.5, lta=10.0), STALTA)
+        picks = da >> (xd.stalta(..., sta=0.5, lta=10.0) >> xd.trigger(..., thresh=5.0))
+        assert len(picks) > 0
+
+    def test_invalid_parameters(self):
+        with pytest.raises(ValueError, match="`method` must be one of"):
+            STALTA(0.5, 10.0, method="causal")
+        with pytest.raises(ValueError, match="strictly positive"):
+            STALTA(0.0, 1.0)
+        with pytest.raises(ValueError, match="longer than"):
+            STALTA(1.0, 0.5)
+        da = generate_stalta()
+        with pytest.raises(ValueError, match="shorter than one sample"):
+            STALTA(0.004, 10.0)(da)
+        with pytest.raises(ValueError, match="more samples than"):
+            STALTA(0.5, 0.504)(da)
