@@ -75,7 +75,7 @@ To do this you can either use git in the [terminal](https://git-scm.com/docs/git
 
 ## How to write a changelog entry
 
-`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Add one line per user-visible change under `[Unreleased]`, in the section that fits: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed` or `Security`. Write it for users, not reviewers: say what changed for them, start with **Breaking:** when existing code stops working, and credit yourself at the end, e.g. `(@your-github-handle)`. Purely internal changes (tests, CI, refactoring) need no entry.
+`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Add one line per user-visible change under `[Unreleased]`, in the section that fits: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed` or `Security`. A large release may group a section's entries under `####` topic headings (e.g. `#### Atoms`). Write it for users, not reviewers: say what changed for them, start with **Breaking:** when existing code stops working, and credit yourself at the end, e.g. `(@your-github-handle)`. Purely internal changes (tests, CI, refactoring) need no entry.
 
 
 ## How to write a docstring with examples

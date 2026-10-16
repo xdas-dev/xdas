@@ -30,18 +30,27 @@ Changes that break existing code are flagged **Breaking**.
 ## [0.2.9] - 2026-09-02
 
 ### Added
-- **Tile-backed virtual arrays.** The new `xdas.virtual.tiles` module exposes a file archive as one lazy `TileArray`: slicing, concatenation and the numpy routines stay lazy, reductions stream, and a read touches only the tiles it overlaps. Select it with `vtype="tiles"` on any HDF5 engine — the default for Febus, always used by Silixa and ObsPy — or implement `Engine.load_tile`. Tile-backed arrays round-trip through the native netCDF format as a compact `__tiles__` group, relocatable by editing its header's single root path (@atrabattoni).
+
+#### Tiles Backend
+- **Tile-backed virtual arrays.** The new `xdas.virtual.tiles` module exposes a file archive as one lazy `TileArray`: slicing, concatenation and the numpy routines stay lazy, reductions stream, and a read touches only the tiles it overlaps. Select it with `vtype="tiles"` on any HDF5 engine — the default for Febus, always used by Silixa and ObsPy — or implement `Engine.load_tile` (@atrabattoni).
+- Tile-backed arrays round-trip through the native netCDF format as a compact `__tiles__` group, relocatable by editing its header's single root path (@atrabattoni).
 - **`xdas.sortby`** sorts a virtual data array along a dimension by coordinate value without reading data (@atrabattoni).
+
+#### Atoms
 - **Every atom has a functional form, and every function an atom form.** `xdas.resample(da, 50.0)` applies straight away; `xdas.resample(..., 50.0)`, seeded with `...`, is the atom behind it, ready to compose with `>>` and to be streamed. Numpy expressions extend a pipeline under the same seed: `20 * np.log10(np.abs(atom))` (@atrabattoni).
 - **A processing vocabulary in physical units.** The top-level functions take the quantities of the measurement — a rate in Hz, corner frequencies, a kernel in seconds — so a parameter survives a change of sampling rate: `xdas.filter`, `resample`, `integrate`, `differentiate`, `stft`, `detrend`, `taper`, `hilbert`, `medfilt`, `sliding_mean_removal`, `rechunk`, `annotate`, `trigger` and `pick`. The SciPy-shaped ones stay in `xdas.signal` (@atrabattoni).
 - **One `xdas.resample` for every way of changing a sampling rate.** The target is a `rate`, an `interval` or an `up`/`down` ratio, and `method="fir"` (default), `"iir"` or `"fft"` chooses how — `"fft"` alone reaches an arbitrary interval. The solver picks the simplest ratio within `tolerance`, not the closest; `snap=True` stays on the original grid (@atrabattoni).
 - **Gap-aware chunked processing.** State carries across continuous chunks and is flushed at gaps and rate changes, eager calls splitting gappy input the same way, so a result no longer depends on the chunking. `flush()` drains buffered tails, and `xdas.testing.assert_chunk_invariant` asserts the property on a pipeline of your own (@atrabattoni).
 - **`process()` on every atom, with source and sink auto-dispatch.** `pipeline.process(source, out=...)` infers both ends — an array, a path, a `DataCollection`, `xdas.watch(dir)` or a ZeroMQ address in; a directory, a `.csv`, an address or a writer out. An accumulation beyond the `"memory_limit"` entry raises rather than filling the machine (@atrabattoni).
 - **Picking, end to end.** `Annotate` (replacing `MLPicker`) drives a SeisBench model with everything its weight set declares (overlap, stacking, blinding, preprocessing), overlapping GPU compute with transfers; `Trigger` gains per-phase thresholds; `xdas.pick(dc, model)` turns a tree of waveforms into one flat pick table (@atrabattoni).
+
+#### Seismological Data
 - **The `obspy` engine**, named for the library, not a format: decoding is `obspy.read`, so miniSEED, SAC, GSE2, SEG-2 and the rest go through it. Each contiguous `Trace` becomes one lazy `DataArray`, nested `network / station / location / channel`; files the miniseed engine rejected are now readable (@atrabattoni).
 - **`xdas.stack`** collapses a level of a collection into an array dimension — `xd.stack(dc, "channel")` — lazily, with `tolerance` snapping near-identical sampling grids and `join="inner"/"outer"` for leaves that disagree (@atrabattoni).
 - **`xdas.trim_overlaps`** drops the duplicated samples of an array or collection, keeping the later copy, or the earlier with `keep="first"`, at the manifest level so lazy arrays stay lazy (@atrabattoni).
 - **`DataCollection.select`**, with `obspy.Stream.select` semantics: `dc.select(station="SX00*", channel="HH?")` (@atrabattoni).
+
+#### General
 - **Process pools for chunk ingress and egress.** `DataArrayLoader` and `DataArrayWriter` accept `pool="processes"` — on compressed archives, an order of magnitude faster than threads. Chunks travel through shared memory and arrive read-only; `pool="threads"` remains the default (@atrabattoni).
 - `ZMQSubscriber.wait_until_subscribed()` returns once the publisher has greeted the subscription, so nothing published from then on is missed; `ZMQPublisher.wait_for_subscribers()` holds a replay back until its listeners have joined, and a `timeout` makes both subscribers raise on a stream gone quiet (@atrabattoni).
 - `xdas.concat` can open a *new* dimension, checking the inputs agree elsewhere and promoting the scalar coordinates that vary: `xd.concat(traces, "channel")` (@atrabattoni).
@@ -50,10 +59,21 @@ Changes that break existing code are flagged **Breaking**.
 - `xdas.config` gains `"scan_workers"` beside `"n_workers"` (@atrabattoni).
 
 ### Changed
-- **The machine-parameter atoms become an expert layer.** `LFilter`, `SOSFilter`, `DownSample`, `UpSample` and the new fused `Polyphase` move to `xdas.atoms.kernel`, still importable from `xdas.atoms`: the processing vocabulary designs them from the data. Resampling rides `Polyphase`, 2.6–8.7× faster than the chain it replaces (@atrabattoni).
+
+#### Tiles Backend
 - Scanning no longer grows in memory with the file count: a 23-million-file archive opens in ~1 GB (@atrabattoni).
-- **A data collection prints as a table of its leaves**: one row per leaf with the keys that address it, its shape and its size in memory, plus a summary line (@atrabattoni).
+
+#### Atoms
+- **The machine-parameter atoms become an expert layer.** `LFilter`, `SOSFilter`, `DownSample`, `UpSample` and the new fused `Polyphase` move to `xdas.atoms.kernel`, still importable from `xdas.atoms`: the processing vocabulary designs them from the data. Resampling rides `Polyphase`, 2.6–8.7× faster than the chain it replaces (@atrabattoni).
 - **An atom prints as one line, and a pipeline as one line per stage**, showing the parameters its constructor was given with the defaults left out — `Filter(freq=(None, 10.0), ftype='fir')`. A model or a set of coefficients is summarised as `<PhaseNet>` or `<ndarray>` (@atrabattoni).
+- **Breaking:** `Trigger` moved to `xdas.atoms.detect`, with a lowercase twin `xdas.trigger`; the module remains importable and `find_picks` is unchanged. Its `dim` default is now `"time"` instead of `"last"` (@atrabattoni).
+- **Breaking:** the `xdas.atoms.signal` module is split into `xdas.atoms.kernel` and `xdas.atoms.operations`; its atoms are still importable from `xdas.atoms` (@atrabattoni).
+
+#### Seismological Data
+- **Breaking: opening a seismological file without naming an engine returns a nested collection, not a stacked array.** `xd.concat(traces, "channel")` is the one-liner back, and `engine="miniseed"` still gives the old shape (@atrabattoni).
+
+#### General
+- **A data collection prints as a table of its leaves**: one row per leaf with the keys that address it, its shape and its size in memory, plus a summary line (@atrabattoni).
 - Format-specific engine parameters are constructor arguments, validated up front: a misspelled keyword now raises (@atrabattoni).
 - **Parallelism sized to the work, not to the machine.** Both were `os.cpu_count()`, which made small work slower. Threads are now sized against the array they are given, and a small scan stays in the calling process (@atrabattoni).
 - A ZeroMQ publisher answers each new subscription with a greeting, so subscribing no longer races the stream (@atrabattoni).
@@ -61,12 +81,9 @@ Changes that break existing code are flagged **Breaking**.
 - **`simplify` is linear in the number of gaps** (@atrabattoni).
 - When no engine can open a file, the error lists what each engine that recognised it said (@atrabattoni).
 - **Breaking:** the numpy requirement is raised to 2.3 (@atrabattoni).
-- **Breaking: opening a seismological file without naming an engine returns a nested collection, not a stacked array.** `xd.concat(traces, "channel")` is the one-liner back, and `engine="miniseed"` still gives the old shape (@atrabattoni).
 - **Breaking: the innermost level of a collection is named `record`**, whatever it holds: `dc.query(trace=0)` becomes `dc.query(record=0)`. A collection saved before this reads back with its old level names (@atrabattoni).
 - **Breaking:** `DataCollection.query` raises a `KeyError` on an indexer naming no level of the collection, instead of silently returning everything unchanged (@atrabattoni).
 - **Breaking:** custom engines must subclass `xdas.io.Engine`: passing a bare read function as `engine` now raises a `TypeError` (@atrabattoni).
-- **Breaking:** `Trigger` moved to `xdas.atoms.detect`, with a lowercase twin `xdas.trigger`; the module remains importable and `find_picks` is unchanged. Its `dim` default is now `"time"` instead of `"last"` (@atrabattoni).
-- **Breaking:** the `xdas.atoms.signal` module is split into `xdas.atoms.kernel` and `xdas.atoms.operations`; its atoms are still importable from `xdas.atoms` (@atrabattoni).
 
 ### Deprecated
 - `MLPicker` and `xdas.mlpicker` are deprecated in favour of `Annotate` and `Picker`; they remain as aliases until 0.4 (@atrabattoni).
