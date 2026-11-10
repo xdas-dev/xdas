@@ -66,9 +66,8 @@ class DataArray(NDArrayOperatorsMixin):
                 dims = coords.dims
         if dims is not None and len(dims) != data.ndim:
             raise ValueError("different number of dimensions on `data` and `dims`")
-        coords = Coordinates(coords, dims)
-        coords._assign_parent(self)
-        self._coords = coords
+        new_coords = Coordinates(coords, dims, self)
+        self._coords = new_coords
 
         # metadata
         self.name = name
