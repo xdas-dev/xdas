@@ -861,8 +861,27 @@ class DataArray(NDArrayOperatorsMixin):
 
     @classmethod
     def from_xarray(cls, da):
-        """Build a :class:`DataArray` from an :class:`xarray.DataArray` *da*."""
-        return cls(da.data, da.coords, da.dims, da.name, da.attrs)
+        """
+        Build a :class:`DataArray` from an :class:`xarray.DataArray` *da*.
+
+        The mirror of :meth:`to_xarray`: coordinates are kept as the dense values
+        xarray holds, no interpolated coordinate is inferred back.
+
+        Raises
+        ------
+        ValueError
+            If a coordinate of *da* spans more than one dimension.
+        """
+        coords = {}
+        for name, coord in da.coords.items():
+            if coord.ndim > 1:
+                raise ValueError(
+                    f"cannot convert coordinate {name!r} spanning dimensions "
+                    f"{coord.dims}: xdas coordinates span at most one dimension"
+                )
+            coords[name] = (coord.dims[0] if coord.dims else None, coord.values)
+        # xarray always holds a dict; empty attrs are None in xdas, as on read
+        return cls(da.data, coords, da.dims, da.name, da.attrs or None)
 
     def to_stream(
         self,

@@ -6,6 +6,7 @@ import hdf5plugin
 import numpy as np
 import psutil
 import pytest
+import xarray as xr
 
 import xdas as xd
 from xdas.coordinates import Coordinates, DenseCoordinate, InterpCoordinate
@@ -432,6 +433,33 @@ class TestIO:
         result = xd.DataArray.from_xarray(da)
         assert np.array_equal(result.values, da.values)
         assert np.array_equal(result["dim"].values, da["dim"].values)
+
+    def test_xarray_round_trip_without_attrs(self):
+        da = xd.DataArray(np.zeros(3), {"distance": [0.0, 1.0, 2.0]})
+        result = xd.DataArray.from_xarray(da.to_xarray())
+        assert result.attrs is None
+        assert result.equals(da)
+
+    def test_from_xarray_non_dimensional_coords(self):
+        da = xr.DataArray(
+            np.zeros((3, 2)),
+            coords={
+                "time": [0.0, 1.0, 2.0],
+                "distance": [0.0, 10.0],
+                "station": ("distance", ["A", "B"]),
+                "cable": "C",
+            },
+            dims=("time", "distance"),
+        )
+        result = xd.DataArray.from_xarray(da)
+        assert result.dims == ("time", "distance")
+        assert result["station"].dim == "distance"
+        np.testing.assert_array_equal(result["station"].values, ["A", "B"])
+        assert result["cable"].dim is None
+        assert result["cable"].values == "C"
+        da = da.assign_coords(grid=(("time", "distance"), np.zeros((3, 2))))
+        with pytest.raises(ValueError, match="spanning dimensions"):
+            xd.DataArray.from_xarray(da)
 
     def test_stream(self):
         da = xd.testing.dummy()

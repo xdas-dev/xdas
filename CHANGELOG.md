@@ -7,6 +7,9 @@ Changes that break existing code are flagged **Breaking**.
 
 ## [Unreleased]
 
+### Fixed
+- `DataArray.from_xarray` no longer turns every non-dimensional coordinate into a new dimension: a coordinate keeps the dimension it spans in xarray, and one spanning several raises a clear error. Empty attributes come back as `None`, so an array without attributes equals its round trip through `to_xarray` (@atrabattoni).
+
 ## [0.2.10] - 2026-10-16
 
 ### Added
