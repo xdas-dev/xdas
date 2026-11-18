@@ -114,13 +114,15 @@ class Coordinates(dict):
         interrogator: 'SRN'
     """
 
-    def __init__(self, coords=None, dims=None):
+    def __init__(self, coords=None, dims=None, parent=None):
         super().__init__()
         if isinstance(coords, Coordinates):
             if dims is None:
                 dims = coords.dims
             coords = dict(coords)
         self._dims = () if dims is None else tuple(dims)
+        if parent is not None:
+          self._parent = weakref.ref(parent)
         if coords is not None:
             for name in coords:
                 self[name] = coords[name]
@@ -144,14 +146,17 @@ class Coordinates(dict):
         else:
             if coord.dim is not None:
                 if coord.dim not in self.dims:
-                    raise KeyError(
-                        f"cannot add new dimension {coord.dim} to an existing DataArray"
-                    )
-                size = self.parent.sizes[coord.dim]
-                if not len(coord) == size:
-                    raise ValueError(
-                        f"conflicting sizes for dimension {coord.dim}: size {len(coord)} "
-                        f"in `coords` and size {size} in `data`"
+                    pass
+                    # warnings.warn(
+                    # # raise KeyError(
+                    #     f"cannot add new dimension {coord.dim} to an existing DataArray"
+                    # )
+                elif hasattr(self.parent, "sizes"):
+                  size = self.parent.sizes[coord.dim]
+                  if not len(coord) == size:
+                      raise ValueError(
+                          f"conflicting sizes for dimension {coord.dim}: size {len(coord)} "
+                          f"in `coords` and size {size} in `data`"
                     )
         coord._assign_parent(self)
         return super().__setitem__(key, coord)
