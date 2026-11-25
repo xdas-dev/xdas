@@ -21,9 +21,10 @@ __all__ = [
     "silixa",
     "terra15",
     "xdas",
+    "zarr",
 ]
 
-from . import apsensing, aragon, asn, febus, prodml, silixa, terra15, xdas
+from . import apsensing, aragon, asn, febus, prodml, silixa, terra15, xdas, zarr
 from .core import AutoEngine, Engine, get_free_port
 
 # isort: split

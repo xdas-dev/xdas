@@ -122,10 +122,14 @@ def _load(da):
     return da.load()
 
 
-def _dump(chunk, path, encoding):
+def _dump(chunk, path, encoding, engine):
     """Write *chunk* to *path* and return it virtually. Egress unit of work."""
-    chunk.to_netcdf(path, encoding=encoding)
-    return open_dataarray(path)
+    if engine == "zarr":
+      chunk.to_zarr(path, encoding=encoding)
+    else:
+      chunk.to_netcdf(path, encoding=encoding)
+    return open_dataarray(path, engine=engine)
+        
 
 
 def process(atom, source, out=None, chunks=None, until=None, merge=True):
@@ -1177,6 +1181,7 @@ class DataArrayWriter:
         self,
         dirpath,
         encoding=None,
+        engine="xdas",
         max_buffers=1,
         max_workers=1,
         create_dirs=False,
@@ -1203,6 +1208,7 @@ class DataArrayWriter:
         self.dirpath = dirpath
         self.dim = dim
         self.encoding = encoding
+        self.engine = engine
         self.max_buffers = max_buffers
         self.max_workers = max_workers
         self.pool = pool
@@ -1231,7 +1237,7 @@ class DataArrayWriter:
             result = future.result()
             self._results.append(result)
         path = os.path.join(self.dirpath, f"{self._count:09d}")
-        self._futures.append(self._executor.submit(_dump, chunk, path, self.encoding))
+        self._futures.append(self._executor.submit(_dump, chunk, path, self.encoding, self.engine))
         self._count += 1
 
     def write(self, chunk):
